@@ -59,6 +59,25 @@ impl BlockKind {
     pub fn continues_dialogue(self) -> bool {
         matches!(self, BlockKind::Dialogue | BlockKind::Parenthetical)
     }
+
+    /// Whether automatic re-classification may decide this kind (§4.2).
+    ///
+    /// The kinds left out are written with a marker their text no longer
+    /// carries — `~`, `#`, `=`, `===`, `> <`, `[[ ]]`, `/* */`. For those the
+    /// kind *is* the marker, so asking what the text looks like would answer
+    /// Action every time and quietly delete the marker on the way out. The six
+    /// below are the ones §4.1 recognises from the text itself.
+    pub fn is_inferable(self) -> bool {
+        matches!(
+            self,
+            BlockKind::SceneHeading
+                | BlockKind::Action
+                | BlockKind::Character
+                | BlockKind::Dialogue
+                | BlockKind::Parenthetical
+                | BlockKind::Transition
+        )
+    }
 }
 
 /// The line terminator a document uses.

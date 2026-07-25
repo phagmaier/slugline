@@ -30,12 +30,14 @@
 //!    original bytes exactly, including line endings, trailing whitespace and a
 //!    UTF-8 BOM. See [`parse`] for the provenance invariant that makes this so.
 
+mod infer;
 mod lines;
 mod model;
 mod parse;
 mod serialise;
 mod syntax;
 
+pub use infer::{infer_kind, Context};
 pub use lines::detect_line_ending;
 pub use model::{
     BlockKind, Element, ElementRef, LineEnding, Script, TitleEntry, TitleField, TitlePage,

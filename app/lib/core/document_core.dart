@@ -20,6 +20,8 @@ export 'package:slugline/src/rust/api/doc.dart'
         EditOutcome_Rejected,
         EditRejection,
         EditResult,
+        FindMatch,
+        FindQuery,
         InsertedBlock,
         NewBlock;
 
@@ -52,6 +54,28 @@ abstract class DocumentCore {
   /// Replaces [at] with [text] in one undo transaction. [plain] is
   /// `Ctrl+Shift+V`: Action blocks, no element inference.
   rust.EditOutcome paste(rust.DocSelection at, String text, {required bool plain});
+
+  /// Enter: the block splits and whatever appears below it takes the element
+  /// type `docs/KEYMAP.md` says follows this one. One undo step, even though it
+  /// may be a delete, a split and a kind change.
+  rust.EditOutcome enter(rust.DocSelection at);
+
+  /// Tab, or Shift+Tab, on the block the caret is in. `null` where the table
+  /// says Tab does nothing there — not a refusal, just no next element type.
+  rust.EditOutcome? tab(rust.DocSelection at, {required bool shift});
+
+  /// The element type Tab would move to, without moving. For the element bar.
+  rust.BlockKind? tabTarget(int block, {required bool shift});
+
+  /// A character cue the script already has whose name this block's text
+  /// matches. A suggestion: the core never acts on it.
+  String? characterSuggestion(int block);
+
+  /// Every match of [query], in document order.
+  List<rust.FindMatch> find(rust.FindQuery query);
+
+  /// Replaces every match with [with_], as one undo transaction.
+  rust.EditOutcome replaceAll(rust.FindQuery query, String with_);
 
   /// The Fountain text between two positions, for the clipboard.
   String? extract(rust.DocPosition from, rust.DocPosition to);
@@ -92,6 +116,29 @@ class RustDocumentCore implements DocumentCore {
   @override
   rust.EditOutcome paste(rust.DocSelection at, String text, {required bool plain}) =>
       rust.docPaste(handle: _handle, at: at, text: text, plain: plain);
+
+  @override
+  rust.EditOutcome enter(rust.DocSelection at) => rust.docEnter(handle: _handle, at: at);
+
+  @override
+  rust.EditOutcome? tab(rust.DocSelection at, {required bool shift}) =>
+      rust.docTab(handle: _handle, at: at, shift: shift);
+
+  @override
+  rust.BlockKind? tabTarget(int block, {required bool shift}) =>
+      rust.docTabTarget(handle: _handle, block: block, shift: shift);
+
+  @override
+  String? characterSuggestion(int block) =>
+      rust.docCharacterSuggestion(handle: _handle, block: block);
+
+  @override
+  List<rust.FindMatch> find(rust.FindQuery query) =>
+      rust.docFind(handle: _handle, query: query);
+
+  @override
+  rust.EditOutcome replaceAll(rust.FindQuery query, String with_) =>
+      rust.docReplaceAll(handle: _handle, query: query, with_: with_);
 
   @override
   String? extract(rust.DocPosition from, rust.DocPosition to) =>

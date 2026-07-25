@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/line_layout.dart';
 import 'package:slugline/editor/metrics.dart';
 
@@ -22,9 +23,30 @@ import 'package:slugline/editor/metrics.dart';
 /// what makes an IME work. What we own is the model, the layout and the
 /// painting.
 class EditorSurface extends StatefulWidget {
-  const EditorSurface({required this.controller, super.key});
+  const EditorSurface({
+    required this.controller,
+    this.focusNode,
+    this.onOpenPalette,
+    this.onOpenFind,
+    this.onEscape,
+    super.key,
+  });
 
   final EditorController controller;
+
+  /// Supplied when something above the surface has to be able to give it the
+  /// keyboard back — which the editor page does when it closes a panel. The
+  /// surface makes its own when nobody needs to.
+  final FocusNode? focusNode;
+
+  /// `Ctrl+K`, `Ctrl+F` and Escape. The surface has the keyboard focus, so it
+  /// sees these first, but it owns none of them: what a panel is and where it
+  /// sits belongs to the page above (see `editor_page.dart`). Escape is handed
+  /// up unconditionally and never touches the document — §Phase 3 requires that
+  /// it dismiss whatever is open without losing text.
+  final VoidCallback? onOpenPalette;
+  final VoidCallback? onOpenFind;
+  final VoidCallback? onEscape;
 
   @override
   State<EditorSurface> createState() => EditorSurfaceState();
@@ -40,7 +62,11 @@ const double _padding = 28.0;
 const int _pageColumns = 60;
 
 class EditorSurfaceState extends State<EditorSurface> implements TextInputClient {
-  final FocusNode _focusNode = FocusNode();
+  late final FocusNode _focusNode = widget.focusNode ?? FocusNode();
+
+  /// Only a node we made is a node we may dispose.
+  bool get _ownsFocusNode => widget.focusNode == null;
+
   final ScrollController _scroll = ScrollController();
 
   TextInputConnection? _connection;
@@ -56,6 +82,15 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
   /// block. Painted with an underline; never interpreted.
   TextRange _composing = TextRange.empty;
 
+  /// The block the platform's editing session is for.
+  ///
+  /// ADR 0005 hands the platform one block at a time, which is correct for every
+  /// composition except one that would span a block boundary. This is what closes
+  /// that gap: a session belongs to a block, and when the caret leaves that block
+  /// the session ends and a new one begins. A composing region can then never
+  /// describe a range in text the platform is no longer looking at.
+  int? _sessionBlock;
+
   EditorController get _controller => widget.controller;
 
   @override
@@ -70,9 +105,8 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
   void dispose() {
     _connection?.close();
     _controller.removeListener(_onDocumentChanged);
-    _focusNode
-      ..removeListener(_onFocusChanged)
-      ..dispose();
+    _focusNode.removeListener(_onFocusChanged);
+    if (_ownsFocusNode) _focusNode.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -97,6 +131,7 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
       _connection?.close();
       _connection = null;
       _composing = TextRange.empty;
+      _sessionBlock = null;
     }
     setState(() {});
   }
@@ -144,7 +179,25 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     );
   }
 
+  /// Tells the platform what the document is, ending the previous session first
+  /// if the caret has moved to a different block.
+  ///
+  /// Ending it means dropping the composing region. That is not a lost keystroke:
+  /// composed text reaches us as ordinary text in `updateEditingValue` and is
+  /// already in the document by the time the region changes — what is dropped is
+  /// only the platform's claim that some of it is still provisional. Keeping that
+  /// claim across a block boundary is what would lose text, because the offsets in
+  /// it would then describe a range in a block the platform cannot see.
   void _syncEditingState() {
+    final block = _controller.focusedBlock.id;
+    if (_sessionBlock != block) {
+      _sessionBlock = block;
+      if (_composing.isValid) {
+        _composing = TextRange.empty;
+        // The underline goes with it.
+        if (mounted) setState(() {});
+      }
+    }
     _connection?.setEditingState(_editingValue);
   }
 
@@ -253,6 +306,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     final control = keys.isControlPressed;
 
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.arrowLeft when control:
+        _controller.moveByWord(-1, extend: shift);
+      case LogicalKeyboardKey.arrowRight when control:
+        _controller.moveByWord(1, extend: shift);
       case LogicalKeyboardKey.arrowLeft:
         _controller.moveHorizontal(-1, extend: shift);
       case LogicalKeyboardKey.arrowRight:
@@ -279,6 +336,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
         }
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
         _controller.splitBlock();
+      case LogicalKeyboardKey.backspace when control:
+        _controller.deleteWord(forward: false);
+      case LogicalKeyboardKey.delete when control:
+        _controller.deleteWord(forward: true);
       case LogicalKeyboardKey.backspace:
         _controller.deleteBackward();
       case LogicalKeyboardKey.delete:
@@ -297,11 +358,29 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
         _controller.undo();
       case LogicalKeyboardKey.keyY when control:
         _controller.redo();
-      // Tab means something specific in a screenplay editor, and Phase 3 says
-      // what. Until then it is swallowed rather than allowed to move focus out
-      // of the document.
+      // Tab is the element cycle of `docs/KEYMAP.md`, and Shift+Tab reverses it.
+      // It never moves the focus out of the document — there is nowhere in a
+      // script for the focus to go.
       case LogicalKeyboardKey.tab:
-        break;
+        _controller.cycleElement(reverse: shift);
+      case LogicalKeyboardKey.keyK when control:
+        widget.onOpenPalette?.call();
+      case LogicalKeyboardKey.keyF when control:
+        widget.onOpenFind?.call();
+      case LogicalKeyboardKey.keyG when control && shift:
+        _controller.previousMatch();
+      case LogicalKeyboardKey.keyG when control:
+        _controller.nextMatch();
+      // Escape changes nothing. It dismisses whatever is open, and when nothing
+      // is, it collapses the selection — never a deletion, never a command.
+      case LogicalKeyboardKey.escape:
+        widget.onEscape?.call();
+        _controller.collapseSelection();
+      // The element shortcuts. `Ctrl+<digit>` sets the type and pins it, which
+      // is also how a writer overrules an automatic change (§Phase 3).
+      case final key when control && elementShortcuts.containsKey(key):
+        final choice = elementShortcuts[key]!;
+        _controller.setKind(choice.kind, sectionLevel: choice.sectionLevel);
       default:
         return KeyEventResult.ignored;
     }
@@ -312,17 +391,70 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
 
   // --- pointer -------------------------------------------------------------
 
+  /// When and where the last click landed, for counting double and triple
+  /// clicks. `Listener` reports pointers, not gestures, so the count is ours to
+  /// keep — and a `GestureDetector` would not do better: it has no triple tap.
+  Duration _lastClickAt = Duration.zero;
+  Offset _lastClickPosition = Offset.zero;
+  int _clickCount = 0;
+
+  /// The platform's own double-click window, and how far the pointer may drift
+  /// between clicks and still be the same click.
+  static const Duration _multiClickWindow = Duration(milliseconds: 400);
+  static const double _multiClickSlop = 8;
+
   void _onPointerDown(PointerDownEvent event) {
     _focusNode.requestFocus();
     final (row, column) = _gridAt(event.localPosition);
-    _controller.placeCaretAt(row, column,
-        extend: HardwareKeyboard.instance.isShiftPressed);
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+
+    final quick = event.timeStamp - _lastClickAt < _multiClickWindow &&
+        (event.localPosition - _lastClickPosition).distance < _multiClickSlop;
+    _clickCount = quick ? _clickCount + 1 : 1;
+    _lastClickAt = event.timeStamp;
+    _lastClickPosition = event.localPosition;
+
+    // Shift-clicking is always extending a selection, whatever the count.
+    if (shift) {
+      _controller.placeCaretAt(row, column, extend: true);
+      return;
+    }
+    switch (_clickCount) {
+      case 1:
+        _controller.placeCaretAt(row, column);
+      case 2:
+        _controller.selectWordAt(row, column);
+      default:
+        _controller.selectBlockAt(row, column);
+    }
   }
 
   void _onPointerMove(PointerMoveEvent event) {
     if (event.buttons & kPrimaryButton == 0) return;
+    // A drag is a fresh selection, not a continuation of the click count.
+    _clickCount = 1;
     final (row, column) = _gridAt(event.localPosition);
     _controller.placeCaretAt(row, column, extend: true);
+    _autoScroll(event.localPosition);
+  }
+
+  /// Scrolls while a drag is held against the top or bottom edge.
+  ///
+  /// One row per move event rather than a timer: the pointer keeps sending them
+  /// while it is held, and a timer would be a wakeup in an idle process (§1.3).
+  void _autoScroll(Offset local) {
+    if (!_scroll.hasClients) return;
+    const edge = 2 * _lineHeight;
+    final height = _scroll.position.viewportDimension;
+    final delta = switch (local.dy) {
+      final y when y < edge => -_lineHeight,
+      final y when y > height - edge => _lineHeight,
+      _ => 0.0,
+    };
+    if (delta == 0) return;
+    _scroll.jumpTo(
+      (_scroll.offset + delta).clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent)),
+    );
   }
 
   /// The grid cell under a point in the viewport.

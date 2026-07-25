@@ -144,6 +144,53 @@ impl History {
         }
     }
 
+    /// Reopens the transaction that produced `revision`, so that a change the
+    /// document makes on the user's behalf lands in the same undo step as the
+    /// keystroke that caused it. Answers whether it reopened anything, because
+    /// the caller must close what it opens.
+    ///
+    /// A transaction that is still open needs nothing done to it: it is a run of
+    /// typing that has to stay open, and [`History::record_alongside`] appends to
+    /// it without disturbing what it is coalescing.
+    pub(crate) fn reopen(&mut self, revision: u64) -> bool {
+        if self.open.is_some() || self.grouped {
+            return false;
+        }
+        if self
+            .done
+            .last()
+            .is_some_and(|transaction| transaction.after_revision == revision)
+        {
+            self.open = self.done.pop();
+            return true;
+        }
+        false
+    }
+
+    /// Records an inverse into the open transaction without touching what it is
+    /// coalescing and without closing it.
+    ///
+    /// This is for automatic re-classification (§4.2): a kind change the document
+    /// made because of a keystroke, which has to be undone with that keystroke
+    /// and must not end the run of typing it belongs to. A run's first inverse
+    /// already carries the whole block — kind, `forced` and provenance included —
+    /// so when the re-classified block is the one being typed into, this adds
+    /// nothing that is not already recoverable; it is the *neighbours* that need
+    /// an inverse of their own.
+    pub(crate) fn record_alongside(
+        &mut self,
+        inverse: Inverse,
+        before_revision: u64,
+        after_revision: u64,
+    ) {
+        let transaction = self
+            .open
+            .get_or_insert_with(|| Transaction::new(before_revision, after_revision));
+        transaction.after_revision = after_revision;
+        transaction.inverses.push(inverse);
+        self.undone.clear();
+    }
+
     /// Ends the open transaction, if any. Idempotent, and a no-op inside a
     /// group — the group decides when the transaction ends.
     pub(crate) fn close(&mut self) {

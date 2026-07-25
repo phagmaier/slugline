@@ -640,11 +640,15 @@ Do all of this with `cargo test`. Do not open Flutter this phase.
 - [x] Automatic scroll keeps the caret in view with a comfortable margin
 - [x] Undo / redo with correct caret restoration
 - [ ] Editing works with an IME active (test with `ibus` and a CJK input method)
-      — **built, not verified.** The surface hands the platform the caret's block
-      as a one-block editing session and underlines the composing region, but the
-      `ibus` + CJK check is a manual one that has not been run. ADR 0005 makes
-      composition across a block boundary Phase 3 work and gives Phase 3 a hard
-      exit gate for exactly this.
+      — **built and tested through the platform interface, still not verified
+      against `ibus` itself.** Phase 3 finished the one-block editing session: it
+      now belongs to a block and ends when the caret leaves it, so a composing
+      range can never describe text the platform is no longer looking at.
+      `app/integration_test/ime_test.dart` drives the same `TextInputClient`
+      interface `ibus` reaches us through — composition, dead keys, an emoji, a
+      composition the caret leaves, a newline from the input method, and a
+      clipboard round trip — against the real `.so`. The manual `ibus` + CJK check
+      is still the one thing no test can stand in for, and it has not been run.
 
 ### Tests
 
@@ -673,12 +677,13 @@ Requirements §5, §6.
 
 ### Element type control
 
-- [ ] Automatic detection on the current block as you type
-- [ ] Keyboard shortcuts for each element type (`Ctrl+1..9` or similar — document the map)
-- [ ] Visible element selector in the UI showing the current block's type
-- [ ] Searchable command palette (`Ctrl+K`) covering every element type and command
-- [ ] Setting a type explicitly sets `forced = true` and suppresses re-inference
-- [ ] **Changing an element type never alters the text.** This is a dedicated test.
+- [x] Automatic detection on the current block as you type
+- [x] Keyboard shortcuts for each element type (`Ctrl+1..9` or similar — document the map)
+      — `Ctrl+1`…`Ctrl+0`, in `docs/KEYMAP.md`
+- [x] Visible element selector in the UI showing the current block's type
+- [x] Searchable command palette (`Ctrl+K`) covering every element type and command
+- [x] Setting a type explicitly sets `forced = true` and suppresses re-inference
+- [x] **Changing an element type never alters the text.** This is a dedicated test.
 
 ### Enter / Tab semantics
 
@@ -693,26 +698,50 @@ Define the full table in `docs/KEYMAP.md`. Baseline:
 | Dialogue | Action (or Character on double-Enter) | Cycle to Parenthetical |
 | Transition | Scene heading | — |
 
-- [ ] Table implemented and covered by a parameterised widget test
-- [ ] `Shift+Tab` reverses the Tab cycle
-- [ ] `Escape` dismisses completion / palette / dialog, and never loses text
-- [ ] Every automatic behaviour is overridable: an immediate element-type shortcut after an
+- [x] Table implemented and covered by a parameterised widget test — with one
+      division. The table's **content** is `crates/document/src/workflow.rs`'s and
+      is proved by parameterised tests there and in `crates/bridge/src/api/doc.rs`;
+      §2.1 does not allow a second copy of it in Dart, and a copy in the widget
+      double could disagree with the one the application uses. The parameterised
+      widget test in `app/test/editor/keyboard_workflow_test.dart` covers the
+      **wiring** for every element type: that the key reaches the core with the
+      caret the writer had, and that a kind change moves no text and no caret.
+- [x] `Shift+Tab` reverses the Tab cycle
+- [x] `Escape` dismisses completion / palette / dialog, and never loses text
+- [x] Every automatic behaviour is overridable: an immediate element-type shortcut after an
       automatic change reverts and forces the user's choice
-- [ ] `INT.` / `EXT.` typed at the start of an Action block promotes it to Scene heading
-- [ ] Typing an existing character name in an Action-position block suggests Character
+- [x] `INT.` / `EXT.` typed at the start of an Action block promotes it to Scene heading
+- [x] Typing an existing character name in an Action-position block suggests Character
+      — shown in the element bar as `Tab: Character — JOHN`. A suggestion only:
+      `Document::character_suggestion` never changes the block, because an
+      all-capitals line of action that happens to match a name is still action.
 
 ### Find and replace
 
-- [ ] Find with live match count and next/previous
-- [ ] Case-sensitive toggle
-- [ ] Whole-word toggle
-- [ ] Replace and Replace All (Replace All is one undo transaction)
-- [ ] Optional: restrict search to element types (dialogue only, etc.)
+- [x] Find with live match count and next/previous
+- [x] Case-sensitive toggle
+- [x] Whole-word toggle
+- [x] Replace and Replace All (Replace All is one undo transaction)
+- [x] Optional: restrict search to element types (dialogue only, etc.)
 
 ### Exit criteria
 
-- [ ] You can write a full scene without touching the mouse
-- [ ] Element-type changes are provably non-destructive
+- [x] You can write a full scene without touching the mouse
+      (`app/integration_test/writing_test.dart`)
+- [x] Element-type changes are provably non-destructive
+- [x] ADR 0005's input-surface gate, as far as an automated test can reach it:
+      composition, dead-key accents, an astral-plane composition, a composition
+      the caret leaves, and a clipboard round trip, all against the real `.so`
+      (`app/integration_test/ime_test.dart`). Word-wise motion and deletion and
+      the multi-click selections — the rest of what ADR 0005 assigns to this
+      phase — are in `app/test/editor/word_motion_test.dart`.
+- [ ] The **manual** half of ADR 0005's gate: `ibus` with a CJK input method, on a
+      real desktop session. Still not run. No automated test can stand in for it —
+      it is a property of the session, not of this code — and the automated tests
+      above drive the same `TextInputClient` interface `ibus` reaches us through.
+- [ ] Accessibility. ADR 0005 lists it as Phase 3 work and it is not done: the
+      surface exposes no semantics tree, which `EditableText` would have given
+      free. It is the one item on ADR 0005's list still outstanding.
 
 ---
 
@@ -1049,7 +1078,9 @@ These are the requirements phrased as "must never". Each gets its own test file 
 failure is unambiguous.
 
 - [ ] `never_loses_unsaved_changes` — no code path discards edits without user confirmation
-- [ ] `element_change_preserves_text` — changing element type never alters characters
+- [x] `element_change_preserves_text` — changing element type never alters characters
+      (`crates/document/tests/element_change_preserves_text.rs`, and through the
+      whole chain in `app/integration_test/writing_test.dart`)
 - [ ] `autocomplete_requires_explicit_action` — no insertion without a keypress
 - [ ] `spellcheck_never_modifies` — no automatic correction
 - [ ] `appearance_prefs_dont_affect_pagination` — zoom/theme leave golden layout identical
@@ -1109,7 +1140,7 @@ Resolve these and record them in `docs/DECISIONS.md`.
 
 - [x] **Editor implementation approach** (Phase 0 spike) — one custom editing
       surface (ADR 0005)
-- [ ] Exact keyboard shortcut map — write `docs/KEYMAP.md` before Phase 3
+- [x] Exact keyboard shortcut map — `docs/KEYMAP.md` (Phase 3, ADR 0011)
 - [x] Application name, binary name, and reverse-DNS app ID — **Slugline**, `slugline`,
       `com.phagmaier.slugline` (ADR 0006)
 - [ ] Licence for the project itself

@@ -587,3 +587,109 @@ rendering of them (§3.2).
   line would otherwise be read back as something else. A plain-pasted
   `INT. HOUSE - DAY` stays Action without the file gaining a marker it does not
   need.
+
+---
+
+## ADR 0011 — Automatic classification is the recognition rules read forwards
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 3
+
+### Context
+
+Phase 3 asks for "automatic detection on the current block as you type", for
+`INT.` in an action paragraph to promote it to a scene heading, and for §4.2's
+scoping rules — one block either side of an edit, never a forced block, never a
+block the caret is nowhere near.
+
+The obvious implementation is a second set of rules: a table of "if the text
+looks like this, make it that". That is exactly what ADR 0007 spent Phase 1
+avoiding for the serialiser, and for the same reason: two opinions about what a
+line means will disagree, and the disagreement shows up as a document whose
+element types change every time it is saved and reopened.
+
+There is also a subtler problem. Whether a block is "preceded by a blank line" —
+which half of §4.1's rules depend on — is not a fact about its text. It is what
+the serialiser decides from the two kinds involved (`needs_blank_between`). So
+"what would the parser call this text?" has no answer until you say what the
+block currently *is*.
+
+### Decision
+
+**`fountain::infer_kind` asks §4.1's own recognition functions, with the block's
+current kind as part of the context.** It is the third caller of `syntax.rs`,
+after the parser and the serialiser, and it is bound by one property: *it never
+produces a kind the file would not give back*. There is a test that walks a
+parsed script and asserts inference agrees with the parser on every unforced
+block, and another that asserts a document, once re-classified, reads back with
+the same kinds.
+
+The current kind settles the blank-line question first. After a line of dialogue,
+a block that is already dialogue is written adjacent to it and stays dialogue; a
+block that is action is written after a blank line, is therefore a fresh element,
+and is free to become a scene heading. Both are what a reparse would say.
+
+Four things are never re-classified, and each is a rule rather than a special
+case:
+
+* **A forced block.** `forced` is the record that a human said what this element
+  is — by typing `.`, `@`, `>`, `!`, or by pressing the shortcut. Automatic
+  behaviour does not argue with it. This is also what makes §Phase 3's "an
+  immediate element-type shortcut after an automatic change reverts and forces
+  the user's choice" fall out for free rather than needing a mechanism.
+* **An empty block.** There is nothing to classify, and the kind that put it
+  there is the only intent available. Without this rule, the empty scene heading
+  that Enter creates after a transition would flip to Action before a key was
+  pressed.
+* **A block whose kind is written with a marker its text no longer carries** —
+  `~`, `#`, `=`, `===`, `> <`, `[[ ]]`, `/* */`. For those the kind *is* the
+  marker; asking what the text looks like would answer Action every time and
+  delete the marker on the way out. `BlockKind::is_inferable` names the six that
+  §4.1 recognises from the text itself.
+* **A dual cue.** The `^` pins it: a re-classified dual block would carry a flag
+  on a kind that cannot hold one.
+
+**Scope is `Document::reinfer`, and the bridge calls it after every edit.** It
+takes the patch the edit produced and the caret the writer had, widens to one
+block either side of everything that changed, and folds the kinds it changed into
+the same patch — so Dart applies one patch and never learns that anything
+reclassified at all. Two edits opt out: a plain paste (`Ctrl+Shift+V`), because
+§Phase 2 says that path infers nothing, and Replace All, because it is a bulk
+operation over blocks the writer is not looking at, which is the case §4.2 says
+to leave alone.
+
+**A re-classification joins the transaction of the keystroke that caused it.**
+`History::reopen` puts back the transaction that has just closed, and
+`record_alongside` appends without disturbing what the open one is coalescing. So
+typing `INT. HOUSE - DAY` is one undo, and the promotion that happened at `INT.`
+does not split the run of typing in two. This works because an `Inverse::Splice`
+already carries the whole block — kind, `forced` and provenance — so a run's first
+inverse restores a re-classified block for free; only the *neighbours* need an
+inverse of their own.
+
+### Consequences
+
+* A typed scene heading is written **without** a marker, because inference never
+  forces. A scene heading set from the menu is written with a `.`, because
+  §Phase 3 says an explicit choice sets `forced = true`. That asymmetry is
+  visible in the file and it is the intended one: the marker means "a human said
+  so", which is what `forced` has always meant.
+* `Action → Character` is on Tab rather than automatic. A cue is only a cue when
+  something speaks under it (§4.1), so an all-capitals line with a blank line
+  below it is action, and inference must say so or contradict the parser. The
+  cue workflow is therefore *type the name, Tab* — and the character-name
+  suggestion is a hint in the element bar, never a change.
+* The keyboard workflow tables live in `document/src/workflow.rs`, not in
+  `fountain` and not in Dart. Not `fountain`, because the format has nothing to
+  say about Tab. Not Dart, because §2.1 does not allow a second opinion about
+  what follows an element — which is why the "parameterised widget test"
+  §Phase 3 asks for covers the *wiring* for every element type while the table's
+  content is proved in Rust. `SPEC.md`'s Phase 3 list records the division.
+* Enter is composed in the bridge, exactly as paste is (ADR 0010): delete the
+  selection, split, set the new block's kind, in one transaction. `doc_enter` and
+  `doc_tab` are the two functions §6's "keep this small" budget pays for it, and
+  they buy back the alternative — Dart issuing two commands and the writer
+  needing two undos.
+* Re-classification costs a `Vec` of at most a handful of indices and one
+  `infer_kind` call each, on every keystroke. The §1.3 benchmark on the 120-page
+  reference script is unchanged: p99 keystroke-to-patch 1.29 ms against a 16 ms
+  budget.

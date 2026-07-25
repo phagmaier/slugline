@@ -5,12 +5,14 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use slugline_fountain::{
-    needs_blank_between, parse, serialise, BlockKind, ElementRef, LineEnding, Output, TitlePage,
+    infer_kind, needs_blank_between, parse, serialise, BlockKind, Context as InferContext,
+    ElementRef, LineEnding, Output, TitlePage,
 };
 
 use crate::edit::{
     DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
 };
+use crate::find::{self, FindQuery, Match};
 use crate::history::{CoalesceKey, History, Inverse, TextEditKind, Transaction};
 use crate::BlockId;
 
@@ -750,6 +752,198 @@ impl Document {
         })
     }
 
+    // ---- automatic classification (§4.2) ----
+
+    /// Re-classifies the blocks an edit disturbed and folds what it changed into
+    /// `result`.
+    ///
+    /// §4.2 sets the scope, and every clause of it is a guard here:
+    ///
+    /// * **one block either side of the edit.** That is exactly how far §4.1's
+    ///   rules reach, and it is also where the caret is after an edit.
+    /// * **never a forced block.** `forced` is the record that a human said what
+    ///   this element is, whether by typing `.` or by pressing the shortcut, and
+    ///   automatic behaviour does not get to argue with it.
+    /// * **never a block the caret is not in and did not just leave.** `before`
+    ///   is where the caret was; `result.selection` is where it is. Anything
+    ///   outside the union of those two and the edit's own neighbourhood is text
+    ///   the writer is not looking at, and changing how it reads under them is
+    ///   the "text jumping around" §4.2 forbids.
+    ///
+    /// It only ever changes `kind`. No text is touched, no block is created or
+    /// destroyed, and the caret does not move — so the patch grows by a few ids
+    /// and nothing else. A change that the model would refuse is skipped rather
+    /// than reported: inference is a convenience, and a convenience never fails
+    /// an edit that has already applied.
+    pub fn reinfer(&mut self, result: &mut EditResult, before: Option<DocSelection>) {
+        let window = self.inference_window(result, before);
+        if window.is_empty() {
+            return;
+        }
+        // Ascending, so a block that has just been reclassified is the context
+        // the one below it is judged against — deleting a cue's text settles the
+        // cue before the dialogue under it is asked what it is.
+        let reopened = self.history.reopen(self.revision);
+        for index in window {
+            if !self.reinfer_at(index) {
+                continue;
+            }
+            let id = self.blocks[index].id;
+            if !result.changed.contains(&id)
+                && !result.inserted.contains(&id)
+                && !result.removed.contains(&id)
+            {
+                result.changed.push(id);
+            }
+        }
+        if reopened {
+            self.history.close();
+        }
+    }
+
+    /// The block indices §4.2 allows re-classifying after this edit.
+    fn inference_window(&self, result: &EditResult, before: Option<DocSelection>) -> Vec<usize> {
+        let mut window = Vec::new();
+        for id in result.changed.iter().chain(&result.inserted) {
+            if let Some(index) = self.index_of(*id) {
+                window.push(index.saturating_sub(1));
+                window.push(index);
+                window.push(index + 1);
+            }
+        }
+        for selection in [before, result.selection].into_iter().flatten() {
+            for position in [selection.anchor, selection.focus] {
+                if let Some(index) = self.index_of(position.block) {
+                    window.push(index);
+                }
+            }
+        }
+        window.retain(|index| *index < self.blocks.len());
+        window.sort_unstable();
+        window.dedup();
+        window
+    }
+
+    /// Re-classifies one block, and says whether its kind changed.
+    fn reinfer_at(&mut self, index: usize) -> bool {
+        let block = &self.blocks[index];
+        // A dual cue is pinned by the `^` it is written with: re-classifying it
+        // would leave the flag on a kind that cannot carry it.
+        if block.forced || block.dual {
+            return false;
+        }
+        let inferred = infer_kind(
+            &block.text,
+            InferContext {
+                previous: index.checked_sub(1).map(|i| self.blocks[i].kind),
+                current: block.kind,
+                next: self.blocks.get(index + 1).map(|block| block.kind),
+            },
+        );
+        let Some(kind) = inferred.filter(|kind| *kind != block.kind) else {
+            return false;
+        };
+        if validate_block_state(Some(block.id), kind, &block.text, block.dual).is_err() {
+            return false;
+        }
+
+        let old_kind = block.kind;
+        let resettle = self.predecessor_needs_rewriting(index, Some(old_kind), Some(kind));
+        let at = if resettle { index - 1 } else { index };
+        self.record_alongside(Inverse::Splice {
+            at,
+            remove: index + 1 - at,
+            insert: self.blocks[at..=index].to_vec(),
+        });
+        if resettle {
+            self.blocks[index - 1].provenance = None;
+        }
+        let block = &mut self.blocks[index];
+        block.kind = kind;
+        block.provenance = None;
+        true
+    }
+
+    // ---- find and replace ----
+
+    /// Every match of `query`, in document order (§6's `find`).
+    pub fn find(&self, query: &FindQuery) -> Vec<Match> {
+        self.blocks
+            .iter()
+            .filter(|block| query.searches(block.kind))
+            .flat_map(|block| {
+                find::matches_in(&block.text, query)
+                    .into_iter()
+                    .map(move |range| Match {
+                        block: block.id,
+                        range,
+                    })
+            })
+            .collect()
+    }
+
+    /// Replaces every match with `with`, as **one** undo transaction (§Phase 3).
+    ///
+    /// Within a block the matches are replaced back to front, so that the
+    /// offsets of the ones not yet reached are still the offsets they were found
+    /// at. Nothing is re-classified afterwards: this is a bulk text operation
+    /// over blocks the writer is not looking at, which is precisely the case
+    /// §4.2 says to leave alone. The serialiser still protects whatever the new
+    /// text turned into, so the file remains readable either way.
+    pub fn replace_all(
+        &mut self,
+        query: &FindQuery,
+        with: &str,
+        before: Option<DocSelection>,
+    ) -> Result<EditResult, EditError> {
+        let mut matches = self.find(query);
+        if matches.is_empty() {
+            return Ok(EditResult {
+                changed: Vec::new(),
+                removed: Vec::new(),
+                inserted: Vec::new(),
+                selection: before.or_else(|| self.caret_at_start()),
+            });
+        }
+        matches.reverse();
+        let with = with.to_owned();
+        self.apply_group(before, |group| {
+            for hit in matches {
+                group.apply(EditCommand::ReplaceText {
+                    block: hit.block,
+                    range: hit.range,
+                    with: with.clone(),
+                })?;
+            }
+            Ok(())
+        })
+    }
+
+    /// The character cue this block's text already names elsewhere in the
+    /// script, if it does — §Phase 3's "typing an existing character name in an
+    /// Action-position block suggests Character".
+    ///
+    /// A **suggestion**: it changes nothing, and it is deliberately not wired
+    /// into [`Document::reinfer`]. Promoting a line to a cue because it matches a
+    /// name would rewrite an all-capitals line of action the moment a character
+    /// happened to share its wording. The editor shows this and Tab accepts it,
+    /// so the writer is the one who decides.
+    pub fn character_suggestion(&self, id: BlockId) -> Option<&str> {
+        let block = self.block(id)?;
+        let name = block.text.trim();
+        // Action is also what makes this "an Action-position block": a block
+        // inside a speech is dialogue or a parenthetical, never action.
+        if block.kind != BlockKind::Action || block.forced || name.is_empty() || name.contains('\n')
+        {
+            return None;
+        }
+        self.blocks
+            .iter()
+            .filter(|other| other.kind == BlockKind::Character && other.id != id)
+            .map(|other| other.text.trim())
+            .find(|cue| cue.eq_ignore_ascii_case(name))
+    }
+
     // ---- clipboard ----
 
     /// The Fountain text of everything between two positions.
@@ -972,6 +1166,17 @@ impl Document {
         let after_revision = self.next_revision;
         self.history
             .record(inverse, coalesce, before_revision, after_revision);
+        self.revision = after_revision;
+    }
+
+    /// Records into the transaction the last edit is in, rather than one of its
+    /// own. See [`crate::history::History::record_alongside`].
+    fn record_alongside(&mut self, inverse: Inverse) {
+        let before_revision = self.revision;
+        self.next_revision += 1;
+        let after_revision = self.next_revision;
+        self.history
+            .record_alongside(inverse, before_revision, after_revision);
         self.revision = after_revision;
     }
 
@@ -2177,5 +2382,380 @@ mod tests {
             )
             .unwrap();
         assert_eq!(document.undo().unwrap().selection, None);
+    }
+
+    // --- automatic classification (§4.2) ---------------------------------
+
+    /// Types `text` into the block at `index`, one keystroke at a time, with
+    /// re-classification after each — what the bridge does for every key.
+    fn type_into(document: &mut Document, index: usize, text: &str) {
+        let id = document.blocks[index].id;
+        for character in text.chars() {
+            let offset = document
+                .block(id)
+                .expect("the block is still there")
+                .text
+                .len() as u32;
+            let before = Some(DocSelection::caret(DocPosition::new(id, offset)));
+            let mut result = document
+                .apply_with_selection(
+                    EditCommand::ReplaceText {
+                        block: id,
+                        range: offset..offset,
+                        with: character.to_string(),
+                    },
+                    before,
+                )
+                .expect("the keystroke applies");
+            document.reinfer(&mut result, before);
+        }
+    }
+
+    #[test]
+    fn typing_a_slug_line_into_an_action_block_promotes_it() {
+        let mut document = Document::blank();
+        type_into(&mut document, 0, "INT. HOUSE - DAY");
+
+        assert_eq!(document.blocks[0].kind, BlockKind::SceneHeading);
+        assert!(!document.blocks[0].forced, "inference never forces");
+        // And the file says so without needing a marker to protect it.
+        assert_eq!(document.serialise(), "INT. HOUSE - DAY\n");
+    }
+
+    #[test]
+    fn a_promotion_is_undone_with_the_typing_that_caused_it() {
+        let mut document = Document::parse("Some action.\n\nMore action.\n");
+        let id = document.blocks[1].id;
+        type_into(&mut document, 1, "");
+        // Select all of it and retype, then keep typing a slug line.
+        let mut result = document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..12,
+                with: String::new(),
+            })
+            .unwrap();
+        document.reinfer(&mut result, None);
+        type_into(&mut document, 1, "INT. HOUSE");
+        assert_eq!(document.blocks[1].kind, BlockKind::SceneHeading);
+
+        // One undo takes back the run of typing *and* the kind it produced.
+        document.undo().expect("something to undo");
+        assert_eq!(document.blocks[1].text, "");
+        assert_eq!(document.blocks[1].kind, BlockKind::Action);
+        document.undo().expect("the deletion");
+        assert_eq!(document.blocks[1].text, "More action.");
+        assert_eq!(document.blocks[1].kind, BlockKind::Action);
+        assert_eq!(document.serialise(), "Some action.\n\nMore action.\n");
+    }
+
+    #[test]
+    fn typing_after_a_promotion_still_coalesces() {
+        let mut document = Document::blank();
+        type_into(&mut document, 0, "INT. HOUSE - DAY");
+        // The promotion fired at "INT."; everything after it has to have stayed
+        // in the same transaction, or undo would step one character at a time.
+        document.undo().expect("something to undo");
+        assert_eq!(document.blocks[0].text, "");
+        assert!(!document.can_undo(), "one keystroke run, one undo step");
+    }
+
+    #[test]
+    fn a_forced_block_is_never_reclassified() {
+        let mut document = Document::parse("!INT. NOT A HEADING\n");
+        assert!(document.blocks[0].forced);
+        type_into(&mut document, 0, ".");
+        assert_eq!(document.blocks[0].kind, BlockKind::Action);
+        assert_eq!(document.blocks[0].text, "INT. NOT A HEADING.");
+        assert_eq!(document.serialise(), "!INT. NOT A HEADING.\n");
+    }
+
+    #[test]
+    fn setting_a_kind_explicitly_survives_the_next_keystroke() {
+        // §Phase 3: an element-type shortcut straight after an automatic change
+        // reverts it and pins the writer's choice.
+        let mut document = Document::blank();
+        type_into(&mut document, 0, "INT. HOUSE");
+        assert_eq!(document.blocks[0].kind, BlockKind::SceneHeading);
+
+        let id = document.blocks[0].id;
+        document
+            .apply(EditCommand::SetKind {
+                block: id,
+                kind: BlockKind::Action,
+                forced: true,
+            })
+            .unwrap();
+        type_into(&mut document, 0, " - DAY");
+
+        assert_eq!(document.blocks[0].kind, BlockKind::Action);
+        assert_eq!(document.blocks[0].text, "INT. HOUSE - DAY");
+        assert_eq!(document.serialise(), "!INT. HOUSE - DAY\n");
+    }
+
+    #[test]
+    fn unmaking_a_cue_reclassifies_the_speech_under_it() {
+        // The cascade §4.2's window exists for: block N stops being a cue, and
+        // block N+1 is no longer in a speech. Both settle in one pass, in order.
+        let mut document = Document::parse("JOHN\nHello.\n");
+        assert_eq!(document.blocks[0].kind, BlockKind::Character);
+        assert_eq!(document.blocks[1].kind, BlockKind::Dialogue);
+
+        // Lower-case letters take a line out of §4.1's cue character set.
+        type_into(&mut document, 0, "ny");
+
+        assert_eq!(document.blocks[0].kind, BlockKind::Action);
+        assert_eq!(document.blocks[1].kind, BlockKind::Action);
+        assert_eq!(document.serialise(), "JOHNny\n\nHello.\n");
+        // …and reopening the file agrees.
+        let reopened = Document::parse(&document.serialise());
+        assert_eq!(reopened.blocks[0].kind, BlockKind::Action);
+        assert_eq!(reopened.blocks[1].kind, BlockKind::Action);
+    }
+
+    #[test]
+    fn an_emptied_cue_is_still_a_cue() {
+        // Inference has nothing to read in an empty block, so the kind that put
+        // it there stands — which is also what the file says, because an empty
+        // cue is written `@` and read back as one.
+        let mut document = Document::parse("JOHN\nHello.\n");
+        let cue = document.blocks[0].id;
+        let before = Some(DocSelection::caret(DocPosition::new(cue, 0)));
+        let mut result = document
+            .apply_with_selection(
+                EditCommand::ReplaceText {
+                    block: cue,
+                    range: 0..4,
+                    with: String::new(),
+                },
+                before,
+            )
+            .unwrap();
+        document.reinfer(&mut result, before);
+
+        assert_eq!(document.blocks[0].kind, BlockKind::Character);
+        assert_eq!(document.blocks[1].kind, BlockKind::Dialogue);
+        assert_eq!(document.serialise(), "@\nHello.\n");
+        assert_eq!(
+            Document::parse(&document.serialise()).blocks[1].kind,
+            BlockKind::Dialogue
+        );
+    }
+
+    #[test]
+    fn a_cue_appears_once_something_speaks_under_it() {
+        // Two action paragraphs. Making the first look like a cue is not enough;
+        // the second has to be dialogue, which only the writer can say.
+        let mut document = Document::parse("JOHN\n\nHello.\n");
+        assert_eq!(document.blocks[0].kind, BlockKind::Action);
+
+        let second = document.blocks[1].id;
+        let mut result = document
+            .apply(EditCommand::SetKind {
+                block: second,
+                kind: BlockKind::Dialogue,
+                forced: true,
+            })
+            .unwrap();
+        document.reinfer(&mut result, None);
+
+        assert_eq!(document.blocks[0].kind, BlockKind::Character);
+        assert_eq!(document.serialise(), "JOHN\nHello.\n");
+    }
+
+    #[test]
+    fn reclassification_never_touches_a_marked_element() {
+        for source in [
+            "~A lyric line\n",
+            "# Act One\n",
+            "= A synopsis\n",
+            "> Centred <\n",
+        ] {
+            let mut document = Document::parse(source);
+            let kind = document.blocks[0].kind;
+            type_into(&mut document, 0, " INT. HOUSE - DAY");
+            assert_eq!(
+                document.blocks[0].kind, kind,
+                "{source:?} carries its marker in its kind"
+            );
+        }
+    }
+
+    #[test]
+    fn reclassification_leaves_a_distant_block_alone() {
+        let mut document = Document::parse("JOHN\nHello.\n\nAction.\n\nMore action.\n");
+        let far = document.blocks[3].id;
+        let kinds_before: Vec<BlockKind> = document.blocks.iter().map(|b| b.kind).collect();
+
+        // An edit three blocks away must not reach the dialogue at the top.
+        let before = Some(DocSelection::caret(DocPosition::new(far, 0)));
+        let mut result = document
+            .apply_with_selection(
+                EditCommand::ReplaceText {
+                    block: far,
+                    range: 0..0,
+                    with: "X".into(),
+                },
+                before,
+            )
+            .unwrap();
+        document.reinfer(&mut result, before);
+
+        let kinds_after: Vec<BlockKind> = document.blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(kinds_before, kinds_after);
+    }
+
+    #[test]
+    fn a_dual_cue_is_left_alone() {
+        let mut document = Document::parse("JOHN\nHi.\n\nMARY ^\nHi back.\n");
+        assert!(document.blocks[2].dual);
+        assert!(!document.blocks[2].forced);
+        type_into(&mut document, 2, " ANNE");
+        assert_eq!(document.blocks[2].kind, BlockKind::Character);
+        assert!(document.blocks[2].dual);
+    }
+
+    #[test]
+    fn reclassification_agrees_with_reopening_the_file() {
+        let mut document = Document::blank();
+        type_into(&mut document, 0, "INT. HOUSE - DAY");
+        let written = document.serialise();
+        let reopened = Document::parse(&written);
+        let mine: Vec<BlockKind> = document.blocks.iter().map(|b| b.kind).collect();
+        let theirs: Vec<BlockKind> = reopened.blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(mine, theirs, "{written:?} reads back differently");
+    }
+
+    // --- find and replace ------------------------------------------------
+
+    fn query(text: &str) -> FindQuery {
+        FindQuery {
+            text: text.to_owned(),
+            ..FindQuery::default()
+        }
+    }
+
+    #[test]
+    fn find_reports_every_hit_in_document_order() {
+        let document = Document::parse("INT. HOUSE - DAY\n\nJohn enters the house.\n");
+        let hits = document.find(&query("house"));
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].block, document.blocks[0].id);
+        assert_eq!(hits[0].range, 5..10);
+        assert_eq!(hits[1].block, document.blocks[1].id);
+    }
+
+    #[test]
+    fn find_can_be_restricted_to_element_types() {
+        let document = Document::parse("Hello there.\n\nJOHN\nHello.\n");
+        let dialogue_only = FindQuery {
+            kinds: vec![BlockKind::Dialogue],
+            ..query("hello")
+        };
+        let hits = document.find(&dialogue_only);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].block, document.blocks[2].id);
+    }
+
+    #[test]
+    fn replace_all_is_one_undo_transaction() {
+        let source = "INT. HOUSE - DAY\n\nJohn enters the house.\n";
+        let mut document = Document::parse(source);
+        let result = document
+            .replace_all(&query("house"), "cabin", None)
+            .unwrap();
+
+        assert_eq!(result.changed.len(), 2);
+        assert_eq!(document.blocks[0].text, "INT. cabin - DAY");
+        assert_eq!(document.blocks[1].text, "John enters the cabin.");
+
+        document.undo().expect("one step takes all of it back");
+        assert_eq!(document.serialise(), source);
+        assert!(!document.can_undo());
+    }
+
+    #[test]
+    fn replace_all_handles_several_hits_in_one_block() {
+        let mut document = Document::parse("aa bb aa bb aa\n");
+        document.replace_all(&query("aa"), "X", None).unwrap();
+        assert_eq!(document.blocks[0].text, "X bb X bb X");
+    }
+
+    #[test]
+    fn replacing_with_something_longer_keeps_the_later_hits() {
+        let mut document = Document::parse("cat cat cat\n");
+        document
+            .replace_all(&query("cat"), "elephant", None)
+            .unwrap();
+        assert_eq!(document.blocks[0].text, "elephant elephant elephant");
+    }
+
+    #[test]
+    fn replace_all_with_no_hits_changes_nothing() {
+        let mut document = Document::parse("Action.\n");
+        let result = document
+            .replace_all(&query("nothing here"), "x", None)
+            .unwrap();
+        assert!(result.changed.is_empty());
+        assert!(!document.is_dirty());
+        assert!(!document.can_undo());
+    }
+
+    #[test]
+    fn replace_all_skips_a_block_it_cannot_edit() {
+        // An Opaque block round-trips verbatim, so it is not searched and not
+        // touched — and the replacement in the block beside it still happens.
+        let mut document = Document::parse("/* cat */\n\nThe cat sat.\n");
+        assert_eq!(document.blocks[0].kind, BlockKind::Opaque);
+        let hits = document.find(&query("cat"));
+        assert_eq!(hits.len(), 2, "the boneyard text is still findable");
+
+        // Restricted to what can be edited, the replacement applies.
+        let editable = FindQuery {
+            kinds: vec![BlockKind::Action],
+            ..query("cat")
+        };
+        document.replace_all(&editable, "dog", None).unwrap();
+        assert_eq!(document.blocks[1].text, "The dog sat.");
+        assert!(document.serialise().starts_with("/* cat */\n"));
+    }
+
+    // --- suggestions -----------------------------------------------------
+
+    #[test]
+    fn an_existing_cue_is_suggested_for_a_matching_action_line() {
+        let document = Document::parse("JOHN\nHello.\n\nJOHN\n");
+        let last = document.blocks[2].id;
+        assert_eq!(document.blocks[2].kind, BlockKind::Action);
+        assert_eq!(document.character_suggestion(last), Some("JOHN"));
+    }
+
+    #[test]
+    fn nothing_is_suggested_without_a_name_to_match() {
+        let document = Document::parse("JOHN\nHello.\n\nMARY\n");
+        assert_eq!(document.character_suggestion(document.blocks[2].id), None);
+        // Nor for the cue itself, nor for a block in a speech.
+        assert_eq!(document.character_suggestion(document.blocks[0].id), None);
+        assert_eq!(document.character_suggestion(document.blocks[1].id), None);
+        assert_eq!(document.character_suggestion(BlockId(999)), None);
+    }
+
+    #[test]
+    fn a_suggestion_is_never_taken_on_the_writers_behalf() {
+        let mut document = Document::parse("JOHN\nHello.\n\nJOHN\n");
+        let last = document.blocks[2].id;
+        let before = Some(DocSelection::caret(DocPosition::new(last, 4)));
+        let mut result = document
+            .apply_with_selection(
+                EditCommand::ReplaceText {
+                    block: last,
+                    range: 4..4,
+                    with: String::new(),
+                },
+                before,
+            )
+            .unwrap();
+        document.reinfer(&mut result, before);
+        assert_eq!(document.blocks[2].kind, BlockKind::Action);
     }
 }

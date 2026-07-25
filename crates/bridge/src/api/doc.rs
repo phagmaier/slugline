@@ -144,6 +144,25 @@ pub enum EditCommand {
     },
 }
 
+/// What to look for (§6's `FindQuery`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FindQuery {
+    pub text: String,
+    pub case_sensitive: bool,
+    pub whole_word: bool,
+    /// When empty, every block is searched. Otherwise only these kinds are —
+    /// §Phase 3's optional element filter. A `Section` here matches every level.
+    pub kinds: Vec<BlockKind>,
+}
+
+/// One hit (§6's `Match`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FindMatch {
+    pub block: u64,
+    pub start_utf16: u32,
+    pub end_utf16: u32,
+}
+
 /// A block that appeared, and the index it appeared at.
 ///
 /// The index is the block's position **after** the edit, so Dart can apply the
@@ -298,6 +317,60 @@ pub fn doc_extract(handle: DocumentHandle, from: DocPosition, to: DocPosition) -
     })
 }
 
+/// Every match of `query`, in document order (§6's `find`).
+///
+/// The whole list, not a page of it: the find bar shows a live count, and a
+/// count of "the first fifty" is not a count. A feature-length script is a few
+/// hundred kilobytes, so this is a scan of less text than one screenshot.
+#[frb(sync)]
+pub fn doc_find(handle: DocumentHandle, query: FindQuery) -> Vec<FindMatch> {
+    actor().run(move |state| {
+        let Some(session) = state.session(handle.id) else {
+            return Vec::new();
+        };
+        let document = session.document();
+        document
+            .find(&model_query(query))
+            .into_iter()
+            .filter_map(|hit| match_view(document, &hit))
+            .collect()
+    })
+}
+
+/// The element type Tab would move the caret's block to, without moving it.
+///
+/// The element bar shows this, so that "Tab" on screen means something specific
+/// rather than being a key the writer has to try. It answers from the same table
+/// [`doc_tab`] acts on — there is no second copy of it in Dart (§2.1).
+#[frb(sync)]
+pub fn doc_tab_target(handle: DocumentHandle, block: u64, shift: bool) -> Option<BlockKind> {
+    actor().run(move |state| {
+        let session = state.session(handle.id)?;
+        let (kind, _) = kind_view(tab_target(
+            session.document(),
+            model::BlockId(block),
+            shift,
+        )?);
+        Some(kind)
+    })
+}
+
+/// The character cue this block's text already names, if the script has one.
+///
+/// §Phase 3's "typing an existing character name in an Action-position block
+/// suggests Character". A suggestion and nothing else: the editor shows the name
+/// beside the element bar, and Tab is what accepts it.
+#[frb(sync)]
+pub fn doc_character_suggestion(handle: DocumentHandle, block: u64) -> Option<String> {
+    actor().run(move |state| {
+        state
+            .session(handle.id)?
+            .document()
+            .character_suggestion(model::BlockId(block))
+            .map(str::to_owned)
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -328,6 +401,75 @@ pub fn doc_apply(
             Err(rejection) => return rejection,
         };
         let result = document.apply_with_selection(command, before);
+        inferring(document, before, result)
+    })
+}
+
+/// Enter, with §Phase 3's table applied to whatever it creates.
+///
+/// Composed here rather than in `document` for ADR 0010's reason: the bridge
+/// writes the plan, the document groups it, and one keystroke is therefore one
+/// undo step even though it may be a delete, a split and a kind change. The
+/// table itself is `document`'s — Dart never decides what follows an element.
+#[frb(sync)]
+pub fn doc_enter(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        // Enter is structural: it neither joins the run of typing before it nor
+        // leaves one open behind it.
+        let document = session.interrupt();
+        let at = match to_model_selection(document, Some(at)) {
+            Ok(selection) => selection.expect("Some in, Some out"),
+            Err(rejection) => return rejection,
+        };
+        let result = document.apply_group(Some(at), |group| enter(group, at));
+        inferring(document, Some(at), result)
+    })
+}
+
+/// Tab, or Shift+Tab, on the block the caret is in.
+///
+/// `None` — not a rejection — where the table says Tab does nothing. There is
+/// nothing to report and nothing to beep about: the writer pressed a key that
+/// means "next element type" in a place that has no next element type, and the
+/// editor's answer is to leave the document exactly as it was.
+#[frb(sync)]
+pub fn doc_tab(handle: DocumentHandle, at: DocSelection, shift: bool) -> Option<EditOutcome> {
+    actor().run(move |state| {
+        let session = state.session_mut(handle.id)?;
+        let document = session.interrupt();
+        let id = model::BlockId(at.focus.block);
+        let kind = tab_target(document, id, shift)?;
+        let before = match to_model_selection(document, Some(at)) {
+            Ok(selection) => selection,
+            Err(rejection) => return Some(rejection),
+        };
+        // §Phase 3: setting a type explicitly pins it, so that automatic
+        // re-classification does not take it back on the next keystroke.
+        let result = document.apply_with_selection(
+            model::EditCommand::SetKind {
+                block: id,
+                kind,
+                forced: true,
+            },
+            before,
+        );
+        Some(inferring(document, before, result))
+    })
+}
+
+/// Replaces every match of `query` with `with`, as one undo transaction.
+#[frb(sync)]
+pub fn doc_replace_all(handle: DocumentHandle, query: FindQuery, with: String) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        let document = session.interrupt();
+        let result = document.replace_all(&model_query(query), &with, None);
+        // Deliberately not re-classified: see `Document::replace_all`.
         outcome(document, result)
     })
 }
@@ -362,7 +504,17 @@ pub fn doc_paste(
             model::parse_blocks(&text)
         };
         let result = document.apply_group(Some(at), |group| paste(group, at, blocks));
-        outcome(document, result)
+        // A plain paste is the one edit that is asked not to infer anything
+        // (§Phase 2), and that has to hold for the blocks around it too: the
+        // whole point of `Ctrl+Shift+V` is that the text arrives as text. A
+        // Fountain paste has already been classified by the parser, and
+        // re-classifying the seam is what makes the block it landed in agree
+        // with the blocks it landed between.
+        if plain {
+            outcome(document, result)
+        } else {
+            inferring(document, Some(at), result)
+        }
     })
 }
 
@@ -387,6 +539,99 @@ fn step(
         let result = take(session.interrupt())?;
         Some(result_view(session.document(), result))
     })
+}
+
+// ---------------------------------------------------------------------------
+// Enter and Tab
+// ---------------------------------------------------------------------------
+
+/// Enter, as a plan the document runs in one transaction.
+///
+/// Three cases, and the middle one is the whole of §Phase 3's table:
+///
+/// * **A selection.** It goes first, and everything below happens where it was.
+/// * **The caret at the end of a block.** The block splits and the new block
+///   below it takes the kind the table says follows this one, unforced — it is
+///   empty, so there is nothing to pin yet, and leaving it open is what lets
+///   `INT.` typed into it be recognised.
+/// * **The caret inside a block.** The split is breaking one element in two, so
+///   both halves stay what they were, kind and `forced` included. Pressing Enter
+///   in the middle of an action paragraph does not turn its second half into
+///   something else.
+fn enter(group: &mut model::Grouped<'_>, at: model::DocSelection) -> Result<(), model::EditError> {
+    let (from, to) = ordered(group.document(), at);
+    if from != to {
+        group.apply(model::EditCommand::DeleteRange { from, to })?;
+    }
+    let block = from.block;
+
+    let (kind, forced, at_end, cue) = {
+        let document = group.document();
+        let index = document
+            .index_of(block)
+            .ok_or(model::EditError::UnknownBlock(block))?;
+        let current = &document.blocks()[index];
+        let previous = index
+            .checked_sub(1)
+            .map(|earlier| document.blocks()[earlier].kind());
+        (
+            current.kind(),
+            current.forced(),
+            from.offset as usize == current.text().len(),
+            model::enter_makes_a_cue(current.kind(), current.forced(), current.text(), previous),
+        )
+    };
+
+    // Enter a second time at the end of a speech: the empty paragraph the first
+    // one left becomes the cue the writer is plainly reaching for, rather than a
+    // second empty paragraph under it.
+    if cue {
+        return group
+            .apply(model::EditCommand::SetKind {
+                block,
+                kind: model::BlockKind::Character,
+                forced: true,
+            })
+            .map(drop);
+    }
+
+    let split = group.apply(model::EditCommand::SplitBlock {
+        block,
+        at: from.offset,
+    })?;
+    let Some(created) = split.inserted.first().copied() else {
+        return Ok(());
+    };
+    if !at_end {
+        return Ok(());
+    }
+    let wanted = model::kind_after_enter(kind);
+    if (wanted, false) != (kind, forced) {
+        group.apply(model::EditCommand::SetKind {
+            block: created,
+            kind: wanted,
+            forced: false,
+        })?;
+    }
+    Ok(())
+}
+
+/// The kind Tab (or Shift+Tab) moves `block` to, from `document`'s table.
+fn tab_target(
+    document: &model::Document,
+    block: model::BlockId,
+    shift: bool,
+) -> Option<model::BlockKind> {
+    let index = document.index_of(block)?;
+    let blocks = document.blocks();
+    let current = blocks[index].kind();
+    if shift {
+        let previous = index.checked_sub(1).map(|earlier| blocks[earlier].kind());
+        model::kind_before_tab(current, previous)
+    } else {
+        model::kind_after_tab(current)
+    }
+    .filter(|target| *target != current)
 }
 
 // ---------------------------------------------------------------------------
@@ -800,6 +1045,58 @@ fn outcome(
     }
 }
 
+/// The same, with §4.2's automatic re-classification applied to whatever the
+/// edit disturbed.
+///
+/// Every ordinary keystroke comes through here. `document` decides the scope —
+/// one block either side, nothing forced, nothing far from the caret — and folds
+/// the kinds it changed into the patch, so Dart applies one patch and does not
+/// have to know that anything reclassified at all.
+fn inferring(
+    document: &mut model::Document,
+    before: Option<model::DocSelection>,
+    result: Result<model::EditResult, model::EditError>,
+) -> EditOutcome {
+    match result {
+        Ok(mut result) => {
+            document.reinfer(&mut result, before);
+            EditOutcome::Applied {
+                result: result_view(document, result),
+            }
+        }
+        Err(error) => rejected(rejection_of(&error), error.to_string()),
+    }
+}
+
+fn model_query(query: FindQuery) -> model::FindQuery {
+    model::FindQuery {
+        text: query.text,
+        case_sensitive: query.case_sensitive,
+        whole_word: query.whole_word,
+        // A `Section` from Dart carries no level (ADR 0009), and a filter that
+        // matched only level 1 would silently miss the rest.
+        kinds: query
+            .kinds
+            .into_iter()
+            .flat_map(|kind| match kind {
+                BlockKind::Section => (1..=6)
+                    .map(|level| model::BlockKind::Section { level })
+                    .collect(),
+                other => vec![model_kind(other, 0)],
+            })
+            .collect(),
+    }
+}
+
+fn match_view(document: &model::Document, hit: &model::Match) -> Option<FindMatch> {
+    let text = document.block(hit.block)?.text();
+    Some(FindMatch {
+        block: hit.block.0,
+        start_utf16: offsets::utf8_to_utf16(text, hit.range.start as usize)?,
+        end_utf16: offsets::utf8_to_utf16(text, hit.range.end as usize)?,
+    })
+}
+
 fn rejection_of(error: &model::EditError) -> EditRejection {
     match error {
         model::EditError::UnknownBlock(_) => EditRejection::UnknownBlock,
@@ -883,6 +1180,78 @@ mod tests {
 
         fn kinds(&self) -> Vec<BlockKind> {
             self.blocks().into_iter().map(|block| block.kind).collect()
+        }
+
+        fn caret(&self, index: usize, offset_utf16: u32) -> DocSelection {
+            let at = DocPosition {
+                block: self.id(index),
+                offset_utf16,
+            };
+            DocSelection {
+                anchor: at,
+                focus: at,
+            }
+        }
+
+        /// The caret at the end of a block, where a writer presses Enter.
+        fn end_of(&self, index: usize) -> DocSelection {
+            let block = &self.blocks()[index];
+            self.caret(index, block.text.len() as u32)
+        }
+
+        /// Types `text` a character at a time, as the surface does.
+        fn types(&self, index: usize, text: &str) {
+            let id = self.id(index);
+            for character in text.chars() {
+                let offset = self
+                    .blocks()
+                    .iter()
+                    .find(|block| block.id == id)
+                    .map(|block| block.text.len() as u32)
+                    .expect("the block is still there");
+                let at = DocPosition {
+                    block: id,
+                    offset_utf16: offset,
+                };
+                let before = DocSelection {
+                    anchor: at,
+                    focus: at,
+                };
+                match doc_apply(
+                    self.0,
+                    EditCommand::ReplaceText {
+                        block: id,
+                        start_utf16: offset,
+                        end_utf16: offset,
+                        with: character.to_string(),
+                    },
+                    Some(before),
+                ) {
+                    EditOutcome::Applied { .. } => {}
+                    EditOutcome::Rejected { reason, message } => {
+                        panic!("typing {character:?} was refused: {reason:?} — {message}")
+                    }
+                }
+            }
+        }
+
+        fn enter(&self, at: DocSelection) -> EditResult {
+            match doc_enter(self.0, at) {
+                EditOutcome::Applied { result } => result,
+                EditOutcome::Rejected { reason, message } => {
+                    panic!("expected Enter to apply: {reason:?} — {message}")
+                }
+            }
+        }
+
+        fn tab(&self, at: DocSelection, shift: bool) -> Option<EditResult> {
+            match doc_tab(self.0, at, shift) {
+                None => None,
+                Some(EditOutcome::Applied { result }) => Some(result),
+                Some(EditOutcome::Rejected { reason, message }) => {
+                    panic!("expected Tab to apply: {reason:?} — {message}")
+                }
+            }
         }
     }
 
@@ -1500,6 +1869,423 @@ mod tests {
 
         assert_eq!(doc.kinds(), [BlockKind::SceneHeading, BlockKind::Action]);
         assert_eq!(doc.blocks()[0].text, "EXT. ROAD - NIGHT");
+    }
+
+    // --- automatic classification ----------------------------------------
+
+    #[test]
+    fn typing_a_slug_line_promotes_the_block_and_reports_it_in_the_patch() {
+        let doc = Doc::new();
+        let id = doc.id(0);
+        doc.types(0, "INT. HOUSE");
+
+        assert_eq!(doc.kinds(), [BlockKind::SceneHeading]);
+        assert!(!doc.blocks()[0].forced, "inference never forces");
+        // The last keystroke's patch has to carry the block, or the editor would
+        // go on painting it as action.
+        let EditOutcome::Applied { result } = doc_apply(
+            doc.handle(),
+            EditCommand::ReplaceText {
+                block: id,
+                start_utf16: 10,
+                end_utf16: 10,
+                with: " - DAY".to_owned(),
+            },
+            Some(doc.caret(0, 10)),
+        ) else {
+            panic!("the edit applies");
+        };
+        assert_eq!(result.changed.len(), 1);
+        assert_eq!(result.changed[0].kind, BlockKind::SceneHeading);
+        assert_eq!(doc.text(), "INT. HOUSE - DAY\n");
+    }
+
+    #[test]
+    fn a_promotion_and_the_typing_that_caused_it_undo_together() {
+        let doc = Doc::new();
+        doc.types(0, "INT. HOUSE - DAY");
+        doc_undo(doc.handle()).expect("something to undo");
+
+        assert_eq!(doc.blocks()[0].text, "");
+        assert_eq!(doc.kinds(), [BlockKind::Action]);
+        assert!(
+            doc_undo(doc.handle()).is_none(),
+            "one run of typing, one undo step"
+        );
+    }
+
+    #[test]
+    fn an_element_shortcut_straight_after_a_promotion_wins() {
+        // §Phase 3: "an immediate element-type shortcut after an automatic
+        // change reverts and forces the user's choice".
+        let doc = Doc::new();
+        doc.types(0, "INT. HOUSE");
+        assert_eq!(doc.kinds(), [BlockKind::SceneHeading]);
+
+        doc.apply(EditCommand::SetKind {
+            block: doc.id(0),
+            kind: BlockKind::Action,
+            section_level: 0,
+            forced: true,
+        });
+        doc.types(0, " - DAY");
+
+        assert_eq!(doc.kinds(), [BlockKind::Action]);
+        assert_eq!(doc.blocks()[0].text, "INT. HOUSE - DAY");
+        assert_eq!(doc.text(), "!INT. HOUSE - DAY\n");
+    }
+
+    #[test]
+    fn a_plain_paste_still_infers_nothing_around_it() {
+        let doc = Doc::new();
+        doc_paste(
+            doc.handle(),
+            doc.caret(0, 0),
+            "INT. HOUSE - DAY\nCUT TO:".to_owned(),
+            true,
+        );
+        assert_eq!(doc.kinds(), [BlockKind::Action, BlockKind::Action]);
+    }
+
+    // --- Enter -----------------------------------------------------------
+
+    /// §Phase 3's table, end to end through the bridge.
+    #[test]
+    fn enter_creates_the_element_the_table_says() {
+        let rows = [
+            (
+                "INT. HOUSE - DAY\n",
+                BlockKind::SceneHeading,
+                BlockKind::Action,
+            ),
+            ("Action.\n", BlockKind::Action, BlockKind::Action),
+            ("@JOHN\nHi.\n", BlockKind::Character, BlockKind::Dialogue),
+            (
+                "JOHN\n(quietly)\nHi.\n",
+                BlockKind::Parenthetical,
+                BlockKind::Dialogue,
+            ),
+            ("JOHN\nHello.\n", BlockKind::Dialogue, BlockKind::Action),
+            (">CUT TO:\n", BlockKind::Transition, BlockKind::SceneHeading),
+            ("~A lyric\n", BlockKind::Lyric, BlockKind::Lyric),
+        ];
+        for (source, from, expected) in rows {
+            let doc = Doc::parse(source);
+            let index = doc
+                .kinds()
+                .iter()
+                .position(|kind| *kind == from)
+                .unwrap_or_else(|| panic!("{source:?} has no {from:?} block"));
+            let before = doc.blocks()[index].text.clone();
+
+            let result = doc.enter(doc.end_of(index));
+
+            assert_eq!(
+                result.inserted.len(),
+                1,
+                "Enter in {from:?} should create one block"
+            );
+            let created = &result.inserted[0].block;
+            assert_eq!(created.kind, expected, "Enter from {from:?}");
+            assert!(created.text.is_empty());
+            assert!(!created.forced, "a new empty block is not pinned");
+            assert_eq!(
+                doc.blocks()[index].text,
+                before,
+                "Enter never alters the text it was pressed in"
+            );
+            assert_eq!(
+                result.selection.expect("a caret").focus.block,
+                created.id,
+                "the caret goes into the new block"
+            );
+        }
+    }
+
+    #[test]
+    fn enter_a_second_time_after_a_speech_asks_for_a_cue() {
+        let doc = Doc::parse("JOHN\nHello.\n");
+        // Once: an action paragraph under the speech.
+        let first = doc.enter(doc.end_of(1));
+        let created = first.inserted[0].block.id;
+        assert_eq!(first.inserted[0].block.kind, BlockKind::Action);
+
+        // Twice: that empty paragraph becomes the next cue.
+        let at = DocPosition {
+            block: created,
+            offset_utf16: 0,
+        };
+        let second = doc.enter(DocSelection {
+            anchor: at,
+            focus: at,
+        });
+        assert_eq!(second.block_count, 3, "no fourth block was created");
+        assert_eq!(
+            doc.kinds(),
+            [
+                BlockKind::Character,
+                BlockKind::Dialogue,
+                BlockKind::Character
+            ]
+        );
+        assert!(doc.blocks()[2].forced, "the writer asked for a cue");
+    }
+
+    #[test]
+    fn enter_in_the_middle_of_a_paragraph_leaves_both_halves_as_they_were() {
+        let doc = Doc::parse("!INT. NOT A HEADING\n");
+        assert!(doc.blocks()[0].forced);
+        doc.enter(doc.caret(0, 5));
+
+        let blocks = doc.blocks();
+        assert_eq!(blocks[0].text, "INT. ");
+        assert_eq!(blocks[1].text, "NOT A HEADING");
+        assert_eq!(blocks[1].kind, BlockKind::Action);
+        assert!(
+            blocks[1].forced,
+            "the second half is still the same element"
+        );
+    }
+
+    #[test]
+    fn enter_over_a_selection_replaces_it_in_one_undo_step() {
+        let doc = Doc::parse(SCRIPT);
+        let selection = DocSelection {
+            anchor: DocPosition {
+                block: doc.id(1),
+                offset_utf16: 4,
+            },
+            focus: DocPosition {
+                block: doc.id(4),
+                offset_utf16: 2,
+            },
+        };
+        doc.enter(selection);
+        assert_eq!(doc.blocks()[1].text, "John");
+
+        doc_undo(doc.handle()).expect("one step takes all of it back");
+        assert_eq!(doc.text(), SCRIPT);
+    }
+
+    #[test]
+    fn enter_in_a_read_only_block_is_refused() {
+        let doc = Doc::parse("/* hidden */\n");
+        assert!(matches!(
+            doc_enter(doc.handle(), doc.end_of(0)),
+            EditOutcome::Rejected {
+                reason: EditRejection::NotEditable,
+                ..
+            }
+        ));
+        assert_eq!(doc.text(), "/* hidden */\n");
+    }
+
+    // --- Tab -------------------------------------------------------------
+
+    /// The Tab half of §Phase 3's table, and its reverse.
+    #[test]
+    fn tab_and_shift_tab_walk_the_table() {
+        let rows = [
+            ("Action.\n", BlockKind::Action, Some(BlockKind::Character)),
+            (
+                "@JOHN\nHi.\n",
+                BlockKind::Character,
+                Some(BlockKind::Parenthetical),
+            ),
+            (
+                "JOHN\nHello.\n",
+                BlockKind::Dialogue,
+                Some(BlockKind::Parenthetical),
+            ),
+            ("INT. HOUSE - DAY\n", BlockKind::SceneHeading, None),
+            ("JOHN\n(quietly)\nHi.\n", BlockKind::Parenthetical, None),
+            (">CUT TO:\n", BlockKind::Transition, None),
+            ("/* hidden */\n", BlockKind::Opaque, None),
+        ];
+        for (source, from, expected) in rows {
+            let doc = Doc::parse(source);
+            let index = doc
+                .kinds()
+                .iter()
+                .position(|kind| *kind == from)
+                .unwrap_or_else(|| panic!("{source:?} has no {from:?} block"));
+            let text = doc.blocks()[index].text.clone();
+            assert_eq!(
+                doc_tab_target(doc.handle(), doc.id(index), false),
+                expected,
+                "the hint for Tab from {from:?}"
+            );
+
+            match (doc.tab(doc.end_of(index), false), expected) {
+                (None, None) => {}
+                (Some(result), Some(kind)) => {
+                    assert_eq!(result.changed[0].kind, kind, "Tab from {from:?}");
+                    assert_eq!(result.changed[0].text, text, "Tab never alters the text");
+                    assert!(result.changed[0].forced, "Tab pins the choice");
+                }
+                (got, _) => panic!("Tab from {from:?} answered {got:?}, wanted {expected:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn shift_tab_returns_to_where_tab_came_from() {
+        // Action → Character → Action.
+        let doc = Doc::parse("JOHN\n");
+        assert_eq!(doc.kinds(), [BlockKind::Action]);
+        doc.tab(doc.end_of(0), false).expect("Tab moves");
+        assert_eq!(doc.kinds(), [BlockKind::Character]);
+        doc.tab(doc.end_of(0), true).expect("Shift+Tab moves back");
+        assert_eq!(doc.kinds(), [BlockKind::Action]);
+
+        // A parenthetical under a cue goes back to a cue; under a speech, to a
+        // speech.
+        let under_cue = Doc::parse("@JOHN\n(quietly)\n");
+        under_cue.tab(under_cue.end_of(1), true).expect("moves");
+        assert_eq!(under_cue.blocks()[1].kind, BlockKind::Character);
+
+        let under_speech = Doc::parse("JOHN\nHello.\n(quietly)\n");
+        assert_eq!(under_speech.blocks()[2].kind, BlockKind::Parenthetical);
+        under_speech
+            .tab(under_speech.end_of(2), true)
+            .expect("moves");
+        assert_eq!(under_speech.blocks()[2].kind, BlockKind::Dialogue);
+    }
+
+    #[test]
+    fn tab_from_action_to_a_cue_makes_the_speech_under_it_dialogue() {
+        // The workflow the table exists for: type a name, Tab, Enter, speak.
+        let doc = Doc::new();
+        doc.types(0, "JOHN");
+        doc.tab(doc.end_of(0), false).expect("Tab moves");
+        let created = doc.enter(doc.end_of(0)).inserted[0].block.id;
+        assert_eq!(doc.kinds(), [BlockKind::Character, BlockKind::Dialogue]);
+
+        let at = DocPosition {
+            block: created,
+            offset_utf16: 0,
+        };
+        doc_apply(
+            doc.handle(),
+            EditCommand::ReplaceText {
+                block: created,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: "Hello.".to_owned(),
+            },
+            Some(DocSelection {
+                anchor: at,
+                focus: at,
+            }),
+        );
+
+        assert_eq!(doc.kinds(), [BlockKind::Character, BlockKind::Dialogue]);
+        assert_eq!(doc.text(), "@JOHN\nHello.\n");
+    }
+
+    #[test]
+    fn a_tab_on_a_stale_handle_answers_none() {
+        let handle = doc_new();
+        let at = DocPosition {
+            block: 1,
+            offset_utf16: 0,
+        };
+        let caret = DocSelection {
+            anchor: at,
+            focus: at,
+        };
+        doc_close(handle);
+        assert!(doc_tab(handle, caret, false).is_none());
+        assert!(doc_tab_target(handle, 1, false).is_none());
+        assert!(doc_character_suggestion(handle, 1).is_none());
+        assert!(doc_find(handle, find("x")).is_empty());
+    }
+
+    // --- find and replace ------------------------------------------------
+
+    fn find(text: &str) -> FindQuery {
+        FindQuery {
+            text: text.to_owned(),
+            case_sensitive: false,
+            whole_word: false,
+            kinds: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn find_answers_in_dart_coordinates() {
+        let doc = Doc::parse("aé日🎬 café\n");
+        let hits = doc_find(doc.handle(), find("café"));
+        assert_eq!(hits.len(), 1);
+        // 'aé日🎬 ' is 6 UTF-16 units and 12 bytes; Dart must be told 6.
+        assert_eq!(hits[0].start_utf16, 6);
+        assert_eq!(hits[0].end_utf16, 10);
+        assert_eq!(hits[0].block, doc.id(0));
+    }
+
+    #[test]
+    fn find_reports_every_hit_in_order() {
+        let doc = Doc::parse("INT. HOUSE - DAY\n\nJohn enters the house.\n");
+        let hits = doc_find(doc.handle(), find("house"));
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].block, doc.id(0));
+        assert_eq!(hits[1].block, doc.id(1));
+    }
+
+    #[test]
+    fn find_can_be_restricted_to_element_types() {
+        let doc = Doc::parse("# Act one\n\n## Act two\n\nAct three.\n");
+        let sections = FindQuery {
+            kinds: vec![BlockKind::Section],
+            ..find("act")
+        };
+        assert_eq!(
+            doc_find(doc.handle(), sections).len(),
+            2,
+            "a Section filter covers every level"
+        );
+    }
+
+    #[test]
+    fn replace_all_is_one_undo_step() {
+        let source = "INT. HOUSE - DAY\n\nJohn enters the house.\n";
+        let doc = Doc::parse(source);
+        let EditOutcome::Applied { result } =
+            doc_replace_all(doc.handle(), find("house"), "cabin".to_owned())
+        else {
+            panic!("the replacement applies");
+        };
+        assert_eq!(result.changed.len(), 2);
+        assert_eq!(doc.blocks()[0].text, "INT. cabin - DAY");
+
+        doc_undo(doc.handle()).expect("one step takes all of it back");
+        assert_eq!(doc.text(), source);
+        assert!(doc_undo(doc.handle()).is_none());
+    }
+
+    #[test]
+    fn replace_all_with_nothing_to_replace_leaves_no_undo_step() {
+        let doc = Doc::parse("Action.\n");
+        doc_replace_all(doc.handle(), find("absent"), "x".to_owned());
+        assert!(doc_undo(doc.handle()).is_none());
+        assert_eq!(doc.text(), "Action.\n");
+    }
+
+    // --- suggestions -----------------------------------------------------
+
+    #[test]
+    fn an_existing_cue_is_suggested_but_never_applied() {
+        let doc = Doc::parse("JOHN\nHello.\n\nJOHN\n");
+        assert_eq!(
+            doc_character_suggestion(doc.handle(), doc.id(2)).as_deref(),
+            Some("JOHN")
+        );
+        assert_eq!(
+            doc.kinds(),
+            [BlockKind::Character, BlockKind::Dialogue, BlockKind::Action],
+            "a suggestion changes nothing on its own"
+        );
+        assert_eq!(doc_character_suggestion(doc.handle(), doc.id(1)), None);
     }
 
     #[test]

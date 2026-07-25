@@ -136,6 +136,112 @@ class FakeCore implements DocumentCore {
     );
   }
 
+  /// Enter, as **list surgery only**: delete the selection, split at the caret.
+  ///
+  /// The real core also gives the block it creates the element type
+  /// `docs/KEYMAP.md` says follows this one, and this deliberately does not.
+  /// That table is screenplay semantics, it lives in `document/src/workflow.rs`,
+  /// and `cargo test` covers it there — a second copy of it here would be a
+  /// second copy that can disagree. What a widget test can prove is what this
+  /// records: that Enter reaches the core at all, with the right caret.
+  @override
+  EditOutcome enter(DocSelection at) {
+    enters.add(at);
+    final (start, end) = _ordered(at);
+    if (start != end) {
+      final outcome = start.block == end.block
+          ? apply(EditCommand.replaceText(
+              block: start.block,
+              startUtf16: start.offsetUtf16,
+              endUtf16: end.offsetUtf16,
+              with_: '',
+            ))
+          : apply(EditCommand.deleteRange(from: start, to: end));
+      if (outcome is EditOutcome_Rejected) return outcome;
+    }
+    return apply(
+      EditCommand.splitBlock(block: start.block, atUtf16: start.offsetUtf16),
+    );
+  }
+
+  /// Every Enter, in order.
+  final List<DocSelection> enters = [];
+
+  /// Every Tab, as `(selection, shift)`.
+  final List<(DocSelection, bool)> tabs = [];
+
+  /// What [tab] and [tabTarget] answer. `null` — the default — is "Tab does
+  /// nothing here", which is what the real core says for most element types.
+  BlockKind? tabAnswer;
+
+  @override
+  EditOutcome? tab(DocSelection at, {required bool shift}) {
+    tabs.add((at, shift));
+    final kind = tabAnswer;
+    if (kind == null) return null;
+    return apply(EditCommand.setKind(
+      block: at.focus.block,
+      kind: kind,
+      sectionLevel: 0,
+      forced: true,
+    ));
+  }
+
+  @override
+  BlockKind? tabTarget(int block, {required bool shift}) => tabAnswer;
+
+  /// What [characterSuggestion] answers, for the element bar's hint.
+  String? suggestion;
+
+  @override
+  String? characterSuggestion(int block) => suggestion;
+
+  /// Every query [find] was asked, in order.
+  final List<FindQuery> queries = [];
+
+  /// Plain substring search over the block texts. Enough for the find bar's own
+  /// behaviour — match count, next, previous — and no more: the case, word and
+  /// element-type rules are `document/src/find.rs`'s and are tested there.
+  @override
+  List<FindMatch> find(FindQuery query) {
+    queries.add(query);
+    if (query.text.isEmpty) return const [];
+    final hits = <FindMatch>[];
+    for (final block in _blocks) {
+      var from = 0;
+      while (true) {
+        final at = block.text.indexOf(query.text, from);
+        if (at < 0) break;
+        hits.add(FindMatch(
+          block: block.id,
+          startUtf16: at,
+          endUtf16: at + query.text.length,
+        ));
+        from = at + query.text.length;
+      }
+    }
+    return hits;
+  }
+
+  /// Every replacement, as `(query, replacement)`.
+  final List<(FindQuery, String)> replacements = [];
+
+  @override
+  EditOutcome replaceAll(FindQuery query, String with_) {
+    replacements.add((query, with_));
+    _undo.add(List.of(_blocks));
+    final changed = <BlockView>[];
+    for (var i = 0; i < _blocks.length; i++) {
+      if (!_blocks[i].text.contains(query.text)) continue;
+      _blocks[i] = _copy(
+        _blocks[i],
+        text: _blocks[i].text.replaceAll(query.text, with_),
+      );
+      changed.add(_blocks[i]);
+    }
+    return _applied(changed: changed, caret: null);
+  }
+
   (DocPosition, DocPosition) _ordered(DocSelection selection) {
     final anchor = _indexOf(selection.anchor.block);
     final focus = _indexOf(selection.focus.block);

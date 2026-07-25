@@ -8,8 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `kind_view`, `model_kind`, `model_new_block`, `no_such_document`, `ordered`, `outcome`, `paste`, `plain_blocks`, `position_view`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `enter`, `inferring`, `kind_view`, `match_view`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome`, `paste`, `plain_blocks`, `position_view`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
 ///
@@ -59,6 +59,44 @@ String? docExtract({
   to: to,
 );
 
+/// Every match of `query`, in document order (§6's `find`).
+///
+/// The whole list, not a page of it: the find bar shows a live count, and a
+/// count of "the first fifty" is not a count. A feature-length script is a few
+/// hundred kilobytes, so this is a scan of less text than one screenshot.
+List<FindMatch> docFind({
+  required DocumentHandle handle,
+  required FindQuery query,
+}) => RustLib.instance.api.crateApiDocDocFind(handle: handle, query: query);
+
+/// The element type Tab would move the caret's block to, without moving it.
+///
+/// The element bar shows this, so that "Tab" on screen means something specific
+/// rather than being a key the writer has to try. It answers from the same table
+/// [`doc_tab`] acts on — there is no second copy of it in Dart (§2.1).
+BlockKind? docTabTarget({
+  required DocumentHandle handle,
+  required int block,
+  required bool shift,
+}) => RustLib.instance.api.crateApiDocDocTabTarget(
+  handle: handle,
+  block: block,
+  shift: shift,
+);
+
+/// The character cue this block's text already names, if the script has one.
+///
+/// §Phase 3's "typing an existing character name in an Action-position block
+/// suggests Character". A suggestion and nothing else: the editor shows the name
+/// beside the element bar, and Tab is what accepts it.
+String? docCharacterSuggestion({
+  required DocumentHandle handle,
+  required int block,
+}) => RustLib.instance.api.crateApiDocDocCharacterSuggestion(
+  handle: handle,
+  block: block,
+);
+
 /// Applies one command.
 ///
 /// `before` is the selection the user had **before** the edit, so undo can put
@@ -72,6 +110,44 @@ EditOutcome docApply({
   handle: handle,
   command: command,
   before: before,
+);
+
+/// Enter, with §Phase 3's table applied to whatever it creates.
+///
+/// Composed here rather than in `document` for ADR 0010's reason: the bridge
+/// writes the plan, the document groups it, and one keystroke is therefore one
+/// undo step even though it may be a delete, a split and a kind change. The
+/// table itself is `document`'s — Dart never decides what follows an element.
+EditOutcome docEnter({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocEnter(handle: handle, at: at);
+
+/// Tab, or Shift+Tab, on the block the caret is in.
+///
+/// `None` — not a rejection — where the table says Tab does nothing. There is
+/// nothing to report and nothing to beep about: the writer pressed a key that
+/// means "next element type" in a place that has no next element type, and the
+/// editor's answer is to leave the document exactly as it was.
+EditOutcome? docTab({
+  required DocumentHandle handle,
+  required DocSelection at,
+  required bool shift,
+}) => RustLib.instance.api.crateApiDocDocTab(
+  handle: handle,
+  at: at,
+  shift: shift,
+);
+
+/// Replaces every match of `query` with `with`, as one undo transaction.
+EditOutcome docReplaceAll({
+  required DocumentHandle handle,
+  required FindQuery query,
+  required String with_,
+}) => RustLib.instance.api.crateApiDocDocReplaceAll(
+  handle: handle,
+  query: query,
+  with_: with_,
 );
 
 /// Inserts `text` at `at`, replacing the selection if there is one, as **one**
@@ -351,6 +427,66 @@ class EditResult {
           inserted == other.inserted &&
           selection == other.selection &&
           blockCount == other.blockCount;
+}
+
+/// One hit (§6's `Match`).
+class FindMatch {
+  final int block;
+  final int startUtf16;
+  final int endUtf16;
+
+  const FindMatch({
+    required this.block,
+    required this.startUtf16,
+    required this.endUtf16,
+  });
+
+  @override
+  int get hashCode => block.hashCode ^ startUtf16.hashCode ^ endUtf16.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FindMatch &&
+          runtimeType == other.runtimeType &&
+          block == other.block &&
+          startUtf16 == other.startUtf16 &&
+          endUtf16 == other.endUtf16;
+}
+
+/// What to look for (§6's `FindQuery`).
+class FindQuery {
+  final String text;
+  final bool caseSensitive;
+  final bool wholeWord;
+
+  /// When empty, every block is searched. Otherwise only these kinds are —
+  /// §Phase 3's optional element filter. A `Section` here matches every level.
+  final List<BlockKind> kinds;
+
+  const FindQuery({
+    required this.text,
+    required this.caseSensitive,
+    required this.wholeWord,
+    required this.kinds,
+  });
+
+  @override
+  int get hashCode =>
+      text.hashCode ^
+      caseSensitive.hashCode ^
+      wholeWord.hashCode ^
+      kinds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FindQuery &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          caseSensitive == other.caseSensitive &&
+          wholeWord == other.wholeWord &&
+          kinds == other.kinds;
 }
 
 /// A block that appeared, and the index it appeared at.

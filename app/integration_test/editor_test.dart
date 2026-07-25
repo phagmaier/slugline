@@ -66,7 +66,7 @@ void main() {
     expect(controller.source, '$expected\n');
   });
 
-  testWidgets('a scene typed with the keyboard reads back as a screenplay',
+  testWidgets('setting every element type by hand keeps the text exactly',
       (tester) async {
     final controller = await open(tester, RustDocumentCore.create());
 
@@ -80,15 +80,12 @@ void main() {
       await tester.pump();
     }
 
-    // Everything typed is Action until something says otherwise: **Phase 2 has
-    // no element inference.** "Automatic detection on the current block as you
-    // type" and the shortcuts that reach `setKind` are Phase 3's list; what this
-    // proves is that the command path underneath them already works.
+    // The explicit path: every type set by hand, which is what the element
+    // selector and `Ctrl+<digit>` do. `writing_test.dart` covers the same scene
+    // written the way §Phase 3 intends, with the types inferred and Tab.
     await type('INT. HOUSE - DAY');
     controller.setKind(BlockKind.sceneHeading);
     await enter();
-    // Enter carries the kind of the block it split, so the new block has to be
-    // told what it is. Phase 3's Enter table is what stops that being manual.
     controller.setKind(BlockKind.action);
     await type('John enters, holding a letter.');
     await enter();
@@ -109,8 +106,7 @@ void main() {
       ],
     );
     // Not a character of the text moved when the types changed (§13's
-    // `element_change_preserves_text`), and the markers are the forced forms of
-    // §4.1: an explicit type is a pinned one.
+    // `element_change_preserves_text`).
     expect(
       controller.blocks.map((block) => block.text).toList(),
       [
@@ -122,8 +118,8 @@ void main() {
     );
     // Every one of these was pinned by hand, so every one is written in its
     // forced form (§4.1) — including the `!` on an Action that would have read
-    // as Action anyway. Whether choosing "Action" from a menu should pin it is
-    // Phase 3's question; the round trip is right either way.
+    // as Action anyway. That is what `forced = true` means, and §Phase 3 asks
+    // for it: it is the record that a human, not the editor, chose this.
     expect(
       controller.source,
       '.INT. HOUSE - DAY\n\n!John enters, holding a letter.\n\n@JOHN\nIt came.\n',

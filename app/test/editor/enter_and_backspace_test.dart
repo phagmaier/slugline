@@ -1,10 +1,13 @@
-// The Phase 2 table: what Enter and Backspace do, in every element type.
+// What Enter and Backspace do to the block structure, in every element type.
 //
 // What is under test here is the editor's half of the contract — which command
 // the keystroke turns into, and where the caret ends up once the patch comes
 // back. What the command then *means* is the core's, and `cargo test` covers it.
-// Asserting on the command rather than only on the resulting text is deliberate:
-// it is the thing Phase 3 will change, element type by element type.
+//
+// Since Phase 3, Enter also gives the block it creates the element type
+// `docs/KEYMAP.md` says follows this one. That is the core's decision, so the
+// double here does not make it; `keyboard_workflow_test.dart` covers the editor's
+// side of it and `crates/bridge` covers the table.
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

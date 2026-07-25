@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1120506456;
+  int get rustContentHash => -779029277;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -97,12 +97,27 @@ abstract class RustLibApi extends BaseApi {
     required int to,
   });
 
+  String? crateApiDocDocCharacterSuggestion({
+    required DocumentHandle handle,
+    required int block,
+  });
+
   void crateApiDocDocClose({required DocumentHandle handle});
+
+  EditOutcome crateApiDocDocEnter({
+    required DocumentHandle handle,
+    required DocSelection at,
+  });
 
   String? crateApiDocDocExtract({
     required DocumentHandle handle,
     required DocPosition from,
     required DocPosition to,
+  });
+
+  List<FindMatch> crateApiDocDocFind({
+    required DocumentHandle handle,
+    required FindQuery query,
   });
 
   DocumentHandle crateApiDocDocNew();
@@ -118,7 +133,25 @@ abstract class RustLibApi extends BaseApi {
 
   EditResult? crateApiDocDocRedo({required DocumentHandle handle});
 
+  EditOutcome crateApiDocDocReplaceAll({
+    required DocumentHandle handle,
+    required FindQuery query,
+    required String with_,
+  });
+
   String crateApiDocDocSource({required DocumentHandle handle});
+
+  EditOutcome? crateApiDocDocTab({
+    required DocumentHandle handle,
+    required DocSelection at,
+    required bool shift,
+  });
+
+  BlockKind? crateApiDocDocTabTarget({
+    required DocumentHandle handle,
+    required int block,
+    required bool shift,
+  });
 
   EditResult? crateApiDocDocUndo({required DocumentHandle handle});
 
@@ -285,13 +318,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  String? crateApiDocDocCharacterSuggestion({
+    required DocumentHandle handle,
+    required int block,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_CastedPrimitive_u_64(block, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocCharacterSuggestionConstMeta,
+        argValues: [handle, block],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocCharacterSuggestionConstMeta =>
+      const TaskConstMeta(
+        debugName: "doc_character_suggestion",
+        argNames: ["handle", "block"],
+      );
+
+  @override
   void crateApiDocDocClose({required DocumentHandle handle}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -308,6 +371,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "doc_close", argNames: ["handle"]);
 
   @override
+  EditOutcome crateApiDocDocEnter({
+    required DocumentHandle handle,
+    required DocSelection at,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_doc_selection(at, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_edit_outcome,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocEnterConstMeta,
+        argValues: [handle, at],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocEnterConstMeta =>
+      const TaskConstMeta(debugName: "doc_enter", argNames: ["handle", "at"]);
+
+  @override
   String? crateApiDocDocExtract({
     required DocumentHandle handle,
     required DocPosition from,
@@ -320,7 +410,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_box_autoadd_document_handle(handle, serializer);
           sse_encode_box_autoadd_doc_position(from, serializer);
           sse_encode_box_autoadd_doc_position(to, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -339,12 +429,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  List<FindMatch> crateApiDocDocFind({
+    required DocumentHandle handle,
+    required FindQuery query,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_find_query(query, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_find_match,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocFindConstMeta,
+        argValues: [handle, query],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocFindConstMeta =>
+      const TaskConstMeta(debugName: "doc_find", argNames: ["handle", "query"]);
+
+  @override
   DocumentHandle crateApiDocDocNew() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_document_handle,
@@ -367,7 +484,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(source, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_document_handle,
@@ -398,7 +515,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_box_autoadd_doc_selection(at, serializer);
           sse_encode_String(text, serializer);
           sse_encode_bool(plain, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_edit_outcome,
@@ -423,7 +540,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_edit_result,
@@ -440,13 +557,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "doc_redo", argNames: ["handle"]);
 
   @override
+  EditOutcome crateApiDocDocReplaceAll({
+    required DocumentHandle handle,
+    required FindQuery query,
+    required String with_,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_find_query(query, serializer);
+          sse_encode_String(with_, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_edit_outcome,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocReplaceAllConstMeta,
+        argValues: [handle, query, with_],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocReplaceAllConstMeta => const TaskConstMeta(
+    debugName: "doc_replace_all",
+    argNames: ["handle", "query", "with_"],
+  );
+
+  @override
   String crateApiDocDocSource({required DocumentHandle handle}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -463,13 +611,75 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "doc_source", argNames: ["handle"]);
 
   @override
+  EditOutcome? crateApiDocDocTab({
+    required DocumentHandle handle,
+    required DocSelection at,
+    required bool shift,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_doc_selection(at, serializer);
+          sse_encode_bool(shift, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_edit_outcome,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocTabConstMeta,
+        argValues: [handle, at, shift],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocTabConstMeta => const TaskConstMeta(
+    debugName: "doc_tab",
+    argNames: ["handle", "at", "shift"],
+  );
+
+  @override
+  BlockKind? crateApiDocDocTabTarget({
+    required DocumentHandle handle,
+    required int block,
+    required bool shift,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_CastedPrimitive_u_64(block, serializer);
+          sse_encode_bool(shift, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_block_kind,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocTabTargetConstMeta,
+        argValues: [handle, block, shift],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocTabTargetConstMeta => const TaskConstMeta(
+    debugName: "doc_tab_target",
+    argNames: ["handle", "block", "shift"],
+  );
+
+  @override
   EditResult? crateApiDocDocUndo({required DocumentHandle handle}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_edit_result,
@@ -492,7 +702,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -517,7 +727,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 21,
             port: port_,
           );
         },
@@ -542,7 +752,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -571,7 +781,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(text, serializer);
           sse_encode_u_32(startUtf16, serializer);
           sse_encode_u_32(endUtf16, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 23)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -597,7 +807,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_text_metrics,
@@ -669,6 +879,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BlockKind dco_decode_box_autoadd_block_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_block_kind(raw);
+  }
+
+  @protected
   DocPosition dco_decode_box_autoadd_doc_position(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_doc_position(raw);
@@ -693,9 +909,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EditOutcome dco_decode_box_autoadd_edit_outcome(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_edit_outcome(raw);
+  }
+
+  @protected
   EditResult dco_decode_box_autoadd_edit_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_edit_result(raw);
+  }
+
+  @protected
+  FindQuery dco_decode_box_autoadd_find_query(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_find_query(raw);
   }
 
   @protected
@@ -860,6 +1088,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  FindMatch dco_decode_find_match(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return FindMatch(
+      block: dco_decode_CastedPrimitive_u_64(arr[0]),
+      startUtf16: dco_decode_u_32(arr[1]),
+      endUtf16: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  FindQuery dco_decode_find_query(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return FindQuery(
+      text: dco_decode_String(arr[0]),
+      caseSensitive: dco_decode_bool(arr[1]),
+      wholeWord: dco_decode_bool(arr[2]),
+      kinds: dco_decode_list_block_kind(arr[3]),
+    );
+  }
+
+  @protected
   int dco_decode_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -890,6 +1145,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<BlockKind> dco_decode_list_block_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_block_kind).toList();
+  }
+
+  @protected
   List<BlockView> dco_decode_list_block_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_block_view).toList();
@@ -899,6 +1160,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<CrateInfo> dco_decode_list_crate_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_crate_info).toList();
+  }
+
+  @protected
+  List<FindMatch> dco_decode_list_find_match(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_find_match).toList();
   }
 
   @protected
@@ -947,9 +1214,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BlockKind? dco_decode_opt_box_autoadd_block_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_block_kind(raw);
+  }
+
+  @protected
   DocSelection? dco_decode_opt_box_autoadd_doc_selection(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_doc_selection(raw);
+  }
+
+  @protected
+  EditOutcome? dco_decode_opt_box_autoadd_edit_outcome(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_edit_outcome(raw);
   }
 
   @protected
@@ -1059,6 +1338,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BlockKind sse_decode_box_autoadd_block_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_block_kind(deserializer));
+  }
+
+  @protected
   DocPosition sse_decode_box_autoadd_doc_position(
     SseDeserializer deserializer,
   ) {
@@ -1091,9 +1376,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EditOutcome sse_decode_box_autoadd_edit_outcome(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_edit_outcome(deserializer));
+  }
+
+  @protected
   EditResult sse_decode_box_autoadd_edit_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_edit_result(deserializer));
+  }
+
+  @protected
+  FindQuery sse_decode_box_autoadd_find_query(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_find_query(deserializer));
   }
 
   @protected
@@ -1254,6 +1553,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  FindMatch sse_decode_find_match(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_startUtf16 = sse_decode_u_32(deserializer);
+    var var_endUtf16 = sse_decode_u_32(deserializer);
+    return FindMatch(
+      block: var_block,
+      startUtf16: var_startUtf16,
+      endUtf16: var_endUtf16,
+    );
+  }
+
+  @protected
+  FindQuery sse_decode_find_query(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_text = sse_decode_String(deserializer);
+    var var_caseSensitive = sse_decode_bool(deserializer);
+    var var_wholeWord = sse_decode_bool(deserializer);
+    var var_kinds = sse_decode_list_block_kind(deserializer);
+    return FindQuery(
+      text: var_text,
+      caseSensitive: var_caseSensitive,
+      wholeWord: var_wholeWord,
+      kinds: var_kinds,
+    );
+  }
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getInt32();
@@ -1292,6 +1619,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<BlockKind> sse_decode_list_block_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <BlockKind>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_block_kind(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<BlockView> sse_decode_list_block_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1311,6 +1650,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <CrateInfo>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_crate_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<FindMatch> sse_decode_list_find_match(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <FindMatch>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_find_match(deserializer));
     }
     return ans_;
   }
@@ -1388,6 +1739,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BlockKind? sse_decode_opt_box_autoadd_block_kind(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_block_kind(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   DocSelection? sse_decode_opt_box_autoadd_doc_selection(
     SseDeserializer deserializer,
   ) {
@@ -1395,6 +1759,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_doc_selection(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  EditOutcome? sse_decode_opt_box_autoadd_edit_outcome(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_edit_outcome(deserializer));
     } else {
       return null;
     }
@@ -1512,6 +1889,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_block_kind(
+    BlockKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_block_kind(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_doc_position(
     DocPosition self,
     SseSerializer serializer,
@@ -1548,12 +1934,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_edit_outcome(
+    EditOutcome self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_edit_outcome(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_edit_result(
     EditResult self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_edit_result(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_find_query(
+    FindQuery self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_find_query(self, serializer);
   }
 
   @protected
@@ -1688,6 +2092,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_find_match(FindMatch self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.block, serializer);
+    sse_encode_u_32(self.startUtf16, serializer);
+    sse_encode_u_32(self.endUtf16, serializer);
+  }
+
+  @protected
+  void sse_encode_find_query(FindQuery self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.caseSensitive, serializer);
+    sse_encode_bool(self.wholeWord, serializer);
+    sse_encode_list_block_kind(self.kinds, serializer);
+  }
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
@@ -1722,6 +2143,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_block_kind(
+    List<BlockKind> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_block_kind(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_block_view(
     List<BlockView> self,
     SseSerializer serializer,
@@ -1742,6 +2175,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_crate_info(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_find_match(
+    List<FindMatch> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_find_match(item, serializer);
     }
   }
 
@@ -1813,6 +2258,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_block_kind(
+    BlockKind? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_block_kind(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_doc_selection(
     DocSelection? self,
     SseSerializer serializer,
@@ -1822,6 +2280,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_doc_selection(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_edit_outcome(
+    EditOutcome? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_edit_outcome(self, serializer);
     }
   }
 

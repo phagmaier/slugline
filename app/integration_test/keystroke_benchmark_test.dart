@@ -134,7 +134,7 @@ void _report({
   final over = builds.where((build) => build > keystrokeBudgetMs).length;
   final buffer = StringBuffer()
     ..writeln('')
-    ..writeln('=== PHASE 2 KEYSTROKE BUDGET (§1.3) ===')
+    ..writeln('=== KEYSTROKE BUDGET (§1.3) ===')
     ..writeln('reference script: $blocks blocks, $rows rows')
     ..writeln('open → editable:  ${openMs.toStringAsFixed(1)} ms '
         '(budget ${openBudgetMs.toStringAsFixed(0)} ms)')

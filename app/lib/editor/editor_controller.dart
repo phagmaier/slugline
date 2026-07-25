@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/line_layout.dart';
-import 'package:slugline/editor/metrics.dart';
 
 /// The editor's copy of the document, and every operation the surface performs
 /// on it.
@@ -120,6 +119,16 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drops the selection, leaving the caret at its focus.
+  ///
+  /// What Escape does when there is no panel to dismiss. It is a selection
+  /// change and nothing else: §Phase 3 requires that Escape never loses text, so
+  /// it must not be a deletion however tempting the key is.
+  void collapseSelection() {
+    if (!hasSelection) return;
+    setSelection(DocSelection(anchor: _selection.focus, focus: _selection.focus));
+  }
+
   void selectAll() {
     final last = _blocks.last;
     setSelection(DocSelection(
@@ -178,6 +187,46 @@ class EditorController extends ChangeNotifier {
         );
       }
     }
+  }
+
+  /// One word left or right, crossing block boundaries.
+  ///
+  /// A "word" is a run of word characters; moving over one skips any whitespace
+  /// and punctuation on the way, which is the behaviour every text editor on this
+  /// platform has. At the edge of a block the move lands on the boundary rather
+  /// than carrying on into the next block: stopping at the end of a paragraph is
+  /// what makes Ctrl+Right usable for getting *to* the end of a paragraph.
+  void moveByWord(int delta, {bool extend = false}) {
+    final focus = _selection.focus;
+    final index = _indexOf(focus.block);
+    final text = _blocks[index].text;
+
+    if (delta < 0 && focus.offsetUtf16 == 0) {
+      if (index == 0) return;
+      final previous = _blocks[index - 1];
+      _moveTo(
+        DocPosition(block: previous.id, offsetUtf16: previous.text.length),
+        extend: extend,
+      );
+      return;
+    }
+    if (delta > 0 && focus.offsetUtf16 >= text.length) {
+      if (index == _blocks.length - 1) return;
+      _moveTo(
+        DocPosition(block: _blocks[index + 1].id, offsetUtf16: 0),
+        extend: extend,
+      );
+      return;
+    }
+    _moveTo(
+      DocPosition(
+        block: focus.block,
+        offsetUtf16: delta < 0
+            ? wordStartBefore(text, focus.offsetUtf16)
+            : wordEndAfter(text, focus.offsetUtf16),
+      ),
+      extend: extend,
+    );
   }
 
   /// [rows] visual lines up or down, skipping the blank rows between elements.
@@ -243,6 +292,42 @@ class EditorController extends ChangeNotifier {
     _moveTo(_positionAt(block, line, column), extend: extend);
   }
 
+  /// A double-click: the word under the point.
+  void selectWordAt(int row, int column) {
+    final block = _layout.blockAtRow(row);
+    final at = _pointIn(block, row, column);
+    final text = _blocks[block].text;
+    // Both ends of the same word, so a click in the middle of one selects it
+    // rather than reaching into the space beside it.
+    final start = _isWordCharacter(text.codeUnitAt(at.clamp(0, text.length - 1)))
+        ? wordStartBefore(text, at + 1)
+        : at;
+    setSelection(DocSelection(
+      anchor: DocPosition(block: _blocks[block].id, offsetUtf16: start),
+      focus: DocPosition(
+        block: _blocks[block].id,
+        offsetUtf16: wordEndAfter(text, start),
+      ),
+    ));
+  }
+
+  /// A triple-click: the whole element.
+  void selectBlockAt(int row, int column) {
+    final index = _layout.blockAtRow(row);
+    final block = _blocks[index];
+    setSelection(DocSelection(
+      anchor: DocPosition(block: block.id, offsetUtf16: 0),
+      focus: DocPosition(block: block.id, offsetUtf16: block.text.length),
+    ));
+  }
+
+  /// The offset in [blockIndex] a grid point lands on.
+  int _pointIn(int blockIndex, int row, int column) {
+    final lines = _layout.linesOf(blockIndex);
+    final line = (row - _layout.firstRowOf(blockIndex)).clamp(0, lines.length - 1);
+    return _positionAt(blockIndex, line, column).offsetUtf16;
+  }
+
   DocPosition _positionAt(int blockIndex, int lineIndex, int column) {
     final line = _layout.linesOf(blockIndex)[lineIndex];
     final startColumn = _layout.columnOf(blockIndex, lineIndex);
@@ -276,19 +361,14 @@ class EditorController extends ChangeNotifier {
     _outcome(core.paste(_selection, text, plain: true));
   }
 
-  /// Enter: the block splits at the caret and the caret lands in the new one.
-  void splitBlock() {
-    if (hasSelection) {
-      deleteSelection();
-      if (hasSelection) return; // The delete was refused.
-    }
-    _apply(
-      EditCommand.splitBlock(
-        block: _selection.focus.block,
-        atUtf16: _selection.focus.offsetUtf16,
-      ),
-    );
-  }
+  /// Enter.
+  ///
+  /// The whole keystroke goes to the core in one call — replace the selection,
+  /// split, and give what appears below the element type that follows this one —
+  /// because all three have to be one undo step and because the last of them is
+  /// a screenplay question (§2.1). The table is in `document/src/workflow.rs`
+  /// and written out in `docs/KEYMAP.md`.
+  void splitBlock() => _outcome(core.enter(_selection));
 
   /// Backspace.
   void deleteBackward() {
@@ -330,6 +410,30 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Ctrl+Backspace and Ctrl+Delete: one word, in one command.
+  ///
+  /// At the edge of a block it falls through to the plain version, so that
+  /// Ctrl+Backspace at offset 0 joins the block above rather than doing nothing.
+  void deleteWord({required bool forward}) {
+    if (hasSelection) return deleteSelection();
+    final focus = _selection.focus;
+    final text = _textOf(focus.block);
+    final to = forward
+        ? wordEndAfter(text, focus.offsetUtf16)
+        : wordStartBefore(text, focus.offsetUtf16);
+    if (to == focus.offsetUtf16) {
+      return forward ? deleteForward() : deleteBackward();
+    }
+    _apply(
+      EditCommand.replaceText(
+        block: focus.block,
+        startUtf16: forward ? focus.offsetUtf16 : to,
+        endUtf16: forward ? to : focus.offsetUtf16,
+        with_: '',
+      ),
+    );
+  }
+
   void deleteSelection() {
     if (!hasSelection) return;
     final (start, end) = orderedSelection;
@@ -349,7 +453,13 @@ class EditorController extends ChangeNotifier {
 
   /// Changes the element type of the block the caret is in, without touching a
   /// character of its text (§13, `element_change_preserves_text`).
+  ///
+  /// `forced` is true, as §Phase 3 requires: the writer has said what this
+  /// element is, and automatic re-classification does not get to argue with it
+  /// on the next keystroke. Doing this straight after an automatic change is
+  /// therefore how you overrule one.
   void setKind(BlockKind kind, {int sectionLevel = 1}) {
+    final was = _selection;
     _apply(
       EditCommand.setKind(
         block: _selection.focus.block,
@@ -357,6 +467,52 @@ class EditorController extends ChangeNotifier {
         sectionLevel: sectionLevel,
         forced: true,
       ),
+    );
+    _restoreCaret(was);
+  }
+
+  /// Tab, or Shift+Tab: the next element type at this position, or nothing at
+  /// all where the table has none. See `docs/KEYMAP.md`.
+  void cycleElement({bool reverse = false}) {
+    final was = _selection;
+    final outcome = core.tab(_selection, shift: reverse);
+    // No answer means Tab has nothing to do here. That is not a refusal, so
+    // nothing is reported and nothing repaints.
+    if (outcome == null) return;
+    _outcome(outcome);
+    _restoreCaret(was);
+  }
+
+  /// The element type Tab would move to from here, for the element bar's hint.
+  BlockKind? tabTarget({bool reverse = false}) =>
+      core.tabTarget(_selection.focus.block, shift: reverse);
+
+  /// A character cue the script already has whose name the caret's block
+  /// matches. Shown as a hint; only Tab acts on it.
+  String? get characterSuggestion => core.characterSuggestion(_selection.focus.block);
+
+  /// Puts the caret back where it was after an edit that changed no text.
+  ///
+  /// A kind change reports the caret at the end of the block, which is the only
+  /// answer the core can give without owning the caret — and it is the wrong one
+  /// for a writer who pressed the shortcut mid-sentence. The offsets are still
+  /// valid because no character moved, but they are clamped anyway: the block may
+  /// have been refused and left as it was.
+  void _restoreCaret(DocSelection was) {
+    if (lastRejection != null) return;
+    final anchor = _clamp(was.anchor);
+    final focus = _clamp(was.focus);
+    if (anchor == null || focus == null) return;
+    setSelection(DocSelection(anchor: anchor, focus: focus));
+  }
+
+  DocPosition? _clamp(DocPosition position) {
+    final index = _indexById[position.block];
+    if (index == null) return null;
+    final text = _blocks[index].text;
+    return DocPosition(
+      block: position.block,
+      offsetUtf16: _snapToBoundary(text, position.offsetUtf16),
     );
   }
 
@@ -392,6 +548,118 @@ class EditorController extends ChangeNotifier {
     _outcome(core.paste(_selection, text, plain: plain));
   }
 
+  // --- find and replace ----------------------------------------------------
+
+  FindQuery _query = const FindQuery(
+    text: '',
+    caseSensitive: false,
+    wholeWord: false,
+    kinds: [],
+  );
+  List<FindMatch> _matches = const [];
+  int _matchIndex = 0;
+
+  FindQuery get query => _query;
+
+  /// Every match of the current query, in document order.
+  List<FindMatch> get matches => _matches;
+
+  /// Which match the caret is on, or `null` when there are none. The find bar
+  /// shows this as "3 of 17".
+  int? get matchIndex => _matches.isEmpty ? null : _matchIndex;
+
+  /// Runs [query] and selects the first match at or after the caret, so that
+  /// typing in the find box walks forwards through the script rather than
+  /// jumping back to the top on every keystroke.
+  void search(FindQuery query) {
+    _query = query;
+    _matches = core.find(query);
+    if (_matches.isEmpty) {
+      _matchIndex = 0;
+      notifyListeners();
+      return;
+    }
+    final from = orderedSelection.$1;
+    _matchIndex = _matches.indexWhere((match) => _isAtOrAfter(match, from));
+    if (_matchIndex < 0) _matchIndex = 0;
+    _selectMatch();
+  }
+
+  /// Re-runs the current query. Called after an edit changes the text under it.
+  void refreshSearch() {
+    if (_query.text.isEmpty) {
+      _matches = const [];
+      return;
+    }
+    _matches = core.find(_query);
+    if (_matchIndex >= _matches.length) _matchIndex = 0;
+  }
+
+  void nextMatch() => _step(1);
+
+  void previousMatch() => _step(-1);
+
+  void _step(int delta) {
+    if (_matches.isEmpty) return;
+    _matchIndex = (_matchIndex + delta) % _matches.length;
+    if (_matchIndex < 0) _matchIndex += _matches.length;
+    _selectMatch();
+  }
+
+  void _selectMatch() {
+    final match = _matches[_matchIndex];
+    setSelection(DocSelection(
+      anchor: DocPosition(block: match.block, offsetUtf16: match.startUtf16),
+      focus: DocPosition(block: match.block, offsetUtf16: match.endUtf16),
+    ));
+  }
+
+  /// Replaces the match the caret is on and moves to the next one.
+  void replaceCurrent(String with_) {
+    if (_matches.isEmpty) return;
+    final match = _matches[_matchIndex];
+    _apply(
+      EditCommand.replaceText(
+        block: match.block,
+        startUtf16: match.startUtf16,
+        endUtf16: match.endUtf16,
+        with_: with_,
+      ),
+    );
+    if (lastRejection != null) return;
+    // `_outcome` has already re-run the query: the match list was stale the
+    // moment the text under it changed.
+    if (_matches.isEmpty) {
+      _matchIndex = 0;
+      notifyListeners();
+      return;
+    }
+    // Forwards from where the replacement left the caret, so replacing a word
+    // with something containing it does not loop on itself.
+    final after = orderedSelection.$2;
+    final next = _matches.indexWhere((candidate) => _isAtOrAfter(candidate, after));
+    _matchIndex = next < 0 ? 0 : next;
+    _selectMatch();
+  }
+
+  /// Replaces every match, as one undo transaction.
+  void replaceAll(String with_) {
+    if (_query.text.isEmpty) return;
+    final was = _selection;
+    _outcome(core.replaceAll(_query, with_));
+    if (lastRejection != null) return;
+    _matchIndex = 0;
+    // The caret was not necessarily anywhere near a replacement, so it stays
+    // where the writer left it rather than following the last one.
+    _restoreCaret(was);
+  }
+
+  bool _isAtOrAfter(FindMatch match, DocPosition position) {
+    final byBlock = _indexOf(match.block).compareTo(_indexOf(position.block));
+    if (byBlock != 0) return byBlock > 0;
+    return match.startUtf16 >= position.offsetUtf16;
+  }
+
   // --- history -------------------------------------------------------------
 
   void undo() => _replay(core.undo());
@@ -400,7 +668,9 @@ class EditorController extends ChangeNotifier {
 
   void _replay(EditResult? result) {
     if (result == null) return;
+    lastRejection = null;
     _applyResult(result);
+    refreshSearch();
     notifyListeners();
   }
 
@@ -415,6 +685,8 @@ class EditorController extends ChangeNotifier {
       case EditOutcome_Applied(:final result):
         lastRejection = null;
         _applyResult(result);
+        // Every match offset is an offset into text the edit may have moved.
+        refreshSearch();
       case EditOutcome_Rejected(:final reason):
         lastRejection = reason;
     }
@@ -476,6 +748,42 @@ class EditorController extends ChangeNotifier {
   }
 }
 
+/// Letters, digits, combining marks, `_`, and the apostrophe — so that word-wise
+/// motion treats "don't" as one word and "café" as one word.
+///
+/// Spelled out rather than `\w`, which in Dart is ASCII even with `unicode: true`
+/// and would stop at the first accent in a script full of them. Built once: this
+/// runs per code unit.
+final RegExp _wordCharacter = RegExp(r"[\p{L}\p{N}\p{M}_'’]", unicode: true);
+
+bool _isWordCharacter(int codeUnit) =>
+    _wordCharacter.hasMatch(String.fromCharCode(codeUnit));
+
+/// The start of the word at or before [offset]: whitespace and punctuation are
+/// skipped, then the run of word characters.
+int wordStartBefore(String text, int offset) {
+  var at = offset.clamp(0, text.length);
+  while (at > 0 && !_isWordCharacter(text.codeUnitAt(at - 1))) {
+    at--;
+  }
+  while (at > 0 && _isWordCharacter(text.codeUnitAt(at - 1))) {
+    at--;
+  }
+  return at;
+}
+
+/// The end of the word at or after [offset], the same way round.
+int wordEndAfter(String text, int offset) {
+  var at = offset.clamp(0, text.length);
+  while (at < text.length && !_isWordCharacter(text.codeUnitAt(at))) {
+    at++;
+  }
+  while (at < text.length && _isWordCharacter(text.codeUnitAt(at))) {
+    at++;
+  }
+  return at;
+}
+
 /// The offset one grapheme cluster before [offset].
 int previousBoundary(String text, int offset) {
   if (offset <= 0) return 0;
@@ -499,10 +807,4 @@ int _snapToBoundary(String text, int offset) {
   // `CharacterRange.at` expands to cover the cluster an index falls inside, so
   // what is before the range is the boundary we want.
   return CharacterRange.at(text, clamped).stringBeforeLength;
-}
-
-/// The label for the element the caret is in, for the status bar.
-String currentKindLabel(EditorController controller) {
-  final block = controller.focusedBlock;
-  return kindLabel(block.kind, block.sectionLevel);
 }

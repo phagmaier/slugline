@@ -41,6 +41,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  BlockKind dco_decode_box_autoadd_block_kind(dynamic raw);
+
+  @protected
   DocPosition dco_decode_box_autoadd_doc_position(dynamic raw);
 
   @protected
@@ -53,7 +56,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditCommand dco_decode_box_autoadd_edit_command(dynamic raw);
 
   @protected
+  EditOutcome dco_decode_box_autoadd_edit_outcome(dynamic raw);
+
+  @protected
   EditResult dco_decode_box_autoadd_edit_result(dynamic raw);
+
+  @protected
+  FindQuery dco_decode_box_autoadd_find_query(dynamic raw);
 
   @protected
   CoreEvent dco_decode_core_event(dynamic raw);
@@ -86,6 +95,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditResult dco_decode_edit_result(dynamic raw);
 
   @protected
+  FindMatch dco_decode_find_match(dynamic raw);
+
+  @protected
+  FindQuery dco_decode_find_query(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -98,10 +113,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<BlockKind> dco_decode_list_block_kind(dynamic raw);
+
+  @protected
   List<BlockView> dco_decode_list_block_view(dynamic raw);
 
   @protected
   List<CrateInfo> dco_decode_list_crate_info(dynamic raw);
+
+  @protected
+  List<FindMatch> dco_decode_list_find_match(dynamic raw);
 
   @protected
   List<InsertedBlock> dco_decode_list_inserted_block(dynamic raw);
@@ -122,7 +143,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  BlockKind? dco_decode_opt_box_autoadd_block_kind(dynamic raw);
+
+  @protected
   DocSelection? dco_decode_opt_box_autoadd_doc_selection(dynamic raw);
+
+  @protected
+  EditOutcome? dco_decode_opt_box_autoadd_edit_outcome(dynamic raw);
 
   @protected
   EditResult? dco_decode_opt_box_autoadd_edit_result(dynamic raw);
@@ -166,6 +193,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  BlockKind sse_decode_box_autoadd_block_kind(SseDeserializer deserializer);
+
+  @protected
   DocPosition sse_decode_box_autoadd_doc_position(SseDeserializer deserializer);
 
   @protected
@@ -182,7 +212,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditCommand sse_decode_box_autoadd_edit_command(SseDeserializer deserializer);
 
   @protected
+  EditOutcome sse_decode_box_autoadd_edit_outcome(SseDeserializer deserializer);
+
+  @protected
   EditResult sse_decode_box_autoadd_edit_result(SseDeserializer deserializer);
+
+  @protected
+  FindQuery sse_decode_box_autoadd_find_query(SseDeserializer deserializer);
 
   @protected
   CoreEvent sse_decode_core_event(SseDeserializer deserializer);
@@ -215,6 +251,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditResult sse_decode_edit_result(SseDeserializer deserializer);
 
   @protected
+  FindMatch sse_decode_find_match(SseDeserializer deserializer);
+
+  @protected
+  FindQuery sse_decode_find_query(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -227,10 +269,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<BlockKind> sse_decode_list_block_kind(SseDeserializer deserializer);
+
+  @protected
   List<BlockView> sse_decode_list_block_view(SseDeserializer deserializer);
 
   @protected
   List<CrateInfo> sse_decode_list_crate_info(SseDeserializer deserializer);
+
+  @protected
+  List<FindMatch> sse_decode_list_find_match(SseDeserializer deserializer);
 
   @protected
   List<InsertedBlock> sse_decode_list_inserted_block(
@@ -253,7 +301,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  BlockKind? sse_decode_opt_box_autoadd_block_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DocSelection? sse_decode_opt_box_autoadd_doc_selection(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EditOutcome? sse_decode_opt_box_autoadd_edit_outcome(
     SseDeserializer deserializer,
   );
 
@@ -305,6 +363,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_block_kind(
+    BlockKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_doc_position(
     DocPosition self,
     SseSerializer serializer,
@@ -329,8 +393,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_edit_outcome(
+    EditOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_edit_result(
     EditResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_find_query(
+    FindQuery self,
     SseSerializer serializer,
   );
 
@@ -368,6 +444,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_edit_result(EditResult self, SseSerializer serializer);
 
   @protected
+  void sse_encode_find_match(FindMatch self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_find_query(FindQuery self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -383,6 +465,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_block_kind(
+    List<BlockKind> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_block_view(
     List<BlockView> self,
     SseSerializer serializer,
@@ -391,6 +479,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_crate_info(
     List<CrateInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_find_match(
+    List<FindMatch> self,
     SseSerializer serializer,
   );
 
@@ -419,8 +513,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_block_kind(
+    BlockKind? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_doc_selection(
     DocSelection? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_edit_outcome(
+    EditOutcome? self,
     SseSerializer serializer,
   );
 

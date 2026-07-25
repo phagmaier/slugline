@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
 
 /// Puts a focused editor on screen over [core] and hands back its controller.
@@ -21,6 +22,25 @@ Future<EditorController> pumpEditor(WidgetTester tester, DocumentCore core) asyn
     ),
   );
   // The surface takes focus on a pointer down, as it does for a real click.
+  await tester.tap(find.byType(EditorSurface));
+  await tester.pump();
+  return controller;
+}
+
+/// The same, but the whole page: the surface, the element bar, and the two
+/// panels `Ctrl+K` and `Ctrl+F` open. For anything that involves them.
+Future<EditorController> pumpEditorPage(WidgetTester tester, DocumentCore core) async {
+  final controller = EditorController(core);
+  addTearDown(controller.dispose);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: SizedBox(
+        width: 900,
+        height: 600,
+        child: EditorPage(controller: controller),
+      ),
+    ),
+  );
   await tester.tap(find.byType(EditorSurface));
   await tester.pump();
   return controller;
