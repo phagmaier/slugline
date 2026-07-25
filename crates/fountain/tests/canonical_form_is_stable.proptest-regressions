@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6d9ee4caaaf48f90d85d3693b9c5be7e4420bd3ae79045c062b35bc140f41ca7 # shrinks to (title, elements) = (TitlePage { entries: [TitleEntry { field: Title, value: "Martha" }], provenance: None }, [])
+cc 0bfb3e9631614d10352ee7421aa625ffdcacab7489f40ffe9d11e18f60a41849 # shrinks to (title, elements) = (TitlePage { entries: [], provenance: None }, [Element { kind: Character, text: "INT.", forced: false, dual: false, provenance: None }, Element { kind: Dialogue, text: "Martha", forced: false, dual: false, provenance: None }])
+cc 6bfc573823580dc5427cf5e3a09c1fb62deb8ed9c9b63dfcbf4a9ef23c3e53ae # shrinks to (title, elements) = (TitlePage { entries: [], provenance: None }, [Element { kind: Character, text: "INT.", forced: false, dual: false, provenance: None }, Element { kind: Dialogue, text: "Martha", forced: false, dual: false, provenance: None }])
+cc 58bd3d48d687d5bb3335c6c66ee6fa2b6ae96decef0da501948b340af98c3fa1 # shrinks to (title, elements) = (TitlePage { entries: [], provenance: None }, [Element { kind: SceneHeading, text: ".", forced: false, dual: false, provenance: None }])
+cc 404b37732ccb5abaa27dc5299f2c49356fc2e21feada2fa4feb674f5cbc695b6 # shrinks to (title, elements) = (TitlePage { entries: [], provenance: None }, [Element { kind: Transition, text: "=== TO:", forced: false, dual: false, provenance: None }])
+cc 9de7528017927b7cc0a013f4a18ee2e36cf7de47ac222c8e0174e312f0d7e503 # shrinks to (title, elements) = (TitlePage { entries: [], provenance: None }, [Element { kind: Transition, text: "INT. TO:", forced: false, dual: false, provenance: None }])

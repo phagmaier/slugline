@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PREFIX = "screenplay_"
+PREFIX = "slugline_"
 
 # crate -> the workspace crates it is allowed to depend on, directly or otherwise.
 ALLOWED: dict[str, set[str]] = {

@@ -64,7 +64,7 @@ layout of §2.5 survives. Pin `flutter_rust_bridge = "=2.12.0"` in Cargo.toml an
 ### Consequences
 
 * `flutter build linux --release` compiles Rust and drops
-  `libscreenplay_bridge.so` into `bundle/lib/`. Verified; CI asserts the file
+  `libslugline_bridge.so` into `bundle/lib/`. Verified; CI asserts the file
   exists and that the whole bundle stays under the 60 MB budget (§1.3). It is
   24 MB today.
 * The exact-version pin is not pedantry: the Rust crate and the Dart package
@@ -131,7 +131,7 @@ with the offending edge named. Standard library only.
 ### Consequences
 
 * CI needs Python (present on every runner) and nothing else.
-* Verified by construction: adding `screenplay_layout` to `fountain`'s
+* Verified by construction: adding `slugline_layout` to `fountain`'s
   dependencies makes the check fail with
   `fountain -> layout violates §2.5 (allowed: nothing)`, and removing it makes it
   pass again.
@@ -282,3 +282,184 @@ Three things keep this from being an open-ended commitment:
   output rather than duplicated in Dart — the Dart version exists only because
   the spike had no Rust in it. Flutter renders lines; it does not decide them.
   (§2.1: Flutter never derives screenplay semantics on its own.)
+
+---
+
+## ADR 0006 — The project is called Slugline
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 1
+
+### Context
+
+Phase 0 shipped under the working name "screenplay", which was never a name so
+much as a description: it was the directory the repository happened to be in.
+The GitHub repository is `slugline`, after the industry term for a scene
+heading, and §16 lists "application name, binary name, and reverse-DNS app ID"
+as an open decision.
+
+### Decision
+
+The project is **Slugline**. Every identifier follows:
+
+| | Before | After |
+| --- | --- | --- |
+| Rust crates | `screenplay_*` | `slugline_*` |
+| Shared library | `libscreenplay_bridge.so` | `libslugline_bridge.so` |
+| Dart package | `screenplay` | `slugline` |
+| Binary | `screenplay` | `slugline` |
+| Application ID | `com.phagmaier.screenplay` | `com.phagmaier.slugline` |
+| XDG directories | `$XDG_*_HOME/screenplay/` | `$XDG_*_HOME/slugline/` |
+
+The XDG paths are settled here rather than in Phase 4 because they are the one
+part of the rename that is a user-visible file location, and Phase 4 should
+inherit a decision rather than make one.
+
+### Consequences
+
+* Verified end to end rather than by search-and-replace alone: `flutter build
+  linux --release` produces `bundle/slugline` and
+  `bundle/lib/libslugline_bridge.so`, and `flutter_rust_bridge_codegen generate`
+  reproduces the committed bindings with the new library stem.
+* Name references inside ADRs 0002 and 0004 were updated in place. That is the
+  one edit an accepted record may take: it changes what a thing is called, not
+  what was decided. Anything else still needs a superseding record.
+* The word "screenplay" survives in prose throughout the repository, because the
+  application is still a screenplay editor. Only identifiers moved.
+
+---
+
+## ADR 0007 — Round-tripping is a tiling invariant, not a comparison
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 1
+
+### Context
+
+§3.2 requires that opening and resaving a file loses nothing, and §1.2 makes
+losing user text a P0. The mechanism the spec names is provenance: each block
+records the byte range it was parsed from, and unedited blocks are re-emitted
+verbatim.
+
+What the spec leaves open is what the ranges cover. The obvious reading — a
+block's range is the bytes of its own lines — leaves the blank lines *between*
+blocks belonging to nobody, and then losslessness becomes a second problem
+stacked on provenance: how many blank lines were there, which of them were CRLF,
+was there a tab on that empty one.
+
+### Decision
+
+**The provenance ranges tile the source exactly.** The title page's range runs
+from the end of the BOM to the start of the first block; each block's range runs
+from the start of its first line to the start of the next block's first line;
+the last block's range runs to the end of the file. Every byte after the BOM
+belongs to exactly one range, in order, with no gaps and no overlaps.
+
+Byte-exactness is then not a feature to be maintained but a consequence:
+serialising an untouched document is copying the source back out in pieces. The
+blank lines, the CRLFs, the trailing tabs and the missing final newline are
+inside somebody's range, so they come back.
+
+The invariant is asserted directly — in unit tests, over every corpus file and
+every truncation of one, and in the fuzz target — rather than only through the
+round-trip comparison it implies, because a tiling failure names the block that
+broke while a byte comparison names an offset.
+
+### Consequences
+
+* A file with no final newline resaves with no final newline. Phase 1's "output
+  always ends with a single newline" is a property of the **canonical** writer —
+  the path an edited block takes — and byte fidelity outranks it for bytes
+  nobody touched. §1.2 decides that tie.
+* Editing a block drops its provenance and nothing else's, so one edit
+  canonicalises one block and leaves the rest of the file alone. Undo restores
+  provenance along with text, so edit-then-undo-then-save is a no-op rather than
+  a reformat.
+* The serialiser therefore owns separators: an edited block writes the blank line
+  that follows it. Where the separator a neighbour carries no longer matches the
+  kind that will follow it — inserting a parenthetical after a line of dialogue,
+  say — that neighbour's provenance is dropped too, and only then.
+  Canonicalising a block the user never touched is exactly what this ADR exists
+  to avoid.
+* Whether the output is at the start of a line is asked of `\n`, not of *this
+  document's* terminator. A file may mix them, and verbatim bytes are whatever
+  the file had; asking the narrower question inserted a spurious `\r\n` into a
+  CRLF file whose second line ended with a bare LF. Found by the fuzz target,
+  not by the corpus.
+* Three consequences of tolerance, each chosen so the parser cannot make text
+  jump around under a caret that is still typing:
+  * An unclosed `/*` runs to the end of the file, as every other Fountain
+    implementation does. An unclosed `[[` is **not** a note — treating it as one
+    would reclassify every block below the caret between keystrokes.
+  * A line of nothing but whitespace is a separator. Fountain's convention that
+    two spaces mean an intentional blank line inside Action is not modelled; the
+    bytes still round-trip, and the difference is one Action block or two.
+  * An `Opaque` block refuses every edit command. §3.2 defines Opaque as "always
+    has provenance and therefore always round-trips exactly", and an edit that
+    deleted the `*/` from a boneyard comment would turn the rest of the script
+    into a comment. Found by a property test.
+* Some element sequences have no Fountain spelling at all: dialogue with no cue
+  above it, two adjacent dialogue blocks, an empty action paragraph, a scene
+  heading whose whole text is `.`. The writer drops what it cannot say rather
+  than writing a blank line that would split the neighbours apart — and a block
+  with no text has no text to lose. Every element marker except `!` also
+  swallows the whitespace beside it, so a padded text loses its padding when it
+  takes a marker on. The property tests generate only representable documents,
+  and say why.
+
+---
+
+## ADR 0008 — Syntax lives in `fountain`, identity and history live in `document`
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 1
+
+### Context
+
+§3.1 puts `Document`, `Block` and `BlockKind` in `crates/document`. §2.5 says
+`fountain` depends on nothing else in the workspace. A parser that returns a
+`Document` cannot honour both.
+
+§3.4 raises the same tension elsewhere: it gives `EditCommand` a `range_utf16`
+field, while §2.4 and ADR 0001 permit UTF-16 conversion in exactly one module,
+`bridge/src/offsets.rs`.
+
+### Decision
+
+Split by what each crate owns rather than by which struct the spec drew where.
+
+* `fountain` owns **syntax**: `BlockKind`, `TitlePage`, `TitleField`, and
+  `Element` — a parsed block with no identity. It parses to `Element`s and
+  serialises from a borrowed view of them, so `document` can write its own blocks
+  without copying their text.
+* `document` owns **identity and history**: `Block` is an `Element` plus a
+  `BlockId`, and `Document` adds the id counter, the retained source and undo. It
+  re-exports `fountain`'s kinds rather than declaring its own, so there is one
+  spelling of "this is a scene heading" in the workspace.
+* `document::EditCommand` carries **UTF-8 byte offsets**. The bridge owns the
+  `*_utf16` form and converts through `offsets.rs` on the way in, which is the
+  arrangement ADR 0001 asks for. The fields are named `range` and `at` rather
+  than `range_utf16`, because a name that lies is worse than a name that differs
+  from the spec.
+
+Two smaller departures from §3.4's literal text, both to keep an invariant
+enforceable in one place: `InsertBlocks` takes id-less `NewBlock`s, so §3.1's
+"never reused after deletion" is decided by the document; and `apply` returns
+`Result`, because a stale id or an offset inside a character has to be answerable
+without a panic.
+
+### Consequences
+
+* The layering check passes unchanged: `document -> fountain` was already the
+  expected edge.
+* An inverse is not an opposite command but a `Splice` carrying the original
+  blocks — ids and provenance included. One clone per transaction, and undo
+  restores provenance, which is the property that makes undo-then-save write the
+  original bytes.
+* `document` has no clock. §3.4's 600 ms coalescing rule needs one, so this crate
+  coalesces consecutive text edits *to the same block* and exposes `commit()`;
+  the caller that owns the clock — the bridge actor, in Phase 2 — decides when
+  600 ms have passed. Keeping time out of the model is what lets the parser, the
+  model and the pagination engine be tested without one.
+* `index_of` is a linear scan. At a few thousand blocks that is a microsecond on
+  the keystroke path; if it ever shows up in a profile the answer is an index
+  beside `blocks`, maintained by the same splice that maintains the vector.
+* The entity index named in §2.1 is not here. It belongs to Phase 5, and building
+  it now would be scaffolding for a consumer that does not exist (§1.4).

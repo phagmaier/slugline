@@ -1,0 +1,17 @@
+INT. STUDY - NIGHT
+
+[[ A note that spans
+
+a blank line, and keeps going. ]]
+
+/* A boneyard comment
+
+that also spans a blank line. */
+
+[[ first note ]]
+[[ second note, adjacent ]]
+
+He writes a sentence [[ inline note ]] and then another /* inline boneyard */ one.
+
+/* An unterminated boneyard swallows the rest of the file,
+which is what every other Fountain implementation does.

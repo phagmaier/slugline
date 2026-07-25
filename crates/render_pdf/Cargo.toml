@@ -1,5 +1,5 @@
 [package]
-name = "screenplay_render_pdf"
+name = "slugline_render_pdf"
 description = "PDF writer. Consumes layout output; embeds Courier Prime."
 version.workspace = true
 edition.workspace = true
@@ -8,4 +8,4 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-screenplay_layout.workspace = true
+slugline_layout.workspace = true

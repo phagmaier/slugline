@@ -1,0 +1,31 @@
+[package]
+name = "slugline-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Deliberately its own workspace. `cargo-fuzz` needs a nightly toolchain and
+# instruments every dependency, so it must not be part of the build that
+# `cargo test --workspace` and CI run on stable (§13).
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+slugline_fountain = { path = "../crates/fountain" }
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "roundtrip"
+path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+bench = false

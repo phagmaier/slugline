@@ -1,10 +1,45 @@
-//! Canonical document model: blocks, edit commands, undo/redo, entity index.
+//! Canonical document model: blocks, edit commands, undo/redo.
 //!
 //! Layering rule (§2.5): may depend on `fountain` only.
 //!
-//! Phase 0 placeholder — the model in §3 lands in Phase 2.
+//! This crate owns identity and history; `fountain` owns syntax.
+//! [`Document::parse`] is the only thing that gives a block its provenance and
+//! [`Document::serialise`] the only thing that reads it back — everything
+//! between them is edits, and every edit that touches a block's bytes drops its
+//! provenance, which is what moves that block from the serialiser's verbatim
+//! path to its canonical one (§3.2).
+//!
+//! ```
+//! use slugline_document::{Document, EditCommand};
+//!
+//! let source = "INT. HOUSE - DAY\n\nJohn enters.\n";
+//! let mut doc = Document::parse(source);
+//! assert_eq!(doc.serialise(), source);
+//!
+//! let id = doc.blocks[1].id;
+//! doc.apply(EditCommand::ReplaceText { block: id, range: 0..4, with: "Mary".into() }).unwrap();
+//! assert_eq!(doc.serialise(), "INT. HOUSE - DAY\n\nMary enters.\n");
+//!
+//! doc.undo();
+//! // Undo restores provenance as well as text, so the original bytes come back.
+//! assert_eq!(doc.serialise(), source);
+//! ```
+
+mod document;
+mod edit;
+mod history;
+
+pub use document::{Block, Document};
+pub use edit::{DocPosition, DocSelection, EditCommand, EditError, EditResult, NewBlock};
+
+// Re-exported so a caller does not have to depend on `fountain` directly to
+// name a block's kind or a title-page field.
+pub use slugline_fountain::{BlockKind, LineEnding, TitleField, TitlePage};
 
 /// Stable for the lifetime of a loaded document. Never reused after deletion.
+///
+/// Flutter uses this as its list key and as the anchor for selections (§3.1),
+/// which is why undo puts the original ids back rather than minting new ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockId(pub u64);
 
@@ -20,6 +55,6 @@ mod tests {
 
     #[test]
     fn can_reach_the_fountain_crate() {
-        assert_eq!(screenplay_fountain::FORMAT_NAME, "fountain");
+        assert_eq!(slugline_fountain::FORMAT_NAME, "fountain");
     }
 }

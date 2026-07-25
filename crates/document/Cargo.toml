@@ -1,5 +1,5 @@
 [package]
-name = "screenplay_document"
+name = "slugline_document"
 description = "Canonical document model, edit commands, undo history, entity index."
 version.workspace = true
 edition.workspace = true
@@ -8,4 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-screenplay_fountain.workspace = true
+slugline_fountain.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "screenplay_spell"
+name = "slugline_spell"
 description = "Dictionary loading and spell checking against system Hunspell dictionaries."
 version.workspace = true
 edition.workspace = true

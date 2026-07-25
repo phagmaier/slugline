@@ -1,5 +1,5 @@
 [package]
-name = "screenplay_storage"
+name = "slugline_storage"
 description = "Atomic writes, autosave, journal, backups, script library index."
 version.workspace = true
 edition.workspace = true
@@ -8,4 +8,4 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-screenplay_document.workspace = true
+slugline_document.workspace = true

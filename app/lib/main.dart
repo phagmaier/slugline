@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:screenplay/core/core.dart';
+import 'package:slugline/core/core.dart';
 
 /// Phase 0 handshake window.
 ///
@@ -26,7 +26,7 @@ class HandshakeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Screenplay — Phase 0',
+      title: 'Slugline — Phase 0',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -72,7 +72,7 @@ class _HandshakePageState extends State<HandshakePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Screenplay — Phase 0 handshake'),
+        title: const Text('Slugline — Phase 0 handshake'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Align(

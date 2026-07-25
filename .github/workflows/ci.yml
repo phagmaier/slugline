@@ -40,6 +40,45 @@ jobs:
       - name: Layering (§2.5 — no upward crate dependencies)
         run: python3 tools/check_layering.py
 
+      - name: The reference feature is current
+        run: python3 tools/make_reference.py --check
+
+  fuzz:
+    name: Fuzz — parser and round trip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `cargo-fuzz` needs nightly and instruments every dependency, which is
+      # why fuzz/ is its own workspace and this is its own job: nothing here
+      # touches the build the other jobs run.
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz -> target
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # A smoke run, not the gate. Phase 1's gate is 1M iterations, which is a
+      # couple of minutes locally and is run before a phase closes; this catches
+      # a regression on the commit that introduces it.
+      - name: Seed the corpus
+        run: |
+          mkdir -p fuzz/corpus/parse fuzz/corpus/roundtrip
+          cp testdata/corpus/*.fountain fuzz/corpus/parse/
+          cp testdata/corpus/*.fountain fuzz/corpus/roundtrip/
+
+      - name: Fuzz the parser
+        working-directory: fuzz
+        run: cargo +nightly fuzz run parse -- -runs=200000 -max_total_time=120
+
+      - name: Fuzz the round trip
+        working-directory: fuzz
+        run: cargo +nightly fuzz run roundtrip -- -runs=200000 -max_total_time=120
+
   flutter:
     name: Flutter — analyze, test, release build
     runs-on: ubuntu-latest
@@ -77,14 +116,14 @@ jobs:
         run: flutter test
 
       # This is the real gate: it proves cargokit compiles the Rust workspace
-      # and bundles libscreenplay_bridge.so with no manual step (Phase 0).
+      # and bundles libslugline_bridge.so with no manual step (Phase 0).
       - name: Release build
         working-directory: app
         run: flutter build linux --release
 
       - name: Assert the Rust library was bundled
         working-directory: app
-        run: test -f build/linux/x64/release/bundle/lib/libscreenplay_bridge.so
+        run: test -f build/linux/x64/release/bundle/lib/libslugline_bridge.so
 
       # §1.3 budget: stripped release binary + bundle under 60 MB.
       - name: Check bundle size budget

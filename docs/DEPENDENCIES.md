@@ -11,9 +11,12 @@ Format: `name` — what it does — why we cannot reasonably do without it.
 | Crate | Version | Used by | Justification |
 | --- | --- | --- | --- |
 | `flutter_rust_bridge` | 2.12.0 | `bridge` | The FFI boundary itself (§2.2). Pinned with `=` because the Rust crate and the Dart package must agree exactly, or the generated glue is silently wrong. |
+| `proptest` (dev) | 1.11.0 | `fountain`, `document` | Phase 1's round-trip properties are the §13 testing strategy's own answer for "invariants a fixture cannot cover". It found the Opaque-block edit and the parenthetical-dialogue cases; both are now ADR 0007 text. Test-only, so it is absent from the shipped binary. |
+| `criterion` (dev) | 0.5.1 | `fountain` | Named in §13 for the §1.3 budgets. Taken with `default-features = false`, which drops `plotters` and its tree: we need the number, not the SVG. Test-only. |
+| `libfuzzer-sys` (dev) | 0.4 | `fuzz/` | Phase 1 requires a `cargo-fuzz` target for the parser. Lives in `fuzz/`, which is a separate workspace on a nightly toolchain, so it is not in any build that CI or a user runs. |
 
-Nothing else yet. The crates from the §2.6 shortlist (`printpdf`, `spellbook`,
-`directories`, `notify`, `serde`, `proptest`) are added in the phase that first
+Nothing else yet. The remaining crates from the §2.6 shortlist (`printpdf`,
+`spellbook`, `directories`, `notify`, `serde`) are added in the phase that first
 needs them, not before.
 
 ## Dart packages

@@ -103,7 +103,7 @@ line is a scene heading, it asks Rust. There is exactly one source of truth.
 
 ### 2.2 Process model
 
-Single process. The Rust core is a `cdylib` (`libscreenplay_bridge.so`) bundled into the
+Single process. The Rust core is a `cdylib` (`libslugline_bridge.so`) bundled into the
 Flutter Linux app and loaded via `dart:ffi` through `flutter_rust_bridge`.
 
 Do **not** use a separate daemon process with IPC. It triples the packaging complexity, adds
@@ -142,7 +142,7 @@ against a string containing ASCII, Latin-1 accents, CJK, and an astral-plane emo
 ### 2.5 Repository layout
 
 ```
-screenplay/
+slugline/
 ├── Cargo.toml                  # workspace
 ├── crates/
 │   ├── fountain/               # parse + serialise. No app deps. Pure.
@@ -577,38 +577,38 @@ Do all of this with `cargo test`. Do not open Flutter this phase.
 
 ### Parser
 
-- [ ] Line segmentation with LF / CRLF / BOM handling
-- [ ] Title page parsing, including multi-line values and unknown keys
-- [ ] All element rules from §4.1 implemented
-- [ ] All forced-syntax prefixes (`.`, `@`, `>`, `!`, `~`, `#`, `=`) implemented
-- [ ] Dual dialogue (`^`)
-- [ ] Notes `[[ ]]` and boneyard `/* */`, including multi-line
-- [ ] Explicit page breaks (`===`)
-- [ ] Unclassifiable-but-valid content becomes `Opaque` blocks
-- [ ] Parser never panics and never returns an error — it always produces a document
-- [ ] Provenance byte ranges recorded on every block
+- [x] Line segmentation with LF / CRLF / BOM handling
+- [x] Title page parsing, including multi-line values and unknown keys
+- [x] All element rules from §4.1 implemented
+- [x] All forced-syntax prefixes (`.`, `@`, `>`, `!`, `~`, `#`, `=`) implemented
+- [x] Dual dialogue (`^`)
+- [x] Notes `[[ ]]` and boneyard `/* */`, including multi-line
+- [x] Explicit page breaks (`===`)
+- [x] Unclassifiable-but-valid content becomes `Opaque` blocks
+- [x] Parser never panics and never returns an error — it always produces a document
+- [x] Provenance byte ranges recorded on every block
 
 ### Serialiser
 
-- [ ] Emits verbatim source for blocks with intact provenance
-- [ ] Re-serialises edited blocks correctly, including re-adding forced prefixes where the
+- [x] Emits verbatim source for blocks with intact provenance
+- [x] Re-serialises edited blocks correctly, including re-adding forced prefixes where the
       element type would otherwise be misread on reparse
-- [ ] Title page emitted in canonical order
-- [ ] Output always ends with a single newline
+- [x] Title page emitted in canonical order
+- [x] Output always ends with a single newline
 
 ### Tests
 
-- [ ] Every file in `testdata/corpus/` satisfies: `serialise(parse(f)) == f` **byte for byte**
-- [ ] `proptest`: for a generated random document, `parse(serialise(d))` has the same block
+- [x] Every file in `testdata/corpus/` satisfies: `serialise(parse(f)) == f` **byte for byte**
+- [x] `proptest`: for a generated random document, `parse(serialise(d))` has the same block
       kinds and text as `d`
-- [ ] `proptest`: applying a random edit then serialising then reparsing preserves all
+- [x] `proptest`: applying a random edit then serialising then reparsing preserves all
       untouched blocks exactly
-- [ ] `cargo-fuzz` target for the parser runs 1M+ iterations with no panic
-- [ ] Parse of the 120-page reference file completes in < 100 ms (`criterion` benchmark)
+- [x] `cargo-fuzz` target for the parser runs 1M+ iterations with no panic
+- [x] Parse of the 120-page reference file completes in < 100 ms (`criterion` benchmark)
 
 ### Exit criteria
 
-- [ ] `crates/fountain` and `crates/document` are feature-complete for §3–§5 of the
+- [x] `crates/fountain` and `crates/document` are feature-complete for §3–§5 of the
       requirements doc, with zero Flutter code written
 
 ---
@@ -731,7 +731,7 @@ Implement precisely this sequence, in `crates/storage`:
 - [ ] Autosave debounced after edit inactivity (default 2 s) and on a hard interval
       (default 30 s), both configurable
 - [ ] Autosave never runs while a modal is open or during an active IME composition
-- [ ] An append-only **edit journal** in `$XDG_STATE_HOME/screenplay/journal/<script-id>.log`
+- [ ] An append-only **edit journal** in `$XDG_STATE_HOME/slugline/journal/<script-id>.log`
       records committed edit commands between saves
 - [ ] On startup, an un-truncated journal means the previous session crashed → offer recovery
 - [ ] Recovery presents a diff summary ("14 edits since last save") and Recover / Discard,
@@ -740,7 +740,7 @@ Implement precisely this sequence, in `crates/storage`:
 ### Backups
 
 - [ ] Rolling backups written to a configurable location (default
-      `$XDG_STATE_HOME/screenplay/backups/`)
+      `$XDG_STATE_HOME/slugline/backups/`)
 - [ ] Retention policy: last N versions plus one per day for M days (defaults: 10 / 7)
 - [ ] "Restore previous version" UI listing backups with timestamps and sizes
 - [ ] Restoring a backup writes the current state to a new backup first
@@ -939,7 +939,7 @@ Requirement §9.
 - [ ] Misspelling underlines rendered in the editor
 - [ ] Context menu: suggestions, Replace, Ignore Once, Ignore All, Add to Personal
       Dictionary, Add to Project Dictionary
-- [ ] Personal dictionary in `$XDG_CONFIG_HOME/screenplay/personal.dic`
+- [ ] Personal dictionary in `$XDG_CONFIG_HOME/slugline/personal.dic`
 - [ ] Project dictionary as a sidecar file beside the script; the script remains fully
       usable if it is missing or deleted
 - [ ] Character names and scene locations from the entity index are automatically accepted
@@ -953,7 +953,7 @@ Requirement §9.
 
 Requirement §14.
 
-- [ ] Preferences stored as readable JSON in `$XDG_CONFIG_HOME/screenplay/prefs.json`
+- [ ] Preferences stored as readable JSON in `$XDG_CONFIG_HOME/slugline/prefs.json`
 - [ ] Light and dark appearance, plus follow-system
 - [ ] Editor zoom / text size
 - [ ] Spell-check language
@@ -1098,7 +1098,8 @@ Resolve these and record them in `docs/DECISIONS.md`.
 
 - [ ] **Editor implementation approach** (Phase 0 spike) — blocks everything
 - [ ] Exact keyboard shortcut map — write `docs/KEYMAP.md` before Phase 3
-- [ ] Application name, binary name, and reverse-DNS app ID
+- [x] Application name, binary name, and reverse-DNS app ID — **Slugline**, `slugline`,
+      `com.phagmaier.slugline` (ADR 0006)
 - [ ] Licence for the project itself
 - [ ] Whether the editor view shows any page indication at all, or is purely fluid
       (the requirements permit fluid; fluid is faster and simpler — recommended)

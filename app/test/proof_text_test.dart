@@ -5,7 +5,7 @@
 // silently weakening the UTF-16 proof.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screenplay/main.dart';
+import 'package:slugline/main.dart';
 
 void main() {
   test('the proof string still covers every width class', () {

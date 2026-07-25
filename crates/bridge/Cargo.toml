@@ -1,5 +1,5 @@
 [package]
-name = "screenplay_bridge"
+name = "slugline_bridge"
 version = "0.1.0"
 edition = "2021"
 

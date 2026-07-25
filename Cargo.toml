@@ -19,12 +19,17 @@ publish = false
 
 # Every entry here needs a one-line justification in docs/DEPENDENCIES.md.
 [workspace.dependencies]
-screenplay_fountain = { path = "crates/fountain" }
-screenplay_document = { path = "crates/document" }
-screenplay_layout = { path = "crates/layout" }
-screenplay_render_pdf = { path = "crates/render_pdf" }
-screenplay_storage = { path = "crates/storage" }
-screenplay_spell = { path = "crates/spell" }
+slugline_fountain = { path = "crates/fountain" }
+slugline_document = { path = "crates/document" }
+slugline_layout = { path = "crates/layout" }
+slugline_render_pdf = { path = "crates/render_pdf" }
+slugline_storage = { path = "crates/storage" }
+slugline_spell = { path = "crates/spell" }
+
+# Test-only. Both are named in the spec's testing strategy (§13); criterion runs
+# with default features off so that plotters and its tree stay out of the build.
+proptest = "1"
+criterion = { version = "0.5", default-features = false }
 
 [profile.release]
 opt-level = 3

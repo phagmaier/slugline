@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a7eb6015bef3b2722404254797183b9a6949fe349c63ad8c7a8b765ec9cf98d8 # shrinks to file = "INT. STUDY - NIGHT\n\n[[ A note that spans\n\na blank line, and keeps going. ]]\n\n/* A boneyard comment\n\nthat also spans a blank line. */\n\n[[ first note ]]\n[[ second note, adjacent ]]\n\nHe writes a sentence [[ inline note ]] and then another /* inline boneyard */ one.\n\n/* An unterminated boneyard swallows the rest of the file,\nwhich is what every other Fountain implementation does.\n", block = 23, start = 39, length = 15, with = ""

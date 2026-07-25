@@ -1,5 +1,12 @@
 # Rust build output. `app/` and `spike/` carry their own Flutter .gitignore.
 /target/
 
+# Fuzzing. The targets and their seed corpus are committed; build output,
+# generated corpus entries and crash artefacts are not.
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/
+
 # Local tooling
 .direnv/

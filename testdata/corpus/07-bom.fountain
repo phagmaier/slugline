@@ -1,0 +1,8 @@
+﻿Title: Byte Order Mark
+
+INT. KITCHEN - MORNING
+
+The file begins with a UTF-8 BOM, which must survive being saved.
+
+MARTHA
+Still here.

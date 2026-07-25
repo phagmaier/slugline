@@ -1,4 +1,4 @@
-# screenplay
+# slugline
 
 Fast, keyboard-driven Fountain screenplay editor.
 

@@ -426,13 +426,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
-  screenplay_bridge:
-    dependency: "direct main"
-    description:
-      path: rust_builder
-      relative: true
-    source: path
-    version: "0.0.1"
   shelf:
     dependency: transitive
     description:
@@ -454,6 +447,13 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  slugline_bridge:
+    dependency: "direct main"
+    description:
+      path: rust_builder
+      relative: true
+    source: path
+    version: "0.0.1"
   source_gen:
     dependency: transitive
     description:

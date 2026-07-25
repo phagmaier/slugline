@@ -1,7 +1,7 @@
 // The Phase 0 exit proofs, as assertions.
 //
 // These live in `integration_test/` rather than `test/` because they load the
-// real `libscreenplay_bridge.so` out of the built bundle. Run with:
+// real `libslugline_bridge.so` out of the built bundle. Run with:
 //
 //     flutter test integration_test/bridge_test.dart -d linux
 //
@@ -9,7 +9,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:screenplay/core/core.dart';
+import 'package:slugline/core/core.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

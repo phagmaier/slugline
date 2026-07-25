@@ -1,5 +1,5 @@
 [package]
-name = "screenplay_layout"
+name = "slugline_layout"
 description = "Line breaking and pagination on the fixed monospace grid. Pure and deterministic."
 version.workspace = true
 edition.workspace = true
@@ -8,4 +8,4 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-screenplay_document.workspace = true
+slugline_document.workspace = true

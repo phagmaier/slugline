@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:screenplay/src/rust/api/handshake.dart' as rust;
-import 'package:screenplay/src/rust/frb_generated.dart';
+import 'package:slugline/src/rust/api/handshake.dart' as rust;
+import 'package:slugline/src/rust/frb_generated.dart';
 
-export 'package:screenplay/src/rust/api/handshake.dart'
+export 'package:slugline/src/rust/api/handshake.dart'
     show CoreEvent, CoreEvent_Ready, CoreEvent_Pong, CoreInfo, CrateInfo, TextMetrics;
 
 /// The Dart-side handle on the Rust core.
@@ -30,7 +30,7 @@ class Core {
     return core;
   }
 
-  /// Loads `libscreenplay_bridge.so` and opens the event stream.
+  /// Loads `libslugline_bridge.so` and opens the event stream.
   static Future<Core> init() async {
     if (_instance case final existing?) return existing;
     await RustLib.init();
