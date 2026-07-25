@@ -165,6 +165,26 @@ pub struct FindMatch {
     pub end_utf16: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionKind {
+    Character,
+    Location,
+    ScenePrefix,
+    TimeOfDay,
+    Transition,
+}
+
+/// One ranked §7 candidate and the exact range an explicit acceptance replaces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Completion {
+    pub kind: CompletionKind,
+    pub value: String,
+    pub start_utf16: u32,
+    pub end_utf16: u32,
+    pub frequency: u32,
+    pub pinned: bool,
+}
+
 /// A block that appeared, and the index it appeared at.
 ///
 /// The index is the block's position **after** the edit, so Dart can apply the
@@ -373,6 +393,151 @@ pub fn doc_character_suggestion(handle: DocumentHandle, block: u64) -> Option<St
     })
 }
 
+/// Ranked completions at a caret. This function is read-only: accepting a
+/// candidate is a separate `doc_apply` call made only by Tab or Enter in Dart.
+#[frb(sync)]
+pub fn doc_complete(
+    handle: DocumentHandle,
+    block: u64,
+    offset_utf16: u32,
+    suppressed: Vec<String>,
+) -> Vec<Completion> {
+    actor().run(move |state| {
+        if state
+            .storage()
+            .is_some_and(|storage| !storage.prefs.autocomplete_enabled)
+        {
+            return Vec::new();
+        }
+        let Some(session) = state.session(handle.id) else {
+            return Vec::new();
+        };
+        let Some(block) = session.document().block(model::BlockId(block)) else {
+            return Vec::new();
+        };
+        let Some(offset) = offsets::utf16_to_utf8(block.text(), offset_utf16) else {
+            return Vec::new();
+        };
+        let Some((kind, start, prefix)) = completion_context(block, offset) else {
+            return Vec::new();
+        };
+        session
+            .entities()
+            .complete(kind, prefix, &suppressed)
+            .into_iter()
+            .map(|candidate| Completion {
+                kind: completion_kind(candidate.kind),
+                value: candidate.value,
+                start_utf16: offsets::utf8_to_utf16(block.text(), start).unwrap_or(0),
+                end_utf16: offset_utf16,
+                frequency: candidate.frequency,
+                pinned: candidate.pinned,
+            })
+            .collect()
+    })
+}
+
+/// Pins or unpins a candidate in the script's library entry. Unsaved scripts
+/// keep the pin for this session and gain persistence once they have an entry.
+#[frb(sync)]
+pub fn doc_set_entity_pinned(
+    handle: DocumentHandle,
+    kind: CompletionKind,
+    value: String,
+    pinned: bool,
+) -> bool {
+    actor().run(move |state| {
+        let (id, pins) = {
+            let Some(session) = state.session_mut(handle.id) else {
+                return false;
+            };
+            let kind = model_entity_kind(kind);
+            if pinned {
+                session.entities_mut().pin(kind, &value);
+            } else {
+                session.entities_mut().unpin(kind, &value);
+            }
+            (session.id().map(str::to_owned), session.entities().pinned())
+        };
+        let Some(id) = id else { return true };
+        let Some(storage) = state.storage_mut() else {
+            return true;
+        };
+        storage.library.set_pinned(
+            &id,
+            pins.into_iter()
+                .map(|(kind, value)| slugline_storage::library::PinnedEntity {
+                    kind: entity_kind_name(kind).to_owned(),
+                    value,
+                })
+                .collect(),
+        );
+        storage.library.save(&storage.paths.library_index()).is_ok()
+    })
+}
+
+fn completion_context(
+    block: &model::Block,
+    offset: usize,
+) -> Option<(model::EntityKind, usize, &str)> {
+    let before = block.text().get(..offset)?;
+    match block.kind() {
+        model::BlockKind::Character => Some((model::EntityKind::Character, 0, before.trim_start())),
+        model::BlockKind::Transition => {
+            Some((model::EntityKind::Transition, 0, before.trim_start()))
+        }
+        model::BlockKind::SceneHeading => {
+            if let Some(separator) = before.rfind(" - ") {
+                let start = separator + 3;
+                return Some((model::EntityKind::TimeOfDay, start, &before[start..]));
+            }
+            let upper = before.to_uppercase();
+            for prefix in ["INT./EXT.", "INT/EXT.", "I/E.", "INT.", "EXT.", "EST."] {
+                if upper.starts_with(prefix) {
+                    let start = prefix.len();
+                    let whitespace = before[start..]
+                        .len()
+                        .saturating_sub(before[start..].trim_start().len());
+                    let start = start + whitespace;
+                    return Some((model::EntityKind::Location, start, &before[start..]));
+                }
+            }
+            Some((model::EntityKind::ScenePrefix, 0, before.trim_start()))
+        }
+        _ => None,
+    }
+}
+
+fn completion_kind(kind: model::EntityKind) -> CompletionKind {
+    match kind {
+        model::EntityKind::Character => CompletionKind::Character,
+        model::EntityKind::Location => CompletionKind::Location,
+        model::EntityKind::ScenePrefix => CompletionKind::ScenePrefix,
+        model::EntityKind::TimeOfDay => CompletionKind::TimeOfDay,
+        model::EntityKind::Transition => CompletionKind::Transition,
+    }
+}
+
+fn model_entity_kind(kind: CompletionKind) -> model::EntityKind {
+    match kind {
+        CompletionKind::Character => model::EntityKind::Character,
+        CompletionKind::Location => model::EntityKind::Location,
+        CompletionKind::ScenePrefix => model::EntityKind::ScenePrefix,
+        CompletionKind::TimeOfDay => model::EntityKind::TimeOfDay,
+        CompletionKind::Transition => model::EntityKind::Transition,
+    }
+}
+
+fn entity_kind_name(kind: model::EntityKind) -> &'static str {
+    match kind {
+        model::EntityKind::Character => "character",
+        model::EntityKind::Location => "location",
+        model::EntityKind::ScenePrefix => "scene_prefix",
+        model::EntityKind::TimeOfDay => "time_of_day",
+        model::EntityKind::Transition => "transition",
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -542,6 +707,7 @@ fn step(
         // An undo is an edit. A crash after one must not bring back the text it
         // took away, so it goes in the journal like everything else.
         journal(session, &result);
+        refresh_entities(session, &result);
         Some(result_view(session.document(), result))
     })
 }
@@ -1050,6 +1216,7 @@ fn outcome(
     match result {
         Ok(result) => {
             journal(session, &result);
+            refresh_entities(session, &result);
             EditOutcome::Applied {
                 result: result_view(session.document(), result),
             }
@@ -1091,6 +1258,20 @@ fn journal(session: &mut Session, result: &model::EditResult) {
     }
 }
 
+fn refresh_entities(session: &mut Session, result: &model::EditResult) {
+    let ids = result
+        .changed
+        .iter()
+        .chain(&result.inserted)
+        .chain(&result.removed)
+        .copied()
+        .collect::<Vec<_>>();
+    session.refresh_entities(ids);
+    emit(CoreEvent::EntityIndexUpdated {
+        handle: session.handle(),
+    });
+}
+
 /// The same, with §4.2's automatic re-classification applied to whatever the
 /// edit disturbed.
 ///
@@ -1107,6 +1288,7 @@ fn inferring(
         Ok(mut result) => {
             session.document_mut().reinfer(&mut result, before);
             journal(session, &result);
+            refresh_entities(session, &result);
             EditOutcome::Applied {
                 result: result_view(session.document(), result),
             }

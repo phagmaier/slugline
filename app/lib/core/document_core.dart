@@ -2,12 +2,20 @@ import 'package:slugline/src/rust/api/doc.dart' as rust;
 import 'package:slugline/src/rust/api/files.dart' as files;
 
 export 'package:slugline/src/rust/api/files.dart'
-    show BackupView, SaveFailure, SaveOutcome, SaveOutcome_Failed, SaveOutcome_Saved, SaveOutcome_Unchanged;
+    show
+        BackupView,
+        SaveFailure,
+        SaveOutcome,
+        SaveOutcome_Failed,
+        SaveOutcome_Saved,
+        SaveOutcome_Unchanged;
 
 export 'package:slugline/src/rust/api/doc.dart'
     show
         BlockKind,
         BlockView,
+        Completion,
+        CompletionKind,
         DocPosition,
         DocSelection,
         DocumentHandle,
@@ -57,7 +65,11 @@ abstract class DocumentCore {
 
   /// Replaces [at] with [text] in one undo transaction. [plain] is
   /// `Ctrl+Shift+V`: Action blocks, no element inference.
-  rust.EditOutcome paste(rust.DocSelection at, String text, {required bool plain});
+  rust.EditOutcome paste(
+    rust.DocSelection at,
+    String text, {
+    required bool plain,
+  });
 
   /// Enter: the block splits and whatever appears below it takes the element
   /// type `docs/KEYMAP.md` says follows this one. One undo step, even though it
@@ -74,6 +86,16 @@ abstract class DocumentCore {
   /// A character cue the script already has whose name this block's text
   /// matches. A suggestion: the core never acts on it.
   String? characterSuggestion(int block);
+
+  /// Ranked, read-only candidates at the caret. Text changes only when Dart
+  /// explicitly accepts one with an edit command.
+  List<rust.Completion> complete(
+    int block,
+    int offsetUtf16,
+    List<String> suppressed,
+  );
+
+  bool setEntityPinned(rust.CompletionKind kind, String value, bool pinned);
 
   /// Every match of [query], in document order.
   List<rust.FindMatch> find(rust.FindQuery query);
@@ -152,7 +174,8 @@ class RustDocumentCore implements DocumentCore {
 
   /// A script the core already has open — what `library_open` and
   /// `recovery_accept` hand back.
-  factory RustDocumentCore.of(rust.DocumentHandle handle) => RustDocumentCore._(handle);
+  factory RustDocumentCore.of(rust.DocumentHandle handle) =>
+      RustDocumentCore._(handle);
 
   final rust.DocumentHandle _handle;
 
@@ -167,15 +190,21 @@ class RustDocumentCore implements DocumentCore {
   String source() => rust.docSource(handle: _handle);
 
   @override
-  rust.EditOutcome apply(rust.EditCommand command, {rust.DocSelection? before}) =>
-      rust.docApply(handle: _handle, command: command, before: before);
+  rust.EditOutcome apply(
+    rust.EditCommand command, {
+    rust.DocSelection? before,
+  }) => rust.docApply(handle: _handle, command: command, before: before);
 
   @override
-  rust.EditOutcome paste(rust.DocSelection at, String text, {required bool plain}) =>
-      rust.docPaste(handle: _handle, at: at, text: text, plain: plain);
+  rust.EditOutcome paste(
+    rust.DocSelection at,
+    String text, {
+    required bool plain,
+  }) => rust.docPaste(handle: _handle, at: at, text: text, plain: plain);
 
   @override
-  rust.EditOutcome enter(rust.DocSelection at) => rust.docEnter(handle: _handle, at: at);
+  rust.EditOutcome enter(rust.DocSelection at) =>
+      rust.docEnter(handle: _handle, at: at);
 
   @override
   rust.EditOutcome? tab(rust.DocSelection at, {required bool shift}) =>
@@ -188,6 +217,27 @@ class RustDocumentCore implements DocumentCore {
   @override
   String? characterSuggestion(int block) =>
       rust.docCharacterSuggestion(handle: _handle, block: block);
+
+  @override
+  List<rust.Completion> complete(
+    int block,
+    int offsetUtf16,
+    List<String> suppressed,
+  ) => rust.docComplete(
+    handle: _handle,
+    block: block,
+    offsetUtf16: offsetUtf16,
+    suppressed: suppressed,
+  );
+
+  @override
+  bool setEntityPinned(rust.CompletionKind kind, String value, bool pinned) =>
+      rust.docSetEntityPinned(
+        handle: _handle,
+        kind: kind,
+        value: value,
+        pinned: pinned,
+      );
 
   @override
   List<rust.FindMatch> find(rust.FindQuery query) =>
@@ -233,7 +283,8 @@ class RustDocumentCore implements DocumentCore {
   Future<bool> reload() => files.docReload(handle: _handle);
 
   @override
-  Future<List<files.BackupView>> backups() => files.backupsList(handle: _handle);
+  Future<List<files.BackupView>> backups() =>
+      files.backupsList(handle: _handle);
 
   @override
   Future<files.SaveOutcome> restoreBackup(String backupPath) =>

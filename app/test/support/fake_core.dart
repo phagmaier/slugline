@@ -15,21 +15,22 @@ import 'package:slugline/core/document_core.dart';
 /// *command*, not just on the text it happened to produce.
 class FakeCore implements DocumentCore {
   FakeCore(List<BlockView> blocks) : _blocks = List.of(blocks) {
-    _nextId = _blocks.fold(0, (highest, b) => b.id > highest ? b.id : highest) + 1;
+    _nextId =
+        _blocks.fold(0, (highest, b) => b.id > highest ? b.id : highest) + 1;
   }
 
   /// A one-block document of the given kind.
   factory FakeCore.single(BlockKind kind, String text) => FakeCore([
-        BlockView(
-          id: 1,
-          kind: kind,
-          sectionLevel: 0,
-          text: text,
-          forced: false,
-          dual: false,
-          readOnly: false,
-        ),
-      ]);
+    BlockView(
+      id: 1,
+      kind: kind,
+      sectionLevel: 0,
+      text: text,
+      forced: false,
+      dual: false,
+      readOnly: false,
+    ),
+  ]);
 
   final List<BlockView> _blocks;
   late int _nextId;
@@ -43,6 +44,35 @@ class FakeCore implements DocumentCore {
   /// Set to refuse the next edit, the way an Opaque block would.
   EditRejection? refuseWith;
 
+  List<Completion> completions = const [];
+
+  @override
+  List<Completion> complete(
+    int block,
+    int offsetUtf16,
+    List<String> suppressed,
+  ) => completions
+      .where((candidate) => !suppressed.contains(candidate.value))
+      .toList();
+
+  @override
+  bool setEntityPinned(CompletionKind kind, String value, bool pinned) {
+    final index = completions.indexWhere(
+      (candidate) => candidate.kind == kind && candidate.value == value,
+    );
+    if (index < 0) return false;
+    final candidate = completions[index];
+    completions[index] = Completion(
+      kind: candidate.kind,
+      value: candidate.value,
+      startUtf16: candidate.startUtf16,
+      endUtf16: candidate.endUtf16,
+      frequency: candidate.frequency,
+      pinned: pinned,
+    );
+    return true;
+  }
+
   @override
   int get blockCount => _blocks.length;
 
@@ -54,7 +84,9 @@ class FakeCore implements DocumentCore {
   List<BlockView> blocks(int from, int to) {
     blockReads++;
     return _blocks.sublist(
-        from.clamp(0, _blocks.length), to.clamp(0, _blocks.length));
+      from.clamp(0, _blocks.length),
+      to.clamp(0, _blocks.length),
+    );
   }
 
   @override
@@ -80,16 +112,30 @@ class FakeCore implements DocumentCore {
     priorSelections.add(before);
     if (refuseWith case final reason?) {
       refuseWith = null;
-      return EditOutcome.rejected(reason: reason, message: 'refused by the test');
+      return EditOutcome.rejected(
+        reason: reason,
+        message: 'refused by the test',
+      );
     }
     _undo.add(List.of(_blocks));
     return switch (command) {
-      EditCommand_ReplaceText(:final block, :final startUtf16, :final endUtf16, :final with_) =>
+      EditCommand_ReplaceText(
+        :final block,
+        :final startUtf16,
+        :final endUtf16,
+        :final with_,
+      ) =>
         _replaceText(block, startUtf16, endUtf16, with_),
-      EditCommand_SplitBlock(:final block, :final atUtf16) => _split(block, atUtf16),
+      EditCommand_SplitBlock(:final block, :final atUtf16) => _split(
+        block,
+        atUtf16,
+      ),
       EditCommand_MergeBlocks(:final first) => _merge(first),
-      EditCommand_SetKind(:final block, :final kind, :final forced) =>
-        _setKind(block, kind, forced),
+      EditCommand_SetKind(:final block, :final kind, :final forced) => _setKind(
+        block,
+        kind,
+        forced,
+      ),
       EditCommand_DeleteRange(:final from, :final to) => _deleteRange(from, to),
       _ => _unchanged(),
     };
@@ -109,7 +155,8 @@ class FakeCore implements DocumentCore {
     if (start != end) {
       final first = _indexOf(start.block);
       final last = _indexOf(end.block);
-      final joined = _blocks[first].text.substring(0, start.offsetUtf16) +
+      final joined =
+          _blocks[first].text.substring(0, start.offsetUtf16) +
           _blocks[last].text.substring(end.offsetUtf16);
       for (var i = first + 1; i <= last; i++) {
         removed.add(_blocks[i].id);
@@ -122,9 +169,11 @@ class FakeCore implements DocumentCore {
     final flat = text.replaceAll('\n', ' ');
     _blocks[index] = _copy(
       _blocks[index],
-      text: _blocks[index]
-          .text
-          .replaceRange(start.offsetUtf16, start.offsetUtf16, flat),
+      text: _blocks[index].text.replaceRange(
+        start.offsetUtf16,
+        start.offsetUtf16,
+        flat,
+      ),
     );
     return _applied(
       changed: [_blocks[index]],
@@ -150,12 +199,14 @@ class FakeCore implements DocumentCore {
     final (start, end) = _ordered(at);
     if (start != end) {
       final outcome = start.block == end.block
-          ? apply(EditCommand.replaceText(
-              block: start.block,
-              startUtf16: start.offsetUtf16,
-              endUtf16: end.offsetUtf16,
-              with_: '',
-            ))
+          ? apply(
+              EditCommand.replaceText(
+                block: start.block,
+                startUtf16: start.offsetUtf16,
+                endUtf16: end.offsetUtf16,
+                with_: '',
+              ),
+            )
           : apply(EditCommand.deleteRange(from: start, to: end));
       if (outcome is EditOutcome_Rejected) return outcome;
     }
@@ -179,12 +230,14 @@ class FakeCore implements DocumentCore {
     tabs.add((at, shift));
     final kind = tabAnswer;
     if (kind == null) return null;
-    return apply(EditCommand.setKind(
-      block: at.focus.block,
-      kind: kind,
-      sectionLevel: 0,
-      forced: true,
-    ));
+    return apply(
+      EditCommand.setKind(
+        block: at.focus.block,
+        kind: kind,
+        sectionLevel: 0,
+        forced: true,
+      ),
+    );
   }
 
   @override
@@ -212,11 +265,13 @@ class FakeCore implements DocumentCore {
       while (true) {
         final at = block.text.indexOf(query.text, from);
         if (at < 0) break;
-        hits.add(FindMatch(
-          block: block.id,
-          startUtf16: at,
-          endUtf16: at + query.text.length,
-        ));
+        hits.add(
+          FindMatch(
+            block: block.id,
+            startUtf16: at,
+            endUtf16: at + query.text.length,
+          ),
+        );
         from = at + query.text.length;
       }
     }
@@ -245,7 +300,8 @@ class FakeCore implements DocumentCore {
   (DocPosition, DocPosition) _ordered(DocSelection selection) {
     final anchor = _indexOf(selection.anchor.block);
     final focus = _indexOf(selection.focus.block);
-    final anchorFirst = anchor < focus ||
+    final anchorFirst =
+        anchor < focus ||
         (anchor == focus &&
             selection.anchor.offsetUtf16 <= selection.focus.offsetUtf16);
     return anchorFirst
@@ -283,7 +339,10 @@ class FakeCore implements DocumentCore {
   EditOutcome _replaceText(int id, int start, int end, String with_) {
     final index = _indexOf(id);
     final block = _blocks[index];
-    _blocks[index] = _copy(block, text: block.text.replaceRange(start, end, with_));
+    _blocks[index] = _copy(
+      block,
+      text: block.text.replaceRange(start, end, with_),
+    );
     return _applied(
       changed: [_blocks[index]],
       caret: DocPosition(block: id, offsetUtf16: start + with_.length),
@@ -333,18 +392,13 @@ class FakeCore implements DocumentCore {
   EditOutcome _deleteRange(DocPosition from, DocPosition to) {
     final first = _indexOf(from.block);
     final last = _indexOf(to.block);
-    final text = _blocks[first].text.substring(0, from.offsetUtf16) +
+    final text =
+        _blocks[first].text.substring(0, from.offsetUtf16) +
         _blocks[last].text.substring(to.offsetUtf16);
-    final removed = [
-      for (var i = first + 1; i <= last; i++) _blocks[i].id,
-    ];
+    final removed = [for (var i = first + 1; i <= last; i++) _blocks[i].id];
     _blocks.removeRange(first + 1, last + 1);
     _blocks[first] = _copy(_blocks[first], text: text);
-    return _applied(
-      changed: [_blocks[first]],
-      removed: removed,
-      caret: from,
-    );
+    return _applied(changed: [_blocks[first]], removed: removed, caret: from);
   }
 
   // --- persistence (§Phase 4) ------------------------------------------------
@@ -490,26 +544,31 @@ class FakeCore implements DocumentCore {
       _journalled++;
     }
     return EditOutcome.applied(
-        result: EditResult(
-          changed: changed,
-          removed: removed,
-          inserted: inserted,
-          selection: caret == null
-              ? null
-              : DocSelection(anchor: caret, focus: caret),
-          blockCount: _blocks.length,
-        ),
+      result: EditResult(
+        changed: changed,
+        removed: removed,
+        inserted: inserted,
+        selection: caret == null
+            ? null
+            : DocSelection(anchor: caret, focus: caret),
+        blockCount: _blocks.length,
+      ),
     );
   }
 
-  BlockView _copy(BlockView block, {int? id, BlockKind? kind, String? text, bool? forced}) =>
-      BlockView(
-        id: id ?? block.id,
-        kind: kind ?? block.kind,
-        sectionLevel: block.sectionLevel,
-        text: text ?? block.text,
-        forced: forced ?? block.forced,
-        dual: block.dual,
-        readOnly: block.readOnly,
-      );
+  BlockView _copy(
+    BlockView block, {
+    int? id,
+    BlockKind? kind,
+    String? text,
+    bool? forced,
+  }) => BlockView(
+    id: id ?? block.id,
+    kind: kind ?? block.kind,
+    sectionLevel: block.sectionLevel,
+    text: text ?? block.text,
+    forced: forced ?? block.forced,
+    dual: block.dual,
+    readOnly: block.readOnly,
+  );
 }

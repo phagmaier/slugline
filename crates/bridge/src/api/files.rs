@@ -148,6 +148,7 @@ pub struct RecoveryOffer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreferencesView {
     pub autosave_enabled: bool,
+    pub autocomplete_enabled: bool,
     pub autosave_idle_ms: u64,
     pub autosave_interval_ms: u64,
     pub backup_dir: Option<String>,
@@ -654,6 +655,7 @@ pub async fn doc_reload(handle: DocumentHandle) -> bool {
         } else {
             document
         };
+        session.rebuild_entities();
         restart_journal(state, handle.id, &source);
         true
     })
@@ -761,6 +763,7 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
             } else {
                 document
             };
+            session.rebuild_entities();
             restart_journal(state, handle.id, &contents);
         }
     });
@@ -871,6 +874,7 @@ pub async fn recovery_accept(journal_path: String) -> Option<DocumentHandle> {
                 storage.library.add(&script);
                 storage.library.opened(&id);
             }
+            hydrate_pins(state, handle, &id);
             watch(state, &script);
             save_library(state);
         }
@@ -915,6 +919,7 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
         };
         storage.prefs = prefs::Preferences {
             autosave_enabled: preferences.autosave_enabled,
+            autocomplete_enabled: preferences.autocomplete_enabled,
             autosave_idle_ms: preferences.autosave_idle_ms,
             autosave_interval_ms: preferences.autosave_interval_ms,
             backup_dir: preferences.backup_dir.map(PathBuf::from),
@@ -951,6 +956,7 @@ fn open_source(path: PathBuf, source: String, blank_if_empty: bool) -> DocumentH
                 storage.library.add(&path);
                 storage.library.opened(&id);
             }
+            hydrate_pins(state, handle, &id);
             watch(state, &path);
             restart_journal(state, handle, &source);
             save_library(state);
@@ -978,7 +984,32 @@ fn rebind(state: &mut AppState, handle: u64, path: PathBuf, id: String) {
         storage.library.add(&path);
         storage.library.opened(&id);
     }
+    hydrate_pins(state, handle, &id);
     watch(state, &path);
+}
+
+fn hydrate_pins(state: &mut AppState, handle: u64, id: &str) {
+    let pins = state
+        .storage()
+        .and_then(|storage| storage.library.get(id))
+        .map(|entry| entry.pinned_entities.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|pin| {
+            let kind = match pin.kind.as_str() {
+                "character" => model::EntityKind::Character,
+                "location" => model::EntityKind::Location,
+                "scene_prefix" => model::EntityKind::ScenePrefix,
+                "time_of_day" => model::EntityKind::TimeOfDay,
+                "transition" => model::EntityKind::Transition,
+                _ => return None,
+            };
+            Some((kind, pin.value))
+        })
+        .collect::<Vec<_>>();
+    if let Some(session) = state.session_mut(handle) {
+        session.load_pins(pins);
+    }
 }
 
 /// Starts a fresh journal for a session, against `base` as the file's contents.
@@ -1041,6 +1072,7 @@ fn script_view(entry: &ScriptEntry) -> ScriptView {
 fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
     PreferencesView {
         autosave_enabled: preferences.autosave_enabled,
+        autocomplete_enabled: preferences.autocomplete_enabled,
         autosave_idle_ms: preferences.autosave_idle_ms,
         autosave_interval_ms: preferences.autosave_interval_ms,
         backup_dir: preferences

@@ -177,6 +177,7 @@ class _SluglineAppState extends State<SluglineApp> {
         }
       case CoreEvent_SaveStateChanged():
       case CoreEvent_BackupWritten():
+      case CoreEvent_EntityIndexUpdated():
         _open?.status.refresh();
       case CoreEvent_AutosaveFailed(:final message):
         // Not a modal: an autosave is not something the writer asked for. The
@@ -196,7 +197,9 @@ class _SluglineAppState extends State<SluglineApp> {
   void _say(String message) {
     final context = _navigator.currentContext;
     if (context == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

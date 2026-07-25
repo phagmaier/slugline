@@ -934,33 +934,33 @@ Requirement §7.
 
 ### Index
 
-- [ ] Incrementally maintained index of: characters, scene locations, INT/EXT prefixes,
+- [x] Incrementally maintained index of: characters, scene locations, INT/EXT prefixes,
       times of day, transitions
-- [ ] Rebuilt incrementally on edit — never a full document scan on the hot path
-- [ ] Character extension normalisation: `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`,
+- [x] Rebuilt incrementally on edit — never a full document scan on the hot path
+- [x] Character extension normalisation: `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`,
       `(SUBTITLE)` stripped for the index key, retained for display
-- [ ] Entities that no longer appear drop out of normal suggestions
-- [ ] Pinned entities persist regardless of occurrence count (stored per-script, in the
+- [x] Entities that no longer appear drop out of normal suggestions
+- [x] Pinned entities persist regardless of occurrence count (stored per-script, in the
       library index — **not** written into the `.fountain` file)
 
 ### Completion
 
-- [ ] Character suggestions in Character-position blocks
-- [ ] Location suggestions after `INT. ` / `EXT. `
-- [ ] Time-of-day suggestions after ` - `
-- [ ] Standard scene-heading component suggestions (DAY, NIGHT, CONTINUOUS, LATER, …)
-- [ ] Transition suggestions
-- [ ] Ranking: exact prefix > frequency > recency. Deterministic, unit-tested with a fixed
+- [x] Character suggestions in Character-position blocks
+- [x] Location suggestions after `INT. ` / `EXT. `
+- [x] Time-of-day suggestions after ` - `
+- [x] Standard scene-heading component suggestions (DAY, NIGHT, CONTINUOUS, LATER, …)
+- [x] Transition suggestions
+- [x] Ranking: exact prefix > frequency > recency. Deterministic, unit-tested with a fixed
       corpus.
-- [ ] **Nothing is ever inserted without an explicit keypress** (Tab or Enter on a
+- [x] **Nothing is ever inserted without an explicit keypress** (Tab or Enter on a
       highlighted item). No inline ghost-text auto-acceptance. This is a hard requirement.
-- [ ] `Escape` dismisses; a preference disables autocomplete entirely
-- [ ] Dismissing a specific suggestion suppresses it for the session
+- [x] `Escape` dismisses; a preference disables autocomplete entirely
+- [x] Dismissing a specific suggestion suppresses it for the session
 
 ### Exit criteria
 
-- [ ] Completion latency < 5 ms at p99 on a script with 60 characters and 200 locations
-- [ ] A test proves no code path inserts completion text without a user keystroke
+- [x] Completion latency < 5 ms at p99 on a script with 60 characters and 200 locations
+- [x] A test proves no code path inserts completion text without a user keystroke
 
 ---
 

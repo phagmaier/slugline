@@ -19,7 +19,10 @@ import 'package:slugline/editor/line_layout.dart';
 class EditorController extends ChangeNotifier {
   EditorController(this.core) {
     _blocks.addAll(core.blocks(0, core.blockCount));
-    assert(_blocks.isNotEmpty, 'a document always has somewhere to put the caret');
+    assert(
+      _blocks.isNotEmpty,
+      'a document always has somewhere to put the caret',
+    );
     _blocksView = UnmodifiableListView(_blocks);
     _layout = DocumentLayout(_blocks);
     _reindexIds();
@@ -28,6 +31,7 @@ class EditorController extends ChangeNotifier {
       anchor: DocPosition(block: first.id, offsetUtf16: 0),
       focus: DocPosition(block: first.id, offsetUtf16: 0),
     );
+    _refreshCompletions();
   }
 
   final DocumentCore core;
@@ -58,6 +62,15 @@ class EditorController extends ChangeNotifier {
   DocumentLayout get layout => _layout;
   DocSelection get selection => _selection;
   bool get hasSelection => _selection.anchor != _selection.focus;
+
+  List<Completion> _completions = const [];
+  final Set<String> _suppressedCompletions = {};
+  int _completionIndex = 0;
+
+  List<Completion> get completions => _completions;
+  int get completionIndex => _completionIndex;
+  Completion? get highlightedCompletion =>
+      _completions.isEmpty ? null : _completions[_completionIndex];
 
   BlockView get focusedBlock => _blocks[_indexOf(_selection.focus.block)];
 
@@ -121,18 +134,23 @@ class EditorController extends ChangeNotifier {
   /// The selection, in document order.
   (DocPosition, DocPosition) get orderedSelection =>
       comparePositions(_selection.anchor, _selection.focus) <= 0
-          ? (_selection.anchor, _selection.focus)
-          : (_selection.focus, _selection.anchor);
+      ? (_selection.anchor, _selection.focus)
+      : (_selection.focus, _selection.anchor);
 
   // --- selection -----------------------------------------------------------
 
   void setSelection(DocSelection selection, {bool keepStickyColumn = false}) {
     if (!keepStickyColumn) _stickyColumn = null;
     _selection = selection;
+    _refreshCompletions();
     notifyListeners();
   }
 
-  void _moveTo(DocPosition position, {required bool extend, bool sticky = false}) {
+  void _moveTo(
+    DocPosition position, {
+    required bool extend,
+    bool sticky = false,
+  }) {
     if (!sticky) _stickyColumn = null;
     _selection = DocSelection(
       anchor: extend ? _selection.anchor : position,
@@ -148,15 +166,19 @@ class EditorController extends ChangeNotifier {
   /// it must not be a deletion however tempting the key is.
   void collapseSelection() {
     if (!hasSelection) return;
-    setSelection(DocSelection(anchor: _selection.focus, focus: _selection.focus));
+    setSelection(
+      DocSelection(anchor: _selection.focus, focus: _selection.focus),
+    );
   }
 
   void selectAll() {
     final last = _blocks.last;
-    setSelection(DocSelection(
-      anchor: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
-      focus: DocPosition(block: last.id, offsetUtf16: last.text.length),
-    ));
+    setSelection(
+      DocSelection(
+        anchor: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
+        focus: DocPosition(block: last.id, offsetUtf16: last.text.length),
+      ),
+    );
   }
 
   // --- navigation ----------------------------------------------------------
@@ -255,9 +277,11 @@ class EditorController extends ChangeNotifier {
   void moveVertical(int rows, {bool extend = false}) {
     final index = _indexOf(_selection.focus.block);
     final lineIndex = _layout.lineIndexAt(index, _selection.focus.offsetUtf16);
-    final column = _stickyColumn ??
+    final column =
+        _stickyColumn ??
         _layout.columnOf(index, lineIndex) +
-            (_selection.focus.offsetUtf16 - _layout.linesOf(index)[lineIndex].start);
+            (_selection.focus.offsetUtf16 -
+                _layout.linesOf(index)[lineIndex].start);
 
     var block = index;
     var line = lineIndex + rows;
@@ -298,10 +322,7 @@ class EditorController extends ChangeNotifier {
   void moveToDocumentEdge({required bool start, bool extend = false}) {
     final block = start ? _blocks.first : _blocks.last;
     _moveTo(
-      DocPosition(
-        block: block.id,
-        offsetUtf16: start ? 0 : block.text.length,
-      ),
+      DocPosition(block: block.id, offsetUtf16: start ? 0 : block.text.length),
       extend: extend,
     );
   }
@@ -321,32 +342,40 @@ class EditorController extends ChangeNotifier {
     final text = _blocks[block].text;
     // Both ends of the same word, so a click in the middle of one selects it
     // rather than reaching into the space beside it.
-    final start = _isWordCharacter(text.codeUnitAt(at.clamp(0, text.length - 1)))
+    final start =
+        _isWordCharacter(text.codeUnitAt(at.clamp(0, text.length - 1)))
         ? wordStartBefore(text, at + 1)
         : at;
-    setSelection(DocSelection(
-      anchor: DocPosition(block: _blocks[block].id, offsetUtf16: start),
-      focus: DocPosition(
-        block: _blocks[block].id,
-        offsetUtf16: wordEndAfter(text, start),
+    setSelection(
+      DocSelection(
+        anchor: DocPosition(block: _blocks[block].id, offsetUtf16: start),
+        focus: DocPosition(
+          block: _blocks[block].id,
+          offsetUtf16: wordEndAfter(text, start),
+        ),
       ),
-    ));
+    );
   }
 
   /// A triple-click: the whole element.
   void selectBlockAt(int row, int column) {
     final index = _layout.blockAtRow(row);
     final block = _blocks[index];
-    setSelection(DocSelection(
-      anchor: DocPosition(block: block.id, offsetUtf16: 0),
-      focus: DocPosition(block: block.id, offsetUtf16: block.text.length),
-    ));
+    setSelection(
+      DocSelection(
+        anchor: DocPosition(block: block.id, offsetUtf16: 0),
+        focus: DocPosition(block: block.id, offsetUtf16: block.text.length),
+      ),
+    );
   }
 
   /// The offset in [blockIndex] a grid point lands on.
   int _pointIn(int blockIndex, int row, int column) {
     final lines = _layout.linesOf(blockIndex);
-    final line = (row - _layout.firstRowOf(blockIndex)).clamp(0, lines.length - 1);
+    final line = (row - _layout.firstRowOf(blockIndex)).clamp(
+      0,
+      lines.length - 1,
+    );
     return _positionAt(blockIndex, line, column).offsetUtf16;
   }
 
@@ -391,6 +420,53 @@ class EditorController extends ChangeNotifier {
   /// a screenplay question (§2.1). The table is in `document/src/workflow.rs`
   /// and written out in `docs/KEYMAP.md`.
   void splitBlock() => _outcome(core.enter(_selection));
+
+  /// Commits the highlighted item. This is deliberately the only completion
+  /// method that writes text, and is called only from Tab/Enter key handling.
+  bool acceptCompletion() {
+    final candidate = highlightedCompletion;
+    if (candidate == null || hasSelection) return false;
+    _apply(
+      EditCommand.replaceText(
+        block: _selection.focus.block,
+        startUtf16: candidate.startUtf16,
+        endUtf16: candidate.endUtf16,
+        with_: candidate.value,
+      ),
+    );
+    dismissCompletions();
+    return true;
+  }
+
+  void moveCompletion(int delta) {
+    if (_completions.isEmpty) return;
+    _completionIndex = (_completionIndex + delta) % _completions.length;
+    if (_completionIndex < 0) _completionIndex += _completions.length;
+    notifyListeners();
+  }
+
+  void toggleCompletionPin(Completion candidate) {
+    if (!core.setEntityPinned(
+      candidate.kind,
+      candidate.value,
+      !candidate.pinned,
+    )) {
+      return;
+    }
+    _refreshCompletions();
+    notifyListeners();
+  }
+
+  void dismissCompletions({bool suppressHighlighted = false}) {
+    if (suppressHighlighted) {
+      final candidate = highlightedCompletion;
+      if (candidate != null) _suppressedCompletions.add(candidate.value);
+    }
+    if (_completions.isEmpty) return;
+    _completions = const [];
+    _completionIndex = 0;
+    notifyListeners();
+  }
 
   /// Backspace.
   void deleteBackward() {
@@ -511,7 +587,8 @@ class EditorController extends ChangeNotifier {
 
   /// A character cue the script already has whose name the caret's block
   /// matches. Shown as a hint; only Tab acts on it.
-  String? get characterSuggestion => core.characterSuggestion(_selection.focus.block);
+  String? get characterSuggestion =>
+      core.characterSuggestion(_selection.focus.block);
 
   /// Puts the caret back where it was after an edit that changed no text.
   ///
@@ -630,10 +707,12 @@ class EditorController extends ChangeNotifier {
 
   void _selectMatch() {
     final match = _matches[_matchIndex];
-    setSelection(DocSelection(
-      anchor: DocPosition(block: match.block, offsetUtf16: match.startUtf16),
-      focus: DocPosition(block: match.block, offsetUtf16: match.endUtf16),
-    ));
+    setSelection(
+      DocSelection(
+        anchor: DocPosition(block: match.block, offsetUtf16: match.startUtf16),
+        focus: DocPosition(block: match.block, offsetUtf16: match.endUtf16),
+      ),
+    );
   }
 
   /// Replaces the match the caret is on and moves to the next one.
@@ -659,7 +738,9 @@ class EditorController extends ChangeNotifier {
     // Forwards from where the replacement left the caret, so replacing a word
     // with something containing it does not loop on itself.
     final after = orderedSelection.$2;
-    final next = _matches.indexWhere((candidate) => _isAtOrAfter(candidate, after));
+    final next = _matches.indexWhere(
+      (candidate) => _isAtOrAfter(candidate, after),
+    );
     _matchIndex = next < 0 ? 0 : next;
     _selectMatch();
   }
@@ -709,11 +790,27 @@ class EditorController extends ChangeNotifier {
         _applyResult(result);
         // Every match offset is an offset into text the edit may have moved.
         refreshSearch();
+        _refreshCompletions();
       case EditOutcome_Rejected(:final reason):
         lastRejection = reason;
     }
     _stickyColumn = null;
     notifyListeners();
+  }
+
+  void _refreshCompletions() {
+    if (hasSelection) {
+      _completions = const [];
+      _completionIndex = 0;
+      return;
+    }
+    final focus = _selection.focus;
+    _completions = core.complete(
+      focus.block,
+      focus.offsetUtf16,
+      _suppressedCompletions.toList(growable: false),
+    );
+    if (_completionIndex >= _completions.length) _completionIndex = 0;
   }
 
   /// Applies a patch (§6): drop what went, update what changed, insert what

@@ -10,6 +10,7 @@ export 'package:slugline/src/rust/api/events.dart'
         CoreEvent,
         CoreEvent_AutosaveFailed,
         CoreEvent_BackupWritten,
+        CoreEvent_EntityIndexUpdated,
         CoreEvent_FileChangedOnDisk,
         CoreEvent_JournalBroken,
         CoreEvent_SaveStateChanged;

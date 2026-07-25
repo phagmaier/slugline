@@ -49,6 +49,16 @@ pub struct ScriptEntry {
     /// application last exited, and where the writer was in it.
     pub open: bool,
     pub scroll_row: u32,
+    /// §7 entities the writer chose to keep even with no occurrences. This is
+    /// per-script cache metadata and is never serialised into Fountain.
+    pub pinned_entities: Vec<PinnedEntity>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PinnedEntity {
+    pub kind: String,
+    pub value: String,
 }
 
 impl Default for ScriptEntry {
@@ -64,6 +74,7 @@ impl Default for ScriptEntry {
             last_opened_millis: 0,
             open: false,
             scroll_row: 0,
+            pinned_entities: Vec::new(),
         }
     }
 }
@@ -190,6 +201,12 @@ impl Library {
     pub fn set_scroll(&mut self, id: &str, scroll_row: u32) {
         if let Some(index) = self.position(id) {
             self.entries[index].scroll_row = scroll_row;
+        }
+    }
+
+    pub fn set_pinned(&mut self, id: &str, entities: Vec<PinnedEntity>) {
+        if let Some(index) = self.position(id) {
+            self.entries[index].pinned_entities = entities;
         }
     }
 
@@ -321,6 +338,13 @@ mod tests {
         let mut library = Library::default();
         let id = library.add(&heat);
         library.opened(&id);
+        library.set_pinned(
+            &id,
+            vec![PinnedEntity {
+                kind: "character".to_owned(),
+                value: "ALICE".to_owned(),
+            }],
+        );
         library.save(&path).unwrap();
 
         let reloaded = Library::load(&path);
@@ -330,6 +354,7 @@ mod tests {
         assert_eq!(entry.title, "heat");
         assert_eq!(entry.bytes, 17);
         assert!(entry.open);
+        assert_eq!(entry.pinned_entities[0].value, "ALICE");
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use slugline_document::{Document, Patch};
+use slugline_document::{BlockId, Document, EntityIndex, EntityKind, Patch};
 use slugline_storage::journal::Journal;
 use slugline_storage::library::Library;
 use slugline_storage::watch::FileWatcher;
@@ -129,6 +129,9 @@ pub struct Session {
     /// pushed from an edit, for one.
     handle: u64,
     document: Document,
+    /// §7's per-block index. Built once on open, then touched only for ids in
+    /// an edit patch.
+    entities: EntityIndex,
     /// When the last edit was applied, for the coalescing window above.
     last_edit: Option<Instant>,
     /// The file this document is. `None` for a script that has never been
@@ -150,9 +153,11 @@ pub struct Session {
 
 impl Session {
     fn new(handle: u64, document: Document) -> Session {
+        let entities = EntityIndex::build(&document);
         Session {
             handle,
             document,
+            entities,
             last_edit: None,
             path: None,
             id: None,
@@ -174,6 +179,30 @@ impl Session {
     /// mutate without being an edit — recovery replay, a reload from disk.
     pub fn document_mut(&mut self) -> &mut Document {
         &mut self.document
+    }
+
+    pub fn entities(&self) -> &EntityIndex {
+        &self.entities
+    }
+
+    pub fn entities_mut(&mut self) -> &mut EntityIndex {
+        &mut self.entities
+    }
+
+    pub fn refresh_entities(&mut self, ids: impl IntoIterator<Item = BlockId>) {
+        self.entities.update(ids, &self.document);
+    }
+
+    pub fn rebuild_entities(&mut self) {
+        let pins = self.entities.pinned();
+        self.entities = EntityIndex::build(&self.document);
+        self.load_pins(pins);
+    }
+
+    pub fn load_pins(&mut self, pins: impl IntoIterator<Item = (EntityKind, String)>) {
+        for (kind, value) in pins {
+            self.entities.pin(kind, &value);
+        }
     }
 
     pub fn path(&self) -> Option<&Path> {

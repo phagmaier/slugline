@@ -57,6 +57,10 @@ sealed class CoreEvent with _$CoreEvent {
     required String path,
   }) = CoreEvent_BackupWritten;
 
+  /// A successful edit changed the incrementally maintained §7 index.
+  const factory CoreEvent.entityIndexUpdated({required int handle}) =
+      CoreEvent_EntityIndexUpdated;
+
   /// The journal stopped working for this document. The writer keeps typing;
   /// what they lose is the cover between one autosave and the next.
   const factory CoreEvent.journalBroken({required int handle}) =

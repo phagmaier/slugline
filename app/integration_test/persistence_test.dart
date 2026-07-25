@@ -47,19 +47,25 @@ void main() {
 
   String path(String name) => '${scripts.path}/$name';
 
-  Future<EditorController> openEditor(WidgetTester tester, DocumentCore core) async {
+  Future<EditorController> openEditor(
+    WidgetTester tester,
+    DocumentCore core,
+  ) async {
     final controller = EditorController(core);
     addTearDown(controller.dispose);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: EditorSurface(controller: controller)),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: EditorSurface(controller: controller)),
+      ),
+    );
     await tester.tap(find.byType(EditorSurface));
     await tester.pump();
     return controller;
   }
 
-  testWidgets('a new script is a real file, and typing into it saves',
-      (tester) async {
+  testWidgets('a new script is a real file, and typing into it saves', (
+    tester,
+  ) async {
     final file = path('new.fountain');
     final handle = await files.libraryCreate(path: file);
     expect(handle, isNotNull, reason: 'create writes the file immediately');
@@ -79,8 +85,9 @@ void main() {
     expect(File(file).readAsStringSync(), contains('INT. HOUSE - DAY'));
   });
 
-  testWidgets('a save writes atomically and leaves no temp file behind',
-      (tester) async {
+  testWidgets('a save writes atomically and leaves no temp file behind', (
+    tester,
+  ) async {
     final file = path('atomic.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final handle = await files.libraryOpen(path: file);
@@ -97,11 +104,16 @@ void main() {
         .map((entry) => entry.path)
         .where((name) => name.contains('.tmp-'))
         .toList();
-    expect(leftovers, isEmpty, reason: 'the temp file is renamed, never orphaned');
+    expect(
+      leftovers,
+      isEmpty,
+      reason: 'the temp file is renamed, never orphaned',
+    );
   });
 
-  testWidgets('what was typed comes back when the file is opened again',
-      (tester) async {
+  testWidgets('what was typed comes back when the file is opened again', (
+    tester,
+  ) async {
     final file = path('roundtrip.fountain');
     final created = await files.libraryCreate(path: file);
     final core = RustDocumentCore.of(created!);
@@ -126,28 +138,38 @@ void main() {
     );
   });
 
-  testWidgets('a read-only file is refused with the reason, and stays as it was',
-      (tester) async {
-    final file = path('readonly.fountain');
-    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
-    final handle = await files.libraryOpen(path: file);
-    final core = RustDocumentCore.of(handle!);
-    addTearDown(core.close);
+  testWidgets(
+    'a read-only file is refused with the reason, and stays as it was',
+    (tester) async {
+      final file = path('readonly.fountain');
+      File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+      final handle = await files.libraryOpen(path: file);
+      final core = RustDocumentCore.of(handle!);
+      addTearDown(core.close);
 
-    final controller = await openEditor(tester, core);
-    controller.insertText('X');
-    await tester.pump();
+      final controller = await openEditor(tester, core);
+      controller.insertText('X');
+      await tester.pump();
 
-    await Process.run('chmod', ['444', file]);
-    final outcome = await core.save();
-    expect(outcome, isA<SaveOutcome_Failed>());
-    expect((outcome as SaveOutcome_Failed).failure, SaveFailure.readOnly);
-    expect(outcome.path, file, reason: 'the path the writer chose, not the temp one');
-    expect(File(file).readAsStringSync(), 'INT. HOUSE - DAY\n');
-    expect(core.dirty, isTrue, reason: 'nothing was written, so nothing is saved');
+      await Process.run('chmod', ['444', file]);
+      final outcome = await core.save();
+      expect(outcome, isA<SaveOutcome_Failed>());
+      expect((outcome as SaveOutcome_Failed).failure, SaveFailure.readOnly);
+      expect(
+        outcome.path,
+        file,
+        reason: 'the path the writer chose, not the temp one',
+      );
+      expect(File(file).readAsStringSync(), 'INT. HOUSE - DAY\n');
+      expect(
+        core.dirty,
+        isTrue,
+        reason: 'nothing was written, so nothing is saved',
+      );
 
-    await Process.run('chmod', ['644', file]);
-  });
+      await Process.run('chmod', ['644', file]);
+    },
+  );
 
   testWidgets('a save leaves a backup that can be restored', (tester) async {
     final file = path('backups.fountain');
@@ -177,12 +199,14 @@ void main() {
     expect(
       (await core.backups()).length,
       greaterThan(before),
-      reason: '§Phase 4: restoring writes the current state to a new backup first',
+      reason:
+          '§Phase 4: restoring writes the current state to a new backup first',
     );
   });
 
-  testWidgets('the journal grows with typing and is cleared by a save',
-      (tester) async {
+  testWidgets('the journal grows with typing and is cleared by a save', (
+    tester,
+  ) async {
     final file = path('journal.fountain');
     final created = await files.libraryCreate(path: file);
     final core = RustDocumentCore.of(created!);
@@ -205,52 +229,57 @@ void main() {
     expect(core.journalState.$1, 0, reason: 'the file holds it all now');
   });
 
-  testWidgets('a file changed on disk is noticed, with the two facts that decide',
-      (tester) async {
-    final file = path('external.fountain');
-    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
-    final handle = await files.libraryOpen(path: file);
-    final core = RustDocumentCore.of(handle!);
-    addTearDown(core.close);
-    await openEditor(tester, core);
+  testWidgets(
+    'a file changed on disk is noticed, with the two facts that decide',
+    (tester) async {
+      final file = path('external.fountain');
+      File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+      final handle = await files.libraryOpen(path: file);
+      final core = RustDocumentCore.of(handle!);
+      addTearDown(core.close);
+      await openEditor(tester, core);
 
-    expect(core.externalChange(), (false, false), reason: 'in step');
+      expect(core.externalChange(), (false, false), reason: 'in step');
 
-    File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
-    expect(
-      core.externalChange(),
-      (false, true),
-      reason: 'unmodified here and different there — reload silently',
-    );
+      File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
+      expect(
+        core.externalChange(),
+        (false, true),
+        reason: 'unmodified here and different there — reload silently',
+      );
 
-    await core.reload();
-    expect(core.source(), 'EXT. STREET - NIGHT\n');
-    expect(core.externalChange(), (false, false));
-  });
+      await core.reload();
+      expect(core.source(), 'EXT. STREET - NIGHT\n');
+      expect(core.externalChange(), (false, false));
+    },
+  );
 
-  testWidgets('the library lists what has been opened, and remembers a session',
-      (tester) async {
-    final file = path('library.fountain');
-    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
-    final handle = await files.libraryOpen(path: file);
-    final core = RustDocumentCore.of(handle!);
+  testWidgets(
+    'the library lists what has been opened, and remembers a session',
+    (tester) async {
+      final file = path('library.fountain');
+      File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+      final handle = await files.libraryOpen(path: file);
+      final core = RustDocumentCore.of(handle!);
 
-    final listed = await Core.instance.library();
-    final entry = listed.firstWhere((script) => script.path == file);
-    expect(entry.title, 'library');
-    expect(entry.missing, isFalse);
-    expect(entry.bytes, 17);
-    expect(entry.open, isTrue);
+      final listed = await Core.instance.library();
+      final entry = listed.firstWhere((script) => script.path == file);
+      expect(entry.title, 'library');
+      expect(entry.missing, isFalse);
+      expect(entry.bytes, 17);
+      expect(entry.open, isTrue);
 
-    core.setScrollRow(42);
-    final session = await Core.instance.sessionToRestore();
-    final restored = session.firstWhere((script) => script.path == file);
-    expect(restored.scrollRow, 42);
-    core.close();
-  });
+      core.setScrollRow(42);
+      final session = await Core.instance.sessionToRestore();
+      final restored = session.firstWhere((script) => script.path == file);
+      expect(restored.scrollRow, 42);
+      core.close();
+    },
+  );
 
-  testWidgets('a script whose file has gone is shown as missing, not dropped',
-      (tester) async {
+  testWidgets('a script whose file has gone is shown as missing, not dropped', (
+    tester,
+  ) async {
     final file = path('vanishing.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final handle = await files.libraryOpen(path: file);
@@ -262,8 +291,9 @@ void main() {
     expect(entry.missing, isTrue);
   });
 
-  testWidgets('the library index is a cache: deleting it costs only the list',
-      (tester) async {
+  testWidgets('the library index is a cache: deleting it costs only the list', (
+    tester,
+  ) async {
     final index = File('${root.path}/data/library.json');
     expect(index.existsSync(), isTrue);
     final file = path('cache.fountain');
@@ -286,18 +316,24 @@ void main() {
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final first = await files.libraryOpen(path: file);
     final second = await files.libraryOpen(path: file);
-    expect(first!.id, second!.id, reason: 'two undo histories over one file is a race');
+    expect(
+      first!.id,
+      second!.id,
+      reason: 'two undo histories over one file is a race',
+    );
     RustDocumentCore.of(first).close();
   });
 
-  testWidgets('preferences round-trip through the config directory',
-      (tester) async {
+  testWidgets('preferences round-trip through the config directory', (
+    tester,
+  ) async {
     final defaults = Core.instance.preferences();
     expect(defaults.autosaveIdleMs, 2000);
     expect(defaults.autosaveIntervalMs, 30000);
 
     final changed = PreferencesView(
       autosaveEnabled: true,
+      autocompleteEnabled: false,
       autosaveIdleMs: 750,
       autosaveIntervalMs: 15000,
       backupDir: null,

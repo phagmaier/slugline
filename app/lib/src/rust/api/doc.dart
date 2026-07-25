@@ -8,8 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `enter`, `inferring`, `journal`, `kind_view`, `match_view`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome`, `paste`, `plain_blocks`, `position_view`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome`, `paste`, `plain_blocks`, `position_view`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
 ///
@@ -95,6 +95,34 @@ String? docCharacterSuggestion({
 }) => RustLib.instance.api.crateApiDocDocCharacterSuggestion(
   handle: handle,
   block: block,
+);
+
+/// Ranked completions at a caret. This function is read-only: accepting a
+/// candidate is a separate `doc_apply` call made only by Tab or Enter in Dart.
+List<Completion> docComplete({
+  required DocumentHandle handle,
+  required int block,
+  required int offsetUtf16,
+  required List<String> suppressed,
+}) => RustLib.instance.api.crateApiDocDocComplete(
+  handle: handle,
+  block: block,
+  offsetUtf16: offsetUtf16,
+  suppressed: suppressed,
+);
+
+/// Pins or unpins a candidate in the script's library entry. Unsaved scripts
+/// keep the pin for this session and gain persistence once they have an entry.
+bool docSetEntityPinned({
+  required DocumentHandle handle,
+  required CompletionKind kind,
+  required String value,
+  required bool pinned,
+}) => RustLib.instance.api.crateApiDocDocSetEntityPinned(
+  handle: handle,
+  kind: kind,
+  value: value,
+  pinned: pinned,
 );
 
 /// Applies one command.
@@ -251,6 +279,48 @@ class BlockView {
           dual == other.dual &&
           readOnly == other.readOnly;
 }
+
+/// One ranked §7 candidate and the exact range an explicit acceptance replaces.
+class Completion {
+  final CompletionKind kind;
+  final String value;
+  final int startUtf16;
+  final int endUtf16;
+  final int frequency;
+  final bool pinned;
+
+  const Completion({
+    required this.kind,
+    required this.value,
+    required this.startUtf16,
+    required this.endUtf16,
+    required this.frequency,
+    required this.pinned,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      value.hashCode ^
+      startUtf16.hashCode ^
+      endUtf16.hashCode ^
+      frequency.hashCode ^
+      pinned.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Completion &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          value == other.value &&
+          startUtf16 == other.startUtf16 &&
+          endUtf16 == other.endUtf16 &&
+          frequency == other.frequency &&
+          pinned == other.pinned;
+}
+
+enum CompletionKind { character, location, scenePrefix, timeOfDay, transition }
 
 /// A caret position, in document coordinates (§3.3).
 class DocPosition {

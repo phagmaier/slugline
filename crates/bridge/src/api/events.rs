@@ -20,9 +20,7 @@ use crate::frb_generated::StreamSink;
 
 /// What the core tells Dart about, unasked.
 ///
-/// §6 lists six variants. Three of them — `PaginationReady`, `EntityIndexUpdated`
-/// — belong to phases that have not happened, and §1.4 forbids scaffolding for
-/// them, so they arrive with the code that emits them.
+/// §6 lists these variants phase by phase.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreEvent {
     /// A document became clean, or dirty. The title bar's asterisk.
@@ -41,6 +39,8 @@ pub enum CoreEvent {
     FileChangedOnDisk { path: String },
     /// A rolling backup was written.
     BackupWritten { handle: u64, path: String },
+    /// A successful edit changed the incrementally maintained §7 index.
+    EntityIndexUpdated { handle: u64 },
     /// The journal stopped working for this document. The writer keeps typing;
     /// what they lose is the cover between one autosave and the next.
     JournalBroken { handle: u64 },

@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `failed`, `failure_of`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
+// These functions are ignored because they are not marked as `pub`: `failed`, `failure_of`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Plan`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -216,6 +216,7 @@ class BackupView {
 /// §6's `Preferences`, as far as Phase 4 defines them.
 class PreferencesView {
   final bool autosaveEnabled;
+  final bool autocompleteEnabled;
   final int autosaveIdleMs;
   final int autosaveIntervalMs;
   final String? backupDir;
@@ -224,6 +225,7 @@ class PreferencesView {
 
   const PreferencesView({
     required this.autosaveEnabled,
+    required this.autocompleteEnabled,
     required this.autosaveIdleMs,
     required this.autosaveIntervalMs,
     this.backupDir,
@@ -234,6 +236,7 @@ class PreferencesView {
   @override
   int get hashCode =>
       autosaveEnabled.hashCode ^
+      autocompleteEnabled.hashCode ^
       autosaveIdleMs.hashCode ^
       autosaveIntervalMs.hashCode ^
       backupDir.hashCode ^
@@ -246,6 +249,7 @@ class PreferencesView {
       other is PreferencesView &&
           runtimeType == other.runtimeType &&
           autosaveEnabled == other.autosaveEnabled &&
+          autocompleteEnabled == other.autocompleteEnabled &&
           autosaveIdleMs == other.autosaveIdleMs &&
           autosaveIntervalMs == other.autosaveIntervalMs &&
           backupDir == other.backupDir &&

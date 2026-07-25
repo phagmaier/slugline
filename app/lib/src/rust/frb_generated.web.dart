@@ -90,6 +90,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScriptView dco_decode_box_autoadd_script_view(dynamic raw);
 
   @protected
+  Completion dco_decode_completion(dynamic raw);
+
+  @protected
+  CompletionKind dco_decode_completion_kind(dynamic raw);
+
+  @protected
   CoreEvent dco_decode_core_event(dynamic raw);
 
   @protected
@@ -145,6 +151,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BlockView> dco_decode_list_block_view(dynamic raw);
+
+  @protected
+  List<Completion> dco_decode_list_completion(dynamic raw);
 
   @protected
   List<CrateInfo> dco_decode_list_crate_info(dynamic raw);
@@ -318,6 +327,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScriptView sse_decode_box_autoadd_script_view(SseDeserializer deserializer);
 
   @protected
+  Completion sse_decode_completion(SseDeserializer deserializer);
+
+  @protected
+  CompletionKind sse_decode_completion_kind(SseDeserializer deserializer);
+
+  @protected
   CoreEvent sse_decode_core_event(SseDeserializer deserializer);
 
   @protected
@@ -373,6 +388,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BlockView> sse_decode_list_block_view(SseDeserializer deserializer);
+
+  @protected
+  List<Completion> sse_decode_list_completion(SseDeserializer deserializer);
 
   @protected
   List<CrateInfo> sse_decode_list_crate_info(SseDeserializer deserializer);
@@ -602,6 +620,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_completion(Completion self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_completion_kind(
+    CompletionKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_core_event(CoreEvent self, SseSerializer serializer);
 
   @protected
@@ -670,6 +697,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_block_view(
     List<BlockView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_completion(
+    List<Completion> self,
     SseSerializer serializer,
   );
 

@@ -77,7 +77,8 @@ const double _padding = 28.0;
 /// Columns across the printed text area: 1.5" to 7.5" at 10 characters per inch.
 const int _pageColumns = 60;
 
-class EditorSurfaceState extends State<EditorSurface> implements TextInputClient {
+class EditorSurfaceState extends State<EditorSurface>
+    implements TextInputClient {
   late final FocusNode _focusNode = widget.focusNode ?? FocusNode();
 
   /// Only a node we made is a node we may dispose.
@@ -175,7 +176,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
 
   void _reportScroll() {
     if (widget.onScrolled == null || !_scroll.hasClients) return;
-    final row = ((_scroll.offset - _padding) / _lineHeight).floor().clamp(0, 1 << 30);
+    final row = ((_scroll.offset - _padding) / _lineHeight).floor().clamp(
+      0,
+      1 << 30,
+    );
     if (row == _reportedRow) return;
     _reportedRow = row;
     widget.onScrolled!(row);
@@ -312,7 +316,8 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
   static (int, int, String) _diff(String before, String after) {
     var start = 0;
     final shortest = math.min(before.length, after.length);
-    while (start < shortest && before.codeUnitAt(start) == after.codeUnitAt(start)) {
+    while (start < shortest &&
+        before.codeUnitAt(start) == after.codeUnitAt(start)) {
       start++;
     }
     var tail = 0;
@@ -321,7 +326,11 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
             after.codeUnitAt(after.length - tail - 1)) {
       tail++;
     }
-    return (start, before.length - tail, after.substring(start, after.length - tail));
+    return (
+      start,
+      before.length - tail,
+      after.substring(start, after.length - tail),
+    );
   }
 
   @override
@@ -351,7 +360,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
   void showToolbar() {}
 
   @override
-  void didChangeInputControl(TextInputControl? old, TextInputControl? current) {}
+  void didChangeInputControl(
+    TextInputControl? old,
+    TextInputControl? current,
+  ) {}
 
   @override
   void performSelector(String selectorName) {}
@@ -376,6 +388,16 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     final control = keys.isControlPressed;
 
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.arrowUp when _controller.completions.isNotEmpty:
+        _controller.moveCompletion(-1);
+      case LogicalKeyboardKey.arrowDown when _controller.completions.isNotEmpty:
+        _controller.moveCompletion(1);
+      case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
+          when _controller.completions.isNotEmpty:
+        _controller.acceptCompletion();
+      case LogicalKeyboardKey.tab
+          when !shift && _controller.completions.isNotEmpty:
+        _controller.acceptCompletion();
       case LogicalKeyboardKey.arrowLeft when control:
         _controller.moveByWord(-1, extend: shift);
       case LogicalKeyboardKey.arrowRight when control:
@@ -444,6 +466,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
       // Escape changes nothing. It dismisses whatever is open, and when nothing
       // is, it collapses the selection — never a deletion, never a command.
       case LogicalKeyboardKey.escape:
+        if (_controller.completions.isNotEmpty) {
+          _controller.dismissCompletions(suppressHighlighted: true);
+          return KeyEventResult.handled;
+        }
         widget.onEscape?.call();
         _controller.collapseSelection();
       // The element shortcuts. `Ctrl+<digit>` sets the type and pins it, which
@@ -457,7 +483,8 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     return KeyEventResult.handled;
   }
 
-  int get _rowsPerPage => math.max(1, (_viewportHeight / _lineHeight).floor() - 2);
+  int get _rowsPerPage =>
+      math.max(1, (_viewportHeight / _lineHeight).floor() - 2);
 
   // --- pointer -------------------------------------------------------------
 
@@ -478,7 +505,8 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     final (row, column) = _gridAt(event.localPosition);
     final shift = HardwareKeyboard.instance.isShiftPressed;
 
-    final quick = event.timeStamp - _lastClickAt < _multiClickWindow &&
+    final quick =
+        event.timeStamp - _lastClickAt < _multiClickWindow &&
         (event.localPosition - _lastClickPosition).distance < _multiClickSlop;
     _clickCount = quick ? _clickCount + 1 : 1;
     _lastClickAt = event.timeStamp;
@@ -523,7 +551,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     };
     if (delta == 0) return;
     _scroll.jumpTo(
-      (_scroll.offset + delta).clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent)),
+      (_scroll.offset + delta).clamp(
+        0.0,
+        math.max(0.0, _scroll.position.maxScrollExtent),
+      ),
     );
   }
 
@@ -579,7 +610,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     final layout = _controller.layout;
     final blocks = _controller.blocks;
     final offset = _scroll.hasClients ? _scroll.offset : 0.0;
-    final firstRow = math.max(0, ((offset - _padding) / _lineHeight).floor() - 1);
+    final firstRow = math.max(
+      0,
+      ((offset - _padding) / _lineHeight).floor() - 1,
+    );
     final lastRow = math.min(
       layout.totalRows,
       ((offset + _viewportHeight - _padding) / _lineHeight).ceil() + 1,
@@ -588,7 +622,11 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
 
     final selection = _controller.selection;
     final nodes = <Widget>[];
-    for (var index = layout.blockAtRow(firstRow); index < blocks.length; index++) {
+    for (
+      var index = layout.blockAtRow(firstRow);
+      index < blocks.length;
+      index++
+    ) {
       if (layout.firstRowOf(index) > lastRow) break;
       final block = blocks[index];
       final focused = block.id == selection.focus.block;
@@ -598,7 +636,10 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
           left: _pageLeft,
           top: _padding + layout.firstRowOf(index) * _lineHeight,
           width: _pageColumns * _advance,
-          height: math.max(_lineHeight, layout.linesOf(index).length * _lineHeight),
+          height: math.max(
+            _lineHeight,
+            layout.linesOf(index).length * _lineHeight,
+          ),
           child: ScriptBlockSemantics(
             key: ValueKey(block.id),
             label: kindLabel(block.kind, block.sectionLevel),
@@ -614,8 +655,14 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
             onFocusRequested: () => _placeCaretIn(block),
             onSetSelection: (value) => _controller.setSelection(
               DocSelection(
-                anchor: DocPosition(block: block.id, offsetUtf16: value.baseOffset),
-                focus: DocPosition(block: block.id, offsetUtf16: value.extentOffset),
+                anchor: DocPosition(
+                  block: block.id,
+                  offsetUtf16: value.baseOffset,
+                ),
+                focus: DocPosition(
+                  block: block.id,
+                  offsetUtf16: value.extentOffset,
+                ),
               ),
             ),
             onSetText: (text) => _replaceBlockText(block, text),
@@ -710,6 +757,14 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
                         ),
                       ),
                       ..._blockSemantics(),
+                      if (_controller.completions.isNotEmpty)
+                        Positioned(
+                          left: _pageLeft,
+                          top:
+                              _padding +
+                              (_controller.caretRow + 1) * _lineHeight,
+                          child: _CompletionPopup(controller: _controller),
+                        ),
                     ],
                   ),
                 ),
@@ -718,6 +773,74 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
           ),
         );
       },
+    );
+  }
+}
+
+class _CompletionPopup extends StatelessWidget {
+  const _CompletionPopup({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final colours = Theme.of(context).colorScheme;
+    return Material(
+      key: const ValueKey('completion-popup'),
+      elevation: 6,
+      color: colours.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(4),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (index, candidate)
+                in controller.completions.take(8).indexed)
+              Container(
+                key: ValueKey('completion-${candidate.value}'),
+                color: index == controller.completionIndex
+                    ? colours.primaryContainer
+                    : null,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        candidate.value,
+                        style: _textStyle.copyWith(
+                          color: index == controller.completionIndex
+                              ? colours.onPrimaryContainer
+                              : colours.onSurface,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: ValueKey('pin-${candidate.value}'),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: candidate.pinned
+                          ? 'Unpin suggestion'
+                          : 'Pin suggestion',
+                      onPressed: () =>
+                          controller.toggleCompletionPin(candidate),
+                      icon: Icon(
+                        candidate.pinned
+                            ? Icons.push_pin
+                            : Icons.push_pin_outlined,
+                        size: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -781,10 +904,15 @@ class _SurfacePainter extends CustomPainter {
     final layout = controller.layout;
     final blocks = controller.blocks;
     final offset = scroll.hasClients ? scroll.offset : 0.0;
-    final viewport = scroll.hasClients ? scroll.position.viewportDimension : size.height;
+    final viewport = scroll.hasClients
+        ? scroll.position.viewportDimension
+        : size.height;
 
     // The whole performance story: the band, not the document.
-    final firstRow = math.max(0, ((offset - _padding) / _lineHeight).floor() - 1);
+    final firstRow = math.max(
+      0,
+      ((offset - _padding) / _lineHeight).floor() - 1,
+    );
     final lastRow = math.min(
       layout.totalRows,
       ((offset + viewport - _padding) / _lineHeight).ceil() + 1,
@@ -801,7 +929,11 @@ class _SurfacePainter extends CustomPainter {
       ..color = colours.rule
       ..strokeWidth = 1.0;
 
-    for (var index = layout.blockAtRow(firstRow); index < blocks.length; index++) {
+    for (
+      var index = layout.blockAtRow(firstRow);
+      index < blocks.length;
+      index++
+    ) {
       if (layout.firstRowOf(index) > lastRow) break;
       final block = blocks[index];
       final lines = layout.linesOf(index);
@@ -826,8 +958,19 @@ class _SurfacePainter extends CustomPainter {
         final y = _padding + row * _lineHeight;
 
         if (hasSelection) {
-          _paintSelection(canvas, selectionPaint, index, i, line, x, y,
-              fromIndex, from, toIndex, to);
+          _paintSelection(
+            canvas,
+            selectionPaint,
+            index,
+            i,
+            line,
+            x,
+            y,
+            fromIndex,
+            from,
+            toIndex,
+            to,
+          );
         }
 
         if (line.length > 0) {
@@ -836,15 +979,15 @@ class _SurfacePainter extends CustomPainter {
             block.text.substring(line.start, line.end),
           );
           TextPainter(
-            text: TextSpan(
-              text: text,
-              style: _textStyle.copyWith(
-                color: _isMuted(block.kind) ? colours.dim : colours.text,
-                fontStyle: _isMuted(block.kind) ? FontStyle.italic : null,
+              text: TextSpan(
+                text: text,
+                style: _textStyle.copyWith(
+                  color: _isMuted(block.kind) ? colours.dim : colours.text,
+                  fontStyle: _isMuted(block.kind) ? FontStyle.italic : null,
+                ),
               ),
-            ),
-            textDirection: TextDirection.ltr,
-          )
+              textDirection: TextDirection.ltr,
+            )
             ..layout()
             ..paint(canvas, Offset(x, y + (_lineHeight - _fontSize) / 2));
         }
@@ -861,13 +1004,12 @@ class _SurfacePainter extends CustomPainter {
   /// Sections, synopses, notes and boneyard never reach the page (§5.2). Showing
   /// them dimmed says so without hiding them.
   bool _isMuted(BlockKind kind) => switch (kind) {
-        BlockKind.section ||
-        BlockKind.synopsis ||
-        BlockKind.note ||
-        BlockKind.opaque =>
-          true,
-        _ => false,
-      };
+    BlockKind.section ||
+    BlockKind.synopsis ||
+    BlockKind.note ||
+    BlockKind.opaque => true,
+    _ => false,
+  };
 
   void _paintSelection(
     Canvas canvas,
@@ -886,8 +1028,9 @@ class _SurfacePainter extends CustomPainter {
     final startOffset = index == fromIndex
         ? math.max(from.offsetUtf16, line.start)
         : line.start;
-    final endOffset =
-        index == toIndex ? math.min(to.offsetUtf16, line.end) : line.end;
+    final endOffset = index == toIndex
+        ? math.min(to.offsetUtf16, line.end)
+        : line.end;
     if (endOffset < startOffset) return;
     // An empty line inside the selection still shows a sliver, so that a
     // selection over a blank block is visible at all.
@@ -897,13 +1040,22 @@ class _SurfacePainter extends CustomPainter {
     );
     if (width <= 0) return;
     canvas.drawRect(
-      Rect.fromLTWH(x + (startOffset - line.start) * advance, y, width, _lineHeight),
+      Rect.fromLTWH(
+        x + (startOffset - line.start) * advance,
+        y,
+        width,
+        _lineHeight,
+      ),
       paint,
     );
   }
 
   void _paintComposingUnderline(
-      Canvas canvas, VisualLine line, int column, double y) {
+    Canvas canvas,
+    VisualLine line,
+    int column,
+    double y,
+  ) {
     final start = math.max(composing.start, line.start);
     final end = math.min(composing.end, line.end);
     if (end <= start) return;
@@ -920,11 +1072,14 @@ class _SurfacePainter extends CustomPainter {
   void _paintCaret(Canvas canvas) {
     final layout = controller.layout;
     final focus = controller.selection.focus;
-    final index = controller.blocks.indexWhere((block) => block.id == focus.block);
+    final index = controller.blocks.indexWhere(
+      (block) => block.id == focus.block,
+    );
     if (index < 0) return;
     final lineIndex = layout.lineIndexAt(index, focus.offsetUtf16);
     final line = layout.linesOf(index)[lineIndex];
-    final column = layout.columnOf(index, lineIndex) + (focus.offsetUtf16 - line.start);
+    final column =
+        layout.columnOf(index, lineIndex) + (focus.offsetUtf16 - line.start);
     // Static, not blinking. A blink is an animation loop and §1.3 asks for 0%
     // idle CPU.
     canvas.drawRect(

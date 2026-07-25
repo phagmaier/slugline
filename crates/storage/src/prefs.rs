@@ -36,6 +36,8 @@ pub struct Preferences {
     /// alternative to supporting it is their finding out that they cannot have
     /// it after losing a take.
     pub autosave_enabled: bool,
+    /// §7: the completion popup can be disabled without disabling entity data.
+    pub autocomplete_enabled: bool,
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
@@ -50,6 +52,7 @@ impl Default for Preferences {
             autosave_idle_ms: AUTOSAVE_IDLE_MS,
             autosave_interval_ms: AUTOSAVE_INTERVAL_MS,
             autosave_enabled: true,
+            autocomplete_enabled: true,
             backup_dir: None,
             backup_keep_versions: retention.keep_versions,
             backup_keep_days: retention.keep_days,
