@@ -347,6 +347,108 @@ class FakeCore implements DocumentCore {
     );
   }
 
+  // --- persistence (§Phase 4) ------------------------------------------------
+  //
+  // In memory, but with the same shape as the real thing: a save clears the
+  // dirty flag and can be made to fail, an autosave is quiet, and the journal
+  // count grows with edits and resets on save. That is enough to drive the
+  // autosave timers, the save-error dialogs and the status bar in a widget test
+  // — which is exactly the half of §Phase 4 that lives in Dart. The half that
+  // lives on disk is proved in `cargo test`, where the disk is (ADR 0011).
+
+  /// What the file on disk says, for the external-change tests.
+  String onDisk = '';
+
+  bool _dirty = false;
+  int _journalled = 0;
+
+  /// Set to make the next save fail, the way a full disk would.
+  SaveFailure? refuseSaveWith;
+
+  /// Marks the document saved without writing anything — what an undo back to
+  /// the last saved revision looks like from outside.
+  void markClean() {
+    _dirty = false;
+    _journalled = 0;
+  }
+
+  /// Every save the editor asked for, in order, as `(path, wasAutosave)`.
+  final List<(String, bool)> saves = [];
+
+  /// What a `library_open` would have handed back: the path this is a file for.
+  String? filePath;
+
+  /// The scroll row the editor last parked.
+  int scrollRow = 0;
+
+  @override
+  bool get dirty => _dirty;
+
+  @override
+  String? get path => filePath;
+
+  @override
+  (int, bool) get journalState => (_journalled, false);
+
+  @override
+  Future<SaveOutcome> save() async => _write(filePath, autosave: false);
+
+  @override
+  Future<SaveOutcome> saveAs(String path) async {
+    filePath = path;
+    return _write(path, autosave: false);
+  }
+
+  @override
+  Future<SaveOutcome> autosave() async {
+    if (!_dirty) return const SaveOutcome.unchanged();
+    return _write(filePath, autosave: true);
+  }
+
+  SaveOutcome _write(String? path, {required bool autosave}) {
+    if (path == null) {
+      return const SaveOutcome.failed(
+        failure: SaveFailure.noPath,
+        path: '',
+        message: 'this script has never been saved',
+      );
+    }
+    saves.add((path, autosave));
+    if (refuseSaveWith case final failure?) {
+      return SaveOutcome.failed(
+        failure: failure,
+        path: path,
+        message: 'refused for the test',
+      );
+    }
+    onDisk = source();
+    _dirty = false;
+    _journalled = 0;
+    return SaveOutcome.saved(path: path, bytes: onDisk.length, backup: null);
+  }
+
+  @override
+  (bool, bool)? externalChange() =>
+      filePath == null ? null : (_dirty, onDisk != source());
+
+  @override
+  Future<bool> reload() async {
+    if (filePath == null) return false;
+    _dirty = false;
+    _journalled = 0;
+    return true;
+  }
+
+  @override
+  Future<List<BackupView>> backups() async => const [];
+
+  @override
+  Future<SaveOutcome> restoreBackup(String backupPath) async =>
+      SaveOutcome.saved(path: filePath ?? '', bytes: 0, backup: null);
+
+  @override
+  void setScrollRow(int row) => scrollRow = row;
+
   EditOutcome _unchanged() => _applied(caret: null);
 
   EditResult _restore(List<BlockView> snapshot) {
@@ -382,8 +484,12 @@ class FakeCore implements DocumentCore {
     List<int> removed = const [],
     List<InsertedBlock> inserted = const [],
     required DocPosition? caret,
-  }) =>
-      EditOutcome.applied(
+  }) {
+    if (changed.isNotEmpty || removed.isNotEmpty || inserted.isNotEmpty) {
+      _dirty = true;
+      _journalled++;
+    }
+    return EditOutcome.applied(
         result: EditResult(
           changed: changed,
           removed: removed,
@@ -393,7 +499,8 @@ class FakeCore implements DocumentCore {
               : DocSelection(anchor: caret, focus: caret),
           blockCount: _blocks.length,
         ),
-      );
+    );
+  }
 
   BlockView _copy(BlockView block, {int? id, BlockKind? kind, String? text, bool? forced}) =>
       BlockView(

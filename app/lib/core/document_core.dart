@@ -1,4 +1,8 @@
 import 'package:slugline/src/rust/api/doc.dart' as rust;
+import 'package:slugline/src/rust/api/files.dart' as files;
+
+export 'package:slugline/src/rust/api/files.dart'
+    show BackupView, SaveFailure, SaveOutcome, SaveOutcome_Failed, SaveOutcome_Saved, SaveOutcome_Unchanged;
 
 export 'package:slugline/src/rust/api/doc.dart'
     show
@@ -83,6 +87,55 @@ abstract class DocumentCore {
   rust.EditResult? undo();
   rust.EditResult? redo();
 
+  // --- persistence (§Phase 4) ------------------------------------------------
+  //
+  // The editor asks the core to write the file; it never writes one itself. That
+  // is the same division as everything else here — Rust owns the document, and a
+  // file *is* the document — and it is what puts the atomic save, the journal
+  // and the backups all on one path with no way round them.
+
+  /// Whether there are edits the file does not have (§6's `doc_dirty`).
+  bool get dirty;
+
+  /// The file this document is, or null for one that has never been saved.
+  String? get path;
+
+  /// `(edits in the journal since the last save, whether the journal is
+  /// broken)`. The status bar shows both.
+  (int, bool) get journalState;
+
+  /// Writes the file. Never throws: a failure comes back as
+  /// [files.SaveOutcome_Failed] with the reason, because §Phase 4 wants
+  /// read-only, full-disk and permission-denied each handled with their own
+  /// message and a Save As escape hatch.
+  Future<files.SaveOutcome> save();
+
+  /// Writes the file somewhere else, and follows it there.
+  Future<files.SaveOutcome> saveAs(String path);
+
+  /// The same as [save] but quieter: no backup is written, and nothing to write
+  /// is [files.SaveOutcome_Unchanged] rather than news.
+  Future<files.SaveOutcome> autosave();
+
+  /// `(the document has unsaved edits, the file on disk differs)` — the two
+  /// facts §Phase 4's external-modification rule turns on. Null when there is no
+  /// file to compare against.
+  (bool, bool)? externalChange();
+
+  /// "Take Theirs": drops what is in memory, including the undo history, and
+  /// reads the file again.
+  Future<bool> reload();
+
+  /// Every rolling backup of this script, newest first.
+  Future<List<files.BackupView>> backups();
+
+  /// Restores one, having first backed up what is there now (§Phase 4).
+  Future<files.SaveOutcome> restoreBackup(String backupPath);
+
+  /// Parks the scroll position, so that session restore and a crash both know
+  /// where the writer was.
+  void setScrollRow(int row);
+
   void close();
 }
 
@@ -96,6 +149,10 @@ class RustDocumentCore implements DocumentCore {
   /// A script parsed from Fountain source.
   factory RustDocumentCore.parse(String source) =>
       RustDocumentCore._(rust.docParse(source: source));
+
+  /// A script the core already has open — what `library_open` and
+  /// `recovery_accept` hand back.
+  factory RustDocumentCore.of(rust.DocumentHandle handle) => RustDocumentCore._(handle);
 
   final rust.DocumentHandle _handle;
 
@@ -151,5 +208,49 @@ class RustDocumentCore implements DocumentCore {
   rust.EditResult? redo() => rust.docRedo(handle: _handle);
 
   @override
+  bool get dirty => files.docDirty(handle: _handle);
+
+  @override
+  String? get path => files.docPath(handle: _handle);
+
+  @override
+  (int, bool) get journalState => files.docJournalState(handle: _handle);
+
+  @override
+  Future<files.SaveOutcome> save() => files.docSave(handle: _handle);
+
+  @override
+  Future<files.SaveOutcome> saveAs(String path) =>
+      files.docSaveAs(handle: _handle, path: path);
+
+  @override
+  Future<files.SaveOutcome> autosave() => files.docAutosave(handle: _handle);
+
+  @override
+  (bool, bool)? externalChange() => files.docExternalChange(handle: _handle);
+
+  @override
+  Future<bool> reload() => files.docReload(handle: _handle);
+
+  @override
+  Future<List<files.BackupView>> backups() => files.backupsList(handle: _handle);
+
+  @override
+  Future<files.SaveOutcome> restoreBackup(String backupPath) =>
+      files.backupRestore(handle: _handle, backupPath: backupPath);
+
+  @override
+  void setScrollRow(int row) => files.docSetScroll(handle: _handle, row: row);
+
+  @override
   void close() => rust.docClose(handle: _handle);
+}
+
+/// A script that is already open in the core.
+///
+/// `library_open` and `recovery_accept` hand back a handle rather than source,
+/// because the core has already parsed the file and started its journal. This is
+/// how the editor picks one up.
+extension OpenedScript on rust.DocumentHandle {
+  DocumentCore get core => RustDocumentCore.of(this);
 }

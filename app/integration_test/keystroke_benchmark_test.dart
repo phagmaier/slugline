@@ -19,6 +19,7 @@ import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
+import 'package:slugline/src/rust/api/files.dart' as files;
 
 /// §1.3.
 const keystrokeBudgetMs = 16.0;
@@ -27,8 +28,22 @@ const openBudgetMs = 250.0;
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  late Directory root;
+
   setUpAll(() async {
-    await Core.init();
+    // A temporary XDG root, so that the journal this benchmark now writes goes
+    // somewhere disposable rather than into the runner's own state directory.
+    root = await Directory.systemTemp.createTemp('slugline-bench-');
+    await Core.init(
+      configDir: '${root.path}/config',
+      dataDir: '${root.path}/data',
+      stateDir: '${root.path}/state',
+    );
+  });
+
+  tearDownAll(() async {
+    await Core.instance.shutdown();
+    if (root.existsSync()) await root.delete(recursive: true);
   });
 
   testWidgets('keystroke to frame stays inside the budget on 120 pages',
@@ -108,6 +123,72 @@ void main() {
         reason: 'no frame timings arrived — run this on a device (-d linux)');
     expect(_percentile(builds, 0.99), lessThan(keystrokeBudgetMs),
         reason: 'keystroke → glyph on screen, p99 (§1.3)');
+  });
+
+  testWidgets('the crash journal costs nothing the budget cannot afford',
+      (tester) async {
+    // Phase 4 put a `write(2)` on the keystroke path: every edit is appended to
+    // the crash journal before it is answered. That is the whole reason a
+    // `SIGKILL` loses nothing, and it is exactly the kind of thing that quietly
+    // eats a frame budget — so it is measured, on the same script, against the
+    // same number.
+    //
+    // The append is deliberately not `fsync`ed (see `storage/src/journal.rs`),
+    // so what is being measured is a buffered write of a few hundred bytes.
+    final reference = File('../testdata/reference-feature.fountain');
+    final script = '${root.path}/benchmark.fountain';
+    File(script).writeAsStringSync(reference.readAsStringSync());
+
+    final handle = await files.libraryOpen(path: script);
+    expect(handle, isNotNull);
+    final core = RustDocumentCore.of(handle!);
+    addTearDown(core.close);
+    final controller = EditorController(core);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: EditorSurface(controller: controller)),
+    ));
+    await tester.tap(find.byType(EditorSurface));
+    await tester.pumpAndSettle();
+
+    final middle = controller.blocks[controller.blocks.length ~/ 2];
+    controller.setSelection(DocSelection(
+      anchor: DocPosition(block: middle.id, offsetUtf16: 0),
+      focus: DocPosition(block: middle.id, offsetUtf16: 0),
+    ));
+    await tester.pumpAndSettle();
+
+    final commandMs = <double>[];
+    const typed = 'The quick brown fox jumps over the lazy dog. ';
+    for (var pass = 0; pass < 6; pass++) {
+      for (final character in typed.split('')) {
+        final watch = Stopwatch()..start();
+        controller.insertText(character);
+        commandMs.add(watch.elapsedMicroseconds / 1000);
+        await tester.pump();
+      }
+    }
+
+    final (recorded, broken) = core.journalState;
+    expect(broken, isFalse, reason: 'the journal kept up');
+    expect(recorded, commandMs.length,
+        reason: 'one record per keystroke — nothing was skipped to make the number');
+
+    final buffer = StringBuffer()
+      ..writeln('')
+      ..writeln('=== KEYSTROKE BUDGET WITH THE CRASH JOURNAL (§1.3, §Phase 4) ===')
+      ..writeln('journal records written: $recorded')
+      ..writeln('')
+      ..writeln('milliseconds             n       p50       p99       max')
+      ..writeln('-' * 58)
+      ..writeln(_row('keystroke → journalled', commandMs))
+      ..writeln('=== END ===');
+    // ignore: avoid_print — the point of this test is the table.
+    print(buffer);
+
+    expect(_percentile(commandMs, 0.99), lessThan(keystrokeBudgetMs),
+        reason: 'a journalled keystroke must still fit in a frame');
   });
 }
 

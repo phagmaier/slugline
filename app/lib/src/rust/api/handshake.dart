@@ -12,11 +12,12 @@ part 'handshake.freezed.dart';
 
 CoreInfo coreInfo() => RustLib.instance.api.crateApiHandshakeCoreInfo();
 
-/// Subscribe to the core event stream.
-Stream<CoreEvent> coreEvents() =>
-    RustLib.instance.api.crateApiHandshakeCoreEvents();
+/// Subscribe to the proof channel. The application subscribes to
+/// `api::events::core_events` instead — see [`ProofEvent`].
+Stream<ProofEvent> proofEvents() =>
+    RustLib.instance.api.crateApiHandshakeProofEvents();
 
-/// Ask the core to emit a [`CoreEvent::Pong`] **from another thread**, so the
+/// Ask the core to emit a [`ProofEvent::Pong`] **from another thread**, so the
 /// test proves a genuine unsolicited push rather than a disguised return value.
 ///
 /// Note there is no timer anywhere in this file: the stream is idle until
@@ -44,19 +45,6 @@ String? sliceUtf16({
   startUtf16: startUtf16,
   endUtf16: endUtf16,
 );
-
-@freezed
-sealed class CoreEvent with _$CoreEvent {
-  const CoreEvent._();
-
-  /// Emitted the moment Dart subscribes.
-  const factory CoreEvent.ready({required String coreVersion}) =
-      CoreEvent_Ready;
-
-  /// Emitted from a worker thread in response to [`ping`].
-  const factory CoreEvent.pong({required String text, required int lenUtf16}) =
-      CoreEvent_Pong;
-}
 
 /// What the core reports about itself at startup.
 class CoreInfo {
@@ -115,6 +103,19 @@ class CrateInfo {
           name == other.name &&
           role == other.role &&
           dependsOn == other.dependsOn;
+}
+
+@freezed
+sealed class ProofEvent with _$ProofEvent {
+  const ProofEvent._();
+
+  /// Emitted the moment Dart subscribes.
+  const factory ProofEvent.ready({required String coreVersion}) =
+      ProofEvent_Ready;
+
+  /// Emitted from a worker thread in response to [`ping`].
+  const factory ProofEvent.pong({required String text, required int lenUtf16}) =
+      ProofEvent_Pong;
 }
 
 /// How the core measures a string. Dart asserts `len_utf16` against its own

@@ -7,6 +7,8 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/doc.dart';
+import 'api/events.dart';
+import 'api/files.dart';
 import 'api/handshake.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -31,7 +33,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<CoreEvent> dco_decode_StreamSink_core_event_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<ProofEvent> dco_decode_StreamSink_proof_event_Sse(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
+
+  @protected
+  BackupView dco_decode_backup_view(dynamic raw);
 
   @protected
   BlockKind dco_decode_block_kind(dynamic raw);
@@ -43,7 +51,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  BackupView dco_decode_box_autoadd_backup_view(dynamic raw);
+
+  @protected
   BlockKind dco_decode_box_autoadd_block_kind(dynamic raw);
+
+  @protected
+  CoreEvent dco_decode_box_autoadd_core_event(dynamic raw);
 
   @protected
   DocPosition dco_decode_box_autoadd_doc_position(dynamic raw);
@@ -65,6 +79,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FindQuery dco_decode_box_autoadd_find_query(dynamic raw);
+
+  @protected
+  PreferencesView dco_decode_box_autoadd_preferences_view(dynamic raw);
+
+  @protected
+  (bool, bool) dco_decode_box_autoadd_record_bool_bool(dynamic raw);
+
+  @protected
+  ScriptView dco_decode_box_autoadd_script_view(dynamic raw);
 
   @protected
   CoreEvent dco_decode_core_event(dynamic raw);
@@ -115,6 +138,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<BackupView> dco_decode_list_backup_view(dynamic raw);
+
+  @protected
   List<BlockKind> dco_decode_list_block_kind(dynamic raw);
 
   @protected
@@ -136,6 +162,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RecoveryOffer> dco_decode_list_recovery_offer(dynamic raw);
+
+  @protected
+  List<ScriptView> dco_decode_list_script_view(dynamic raw);
+
+  @protected
   NewBlock dco_decode_new_block(dynamic raw);
 
   @protected
@@ -145,16 +177,52 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  BackupView? dco_decode_opt_box_autoadd_backup_view(dynamic raw);
+
+  @protected
   BlockKind? dco_decode_opt_box_autoadd_block_kind(dynamic raw);
 
   @protected
   DocSelection? dco_decode_opt_box_autoadd_doc_selection(dynamic raw);
 
   @protected
+  DocumentHandle? dco_decode_opt_box_autoadd_document_handle(dynamic raw);
+
+  @protected
   EditOutcome? dco_decode_opt_box_autoadd_edit_outcome(dynamic raw);
 
   @protected
   EditResult? dco_decode_opt_box_autoadd_edit_result(dynamic raw);
+
+  @protected
+  (bool, bool)? dco_decode_opt_box_autoadd_record_bool_bool(dynamic raw);
+
+  @protected
+  ScriptView? dco_decode_opt_box_autoadd_script_view(dynamic raw);
+
+  @protected
+  PreferencesView dco_decode_preferences_view(dynamic raw);
+
+  @protected
+  ProofEvent dco_decode_proof_event(dynamic raw);
+
+  @protected
+  (bool, bool) dco_decode_record_bool_bool(dynamic raw);
+
+  @protected
+  (int, bool) dco_decode_record_u_32_bool(dynamic raw);
+
+  @protected
+  RecoveryOffer dco_decode_recovery_offer(dynamic raw);
+
+  @protected
+  SaveFailure dco_decode_save_failure(dynamic raw);
+
+  @protected
+  SaveOutcome dco_decode_save_outcome(dynamic raw);
+
+  @protected
+  ScriptView dco_decode_script_view(dynamic raw);
 
   @protected
   TextMetrics dco_decode_text_metrics(dynamic raw);
@@ -183,7 +251,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<ProofEvent> sse_decode_StreamSink_proof_event_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
+
+  @protected
+  BackupView sse_decode_backup_view(SseDeserializer deserializer);
 
   @protected
   BlockKind sse_decode_block_kind(SseDeserializer deserializer);
@@ -195,7 +271,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  BackupView sse_decode_box_autoadd_backup_view(SseDeserializer deserializer);
+
+  @protected
   BlockKind sse_decode_box_autoadd_block_kind(SseDeserializer deserializer);
+
+  @protected
+  CoreEvent sse_decode_box_autoadd_core_event(SseDeserializer deserializer);
 
   @protected
   DocPosition sse_decode_box_autoadd_doc_position(SseDeserializer deserializer);
@@ -221,6 +303,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FindQuery sse_decode_box_autoadd_find_query(SseDeserializer deserializer);
+
+  @protected
+  PreferencesView sse_decode_box_autoadd_preferences_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  (bool, bool) sse_decode_box_autoadd_record_bool_bool(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ScriptView sse_decode_box_autoadd_script_view(SseDeserializer deserializer);
 
   @protected
   CoreEvent sse_decode_core_event(SseDeserializer deserializer);
@@ -271,6 +366,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<BackupView> sse_decode_list_backup_view(SseDeserializer deserializer);
+
+  @protected
   List<BlockKind> sse_decode_list_block_kind(SseDeserializer deserializer);
 
   @protected
@@ -294,6 +392,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<RecoveryOffer> sse_decode_list_recovery_offer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ScriptView> sse_decode_list_script_view(SseDeserializer deserializer);
+
+  @protected
   NewBlock sse_decode_new_block(SseDeserializer deserializer);
 
   @protected
@@ -301,6 +407,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  BackupView? sse_decode_opt_box_autoadd_backup_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BlockKind? sse_decode_opt_box_autoadd_block_kind(
@@ -313,6 +424,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DocumentHandle? sse_decode_opt_box_autoadd_document_handle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   EditOutcome? sse_decode_opt_box_autoadd_edit_outcome(
     SseDeserializer deserializer,
   );
@@ -321,6 +437,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditResult? sse_decode_opt_box_autoadd_edit_result(
     SseDeserializer deserializer,
   );
+
+  @protected
+  (bool, bool)? sse_decode_opt_box_autoadd_record_bool_bool(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ScriptView? sse_decode_opt_box_autoadd_script_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PreferencesView sse_decode_preferences_view(SseDeserializer deserializer);
+
+  @protected
+  ProofEvent sse_decode_proof_event(SseDeserializer deserializer);
+
+  @protected
+  (bool, bool) sse_decode_record_bool_bool(SseDeserializer deserializer);
+
+  @protected
+  (int, bool) sse_decode_record_u_32_bool(SseDeserializer deserializer);
+
+  @protected
+  RecoveryOffer sse_decode_recovery_offer(SseDeserializer deserializer);
+
+  @protected
+  SaveFailure sse_decode_save_failure(SseDeserializer deserializer);
+
+  @protected
+  SaveOutcome sse_decode_save_outcome(SseDeserializer deserializer);
+
+  @protected
+  ScriptView sse_decode_script_view(SseDeserializer deserializer);
 
   @protected
   TextMetrics sse_decode_text_metrics(SseDeserializer deserializer);
@@ -353,7 +503,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_proof_event_Sse(
+    RustStreamSink<ProofEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_backup_view(BackupView self, SseSerializer serializer);
 
   @protected
   void sse_encode_block_kind(BlockKind self, SseSerializer serializer);
@@ -365,8 +524,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_backup_view(
+    BackupView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_block_kind(
     BlockKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_core_event(
+    CoreEvent self,
     SseSerializer serializer,
   );
 
@@ -409,6 +580,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_find_query(
     FindQuery self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_preferences_view(
+    PreferencesView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_record_bool_bool(
+    (bool, bool) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_script_view(
+    ScriptView self,
     SseSerializer serializer,
   );
 
@@ -467,6 +656,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_backup_view(
+    List<BackupView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_block_kind(
     List<BlockKind> self,
     SseSerializer serializer,
@@ -506,6 +701,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_recovery_offer(
+    List<RecoveryOffer> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_script_view(
+    List<ScriptView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_new_block(NewBlock self, SseSerializer serializer);
 
   @protected
@@ -513,6 +720,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_backup_view(
+    BackupView? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_block_kind(
@@ -527,6 +740,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_document_handle(
+    DocumentHandle? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_edit_outcome(
     EditOutcome? self,
     SseSerializer serializer,
@@ -537,6 +756,45 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     EditResult? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_record_bool_bool(
+    (bool, bool)? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_script_view(
+    ScriptView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_preferences_view(
+    PreferencesView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_proof_event(ProofEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_record_bool_bool((bool, bool) self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_record_u_32_bool((int, bool) self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_recovery_offer(RecoveryOffer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_save_failure(SaveFailure self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_save_outcome(SaveOutcome self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_script_view(ScriptView self, SseSerializer serializer);
 
   @protected
   void sse_encode_text_metrics(TextMetrics self, SseSerializer serializer);

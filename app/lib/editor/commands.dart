@@ -32,8 +32,25 @@ class EditorCommand {
 List<EditorCommand> editorCommands({
   required EditorController controller,
   required VoidCallback openFind,
+  VoidCallback? save,
+  VoidCallback? saveAs,
+  VoidCallback? showBackups,
 }) {
   return [
+    // Phase 4's file commands, and null where there is no persistence attached —
+    // which is a widget test driving the palette on its own. A palette entry
+    // that does nothing is worse than one that is not there.
+    if (save case final run?)
+      EditorCommand(group: 'File', label: 'Save', shortcut: 'Ctrl+S', run: run),
+    if (saveAs case final run?)
+      EditorCommand(
+        group: 'File',
+        label: 'Save as…',
+        shortcut: 'Ctrl+Shift+S',
+        run: run,
+      ),
+    if (showBackups case final run?)
+      EditorCommand(group: 'File', label: 'Previous versions…', run: run),
     for (final choice in elementChoices)
       EditorCommand(
         group: 'Element',

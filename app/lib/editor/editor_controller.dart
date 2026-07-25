@@ -90,6 +90,28 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Rebuilds everything from the core, throwing away the caret and the layout.
+  ///
+  /// The one legitimate exception to ADR 0009's "never refetch the document":
+  /// after a reload from disk or a backup restore, the core is holding a
+  /// *different* document — new block ids, no shared history — and there is no
+  /// patch that could describe the difference. Every other path applies a patch.
+  void reloadFromCore() {
+    _blocks
+      ..clear()
+      ..addAll(core.blocks(0, core.blockCount));
+    if (_blocks.isEmpty) return;
+    _reindexIds();
+    _layout.rebuild();
+    final first = _blocks.first;
+    _selection = DocSelection(
+      anchor: DocPosition(block: first.id, offsetUtf16: 0),
+      focus: DocPosition(block: first.id, offsetUtf16: 0),
+    );
+    lastRejection = null;
+    notifyListeners();
+  }
+
   /// Document order for two positions.
   int comparePositions(DocPosition a, DocPosition b) {
     final byBlock = _indexOf(a.block).compareTo(_indexOf(b.block));

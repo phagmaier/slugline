@@ -1,7 +1,9 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
 import 'package:slugline/core/document_core.dart';
@@ -9,6 +11,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/line_layout.dart';
 import 'package:slugline/editor/metrics.dart';
+import 'package:slugline/editor/surface_semantics.dart';
 
 /// One editing surface for the whole document (ADR 0005).
 ///
@@ -29,6 +32,8 @@ class EditorSurface extends StatefulWidget {
     this.onOpenPalette,
     this.onOpenFind,
     this.onEscape,
+    this.onComposingChanged,
+    this.onScrolled,
     super.key,
   });
 
@@ -47,6 +52,17 @@ class EditorSurface extends StatefulWidget {
   final VoidCallback? onOpenPalette;
   final VoidCallback? onOpenFind;
   final VoidCallback? onEscape;
+
+  /// Whether the platform is holding a composing region right now.
+  ///
+  /// The surface is the only thing that knows: the composition lives in the
+  /// `TextInputClient` contract it implements. §Phase 4 forbids autosaving
+  /// during one, so the page above needs telling — see `editor_page.dart`.
+  final void Function(bool composing)? onComposingChanged;
+
+  /// The top visual row on screen, as it changes. Parked in the library index so
+  /// that session restore, and a crash, both put the writer back where they were.
+  final void Function(int row)? onScrolled;
 
   @override
   State<EditorSurface> createState() => EditorSurfaceState();
@@ -99,6 +115,8 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     _measureAdvance();
     _controller.addListener(_onDocumentChanged);
     _focusNode.addListener(_onFocusChanged);
+    _scroll.addListener(_refreshSemantics);
+    _scroll.addListener(_reportScroll);
   }
 
   @override
@@ -106,6 +124,8 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     _connection?.close();
     _controller.removeListener(_onDocumentChanged);
     _focusNode.removeListener(_onFocusChanged);
+    _scroll.removeListener(_refreshSemantics);
+    _scroll.removeListener(_reportScroll);
     if (_ownsFocusNode) _focusNode.dispose();
     _scroll.dispose();
     super.dispose();
@@ -122,7 +142,54 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
   void _onDocumentChanged() {
     _syncEditingState();
     _ensureCaretVisible();
+    _refreshSemantics();
   }
+
+  /// Whether a rebuild is already queued for the semantics band.
+  bool _semanticsRefreshQueued = false;
+
+  /// Rebuilds so that the semantics nodes describe the current document and the
+  /// current visible band.
+  ///
+  /// Painting does not need this — the painter repaints from a `Listenable` and
+  /// never rebuilds — so with no assistive technology attached the surface still
+  /// builds its widget tree once per layout and no more. When something *is*
+  /// attached, an edit or a scroll has to reach the semantics tree, and the only
+  /// way for a widget to change what it put there is to build again.
+  ///
+  /// Deferred to after the frame because both callers can fire mid-layout: a
+  /// `ScrollPosition` notifies its listeners from inside `setPixels`.
+  void _refreshSemantics() {
+    if (!SemanticsBinding.instance.semanticsEnabled) return;
+    if (_semanticsRefreshQueued) return;
+    _semanticsRefreshQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _semanticsRefreshQueued = false;
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// The last row reported upward, so that a scroll of half a line is not a
+  /// call across the bridge.
+  int _reportedRow = -1;
+
+  void _reportScroll() {
+    if (widget.onScrolled == null || !_scroll.hasClients) return;
+    final row = ((_scroll.offset - _padding) / _lineHeight).floor().clamp(0, 1 << 30);
+    if (row == _reportedRow) return;
+    _reportedRow = row;
+    widget.onScrolled!(row);
+  }
+
+  /// Tells the page above when a composition starts or ends.
+  void _reportComposing() {
+    final composing = _composing.isValid && !_composing.isCollapsed;
+    if (composing == _reportedComposing) return;
+    _reportedComposing = composing;
+    widget.onComposingChanged?.call(composing);
+  }
+
+  bool _reportedComposing = false;
 
   void _onFocusChanged() {
     if (_focusNode.hasFocus) {
@@ -132,6 +199,7 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
       _connection = null;
       _composing = TextRange.empty;
       _sessionBlock = null;
+      _reportComposing();
     }
     setState(() {});
   }
@@ -194,6 +262,7 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
       _sessionBlock = block;
       if (_composing.isValid) {
         _composing = TextRange.empty;
+        _reportComposing();
         // The underline goes with it.
         if (mounted) setState(() {});
       }
@@ -208,6 +277,7 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
   void updateEditingValue(TextEditingValue value) {
     final previous = _editingValue;
     _composing = value.composing;
+    _reportComposing();
     if (value.text == previous.text) {
       // Selection-only news — a composition being confirmed, or the platform
       // moving its own caret. The model's caret is ours, so only repaint.
@@ -491,6 +561,110 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
     );
   }
 
+  // --- accessibility -------------------------------------------------------
+
+  /// A semantics node over each block in the visible band.
+  ///
+  /// The painter paints a band and nothing else, and this describes the same
+  /// band for the same reason: a 120-page script is some three thousand blocks,
+  /// and a semantics tree with three thousand nodes in it is a tree no screen
+  /// reader wants and no frame budget affords. Scrolling rebuilds it —
+  /// [_refreshSemantics] — so what the tree holds is what is on screen, which is
+  /// also what a screen reader's own scroll actions move through.
+  ///
+  /// Empty when nothing is listening, which is the ordinary case.
+  List<Widget> _blockSemantics() {
+    if (!SemanticsBinding.instance.semanticsEnabled) return const [];
+
+    final layout = _controller.layout;
+    final blocks = _controller.blocks;
+    final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+    final firstRow = math.max(0, ((offset - _padding) / _lineHeight).floor() - 1);
+    final lastRow = math.min(
+      layout.totalRows,
+      ((offset + _viewportHeight - _padding) / _lineHeight).ceil() + 1,
+    );
+    if (lastRow <= firstRow || blocks.isEmpty) return const [];
+
+    final selection = _controller.selection;
+    final nodes = <Widget>[];
+    for (var index = layout.blockAtRow(firstRow); index < blocks.length; index++) {
+      if (layout.firstRowOf(index) > lastRow) break;
+      final block = blocks[index];
+      final focused = block.id == selection.focus.block;
+      final withinOneBlock = selection.anchor.block == selection.focus.block;
+      nodes.add(
+        Positioned(
+          left: _pageLeft,
+          top: _padding + layout.firstRowOf(index) * _lineHeight,
+          width: _pageColumns * _advance,
+          height: math.max(_lineHeight, layout.linesOf(index).length * _lineHeight),
+          child: ScriptBlockSemantics(
+            key: ValueKey(block.id),
+            label: kindLabel(block.kind, block.sectionLevel),
+            value: displayText(block.kind, block.text),
+            focused: focused,
+            selection: withinOneBlock
+                ? TextSelection(
+                    baseOffset: selection.anchor.offsetUtf16,
+                    extentOffset: selection.focus.offsetUtf16,
+                  )
+                : TextSelection.collapsed(offset: selection.focus.offsetUtf16),
+            readOnly: block.readOnly,
+            onFocusRequested: () => _placeCaretIn(block),
+            onSetSelection: (value) => _controller.setSelection(
+              DocSelection(
+                anchor: DocPosition(block: block.id, offsetUtf16: value.baseOffset),
+                focus: DocPosition(block: block.id, offsetUtf16: value.extentOffset),
+              ),
+            ),
+            onSetText: (text) => _replaceBlockText(block, text),
+            onMoveCursorByCharacter: (delta, extend) =>
+                _controller.moveHorizontal(delta, extend: extend),
+            onMoveCursorByWord: (delta, extend) =>
+                _controller.moveByWord(delta, extend: extend),
+            onCopy: () => unawaited(_controller.copy()),
+            onCut: () => unawaited(_controller.cut()),
+            onPaste: () => unawaited(_controller.paste()),
+          ),
+        ),
+      );
+    }
+    return nodes;
+  }
+
+  /// Moves the caret into [block] without disturbing its text.
+  ///
+  /// This is what a screen reader's own navigation does when it lands on a
+  /// paragraph, so it must be a caret move and nothing more. Focusing the
+  /// surface as well is deliberate: the writer who arrived here by swiping
+  /// expects the next key they press to type into this block.
+  void _placeCaretIn(BlockView block) {
+    _focusNode.requestFocus();
+    final at = DocPosition(block: block.id, offsetUtf16: 0);
+    _controller.setSelection(DocSelection(anchor: at, focus: at));
+  }
+
+  /// The `SetText` action: replace one block's text wholesale.
+  ///
+  /// Expressed as a selection plus an insertion rather than a command of its
+  /// own, so that it takes exactly the path a paste takes — one undo step, and
+  /// the same re-inference afterwards. An accessibility action must not be a
+  /// second way into the document.
+  void _replaceBlockText(BlockView block, String text) {
+    _controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(block: block.id, offsetUtf16: 0),
+        focus: DocPosition(block: block.id, offsetUtf16: block.text.length),
+      ),
+    );
+    if (text.isEmpty) {
+      _controller.deleteSelection();
+    } else {
+      _controller.insertText(text);
+    }
+  }
+
   // --- building ------------------------------------------------------------
 
   @override
@@ -518,18 +692,25 @@ class EditorSurfaceState extends State<EditorSurface> implements TextInputClient
                 child: SizedBox(
                   height: math.max(height, constraints.maxHeight),
                   width: double.infinity,
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _SurfacePainter(
-                        controller: _controller,
-                        scroll: _scroll,
-                        advance: _advance,
-                        pageLeft: _pageLeft,
-                        showCaret: _focusNode.hasFocus,
-                        composing: _composing,
-                        colours: _EditorColours.of(context),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: CustomPaint(
+                            painter: _SurfacePainter(
+                              controller: _controller,
+                              scroll: _scroll,
+                              advance: _advance,
+                              pageLeft: _pageLeft,
+                              showCaret: _focusNode.hasFocus,
+                              composing: _composing,
+                              colours: _EditorColours.of(context),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      ..._blockSemantics(),
+                    ],
                   ),
                 ),
               ),

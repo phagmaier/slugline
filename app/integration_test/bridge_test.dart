@@ -39,9 +39,9 @@ void main() {
 
   test('Rust pushes an event and Dart receives it', () async {
     // `ping` returns immediately; the event arrives from a Rust worker thread.
-    final pong = core.events.firstWhere((e) => e is CoreEvent_Pong);
+    final pong = core.proofEvents.firstWhere((e) => e is ProofEvent_Pong);
     core.ping('from the test');
-    final event = await pong.timeout(const Duration(seconds: 5)) as CoreEvent_Pong;
+    final event = await pong.timeout(const Duration(seconds: 5)) as ProofEvent_Pong;
     expect(event.text, 'from the test');
     expect(event.lenUtf16, 'from the test'.length);
   });

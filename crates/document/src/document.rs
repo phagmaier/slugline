@@ -14,6 +14,7 @@ use crate::edit::{
 };
 use crate::find::{self, FindQuery, Match};
 use crate::history::{CoalesceKey, History, Inverse, TextEditKind, Transaction};
+use crate::recovery::{BlockSnapshot, Patch, ReplayError};
 use crate::BlockId;
 
 /// One element of the script, with an identity Flutter can hold on to.
@@ -194,13 +195,32 @@ impl Document {
         self.revision != self.saved_revision
     }
 
+    /// A monotonic counter that changes on every edit and nothing else.
+    ///
+    /// A save serialises the document off the actor thread (§2.3), so by the
+    /// time it comes back to say it succeeded, the writer may have typed. This
+    /// is what lets it say *which* document it wrote.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Clears the dirty flag as far as [`Document::revision`] said when the
+    /// bytes were taken.
+    ///
+    /// An edit that landed while the file was being written stays unsaved, which
+    /// is the honest answer: it is not in the file. Marking the whole document
+    /// clean instead would silently drop it.
+    pub fn mark_saved_at(&mut self, revision: u64) {
+        self.history.close();
+        self.saved_revision = revision.min(self.revision);
+    }
+
     /// Clears the dirty flag. Re-anchoring provenance to the newly written
     /// bytes belongs to `storage`, in Phase 4; until then a saved document goes
     /// on serialising from the source it was opened with, which is correct but
     /// keeps the old bytes alive.
     pub fn mark_saved(&mut self) {
-        self.history.close();
-        self.saved_revision = self.revision;
+        self.mark_saved_at(self.revision);
     }
 
     pub fn index_of(&self, id: BlockId) -> Option<usize> {
@@ -353,6 +373,100 @@ impl Document {
             }
         }?;
         Ok(result)
+    }
+
+    /// Applies a patch the crash journal recorded (§Phase 4).
+    ///
+    /// Three things separate this from [`Document::apply`], and all three are
+    /// deliberate:
+    ///
+    /// * **No history.** A recovered session cannot be undone into — the
+    ///   transactions it would undo belong to a process that is gone. Recovery
+    ///   hands the writer a document and an unbroken undo stack starting from
+    ///   there.
+    /// * **No inference.** A patch is an outcome, not an instruction; the kinds
+    ///   in it are the kinds the writer was looking at when the machine died.
+    ///   Re-inferring them would be second-guessing the record.
+    /// * **No validity check.** The state in the patch was in a live document,
+    ///   so it was already valid when it was recorded. What *is* checked is that
+    ///   the patch fits this document at all — see [`ReplayError`].
+    ///
+    /// The document is left dirty, because it is: the file on disk is the one
+    /// the journal was recorded against.
+    pub fn replay(&mut self, patch: &Patch) -> Result<(), ReplayError> {
+        // Everything is validated before anything is written. A half-applied
+        // patch is a document nobody can reason about, and this runs against a
+        // file the user is about to be shown.
+        for id in &patch.removed {
+            if self.index_of(*id).is_none() {
+                return Err(ReplayError::UnknownBlock(*id));
+            }
+        }
+        for snapshot in &patch.changed {
+            if self.index_of(snapshot.id).is_none() && !patch.removed.contains(&snapshot.id) {
+                return Err(ReplayError::UnknownBlock(snapshot.id));
+            }
+        }
+        for (_, snapshot) in &patch.inserted {
+            if self.index_of(snapshot.id).is_some() {
+                return Err(ReplayError::DuplicateBlock(snapshot.id));
+            }
+        }
+
+        self.blocks
+            .retain(|block| !patch.removed.contains(&block.id));
+
+        for snapshot in &patch.changed {
+            let Some(index) = self.index_of(snapshot.id) else {
+                // Changed and then removed by the same edit. The removal wins;
+                // it is the later fact.
+                continue;
+            };
+            let block = &mut self.blocks[index];
+            block.kind = snapshot.kind;
+            block.text.clone_from(&snapshot.text);
+            block.forced = snapshot.forced;
+            block.dual = snapshot.dual;
+            // The bytes no longer match the file they were read from, so the
+            // serialiser must take this block down its canonical path (§3.2).
+            block.provenance = None;
+        }
+
+        for (index, snapshot) in &patch.inserted {
+            let index = *index as usize;
+            if index > self.blocks.len() {
+                return Err(ReplayError::BadIndex(index as u32));
+            }
+            self.blocks.insert(
+                index,
+                Block {
+                    id: snapshot.id,
+                    kind: snapshot.kind,
+                    text: snapshot.text.clone(),
+                    forced: snapshot.forced,
+                    dual: snapshot.dual,
+                    provenance: None,
+                },
+            );
+            // §3.1: an id is never reused. The journal's ids were minted by the
+            // session that crashed, so the counter has to clear them all.
+            self.next_id = self.next_id.max(snapshot.id.0);
+        }
+
+        self.next_revision += 1;
+        self.revision = self.next_revision;
+        Ok(())
+    }
+
+    /// The block with this id, as the journal would record it.
+    pub fn snapshot(&self, id: BlockId) -> Option<BlockSnapshot> {
+        self.block(id).map(|block| BlockSnapshot {
+            id: block.id,
+            kind: block.kind,
+            text: block.text.clone(),
+            forced: block.forced,
+            dual: block.dual,
+        })
     }
 
     pub fn undo(&mut self) -> Option<EditResult> {

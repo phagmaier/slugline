@@ -165,6 +165,28 @@ classification says so.
 | `Ctrl+Backspace` | Delete the word before the caret; at offset 0, join to the block above |
 | `Ctrl+Delete` | Delete the word after the caret |
 
+## Files
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+S` | Save |
+| `Ctrl+Shift+S` | Save as… |
+
+Both are also in the command palette, along with "Previous versions…".
+
+There is no key for "open" or "new": both need a path, so both are a dialog
+either way, and the library is one Escape and one click away.
+
+`Ctrl+S` on a script that has never been saved asks where to put it. A save that
+fails says why — read-only, no permission, full disk each get their own sentence
+— and offers Save As, blocking, in a dialog that cannot be clicked away. §Phase 4
+requires exactly that, and the reason is that a toast is a thing a writer scrolls
+past.
+
+Saving by hand is a habit, not a requirement: autosave writes two seconds after
+you stop typing and every thirty seconds while you do not, and every edit in
+between is already in a crash-recovery record on disk.
+
 ## Moving
 
 | Key | Action |

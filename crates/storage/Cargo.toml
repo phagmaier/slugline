@@ -7,5 +7,13 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# Every entry here needs a one-line justification in docs/DEPENDENCIES.md.
 [dependencies]
 slugline_document.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+directories = "6.0.0"
+# The default feature set adds a polling fallback for filesystems inotify cannot
+# watch. That is a timer in an idle process, which §1.3 budgets at zero, and we
+# only ever watch ordinary files on ordinary filesystems.
+notify = { version = "8.2.0", default-features = false }

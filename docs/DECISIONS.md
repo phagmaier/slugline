@@ -693,3 +693,286 @@ inverse of their own.
   `infer_kind` call each, on every keystroke. The §1.3 benchmark on the 120-page
   reference script is unchanged: p99 keystroke-to-patch 1.29 ms against a 16 ms
   budget.
+
+---
+
+## ADR 0012 — The custom surface's semantics tree is a render object per block
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 3
+
+### Context
+
+ADR 0005 chose one custom editing surface over `EditableText` and listed four
+things that choice costs. Three were paid in Phase 3. The fourth —
+"accessibility, which `EditableText` provides free and we do not" — was the last
+item outstanding, and `SPEC.md`'s Phase 3 list said so.
+
+The gap was total, not partial. A `CustomPaint` contributes nothing to the
+semantics tree, so a screen reader pointed at the editor found a scrollable
+containing no text at all: not a degraded experience, an absent one.
+
+Flutter offers three ways to put something there, and two of them cannot express
+what a text editor needs:
+
+1. **`Semantics` widgets.** They carry a `SemanticsProperties`, which has fields
+   for a label, a value, `textField`, `readOnly`, `multiline` and every action —
+   but **no field for a text selection**.
+2. **`CustomPainter.semanticsBuilder`.** Same `SemanticsProperties`, same gap,
+   plus one of its own: it is rebuilt when the painter is replaced, and this
+   painter repaints from a `Listenable` without ever rebuilding.
+3. **A render object.** `SemanticsConfiguration.textSelection` is public, and it
+   is what carries the caret to AT-SPI as `textSelectionBase`/`textSelectionExtent`.
+   `RenderEditable` reaches it the same way.
+
+For a writing tool the caret is not a detail. A screen reader that can read the
+paragraph but cannot say where in it you are has told you almost nothing.
+
+### Decision
+
+**One leaf render object per visible block** (`editor/surface_semantics.dart`),
+positioned over the block it describes, painting nothing and hit-testing never.
+Each one declares itself a multiline text field with the element type as its
+`label` and the drawn text as its `value`; the block holding the caret also
+carries the selection and the cursor-movement, set-selection, set-text and
+clipboard actions.
+
+Three details are load-bearing:
+
+* **The label is the element type.** "Character, JOHN" is what a screenwriter
+  needs to hear, and it is the thing no generic text field could say. It comes
+  from `kindLabel`, the same table the element bar and the palette read.
+* **The value is `displayText`, not the model's text.** §5.2 upper-cases scene
+  headings and cues on screen only, and what is announced should be what is
+  drawn. This is safe because `displayText` never changes a string's length —
+  it refuses the upper-casing that would (`ß` → `SS`) — so the selection offsets
+  index into the announced string exactly as they index into the model's.
+* **Only the focused block offers cursor actions.** There is one caret. A block
+  that does not hold it must not offer to move it, or the move would silently
+  jump somewhere else first.
+
+### Consequences
+
+* **Nodes are built for the visible band only, and only while
+  `SemanticsBinding.semanticsEnabled`.** A feature-length script is some three
+  thousand blocks and a semantics tree of that size is one no screen reader wants
+  and no frame budget affords. With no assistive technology attached the cost is
+  not paid at all: `_blockSemantics` returns an empty list.
+* **The surface now rebuilds on scroll — but only when semantics are on.** The
+  painter repaints from a `Listenable` and does not rebuild, which is why the
+  editor is as cheap as it is; a semantics tree cannot be updated that way, so
+  scrolling and editing both queue a post-frame `setState` while something is
+  listening. The §1.3 benchmark is measured with semantics off, which is the
+  ordinary case, and is unchanged.
+* **One node per block rather than one for the document.** A `value` is one
+  string and the document's is half a megabyte. Per-block nodes are also what
+  lets a screen reader navigate paragraph by paragraph, which is how someone
+  actually reads a script.
+* `SemanticsAction.setText` goes through `setSelection` + `insertText` rather
+  than a command of its own, so an accessibility action takes exactly the path a
+  paste takes: one undo step, and the same re-inference afterwards. An assistive
+  technology must not be a second way into the document.
+* The tests in `app/test/editor/accessibility_test.dart` assert on the
+  `SemanticsData` the owner produces, not on the widgets that produce it. What
+  reaches AT-SPI is the only thing that matters, and it is the only thing a
+  widget-level assertion would not have checked.
+
+---
+
+## ADR 0013 — The crash journal records outcomes, not commands
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4
+
+### Context
+
+§Phase 4 asks for "an append-only **edit journal** … [that] records committed
+edit commands between saves", and its exit criterion is that the application can
+be killed twenty times while typing without losing a keystroke beyond the last.
+
+Taken literally, a journal of `EditCommand`s replays by re-running every rule
+that decided what those commands did: the Enter/Tab tables in `workflow.rs`,
+`Document::reinfer`, the validity checks in `edit.rs`, and the caret the writer
+happened to have — because `reinfer`'s scope depends on it. Get any of them a
+version out of step with the session that crashed, and the recovered script is
+quietly not the one the writer was looking at. Recovery is the last place in this
+codebase to want cleverness.
+
+Two alternatives were considered and rejected:
+
+* **Journal the serialised document.** Always recoverable, trivially correct, and
+  half a megabyte per keystroke on a feature. Doing it per *transaction* instead
+  brings it down to once per 600 ms of typing — but a 600 ms window is more than
+  "the last keystroke", so it fails the exit criterion by construction.
+* **Journal a splice against the previous serialised text.** Small records, but
+  computing one costs a full serialise and diff on the keystroke path.
+
+### Decision
+
+**The journal records the `Patch` an edit produced** — the blocks that were
+removed, the blocks as they now stand, and the blocks that appeared with the
+index they appeared at. `document::recovery` defines the type;
+`Document::replay` applies one; `storage::journal` writes and reads them.
+
+Replaying is list surgery with no rules in it. It is also cheap enough to do
+after **every** edit rather than every transaction, because one patch is the
+blocks one edit touched — a paragraph, for a keystroke — which is what makes the
+exit criterion reachable at all.
+
+Three things fall out of the choice and are worth stating:
+
+* **The patch is recorded after `reinfer`**, so the kinds in it are the kinds the
+  writer was looking at, not the kinds the command asked for.
+* **The header carries a checksum of the file** the journal was opened against.
+  Block ids only mean anything against a particular parse, so recovery refuses to
+  replay onto a file that changed underneath it rather than applying edits to
+  whatever happens to be there now.
+* **An undo is journalled like anything else.** A crash after an undo must not
+  bring back the text it took away.
+
+### On durability
+
+Appends are written but **not** `fsync`ed, and that is deliberate. The threat
+§Phase 4 names is the process dying — `SIGKILL`, a panic, an OOM kill — and a
+`write(2)` that has returned has already reached the kernel, so the data survives
+all of those whether or not it has reached the platter. `fsync` per keystroke
+would be a disk round trip on the hot path to buy protection against power loss
+only, and against power loss the last keystroke is unrecoverable anyway. The
+atomic save in `storage::atomic` is what protects the *file* against that, and it
+does `fsync`, twice.
+
+The measured cost of the append is in the §1.3 benchmark, which now types into a
+journalled document as well as an unattached one: p50 0.81 ms against 0.78 ms
+without, p99 1.14 ms against a 16 ms budget.
+
+### On the format
+
+Line-delimited JSON, with the record and its newline written in **one**
+`write_all`. That single write is the entire integrity scheme: a record followed
+by a newline is a record the kernel took whole, and a trailing fragment is a
+write that was interrupted. `journal::read` is total in the same sense the
+Fountain parser is — no input makes it fail — because it is read at exactly the
+moment the user has already lost something, and a recovery path that panics on a
+damaged file turns a bad day into a lost script.
+
+JSON rather than a packed binary format because when recovery goes wrong the
+writer's text is *in there*, and they must be able to get it out with a text
+editor.
+
+### Consequences
+
+* `document` gains `BlockSnapshot`, `Patch`, `Document::replay` and
+  `Document::snapshot`. `replay` bypasses the undo history on purpose: the
+  transactions it would push invert edits against a process that is gone.
+* `storage::journal` mirrors `BlockSnapshot` as a serde struct rather than
+  deriving `Serialize` on the model. `document` and `fountain` are the two crates
+  §2.5 keeps pure, and a file format is not a thing the model should know about.
+  The cost is two conversion functions and a test that walks every `BlockKind`
+  through them — element kinds are written as **names**, not numbers, so that
+  inserting a variant cannot silently reinterpret every journal on every disk.
+* A script that has never been saved is journalled too, keyed by its handle, with
+  an empty path in the header. It replays onto `Document::blank()`. That is the
+  script a crash costs most.
+* Every mutation in `api::doc` ends in `outcome` or `inferring`, and both
+  journal. There is no path from Dart to the document that does not pass through
+  one of them, which is what lets the journal claim to hold every edit.
+
+---
+
+## ADR 0014 — The autosave clock lives in Dart
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4
+
+### Context
+
+§Phase 4 asks for autosave "debounced after edit inactivity (default 2 s) and on
+a hard interval (default 30 s), both configurable", and in the next line: it
+"never runs while a modal is open or during an active IME composition".
+
+§2.1 puts "file I/O, autosave, atomic writes, backups" in Rust's column, which
+reads at first like an instruction to put the timers there too.
+
+### Decision
+
+**Rust owns the saving. Dart owns the deciding-when.** `AutosaveDriver`
+(`editor/autosave.dart`) runs both timers and calls `doc_autosave`; the core has
+no timer anywhere.
+
+The reason is the second sentence, not the first. A modal is a widget and a
+composition is a state of the platform's input connection — neither fact exists
+in Rust, and neither can be sent to it without inventing a protocol whose only
+purpose is to tell the core about the UI. §2.1's line is about who *writes the
+file*, and that is still Rust: the driver's only power is to ask.
+
+Keeping the clock out of the core also keeps §1.3's 0% idle CPU budget met by
+construction rather than by tuning. The actor thread blocks on its channel and
+wakes only when something happens; a timer in it would be a wakeup in an idle
+process, which is the one thing that budget forbids.
+
+### The two timers, and why both
+
+* **Idle**, restarted on every edit. This is the one that normally fires.
+* **Interval**, *not* restarted on every edit. Without it, a writer who never
+  pauses for two seconds — which is what a good session looks like — would never
+  be saved at all.
+
+Both are cancelled the moment the document is clean, so an idle window costs no
+wakeups, and neither is created for a document with nothing to save.
+
+### Consequences
+
+* **A suppression holds a save; it never cancels one.** A save deferred by a
+  dialog happens when the dialog closes. §10 does not allow a save to be quietly
+  dropped because the timing was awkward, and "the modal closed and the moment
+  passed" is exactly that.
+* Suppressions are a *set*, not a flag, so a dialog opened over a composition
+  cannot un-suppress it by closing. `EditorPage.withModal` pairs every
+  suppression with its release in a `finally`.
+* **Autosave writes no backup.** A backup per autosave would be a hundred a day
+  and would push yesterday's draft out of the retention window by lunchtime.
+  §Phase 4's rolling backups are per explicit save.
+* A failed autosave leaves the document dirty, so the interval keeps retrying: a
+  disk that frees up gets written to without the writer doing anything. The
+  failure reaches the status line via `CoreEvent::AutosaveFailed` rather than a
+  modal — an autosave is not something the writer asked for — while an explicit
+  save that fails is blocking, which is the split §Phase 4 draws.
+* The rules are testable without the `.so`, which is where they are tested
+  (`app/test/editor/autosave_test.dart`). What a save *does* to a file is Rust's
+  and is proved in `cargo test`, per ADR 0011's division.
+
+---
+
+## ADR 0015 — The file chooser is ours, because `file_selector` brings `http`
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4
+
+### Context
+
+Phase 4 needs Open, Save As, New and Rename, and all four need a path from the
+user. The obvious answer is `file_selector_linux`, a Flutter-team package that
+puts up GTK's own dialog — a better dialog than anything we would write, using
+the file manager's bookmarks and the platform's own conventions.
+
+It pulls `file_selector_platform_interface`, which pulls **`http`**.
+
+### Decision
+
+**Write the chooser** (`library/file_chooser.dart`): list a directory, walk into
+it, type a name.
+
+§1.2 makes "the application makes **zero** network requests" a *build-time
+assertion* (§13). An HTTP client linked into the shipped bundle is a thing that
+assertion then has to argue with — and "it is linked but never reached" is
+exactly the kind of exception that, once written into a check, stops the check
+from meaning anything. The whole `file_selector` umbrella is worse still: eleven
+packages, four of them implementations for platforms §1.2 says not to write code
+for.
+
+### Consequences
+
+* The chooser is plainer than GTK's. It hides dotfiles and in-flight `.tmp-`
+  saves, appends `.fountain` to a name with no extension, and is keyboard-first
+  like the rest of the application (§1.1).
+* **This is worth revisiting in Phase 10.** Either the §13 assertion is written
+  precisely enough to allow a linked-but-unreached client, or the platform
+  interface stops needing one. Until one of those happens, a native dialog costs
+  more than it is worth.
+* No dependency was added for Phase 4 on the Dart side at all.

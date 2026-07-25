@@ -24,7 +24,9 @@ use flutter_rust_bridge::frb;
 use slugline_document as model;
 
 use crate::actor::actor;
+use crate::api::events::{emit, CoreEvent};
 use crate::offsets;
+use crate::state::Session;
 
 // ---------------------------------------------------------------------------
 // Handles and views
@@ -401,7 +403,7 @@ pub fn doc_apply(
             Err(rejection) => return rejection,
         };
         let result = document.apply_with_selection(command, before);
-        inferring(document, before, result)
+        inferring(session, before, result)
     })
 }
 
@@ -425,7 +427,7 @@ pub fn doc_enter(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
             Err(rejection) => return rejection,
         };
         let result = document.apply_group(Some(at), |group| enter(group, at));
-        inferring(document, Some(at), result)
+        inferring(session, Some(at), result)
     })
 }
 
@@ -456,7 +458,7 @@ pub fn doc_tab(handle: DocumentHandle, at: DocSelection, shift: bool) -> Option<
             },
             before,
         );
-        Some(inferring(document, before, result))
+        Some(inferring(session, before, result))
     })
 }
 
@@ -470,7 +472,7 @@ pub fn doc_replace_all(handle: DocumentHandle, query: FindQuery, with: String) -
         let document = session.interrupt();
         let result = document.replace_all(&model_query(query), &with, None);
         // Deliberately not re-classified: see `Document::replace_all`.
-        outcome(document, result)
+        outcome(session, result)
     })
 }
 
@@ -511,9 +513,9 @@ pub fn doc_paste(
         // re-classifying the seam is what makes the block it landed in agree
         // with the blocks it landed between.
         if plain {
-            outcome(document, result)
+            outcome(session, result)
         } else {
-            inferring(document, Some(at), result)
+            inferring(session, Some(at), result)
         }
     })
 }
@@ -537,6 +539,9 @@ fn step(
         // Undo ends the run of typing it is undoing, so the next keystroke
         // starts a transaction of its own rather than reopening the old one.
         let result = take(session.interrupt())?;
+        // An undo is an edit. A crash after one must not bring back the text it
+        // took away, so it goes in the journal like everything else.
+        journal(session, &result);
         Some(result_view(session.document(), result))
     })
 }
@@ -1032,16 +1037,57 @@ fn result_view(document: &model::Document, result: model::EditResult) -> EditRes
     }
 }
 
-/// Turns whichever way an edit went into an [`EditOutcome`].
+/// Turns whichever way an edit went into an [`EditOutcome`], and writes what it
+/// did to the crash journal.
+///
+/// Every mutation in this module ends here or in [`inferring`], which is the
+/// whole reason the journal can claim to hold every edit: there is no path from
+/// Dart to the document that does not pass through one of these two functions.
 fn outcome(
-    document: &model::Document,
+    session: &mut Session,
     result: Result<model::EditResult, model::EditError>,
 ) -> EditOutcome {
     match result {
-        Ok(result) => EditOutcome::Applied {
-            result: result_view(document, result),
-        },
+        Ok(result) => {
+            journal(session, &result);
+            EditOutcome::Applied {
+                result: result_view(session.document(), result),
+            }
+        }
         Err(error) => rejected(rejection_of(&error), error.to_string()),
+    }
+}
+
+/// Appends what an edit did to the session's journal (§Phase 4).
+///
+/// The patch records the **outcome** — the blocks as they now stand — rather
+/// than the command, so replaying it needs none of the inference or workflow
+/// rules that produced it. See `document::recovery`.
+///
+/// This runs after `reinfer`, so the kinds it records are the kinds the writer
+/// is looking at.
+fn journal(session: &mut Session, result: &model::EditResult) {
+    let document = session.document();
+    let mut inserted: Vec<(u32, model::BlockSnapshot)> = result
+        .inserted
+        .iter()
+        .filter_map(|id| Some((clamp_u32(document.index_of(*id)?), document.snapshot(*id)?)))
+        .collect();
+    inserted.sort_by_key(|(index, _)| *index);
+    let patch = model::Patch {
+        removed: result.removed.clone(),
+        changed: result
+            .changed
+            .iter()
+            .filter_map(|id| document.snapshot(*id))
+            .collect(),
+        inserted,
+    };
+    if session.record(&patch) {
+        // Said once, not once per keystroke.
+        emit(CoreEvent::JournalBroken {
+            handle: session.handle(),
+        });
     }
 }
 
@@ -1053,15 +1099,16 @@ fn outcome(
 /// the kinds it changed into the patch, so Dart applies one patch and does not
 /// have to know that anything reclassified at all.
 fn inferring(
-    document: &mut model::Document,
+    session: &mut Session,
     before: Option<model::DocSelection>,
     result: Result<model::EditResult, model::EditError>,
 ) -> EditOutcome {
     match result {
         Ok(mut result) => {
-            document.reinfer(&mut result, before);
+            session.document_mut().reinfer(&mut result, before);
+            journal(session, &result);
             EditOutcome::Applied {
-                result: result_view(document, result),
+                result: result_view(session.document(), result),
             }
         }
         Err(error) => rejected(rejection_of(&error), error.to_string()),

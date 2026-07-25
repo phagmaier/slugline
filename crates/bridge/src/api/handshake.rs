@@ -105,27 +105,29 @@ const WORKSPACE_CRATES: &[(&str, &str, &[&str])] = &[
 // Proof 2 — Rust pushes, Dart receives
 // ---------------------------------------------------------------------------
 
-/// Notifications pushed from Rust. The real variant list is in §6
-/// (`SaveStateChanged`, `AutosaveFailed`, `PaginationReady`, …); these two are
-/// placeholders that exercise the same machinery.
-pub enum CoreEvent {
+/// Notifications pushed by this proof, and by nothing else.
+///
+/// The application's channel is `api::events::CoreEvent` — §6's list, §2.3's
+/// single sink. These two variants exist to prove that a `StreamSink` works at
+/// all, which is Phase 0's job and this file's whole reason for existing. They
+/// go when it does.
+pub enum ProofEvent {
     /// Emitted the moment Dart subscribes.
     Ready { core_version: String },
     /// Emitted from a worker thread in response to [`ping`].
     Pong { text: String, len_utf16: u32 },
 }
 
-/// The single event channel of §2.3. Dart subscribes once at startup; a second
-/// subscription replaces the first, which is what a Flutter hot restart does.
-static EVENTS: OnceLock<Mutex<Option<StreamSink<CoreEvent>>>> = OnceLock::new();
+static EVENTS: OnceLock<Mutex<Option<StreamSink<ProofEvent>>>> = OnceLock::new();
 
-fn event_sink() -> &'static Mutex<Option<StreamSink<CoreEvent>>> {
+fn event_sink() -> &'static Mutex<Option<StreamSink<ProofEvent>>> {
     EVENTS.get_or_init(|| Mutex::new(None))
 }
 
-/// Subscribe to the core event stream.
-pub fn core_events(sink: StreamSink<CoreEvent>) {
-    let ready = CoreEvent::Ready {
+/// Subscribe to the proof channel. The application subscribes to
+/// `api::events::core_events` instead — see [`ProofEvent`].
+pub fn proof_events(sink: StreamSink<ProofEvent>) {
+    let ready = ProofEvent::Ready {
         core_version: env!("CARGO_PKG_VERSION").to_owned(),
     };
     // Send before storing, so a failed handshake never installs a dead sink.
@@ -135,7 +137,7 @@ pub fn core_events(sink: StreamSink<CoreEvent>) {
 
 /// Push `event` to Dart. Silently does nothing if nobody has subscribed —
 /// dropping a notification is always preferable to blocking the core on the UI.
-fn emit(event: CoreEvent) {
+fn emit(event: ProofEvent) {
     if let Some(sink) = event_sink()
         .lock()
         .expect("event sink mutex poisoned")
@@ -145,7 +147,7 @@ fn emit(event: CoreEvent) {
     }
 }
 
-/// Ask the core to emit a [`CoreEvent::Pong`] **from another thread**, so the
+/// Ask the core to emit a [`ProofEvent::Pong`] **from another thread**, so the
 /// test proves a genuine unsolicited push rather than a disguised return value.
 ///
 /// Note there is no timer anywhere in this file: the stream is idle until
@@ -154,7 +156,7 @@ fn emit(event: CoreEvent) {
 pub fn ping(text: String) {
     std::thread::spawn(move || {
         let len_utf16 = offsets::utf16_len(&text);
-        emit(CoreEvent::Pong { text, len_utf16 });
+        emit(ProofEvent::Pong { text, len_utf16 });
     });
 }
 

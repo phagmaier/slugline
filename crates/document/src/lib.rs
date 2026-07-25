@@ -29,6 +29,7 @@ mod document;
 mod edit;
 mod find;
 mod history;
+mod recovery;
 mod workflow;
 
 pub use document::{parse_blocks, Block, Document, Grouped};
@@ -36,6 +37,7 @@ pub use edit::{
     DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
 };
 pub use find::{FindQuery, Match};
+pub use recovery::{BlockSnapshot, Patch, ReplayError};
 pub use workflow::{enter_makes_a_cue, kind_after_enter, kind_after_tab, kind_before_tab};
 
 // Re-exported so a caller does not have to depend on `fountain` directly to

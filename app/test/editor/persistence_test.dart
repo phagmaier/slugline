@@ -1,0 +1,360 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:slugline/core/core.dart' show RecoveryOffer;
+import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/save_status.dart';
+import 'package:slugline/library/backups_dialog.dart' show formatBytes, formatTimestamp;
+import 'package:slugline/library/recovery_dialog.dart';
+import 'package:slugline/library/save_dialogs.dart';
+
+import '../support/fake_core.dart';
+
+/// The Dart half of §Phase 4: what the writer is told, and what they are asked.
+///
+/// The rules being checked here are §Phase 4's own words:
+///
+/// * a save failure is "a blocking, explicit error … never a silent toast";
+/// * read-only, full disk and permission-denied each get "a distinct message and
+///   a Save As escape hatch";
+/// * a file that changed on disk while unmodified reloads silently, and one that
+///   changed with unsaved edits prompts;
+/// * §10's "must never silently discard unsaved changes".
+void main() {
+  Future<void> pumpWith(WidgetTester tester, Widget Function(BuildContext) body) {
+    return tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: Builder(builder: body))),
+    );
+  }
+
+  group('save failures', () {
+    for (final (failure, expected) in const [
+      (SaveFailure.readOnly, 'read-only'),
+      (SaveFailure.noSpace, 'disk is full'),
+      (SaveFailure.permissionDenied, 'No permission'),
+      (SaveFailure.noSuchDirectory, 'not there'),
+    ]) {
+      testWidgets('$failure says "$expected" and offers Save as', (tester) async {
+        SaveFailureChoice? choice;
+        await pumpWith(
+          tester,
+          (context) => TextButton(
+            onPressed: () async {
+              choice = await showSaveFailure(
+                context,
+                SaveOutcome.failed(
+                  failure: failure,
+                  path: '/scripts/heat.fountain',
+                  message: 'os said no',
+                ) as SaveOutcome_Failed,
+              );
+            },
+            child: const Text('save'),
+          ),
+        );
+        await tester.tap(find.text('save'));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining(expected, findRichText: true), findsWidgets);
+        expect(find.text('/scripts/heat.fountain'), findsNothing,
+            reason: 'the path is in a sentence, not on its own');
+        expect(find.textContaining('/scripts/heat.fountain'), findsWidgets);
+
+        // Every failure offers the escape hatch.
+        expect(find.text('Save as…'), findsOneWidget);
+        await tester.tap(find.text('Save as…'));
+        await tester.pumpAndSettle();
+        expect(choice, SaveFailureChoice.saveAs);
+      });
+    }
+
+    testWidgets('the dialog cannot be dismissed by clicking away', (tester) async {
+      // §Phase 4: "blocking, explicit … never a silent toast". Clicking the
+      // barrier away would be the silent version.
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () => showSaveFailure(
+            context,
+            SaveOutcome.failed(
+              failure: SaveFailure.noSpace,
+              path: '/x.fountain',
+              message: 'ENOSPC',
+            ) as SaveOutcome_Failed,
+          ),
+          child: const Text('save'),
+        ),
+      );
+      await tester.tap(find.text('save'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget, reason: 'still there');
+    });
+
+    testWidgets('the writer is told their work is not lost', (tester) async {
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () => showSaveFailure(
+            context,
+            SaveOutcome.failed(
+              failure: SaveFailure.noSpace,
+              path: '/x.fountain',
+              message: 'ENOSPC',
+            ) as SaveOutcome_Failed,
+          ),
+          child: const Text('save'),
+        ),
+      );
+      await tester.tap(find.text('save'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('nothing has been lost'), findsOneWidget);
+    });
+  });
+
+  group('unsaved changes', () {
+    testWidgets('closing with unsaved work asks, and Cancel means cancel',
+        (tester) async {
+      UnsavedChoice? choice;
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () async {
+            choice = await showUnsavedChanges(context, 'heat.fountain');
+          },
+          child: const Text('close'),
+        ),
+      );
+      await tester.tap(find.text('close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes to heat.fountain?'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(choice, UnsavedChoice.cancel);
+    });
+
+    testWidgets('discarding is a deliberate choice, not the default',
+        (tester) async {
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () => showUnsavedChanges(context, 'heat.fountain'),
+          child: const Text('close'),
+        ),
+      );
+      await tester.tap(find.text('close'));
+      await tester.pumpAndSettle();
+      // Save is the filled button; Discard is not.
+      expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Discard'), findsNothing);
+      expect(find.widgetWithText(TextButton, 'Discard'), findsOneWidget);
+    });
+  });
+
+  group('external modification', () {
+    testWidgets('an unmodified document reloads without asking', (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..onDisk = 'Somebody else wrote this.\n';
+      // Not dirty: nothing has been typed.
+      final (dirty, differs) = core.externalChange()!;
+      expect(dirty, isFalse);
+      expect(differs, isTrue);
+      // The page's rule: not dirty and different → reload, no dialog. The dialog
+      // is only reached in the other case, which the next test covers.
+    });
+
+    testWidgets('a modified document prompts with three answers', (tester) async {
+      ExternalChangeChoice? choice;
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () async {
+            choice = await showExternalChange(context, '/scripts/heat.fountain');
+          },
+          child: const Text('changed'),
+        ),
+      );
+      await tester.tap(find.text('changed'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Keep mine'), findsOneWidget);
+      expect(find.text('Take theirs'), findsOneWidget);
+      expect(find.text('Save as…'), findsOneWidget);
+      // The one that loses work says so.
+      expect(find.textContaining('discards your unsaved changes'), findsOneWidget);
+
+      await tester.tap(find.text('Keep mine'));
+      await tester.pumpAndSettle();
+      expect(choice, ExternalChangeChoice.keepMine);
+    });
+  });
+
+  group('crash recovery', () {
+    RecoveryOffer offer({
+      int edits = 14,
+      bool damaged = false,
+      String script = '/scripts/heat.fountain',
+      String? blocked,
+    }) =>
+        RecoveryOffer(
+          journal: '/state/journal/abc.log',
+          script: script,
+          title: script.isEmpty ? 'Untitled' : 'heat.fountain',
+          edits: edits,
+          damaged: damaged,
+          blocked: blocked,
+        );
+
+    test('the summary is §Phase 4\'s "14 edits since last save"', () {
+      expect(
+        RecoveryDialog.summaryOf(offer()),
+        '14 edits since the last save.',
+      );
+      expect(
+        RecoveryDialog.summaryOf(offer(edits: 1)),
+        '1 edit since the last save.',
+      );
+      expect(
+        RecoveryDialog.summaryOf(offer(script: '')),
+        '14 edits in a script never saved.',
+      );
+      expect(
+        RecoveryDialog.summaryOf(offer(damaged: true)),
+        contains('last keystroke was not written in full'),
+      );
+    });
+
+    testWidgets('Recover and Discard are both offered, and nothing is automatic',
+        (tester) async {
+      Map<String, RecoveryChoice>? chosen;
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () async {
+            chosen = await RecoveryDialog.show(context, [offer()]);
+          },
+          child: const Text('start'),
+        ),
+      );
+      await tester.tap(find.text('start'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('closed unexpectedly'), findsOneWidget);
+      expect(
+        find.textContaining('Nothing has been written to any of your files'),
+        findsOneWidget,
+      );
+      expect(find.text('Recover'), findsOneWidget);
+      expect(find.text('Discard'), findsOneWidget);
+
+      await tester.tap(find.text('Recover'));
+      await tester.pumpAndSettle();
+      expect(chosen, {'/state/journal/abc.log': RecoveryChoice.recover});
+    });
+
+    testWidgets('closing the dialog decides nothing', (tester) async {
+      // The safe answer. A journal left alone is offered again next launch; a
+      // journal discarded is gone.
+      Map<String, RecoveryChoice>? chosen;
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () async {
+            chosen = await RecoveryDialog.show(context, [offer()]);
+          },
+          child: const Text('start'),
+        ),
+      );
+      await tester.tap(find.text('start'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Decide later'));
+      await tester.pumpAndSettle();
+      expect(chosen, isEmpty);
+    });
+
+    testWidgets('an offer that cannot be taken says why and is not offered',
+        (tester) async {
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () => RecoveryDialog.show(
+            context,
+            [offer(blocked: 'heat.fountain has changed since it was last open')],
+          ),
+          child: const Text('start'),
+        ),
+      );
+      await tester.tap(find.text('start'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('has changed since it was last open'), findsOneWidget);
+      final recover = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Recover'),
+      );
+      expect(recover.onPressed, isNull, reason: 'and it cannot be pressed');
+    });
+  });
+
+  group('the status line', () {
+    testWidgets('says what would survive a crash right now', (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain';
+      final status = SaveStatus(core: core);
+
+      expect(status.label, 'saved');
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+      expect(status.label, 'not saved · 1 edits recorded');
+
+      await core.save();
+      expect(status.label, 'saved');
+    });
+
+    testWidgets('a failure outranks an earlier success', (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'x')
+        ..filePath = '/scripts/heat.fountain';
+      final status = SaveStatus(core: core);
+      status.record(await core.save());
+      expect(status.isError, isFalse);
+
+      core.refuseSaveWith = SaveFailure.noSpace;
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+      status.record(await core.save());
+      expect(status.isError, isTrue);
+      expect(status.label, contains('disk is full'));
+    });
+
+    testWidgets('a script that has never been saved says so', (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'x');
+      expect(SaveStatus(core: core).label, 'never saved');
+    });
+  });
+
+  group('formatting', () {
+    test('sizes are human', () {
+      expect(formatBytes(512), '512 bytes');
+      expect(formatBytes(2048), '2.0 kB');
+      expect(formatBytes(3 * 1024 * 1024), '3.0 MB');
+    });
+
+    test('today and yesterday are named rather than dated', () {
+      final now = DateTime.now();
+      expect(formatTimestamp(now.millisecondsSinceEpoch), startsWith('Today at '));
+      final yesterday = now.subtract(const Duration(days: 1));
+      expect(
+        formatTimestamp(yesterday.millisecondsSinceEpoch),
+        startsWith('Yesterday at '),
+      );
+      final old = DateTime(2024, 3, 7, 9, 5);
+      expect(formatTimestamp(old.millisecondsSinceEpoch), '2024-03-07 at 09:05');
+    });
+  });
+}

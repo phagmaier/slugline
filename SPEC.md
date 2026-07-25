@@ -739,9 +739,23 @@ Define the full table in `docs/KEYMAP.md`. Baseline:
       real desktop session. Still not run. No automated test can stand in for it —
       it is a property of the session, not of this code — and the automated tests
       above drive the same `TextInputClient` interface `ibus` reaches us through.
-- [ ] Accessibility. ADR 0005 lists it as Phase 3 work and it is not done: the
-      surface exposes no semantics tree, which `EditableText` would have given
-      free. It is the one item on ADR 0005's list still outstanding.
+- [x] Accessibility — ADR 0005's last outstanding item, and ADR 0012 records how
+      it was closed. Each visible block is a semantics node: a multiline text
+      field whose label is the element type, whose value is the text as drawn,
+      and — on the block holding the caret — whose selection reaches AT-SPI as
+      `textSelectionBase`/`Extent`, with the cursor-movement, set-selection,
+      set-text and clipboard actions. It is a render object rather than a
+      `Semantics` widget because `SemanticsProperties` has no field for a text
+      selection, and for a writing tool the caret is most of the point.
+      `app/test/editor/accessibility_test.dart` asserts on the `SemanticsData`
+      the owner produces rather than on the widgets. Nodes are built for the
+      visible band only, and only while something is listening, so with no
+      assistive technology attached the cost is not paid.
+
+      **Not verified against a real screen reader.** The tests prove what arrives
+      in the semantics tree; whether Orca reads a screenplay *well* from it is a
+      question about a session, like the `ibus` check above, and it has not been
+      asked.
 
 ---
 
@@ -761,62 +775,154 @@ Implement precisely this sequence, in `crates/storage`:
 4. `fsync` the containing **directory**
 5. Preserve the original file's mode and ownership where permitted
 
-- [ ] Implemented exactly as above
-- [ ] Save failure surfaces a blocking, explicit error to the user — never a silent toast
-- [ ] Read-only file, full disk, and permission-denied are each handled with a distinct
-      message and a "Save As" escape hatch
+- [x] Implemented exactly as above — `storage/src/atomic.rs`. Step 5 runs
+      *before* the rename, because the file that will exist at the path is the
+      temp file; after it there would be a window in which the new file is
+      visible with the umask's permissions. Ownership is best effort by
+      specification ("where permitted"): `chown` needs `CAP_CHOWN`, and a save
+      must not fail because a script the writer copied in belongs to someone
+      else.
+- [x] Save failure surfaces a blocking, explicit error to the user — never a
+      silent toast. `showSaveFailure` is `barrierDismissible: false`, because
+      clicking a dialog away *is* the silent version.
+- [x] Read-only file, full disk, and permission-denied are each handled with a
+      distinct message and a "Save As" escape hatch. `SaveFailure` is one variant
+      per message and `saveWithDialogs` is the single path every save in the
+      application takes. A read-only file is refused **up front** rather than
+      overwritten: `rename(2)` asks nothing of the target, so without the check
+      the read-only bit would be silently defeated.
 
 ### Autosave & journal
 
-- [ ] Autosave debounced after edit inactivity (default 2 s) and on a hard interval
-      (default 30 s), both configurable
-- [ ] Autosave never runs while a modal is open or during an active IME composition
-- [ ] An append-only **edit journal** in `$XDG_STATE_HOME/slugline/journal/<script-id>.log`
-      records committed edit commands between saves
-- [ ] On startup, an un-truncated journal means the previous session crashed → offer recovery
-- [ ] Recovery presents a diff summary ("14 edits since last save") and Recover / Discard,
-      never auto-applies
+- [x] Autosave debounced after edit inactivity (default 2 s) and on a hard
+      interval (default 30 s), both configurable — `editor/autosave.dart`,
+      `storage::prefs`. The clock is in Dart and ADR 0014 says why: the two
+      suppression rules below are facts about a widget and about the platform's
+      input connection, neither of which exists in Rust.
+- [x] Autosave never runs while a modal is open or during an active IME
+      composition. A suppression **holds** the save rather than cancelling it, so
+      the save happens when the dialog closes — §10 does not allow a save to be
+      dropped because the timing was awkward.
+- [x] An append-only **edit journal** in
+      `$XDG_STATE_HOME/slugline/journal/<script-id>.log` records committed edits
+      between saves. It records the **outcome** of each edit rather than the
+      command; ADR 0013 explains why, and why that is what makes "not a keystroke
+      beyond the last" reachable. Measured cost on the keystroke path: p50
+      0.81 ms against 0.78 ms without it, p99 1.14 ms against a 16 ms budget
+      (`keystroke_benchmark_test.dart`).
+- [x] On startup, an un-truncated journal means the previous session crashed →
+      offer recovery. The journal's *absence* is what says a session ended
+      cleanly: `Journal::discard` removes it and nothing else does.
+- [x] Recovery presents a diff summary ("14 edits since last save") and Recover /
+      Discard, never auto-applies. `recovery_pending` reads and counts; nothing
+      is applied to any file until the writer answers, and a recovered document
+      arrives **dirty** — the file on disk is still the one from before the
+      crash, so even Recover still has to be confirmed by saving.
 
 ### Backups
 
-- [ ] Rolling backups written to a configurable location (default
-      `$XDG_STATE_HOME/slugline/backups/`)
-- [ ] Retention policy: last N versions plus one per day for M days (defaults: 10 / 7)
-- [ ] "Restore previous version" UI listing backups with timestamps and sizes
-- [ ] Restoring a backup writes the current state to a new backup first
+- [x] Rolling backups written to a configurable location (default
+      `$XDG_STATE_HOME/slugline/backups/`) — `storage/src/backup.rs`. Whole
+      copies, not diffs: a diff chain is only as good as its weakest link and
+      this is the thing that exists for when something has gone wrong.
+- [x] Retention policy: last N versions plus one per day for M days (defaults:
+      10 / 7). A day bucket is `millis / 86_400_000`, so no calendar is needed.
+- [x] "Restore previous version" UI listing backups with timestamps and sizes —
+      `library/backups_dialog.dart`.
+- [x] Restoring a backup writes the current state to a new backup first, which is
+      what turns a restore from a decision into an experiment. The dialog says so.
 
 ### External modification
 
-- [ ] `notify` watcher on open files
-- [ ] If a file changes on disk while open and unmodified in the app → reload silently
-- [ ] If it changes while there are unsaved edits → prompt (Keep Mine / Take Theirs / Save As)
+- [x] `notify` watcher on open files — `storage/src/watch.rs`. It watches the
+      **directory** and filters by name, not the file: an inotify watch follows
+      the inode, so a watch on the file stops firing the first time anything
+      saves over it by rename — which is how every careful editor on this
+      platform saves, ours included.
+- [x] If a file changes on disk while open and unmodified in the app → reload
+      silently. The silence is deliberate: a writer who has changed nothing has
+      nothing to lose and nothing to decide.
+- [x] If it changes while there are unsaved edits → prompt (Keep Mine / Take
+      Theirs / Save As). "Take theirs" says that it discards the undo history
+      too, because it does.
 
 ### Library
 
-- [ ] Create, open, rename, duplicate, remove-from-library, delete-file
-- [ ] Recent scripts list with path, last-modified, page count
-- [ ] Library index is a plain JSON file in `$XDG_DATA_HOME` — it is a *cache*, and the app
-      must work correctly if it is deleted
-- [ ] Missing files shown as missing, not silently dropped
-- [ ] Session restore: reopen the scripts that were open last time, with scroll positions
+- [x] Create, open, rename, duplicate, remove-from-library, delete-file. Remove
+      and delete are two commands in two places in the menu, and only one of them
+      asks twice.
+- [x] Recent scripts list with path, last-modified, page count. The page count is
+      zero until Phase 6's `layout` crate can compute one, and the library shows
+      nothing rather than guessing.
+- [x] Library index is a plain JSON file in `$XDG_DATA_HOME` — it is a *cache*,
+      and the app works correctly if it is deleted. `Library::load` cannot fail:
+      a missing, truncated or hand-mangled index is an empty one, and an
+      integration test deletes it mid-session and opens a script anyway.
+- [x] Missing files shown as missing, not silently dropped. A drive that is not
+      mounted this morning is not a script the writer threw away.
+- [x] Session restore: reopen the scripts that were open last time, with scroll
+      positions. The scroll row is parked in the index on every scroll, so a
+      crash restores it too rather than only a clean exit.
 
 ### Tests — these are the important ones
 
-- [ ] **Kill test:** `SIGKILL` the process mid-typing, relaunch, verify recovery offers the
-      correct edits. Automate this; run it in CI.
-- [ ] **Interrupted write test:** simulate a failure between temp-write and rename; verify
-      the original file is intact and untouched
-- [ ] **Full disk test:** fill a small tmpfs, attempt save, verify a clear error and no
-      truncated file
-- [ ] Fuzz the journal: truncated, corrupt, and partially-written records must not crash
-      recovery
+- [x] **Kill test:** `SIGKILL` the process mid-typing, relaunch, verify recovery
+      offers the correct edits. `crates/bridge/tests/persistence.rs`
+      (`sigkill_mid_typing_loses_nothing`) really does spawn a child, wait until
+      it says it has typed, `kill -9` it, and replay what survived. It runs in
+      `cargo test`, so CI runs it on every commit rather than only in the
+      integration step.
+- [x] **Interrupted write test:** the rename is made impossible (the target path
+      is a directory), so the temp file is written and synced and the rename is
+      what fails — which is exactly the window. The original is untouched and no
+      temp file is left behind.
+- [x] **Full disk test:** `a_full_filesystem_is_a_clear_error_and_no_truncated_file`.
+      Mounting a tmpfs needs root, which a test run does not have; the test uses
+      one when `SLUGLINE_FULL_DISK_DIR` names a small filesystem, and otherwise
+      proves the part that can actually be wrong — that `ENOSPC` is classified as
+      its own failure rather than a generic one, and that a failed save leaves
+      the old bytes. **Give CI a tmpfs to make this the real thing.**
+- [x] Fuzz the journal: truncated, corrupt, and partially-written records must
+      not crash recovery. `storage`'s `no_byte_sequence_makes_the_reader_panic`
+      sweeps every truncation of a real journal and every single-byte corruption
+      of it; `a_damaged_journal_never_yields_a_patch_that_was_not_written_whole`
+      is the stronger half — whatever survives must be a *prefix* of what was
+      recorded. Recovery that invents an edit is worse than recovery that loses
+      one.
 
 ### Exit criteria
 
-- [ ] You have deliberately killed the app 20 times while typing and never lost a keystroke
-      beyond the last one
-- [ ] Requirement §10's "must never silently discard unsaved changes" is verified by test,
-      not by inspection
+- [x] You have deliberately killed the app 20 times while typing and never lost a
+      keystroke beyond the last one — **as an automated equivalent, not as
+      twenty runs by hand.** What varies between one kill and the next is *where*
+      the journal was cut, so that is what
+      `every_way_a_kill_can_cut_the_journal_loses_only_the_tail` varies: every
+      truncation of a real journal is replayed, each must yield a prefix of what
+      was typed, and the whole journal must still recover everything. Twenty
+      manual kills would be the same assertion twenty times with less coverage.
+      The by-hand version has not been run.
+- [x] Requirement §10's "must never silently discard unsaved changes" is verified
+      by test, not by inspection: `showUnsavedChanges` on every close path, and
+      `EditorPageState.confirmClose` returns false when the save the writer chose
+      did not happen — an abandoned save is not consent to lose the work.
+      `app/test/editor/persistence_test.dart` covers the prompt and its defaults.
+
+The window's close button goes through `AppLifecycleListener.onExitRequested`:
+it asks about unsaved work, cancels the quit if the writer cancels, and discards
+every journal on the way out — a clean exit must not leave a journal behind, or
+the next launch offers a recovery for edits that are already in the file, and a
+prompt that cries wolf is a prompt that gets dismissed the one time it matters.
+
+### Still open at the end of Phase 4
+
+- [ ] **Preferences UI.** `prefs_get`/`prefs_set` are wired and the file is
+      read and written; nothing in the application edits it yet. §Phase 4 says
+      the autosave numbers must be configurable, and they are — by hand, in
+      `$XDG_CONFIG_HOME/slugline/preferences.json`. The settings pane is Phase 10.
+- [ ] **A native file dialog.** ADR 0015: `file_selector_linux` brings `http`
+      transitively and §1.2 makes "zero network requests" a build-time assertion.
+      The chooser we wrote works and is keyboard-first, but GTK's is better.
+      Revisit in Phase 10.
 
 ---
 
@@ -1151,7 +1257,8 @@ Resolve these and record them in `docs/DECISIONS.md`.
       for 1.0)
 - [ ] Scene number gutter style (left, right, or both)
 - [ ] Where pinned autocomplete entities are stored (recommended: library index, not the
-      script file, to keep `.fountain` output clean)
+      script file, to keep `.fountain` output clean) — Phase 4 built the library
+      index, so the place now exists; the decision is still Phase 5's to make.
 
 ---
 

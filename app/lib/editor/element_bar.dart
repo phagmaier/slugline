@@ -4,6 +4,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/metrics.dart';
+import 'package:slugline/editor/save_status.dart';
 
 /// The bar along the bottom: what element the caret is in, what Tab would do
 /// next, and whether the last edit was refused.
@@ -13,9 +14,13 @@ import 'package:slugline/editor/metrics.dart';
 /// each entry is there to teach the shortcut, because a writer who uses the menu
 /// twice should never need it a third time.
 class ElementBar extends StatelessWidget {
-  const ElementBar({required this.controller, super.key});
+  const ElementBar({required this.controller, this.saveStatus, super.key});
 
   final EditorController controller;
+
+  /// What the save state is, in a few words. Null before Phase 4's persistence
+  /// is attached — which is what a widget test driving the bar alone does.
+  final SaveStatus? saveStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -45,14 +50,43 @@ class ElementBar extends StatelessWidget {
                     ),
                   const SizedBox(width: 16),
                   Text(
-                    '${controller.blocks.length} blocks · not saved',
+                    '${controller.blocks.length} blocks',
                     style: theme.textTheme.labelMedium
                         ?.copyWith(color: theme.disabledColor),
                   ),
+                  if (saveStatus case final status?) ...[
+                    const SizedBox(width: 12),
+                    _SaveStatusLabel(status: status),
+                  ],
                 ],
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether the file has what is on screen.
+///
+/// Words rather than an icon, because the two states a writer needs to tell
+/// apart — "saved" and "not saved yet" — are worth being unambiguous about, and
+/// because a dot in a corner is exactly the kind of thing people stop seeing.
+class _SaveStatusLabel extends StatelessWidget {
+  const _SaveStatusLabel({required this.status});
+
+  final SaveStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AnimatedBuilder(
+      animation: status,
+      builder: (context, _) => Text(
+        status.label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: status.isError ? theme.colorScheme.error : theme.disabledColor,
         ),
       ),
     );
