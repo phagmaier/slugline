@@ -47,7 +47,9 @@ EXPECTED_DIRECT: dict[str, set[str]] = {
     "render_pdf": {"layout"},
     "storage": {"document"},
     "spell": set(),
-    "bridge": set(),  # Phase 0: the bridge has no core crates wired in yet.
+    # Phase 2 wires the document in. `fountain` is reached through `document`'s
+    # re-exports rather than directly, so the bridge does not name it here.
+    "bridge": {"document"},
 }
 
 

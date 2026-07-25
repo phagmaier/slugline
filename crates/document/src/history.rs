@@ -101,6 +101,9 @@ pub(crate) struct History {
     open: Option<Transaction>,
     /// The block identity and operation the open transaction is coalescing.
     coalescing: Option<CoalesceKey>,
+    /// While set, [`History::close`] does nothing, so a run of commands lands in
+    /// one transaction and one undo takes all of it back.
+    grouped: bool,
 }
 
 impl History {
@@ -128,25 +131,52 @@ impl History {
             (None, _) => self.close(),
         }
         self.coalescing = coalesce;
-        self.open
-            .get_or_insert_with(|| Transaction::new(before_revision, after_revision))
-            .inverses
-            .push(inverse);
+        let transaction = self
+            .open
+            .get_or_insert_with(|| Transaction::new(before_revision, after_revision));
+        // A grouped transaction stays open across several commands, so the
+        // revision it ends at is the one the last command produced.
+        transaction.after_revision = after_revision;
+        transaction.inverses.push(inverse);
         self.undone.clear();
         if coalesce.is_none() {
             self.close();
         }
     }
 
-    /// Ends the open transaction, if any. Idempotent.
+    /// Ends the open transaction, if any. Idempotent, and a no-op inside a
+    /// group — the group decides when the transaction ends.
     pub(crate) fn close(&mut self) {
         self.coalescing = None;
+        if self.grouped {
+            return;
+        }
         if let Some(transaction) = self.open.take() {
             if !transaction.inverses.is_empty() {
                 self.done.push(transaction);
                 self.trim();
             }
         }
+    }
+
+    /// Starts a group: everything recorded until [`History::end_group`] becomes
+    /// a single undo step. Whatever was open before is closed first, so a group
+    /// never swallows the keystrokes that preceded it.
+    pub(crate) fn begin_group(&mut self) {
+        self.close();
+        self.grouped = true;
+    }
+
+    pub(crate) fn end_group(&mut self) {
+        self.grouped = false;
+        self.close();
+    }
+
+    /// Drops the transaction an undo just pushed onto the redo stack. Used when
+    /// the undo was a rollback of a group that failed half-way: the caller was
+    /// told the command did nothing, so there is nothing to redo.
+    pub(crate) fn drop_last_redo(&mut self) {
+        self.undone.pop();
     }
 
     pub(crate) fn take_undo(&mut self) -> Option<Transaction> {

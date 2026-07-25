@@ -80,6 +80,28 @@ impl Document {
         Document::default()
     }
 
+    /// A new script: one empty Action block and no history.
+    ///
+    /// [`Document::empty`] has no blocks at all, which is the right answer for
+    /// "nothing has been written" but the wrong one for an editor, which needs
+    /// somewhere to put the caret before the first keystroke. The block is
+    /// constructed rather than inserted so that the first thing a new script can
+    /// undo is the user's own first edit.
+    pub fn blank() -> Document {
+        Document {
+            blocks: vec![Block {
+                id: BlockId(1),
+                kind: BlockKind::Action,
+                text: String::new(),
+                forced: false,
+                dual: false,
+                provenance: None,
+            }],
+            next_id: 1,
+            ..Document::default()
+        }
+    }
+
     /// Parses Fountain source. Total: every input produces a document.
     pub fn parse(source: &str) -> Document {
         let script = parse(source);
@@ -222,6 +244,72 @@ impl Document {
         let revision = self.revision;
         let result = self.apply_command(command)?;
         if self.revision != revision {
+            self.history
+                .set_selections(self.revision, before, result.selection);
+        }
+        Ok(result)
+    }
+
+    /// Applies several commands as **one** undo transaction.
+    ///
+    /// Either every command applies or none of them does: a failure part-way
+    /// through rolls the group back and reports the error, leaving the document
+    /// and the history exactly as they were. That atomicity is what lets the
+    /// bridge express a paste — delete the selection, split, insert, merge — as
+    /// something the user undoes with one keystroke (§3.4).
+    pub fn apply_all(
+        &mut self,
+        commands: Vec<EditCommand>,
+        before: Option<DocSelection>,
+    ) -> Result<EditResult, EditError> {
+        self.apply_group(before, |group| {
+            for command in commands {
+                group.apply(command)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// The same, for a sequence that cannot be written down in advance.
+    ///
+    /// `plan` applies commands through the [`Grouped`] it is handed and sees
+    /// each result as it goes, so it can name a block that an earlier command in
+    /// the same transaction created — which is what a paste around a split
+    /// needs.
+    pub fn apply_group<F>(
+        &mut self,
+        before: Option<DocSelection>,
+        plan: F,
+    ) -> Result<EditResult, EditError>
+    where
+        F: FnOnce(&mut Grouped<'_>) -> Result<(), EditError>,
+    {
+        if let Some(selection) = before {
+            self.check_selection(selection)?;
+        }
+        let start_revision = self.revision;
+        self.history.begin_group();
+
+        let mut group = Grouped {
+            document: self,
+            merged: Merged::default(),
+        };
+        let outcome = plan(&mut group);
+        let merged = group.merged;
+        self.history.end_group();
+
+        if let Err(error) = outcome {
+            if self.revision != start_revision {
+                self.undo();
+                // The caller is being told the command did nothing, so there is
+                // nothing for a redo to put back.
+                self.history.drop_last_redo();
+            }
+            return Err(error);
+        }
+
+        let result = merged.into_result();
+        if self.revision != start_revision {
             self.history
                 .set_selections(self.revision, before, result.selection);
         }
@@ -662,6 +750,72 @@ impl Document {
         })
     }
 
+    // ---- clipboard ----
+
+    /// The Fountain text of everything between two positions.
+    ///
+    /// A selection inside one block is plain text — it has no element structure
+    /// to carry. A selection spanning blocks is written as Fountain, and the
+    /// blocks it covers *whole* keep their provenance, so copying an untouched
+    /// scene and pasting it back reproduces the bytes it was written with rather
+    /// than a canonical rendering of them (§3.2).
+    pub fn extract(&self, from: DocPosition, to: DocPosition) -> Result<String, EditError> {
+        let first = self
+            .index_of(from.block)
+            .ok_or(EditError::UnknownBlock(from.block))?;
+        let last = self
+            .index_of(to.block)
+            .ok_or(EditError::UnknownBlock(to.block))?;
+        let ((first, from), (last, to)) = if (first, from.offset) <= (last, to.offset) {
+            ((first, from), (last, to))
+        } else {
+            ((last, to), (first, from))
+        };
+        check_offset(&self.blocks[first], from.offset)?;
+        check_offset(&self.blocks[last], to.offset)?;
+
+        if first == last {
+            let text = &self.blocks[first].text;
+            return Ok(text[from.offset as usize..to.offset as usize].to_owned());
+        }
+
+        let elements: Vec<ElementRef<'_>> = self.blocks[first..=last]
+            .iter()
+            .enumerate()
+            .map(|(offset, block)| {
+                let index = first + offset;
+                let start = if index == first {
+                    from.offset as usize
+                } else {
+                    0
+                };
+                let end = if index == last {
+                    to.offset as usize
+                } else {
+                    block.text.len()
+                };
+                let whole = start == 0 && end == block.text.len();
+                ElementRef {
+                    kind: block.kind,
+                    text: &block.text[start..end],
+                    forced: block.forced,
+                    dual: block.dual,
+                    // A partially covered block is not the block the source
+                    // holds, so it cannot be copied out of it verbatim.
+                    provenance: whole.then(|| block.provenance.clone()).flatten(),
+                }
+            })
+            .collect();
+
+        Ok(serialise(&Output {
+            title_page: &TitlePage::default(),
+            elements: &elements,
+            source: self.original_source.as_deref(),
+            bom: false,
+            line_ending: self.line_ending,
+        }))
+    }
+
     // ---- history ----
 
     /// Applies a transaction's inverses and returns the transaction that undoes
@@ -831,6 +985,108 @@ impl Document {
         self.blocks
             .first()
             .map(|block| DocSelection::caret(DocPosition::new(block.id, 0)))
+    }
+}
+
+/// Reads Fountain source as blocks that have not been inserted anywhere yet —
+/// what a paste needs (§Phase 2, "Copy, cut, paste (as Fountain-aware blocks)").
+///
+/// `Opaque` is not a state a *new* block may be in: §3.2 defines it as content
+/// that always has provenance, and a pasted block has none. Such a block becomes
+/// Action carrying the same text, which the serialiser then protects with `!`.
+/// The bytes survive; only the invisibility of a pasted boneyard comment does
+/// not.
+pub fn parse_blocks(source: &str) -> Vec<NewBlock> {
+    parse(source)
+        .elements
+        .into_iter()
+        .map(|element| NewBlock {
+            kind: match element.kind {
+                BlockKind::Opaque => BlockKind::Action,
+                kind => kind,
+            },
+            text: element.text,
+            forced: element.forced,
+            dual: element.dual,
+        })
+        .collect()
+}
+
+/// A transaction in progress (see [`Document::apply_group`]).
+///
+/// Commands go through here rather than through [`Document::apply`] so that the
+/// whole run lands in one undo step, and so that a failure rolls back the run
+/// rather than the one command that failed.
+pub struct Grouped<'a> {
+    document: &'a mut Document,
+    merged: Merged,
+}
+
+impl Grouped<'_> {
+    /// Applies one command and returns what it did — including the ids of any
+    /// blocks it created, which the rest of the plan may then name.
+    pub fn apply(&mut self, command: EditCommand) -> Result<EditResult, EditError> {
+        let result = self.document.apply_command(command)?;
+        self.merged.absorb(result.clone());
+        Ok(result)
+    }
+
+    /// The document as it stands part-way through the transaction.
+    pub fn document(&self) -> &Document {
+        self.document
+    }
+}
+
+/// The patch a run of commands adds up to, with ids that were created and then
+/// destroyed inside the run cancelling out.
+#[derive(Debug, Default)]
+struct Merged {
+    changed: Vec<BlockId>,
+    removed: Vec<BlockId>,
+    inserted: Vec<BlockId>,
+    selection: Option<DocSelection>,
+}
+
+impl Merged {
+    fn absorb(&mut self, result: EditResult) {
+        for id in result.removed {
+            if let Some(at) = self.inserted.iter().position(|&other| other == id) {
+                // Created and destroyed within the group: the caller never saw
+                // it, so it is not part of the patch at all.
+                self.inserted.remove(at);
+                continue;
+            }
+            self.changed.retain(|&other| other != id);
+            push_unique(&mut self.removed, id);
+        }
+        for id in result.changed {
+            if self.inserted.contains(&id) {
+                continue;
+            }
+            push_unique(&mut self.changed, id);
+        }
+        for id in result.inserted {
+            self.removed.retain(|&other| other != id);
+            push_unique(&mut self.inserted, id);
+        }
+        if result.selection.is_some() {
+            self.selection = result.selection;
+        }
+    }
+
+    fn into_result(self) -> EditResult {
+        EditResult {
+            changed: self.changed,
+            removed: self.removed,
+            inserted: self.inserted,
+            selection: self.selection,
+        }
+    }
+}
+
+fn push_unique(ids: &mut Vec<BlockId>, id: BlockId) {
+    if !ids.contains(&id) {
+        ids.push(id);
     }
 }
 
@@ -1672,6 +1928,228 @@ mod tests {
         let reopened = Document::parse(&document.serialise());
         assert_eq!(reopened.blocks[0].kind, BlockKind::Action);
         assert_eq!(reopened.blocks[0].text, "note[[");
+    }
+
+    #[test]
+    fn a_group_of_commands_is_one_undo_step() {
+        let mut document = doc();
+        let action = document.blocks[1].id;
+        document
+            .apply_all(
+                vec![
+                    EditCommand::SplitBlock {
+                        block: action,
+                        at: 5,
+                    },
+                    EditCommand::InsertBlocks {
+                        after: Some(action),
+                        blocks: vec![NewBlock::new(BlockKind::Action, "Inserted.")],
+                    },
+                ],
+                None,
+            )
+            .unwrap();
+        assert_eq!(document.blocks.len(), 7);
+
+        document.undo().unwrap();
+        assert_eq!(document.blocks.len(), 5);
+        assert_eq!(document.serialise(), SCRIPT);
+        assert!(!document.can_undo());
+
+        document.redo().unwrap();
+        assert_eq!(document.blocks.len(), 7);
+    }
+
+    #[test]
+    fn a_new_script_has_one_empty_block_and_nothing_to_undo() {
+        let document = Document::blank();
+        assert_eq!(document.blocks.len(), 1);
+        assert_eq!(document.blocks[0].kind, BlockKind::Action);
+        assert!(document.blocks[0].text.is_empty());
+        assert!(!document.can_undo());
+        assert!(!document.is_dirty());
+        assert!(document.is_empty());
+        assert_eq!(document.serialise(), "");
+    }
+
+    #[test]
+    fn a_plan_can_name_a_block_an_earlier_command_created() {
+        let mut document = doc();
+        let action = document.blocks[1].id;
+        let result = document
+            .apply_group(None, |group| {
+                let split = group.apply(EditCommand::SplitBlock {
+                    block: action,
+                    at: 5,
+                })?;
+                let tail = split.inserted[0];
+                group.apply(EditCommand::ReplaceText {
+                    block: tail,
+                    range: 0..0,
+                    with: "still ".into(),
+                })?;
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(document.blocks[2].text, "still enters.");
+        assert_eq!(result.inserted, vec![document.blocks[2].id]);
+        assert_eq!(result.changed, vec![action]);
+
+        document.undo().unwrap();
+        assert_eq!(document.serialise(), SCRIPT);
+    }
+
+    #[test]
+    fn a_group_reports_only_the_blocks_that_outlived_it() {
+        let mut document = doc();
+        let action = document.blocks[1].id;
+        let result = document
+            .apply_all(
+                vec![
+                    // Split, then merge the halves straight back together: the
+                    // block the split created never existed as far as the caller
+                    // is concerned.
+                    EditCommand::SplitBlock {
+                        block: action,
+                        at: 5,
+                    },
+                    EditCommand::MergeBlocks { first: action },
+                ],
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(result.changed, vec![action]);
+        assert!(result.inserted.is_empty());
+        assert!(result.removed.is_empty());
+    }
+
+    #[test]
+    fn a_group_that_fails_part_way_changes_nothing() {
+        let mut document = doc();
+        let action = document.blocks[1].id;
+        let before = document.serialise();
+
+        assert_eq!(
+            document.apply_all(
+                vec![
+                    EditCommand::ReplaceText {
+                        block: action,
+                        range: 0..0,
+                        with: "x".into(),
+                    },
+                    EditCommand::ReplaceText {
+                        block: BlockId(9_999),
+                        range: 0..0,
+                        with: "y".into(),
+                    },
+                ],
+                None,
+            ),
+            Err(EditError::UnknownBlock(BlockId(9_999)))
+        );
+
+        assert_eq!(document.serialise(), before);
+        assert!(!document.is_dirty());
+        assert!(!document.can_undo());
+        assert!(!document.can_redo());
+    }
+
+    #[test]
+    fn a_group_does_not_swallow_the_keystrokes_before_it() {
+        let mut document = doc();
+        let action = document.blocks[1].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: action,
+                range: 0..0,
+                with: "x".into(),
+            })
+            .unwrap();
+        document
+            .apply_all(
+                vec![EditCommand::SplitBlock {
+                    block: action,
+                    at: 1,
+                }],
+                None,
+            )
+            .unwrap();
+
+        document.undo().unwrap();
+        assert_eq!(document.blocks[1].text, "xJohn enters.");
+        document.undo().unwrap();
+        assert_eq!(document.blocks[1].text, "John enters.");
+    }
+
+    #[test]
+    fn extracting_inside_one_block_is_plain_text() {
+        let document = doc();
+        let id = document.blocks[1].id;
+        let text = document
+            .extract(DocPosition::new(id, 0), DocPosition::new(id, 4))
+            .unwrap();
+        assert_eq!(text, "John");
+    }
+
+    #[test]
+    fn extracting_across_blocks_is_fountain_and_normalises_direction() {
+        let document = doc();
+        let from = DocPosition::new(document.blocks[0].id, 0);
+        let to = DocPosition::new(document.blocks[4].id, 5);
+        let forwards = document.extract(from, to).unwrap();
+        assert_eq!(
+            forwards,
+            "INT. HOUSE - DAY\n\nJohn enters.\n\nJOHN\n(quietly)\nHello\n"
+        );
+        assert_eq!(document.extract(to, from).unwrap(), forwards);
+
+        // And what comes out is what goes back in.
+        let blocks = parse_blocks(&forwards);
+        let kinds: Vec<BlockKind> = blocks.iter().map(|block| block.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                BlockKind::SceneHeading,
+                BlockKind::Action,
+                BlockKind::Character,
+                BlockKind::Parenthetical,
+                BlockKind::Dialogue,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_partly_covered_block_is_not_copied_verbatim() {
+        // The action block's own bytes contain "John enters."; taking half of it
+        // has to re-serialise rather than slice the source.
+        let document = doc();
+        let text = document
+            .extract(
+                DocPosition::new(document.blocks[1].id, 5),
+                DocPosition::new(document.blocks[2].id, 4),
+            )
+            .unwrap();
+        assert_eq!(text, "enters.\n\nJOHN\n");
+    }
+
+    #[test]
+    fn pasted_opaque_content_keeps_its_bytes_as_action() {
+        let blocks = parse_blocks("/* hidden */\n");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, BlockKind::Action);
+        assert_eq!(blocks[0].text, "/* hidden */");
+
+        // And it inserts, which an Opaque block would not.
+        let mut document = doc();
+        document
+            .apply(EditCommand::InsertBlocks {
+                after: None,
+                blocks,
+            })
+            .unwrap();
+        assert!(document.serialise().starts_with("!/* hidden */\n"));
     }
 
     #[test]

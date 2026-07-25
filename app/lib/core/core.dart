@@ -6,6 +6,13 @@ import 'package:slugline/src/rust/frb_generated.dart';
 export 'package:slugline/src/rust/api/handshake.dart'
     show CoreEvent, CoreEvent_Ready, CoreEvent_Pong, CoreInfo, CrateInfo, TextMetrics;
 
+/// The string Phase 0 requires to survive the bridge unchanged: ASCII, a
+/// Latin-1 accent, CJK, and an astral-plane emoji (a surrogate pair in Dart).
+///
+/// Both sides hardcode it — see `crates/bridge/src/api/handshake.rs` — so it
+/// lives beside the client rather than in whatever widget happens to show it.
+const proofText = 'café 日本 🎬';
+
 /// The Dart-side handle on the Rust core.
 ///
 /// Everything that crosses the bridge goes through here, so there is one place

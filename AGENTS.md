@@ -2,10 +2,18 @@
 
 ## Scope and architecture
 
-- The repository is Linux-only. Phases 0 and 1 are complete: `app/` is an FRB handshake proof, `crates/fountain` and `crates/document` are the Fountain core, and the remaining crates are intentional placeholders for later phases. Follow the phase order and exit criteria in `SPEC.md`; work within one phase at a time.
+- The repository is Linux-only. Phases 0–2 are complete: `crates/fountain` and `crates/document` are the Fountain core, `crates/bridge` is the actor thread and the §6 document surface, `app/` is the editor, and `layout`/`render_pdf`/`storage`/`spell` are intentional placeholders for later phases. Follow the phase order and exit criteria in `SPEC.md`; work within one phase at a time.
 - Rust owns document state, Fountain semantics, persistence, pagination, and PDF output. Flutter owns input, caret/selection, scrolling, and widgets; Dart must ask Rust for screenplay semantics rather than reimplementing them.
 - Workspace layers are enforced by `python3 tools/check_layering.py`: `fountain` has no workspace dependencies; `document -> fountain`; `layout -> document`; `render_pdf -> layout`; `storage -> document`; `spell` has none; `bridge` may depend on all. Update the workspace manifest, the script's tables, and the bridge's `WORKSPACE_CRATES` table together when adding a workspace crate or allowed edge.
 - Every bridge offset is a UTF-16 code-unit offset named `*_utf16`. Only `crates/bridge/src/offsets.rs` may convert UTF-16 and UTF-8 offsets; invalid boundaries return `None`, never rounded or clamped. Offsets inside `document` are UTF-8 byte offsets and are named for it (ADR 0008).
+
+## The editor
+
+- `AppState` lives on one actor thread (`crates/bridge/src/actor.rs`); nothing else may hold a `Document`. Every bridge function hands the actor a closure. Long jobs — pagination, PDF export, the library scan — belong on a worker pool against a snapshot, not here (§2.3).
+- The editor is one custom editing surface, not a widget per block (ADR 0005). `EditorController` owns the caret, the selection and the wrapped line geometry; every text change goes to the core as an `EditCommand` and comes back as a patch that is applied in place — never refetch the document (ADR 0009).
+- `app/lib/editor/metrics.dart` holds §5.2's grid on loan. Phase 6's `layout` crate replaces it; do not grow a second opinion about screenplay geometry in Dart.
+- Phase 2 has no element inference and no element shortcuts — both are Phase 3. A block's kind changes only through `SetKind`.
+- Widget tests run without the `.so`, so they drive the editor through `DocumentCore` with the double in `app/test/support/fake_core.dart`. That double does list surgery only: anything that decides what a screenplay *is* goes in Rust and is tested with `cargo test`.
 
 ## The Fountain core
 
@@ -36,12 +44,14 @@ Run Flutter checks from `app/` (start with `flutter pub get` on a fresh checkout
 ```sh
 flutter analyze
 flutter test                         # unit tests only
-flutter test test/proof_text_test.dart # focused Dart test
+flutter test test/editor             # focused Dart tests
 flutter build linux --release        # also builds and bundles Rust
 flutter test integration_test/bridge_test.dart -d linux
+flutter test integration_test/editor_test.dart -d linux
+flutter test integration_test/keystroke_benchmark_test.dart -d linux
 ```
 
-- The bridge integration test needs the built `.so`; CI runs it after the release build under `xvfb-run`. The Linux build needs GTK, clang, CMake, Ninja, pkg-config, and liblzma development packages; see `README.md` for Arch/Debian commands.
+- The integration tests need the built `.so`; CI runs them after the release build under `xvfb-run`. The benchmark prints the §1.3 table it asserts on, so a regression says by how much. The Linux build needs GTK, clang, CMake, Ninja, pkg-config, and liblzma development packages; see `README.md` for Arch/Debian commands.
 - A focused Rust run uses `cargo test -p slugline_bridge <test_name>`.
 
 ## Project constraints

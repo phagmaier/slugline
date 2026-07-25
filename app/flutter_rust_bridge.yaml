@@ -1,3 +1,10 @@
 rust_input: crate::api
 rust_root: ../crates/bridge/
 dart_output: lib/src/rust
+# `BlockId` and `DocumentHandle` are `u64`. Without this, every one of them
+# arrives in Dart as a `BigInt` — allocated, boxed, and awkward as a map key, on
+# the path that runs for every visible block on every keystroke. Dart's `int` is
+# a native 64-bit signed integer on the only platform this project targets (§1),
+# so the mapping is exact. It is a codegen-wide switch: re-run codegen if it
+# changes, or the glue and the bindings disagree silently.
+type_64bit_int: true

@@ -28,6 +28,7 @@ needs them, not before.
 | `freezed` (dev) | 3.2.5 | Code generator for the above. Runs during `flutter_rust_bridge_codegen generate`, never during `flutter build`. |
 | `build_runner` (dev) | 2.15.1 | Drives `freezed`. Same story: codegen-time only. |
 | `integration_test` (dev) | SDK | Runs the bridge proofs against the real `.so`. Ships with Flutter. |
+| `characters` | 1.4.0 | Grapheme-cluster boundaries for caret motion and deletion. Without it, Backspace next to an emoji produces an offset inside a surrogate pair, which the bridge refuses outright (ADR 0001) — so the key would appear to do nothing. Dart-team package, no transitive dependencies, already in Flutter's own dependency set. |
 
 ## Deliberately not taken
 

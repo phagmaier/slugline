@@ -463,3 +463,127 @@ without a panic.
   beside `blocks`, maintained by the same splice that maintains the vector.
 * The entity index named in §2.1 is not here. It belongs to Phase 5, and building
   it now would be scaffolding for a consumer that does not exist (§1.4).
+
+---
+
+## ADR 0009 — The bridge's document surface: flat kinds, patches, and refusals as values
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2
+
+### Context
+
+§6 fixes the *names* of the bridge functions and §3.4 the shape of
+`EditCommand`, but three questions are left open by both, and each one is
+answered on every keystroke:
+
+1. `BlockKind::Section` carries a level. An enum with a payload becomes a
+   `freezed` sealed class in Dart (ADR 0003), which the editor would then have
+   to destructure on every block it paints and could not use as a map key.
+2. `EditResult` says "the ids of blocks that changed, removed, inserted". Ids
+   alone are not enough to patch a list: Dart would have to fetch the changed
+   blocks and guess where the inserted ones went.
+3. An edit can be refused. FRB's usual answer is a `Result` that becomes a
+   thrown Dart exception.
+
+### Decision
+
+**Kinds are flat.** `BlockKind` on the bridge is a plain Dart enum with a
+`Section` variant, and the level rides alongside in `BlockView::section_level`
+(0 for everything else). `SetKind` carries the same pair.
+
+**A result is a patch that can be applied without another call.** `EditResult`
+carries whole `BlockView`s for changed blocks, `(index, BlockView)` for inserted
+ones — the index being the position *after* the edit — and a `block_count` Dart
+asserts its own list against. The order is: drop `removed`, update `changed`,
+insert `inserted` in ascending index.
+
+**A refusal is a value, not an exception.** `doc_apply` returns
+`EditOutcome::Applied | Rejected { reason, message }`.
+
+`u64` is mapped to Dart `int` rather than `BigInt`, via `type_64bit_int` in
+`app/flutter_rust_bridge.yaml`.
+
+### Consequences
+
+* Dart switches exhaustively over `BlockKind` and uses it as the key of the
+  element-metrics table. The cost is one field that means nothing for twelve of
+  the thirteen variants — the "tag plus nullable field" shape ADR 0003 rejected
+  for `CoreEvent`. It is accepted here for the opposite reason: a plain Dart
+  enum *keeps* the compiler's exhaustiveness check, which is what ADR 0003 was
+  buying. `EditCommand`, `EditOutcome` and `CoreEvent` remain sum types.
+* No refetch: `test/editor/editor_controller_test.dart` watches the number of
+  reads out of the core stay at one across a run of edits.
+* Two refusals are ordinary user actions rather than bugs — typing inside a
+  boneyard comment, and backspacing at the very start of the script — so the
+  status bar shows them and nothing catches anything. Making them exceptions
+  would put a `try` on the keystroke path for the sake of two cases that are not
+  errors.
+* Dart `int` is a native 64-bit signed integer on the only platform this project
+  targets (§1.2), so the `BigInt` mapping was pure allocation on the path that
+  runs for every visible block. The switch is codegen-wide: change it and every
+  binding must be regenerated in the same commit, or the glue and the bindings
+  disagree silently.
+* `SetTitlePage` is absent from the bridge's `EditCommand`. The title page is
+  edited in Phase 7 and a command with no caller is scaffolding (§1.4).
+
+---
+
+## ADR 0010 — Paste is composed in the bridge, and grouped by the document
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2
+
+### Context
+
+Phase 2 requires "copy, cut, paste (as Fountain-aware blocks)". Copying a
+selection means asking what the selection *is* in Fountain, and pasting means
+reading Fountain back and splicing it in — both are screenplay semantics, which
+§2.1 puts in Rust.
+
+A paste is not one `EditCommand`. Replacing a selection with three blocks is a
+delete, a split, an insert and two text edits, and §3.4's rule that every
+structural command starts a new transaction would make it five undo steps.
+Worse, the split's new block has no id until the split has run, so the sequence
+cannot even be written down in advance.
+
+### Decision
+
+`document` gains a grouping primitive: `Document::apply_group(before, plan)`
+runs a closure that applies commands through a `Grouped` handle and sees each
+result as it goes, and the whole run becomes **one** undo transaction. A failure
+part-way through rolls the group back and reports the error, so the "a rejected
+edit never half-happens" guarantee holds for a group as it does for a command.
+`apply_all(commands)` is the sequence-shaped convenience over it.
+
+The paste itself is composed in `bridge/src/api/doc.rs`, where the caret is
+known, and its shape depends on where the caret is:
+
+* **Inside a block** — the text is spliced in: the first pasted block joins what
+  precedes the caret, the last joins what follows it, the rest become blocks.
+* **At a block boundary, with more than one block to paste** — the blocks go in
+  whole, above or below. Welding a copied scene heading onto the end of a line
+  of dialogue is never what was meant.
+* **Into an empty block** — the first pasted block fills it, kind and all.
+
+Copying is `Document::extract`, which re-serialises the selected blocks — and
+keeps the provenance of blocks the selection covers *whole*, so copying an
+untouched scene reproduces the bytes it was written with rather than a canonical
+rendering of them (§3.2).
+
+### Consequences
+
+* Typing over a selection that spans blocks is a paste, not two commands, so it
+  is one undo step. That is why `adopt` refuses to carry plain unforced Action:
+  it is the kind typed text has, and adopting it would silently demote a scene
+  heading whose text the user selected and retyped. There is a named test.
+* Phase 3's Replace All ("one undo transaction") already has its primitive.
+* An `Opaque` block cannot be a *new* block — §3.2 defines Opaque as content
+  that always has provenance, and pasted content has none — so `parse_blocks`
+  turns one into Action carrying the same bytes, which the serialiser then
+  protects with `!`. Nothing is lost except the invisibility of a pasted
+  boneyard comment. It is the only lossy corner of the clipboard, and it is
+  preferred to dropping the text (§1.2).
+* `Ctrl+Shift+V` is the same path with `plain: true`: every line becomes an
+  Action block and `forced` stays false, so the serialiser adds `!` only where a
+  line would otherwise be read back as something else. A plain-pasted
+  `INT. HOUSE - DAY` stays Action without the file gaining a marker it does not
+  need.

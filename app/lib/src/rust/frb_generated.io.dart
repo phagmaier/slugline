@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/doc.dart';
 import 'api/handshake.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -22,10 +23,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
+  int dco_decode_CastedPrimitive_u_64(dynamic raw);
+
+  @protected
   RustStreamSink<CoreEvent> dco_decode_StreamSink_core_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
+
+  @protected
+  BlockKind dco_decode_block_kind(dynamic raw);
+
+  @protected
+  BlockView dco_decode_block_view(dynamic raw);
+
+  @protected
+  bool dco_decode_bool(dynamic raw);
+
+  @protected
+  DocPosition dco_decode_box_autoadd_doc_position(dynamic raw);
+
+  @protected
+  DocSelection dco_decode_box_autoadd_doc_selection(dynamic raw);
+
+  @protected
+  DocumentHandle dco_decode_box_autoadd_document_handle(dynamic raw);
+
+  @protected
+  EditCommand dco_decode_box_autoadd_edit_command(dynamic raw);
+
+  @protected
+  EditResult dco_decode_box_autoadd_edit_result(dynamic raw);
 
   @protected
   CoreEvent dco_decode_core_event(dynamic raw);
@@ -37,22 +65,76 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrateInfo dco_decode_crate_info(dynamic raw);
 
   @protected
+  DocPosition dco_decode_doc_position(dynamic raw);
+
+  @protected
+  DocSelection dco_decode_doc_selection(dynamic raw);
+
+  @protected
+  DocumentHandle dco_decode_document_handle(dynamic raw);
+
+  @protected
+  EditCommand dco_decode_edit_command(dynamic raw);
+
+  @protected
+  EditOutcome dco_decode_edit_outcome(dynamic raw);
+
+  @protected
+  EditRejection dco_decode_edit_rejection(dynamic raw);
+
+  @protected
+  EditResult dco_decode_edit_result(dynamic raw);
+
+  @protected
+  int dco_decode_i_32(dynamic raw);
+
+  @protected
+  InsertedBlock dco_decode_inserted_block(dynamic raw);
+
+  @protected
+  List<int> dco_decode_list_CastedPrimitive_u_64(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<BlockView> dco_decode_list_block_view(dynamic raw);
 
   @protected
   List<CrateInfo> dco_decode_list_crate_info(dynamic raw);
 
   @protected
+  List<InsertedBlock> dco_decode_list_inserted_block(dynamic raw);
+
+  @protected
+  List<NewBlock> dco_decode_list_new_block(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  NewBlock dco_decode_new_block(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_CastedPrimitive_u_64(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  DocSelection? dco_decode_opt_box_autoadd_doc_selection(dynamic raw);
+
+  @protected
+  EditResult? dco_decode_opt_box_autoadd_edit_result(dynamic raw);
 
   @protected
   TextMetrics dco_decode_text_metrics(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
+
+  @protected
+  BigInt dco_decode_u_64(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -64,12 +146,43 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_CastedPrimitive_u_64(SseDeserializer deserializer);
+
+  @protected
   RustStreamSink<CoreEvent> sse_decode_StreamSink_core_event_Sse(
     SseDeserializer deserializer,
   );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
+
+  @protected
+  BlockKind sse_decode_block_kind(SseDeserializer deserializer);
+
+  @protected
+  BlockView sse_decode_block_view(SseDeserializer deserializer);
+
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  DocPosition sse_decode_box_autoadd_doc_position(SseDeserializer deserializer);
+
+  @protected
+  DocSelection sse_decode_box_autoadd_doc_selection(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DocumentHandle sse_decode_box_autoadd_document_handle(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EditCommand sse_decode_box_autoadd_edit_command(SseDeserializer deserializer);
+
+  @protected
+  EditResult sse_decode_box_autoadd_edit_result(SseDeserializer deserializer);
 
   @protected
   CoreEvent sse_decode_core_event(SseDeserializer deserializer);
@@ -81,16 +194,73 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrateInfo sse_decode_crate_info(SseDeserializer deserializer);
 
   @protected
+  DocPosition sse_decode_doc_position(SseDeserializer deserializer);
+
+  @protected
+  DocSelection sse_decode_doc_selection(SseDeserializer deserializer);
+
+  @protected
+  DocumentHandle sse_decode_document_handle(SseDeserializer deserializer);
+
+  @protected
+  EditCommand sse_decode_edit_command(SseDeserializer deserializer);
+
+  @protected
+  EditOutcome sse_decode_edit_outcome(SseDeserializer deserializer);
+
+  @protected
+  EditRejection sse_decode_edit_rejection(SseDeserializer deserializer);
+
+  @protected
+  EditResult sse_decode_edit_result(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  InsertedBlock sse_decode_inserted_block(SseDeserializer deserializer);
+
+  @protected
+  List<int> sse_decode_list_CastedPrimitive_u_64(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<BlockView> sse_decode_list_block_view(SseDeserializer deserializer);
 
   @protected
   List<CrateInfo> sse_decode_list_crate_info(SseDeserializer deserializer);
 
   @protected
+  List<InsertedBlock> sse_decode_list_inserted_block(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NewBlock> sse_decode_list_new_block(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  NewBlock sse_decode_new_block(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_CastedPrimitive_u_64(SseDeserializer deserializer);
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  DocSelection? sse_decode_opt_box_autoadd_doc_selection(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EditResult? sse_decode_opt_box_autoadd_edit_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TextMetrics sse_decode_text_metrics(SseDeserializer deserializer);
@@ -99,22 +269,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_8(SseDeserializer deserializer);
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer);
-
-  @protected
-  bool sse_decode_bool(SseDeserializer deserializer);
-
-  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_CastedPrimitive_u_64(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_core_event_Sse(
@@ -126,6 +296,45 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_block_kind(BlockKind self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_block_view(BlockView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_doc_position(
+    DocPosition self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_doc_selection(
+    DocSelection self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_document_handle(
+    DocumentHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_edit_command(
+    EditCommand self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_edit_result(
+    EditResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_core_event(CoreEvent self, SseSerializer serializer);
 
   @protected
@@ -135,7 +344,49 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_crate_info(CrateInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_doc_position(DocPosition self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_doc_selection(DocSelection self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_document_handle(
+    DocumentHandle self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_edit_command(EditCommand self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_edit_outcome(EditOutcome self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_edit_rejection(EditRejection self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_edit_result(EditResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_inserted_block(InsertedBlock self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_CastedPrimitive_u_64(
+    List<int> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_block_view(
+    List<BlockView> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_crate_info(
@@ -144,13 +395,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_inserted_block(
+    List<InsertedBlock> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_new_block(List<NewBlock> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_new_block(NewBlock self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_CastedPrimitive_u_64(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_doc_selection(
+    DocSelection? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_edit_result(
+    EditResult? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_text_metrics(TextMetrics self, SseSerializer serializer);
@@ -159,16 +437,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
   void sse_encode_u_8(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer);
 }
 
 // Section: wire_class

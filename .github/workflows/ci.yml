@@ -136,8 +136,21 @@ jobs:
       # The bridge proofs need the real .so, so they run against the bundle
       # rather than in the unit-test job. xvfb supplies the X display the GTK
       # embedder needs on a headless runner.
+      - name: Install xvfb
+        run: sudo apt-get install --no-install-recommends -y xvfb
+
       - name: Bridge integration tests
         working-directory: app
-        run: |
-          sudo apt-get install --no-install-recommends -y xvfb
-          xvfb-run -a flutter test integration_test/bridge_test.dart -d linux
+        run: xvfb-run -a flutter test integration_test/bridge_test.dart -d linux
+
+      # Phase 2: the whole chain, from a keystroke to the Fountain the core
+      # would write.
+      - name: Editor integration tests
+        working-directory: app
+        run: xvfb-run -a flutter test integration_test/editor_test.dart -d linux
+
+      # §1.3: keystroke → glyph, p99 under 16 ms on the 120-page reference
+      # script. Prints the table it asserts on, so a regression says by how much.
+      - name: Keystroke budget
+        working-directory: app
+        run: xvfb-run -a flutter test integration_test/keystroke_benchmark_test.dart -d linux

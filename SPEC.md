@@ -619,38 +619,49 @@ Do all of this with `cargo test`. Do not open Flutter this phase.
 
 ### Bridge
 
-- [ ] Actor thread + command channel + `AppState` established
-- [ ] `offsets.rs` with UTF-8 ↔ UTF-16 conversion and its full unit test suite
-- [ ] `doc_blocks`, `doc_block_count`, `doc_apply` wired
-- [ ] `EditResult` patch application implemented on the Dart side (no full refetch)
+- [x] Actor thread + command channel + `AppState` established
+- [x] `offsets.rs` with UTF-8 ↔ UTF-16 conversion and its full unit test suite
+- [x] `doc_blocks`, `doc_block_count`, `doc_apply` wired
+- [x] `EditResult` patch application implemented on the Dart side (no full refetch)
 
 ### Editor surface
 
-- [ ] Virtualised block list — only visible blocks are built
-- [ ] Each element kind renders with its correct indent and casing:
+- [x] Virtualised block list — only visible blocks are built
+- [x] Each element kind renders with its correct indent and casing:
       scene headings and character cues upper-case, dialogue indented, etc.
-- [ ] Typing inserts text and commits to Rust
-- [ ] Enter splits a block; Backspace at offset 0 merges with the previous block
-- [ ] Caret and selection render; click-to-place-caret works
-- [ ] Arrow keys, Home/End, PageUp/PageDown navigate across block boundaries
-- [ ] Shift + navigation extends selection across blocks
-- [ ] Select all
-- [ ] Copy, cut, paste (as Fountain-aware blocks)
-- [ ] Paste as plain text (`Ctrl+Shift+V`) — inserts as Action, no element inference
-- [ ] Automatic scroll keeps the caret in view with a comfortable margin
-- [ ] Undo / redo with correct caret restoration
+- [x] Typing inserts text and commits to Rust
+- [x] Enter splits a block; Backspace at offset 0 merges with the previous block
+- [x] Caret and selection render; click-to-place-caret works
+- [x] Arrow keys, Home/End, PageUp/PageDown navigate across block boundaries
+- [x] Shift + navigation extends selection across blocks
+- [x] Select all
+- [x] Copy, cut, paste (as Fountain-aware blocks)
+- [x] Paste as plain text (`Ctrl+Shift+V`) — inserts as Action, no element inference
+- [x] Automatic scroll keeps the caret in view with a comfortable margin
+- [x] Undo / redo with correct caret restoration
 - [ ] Editing works with an IME active (test with `ibus` and a CJK input method)
+      — **built, not verified.** The surface hands the platform the caret's block
+      as a one-block editing session and underlines the composing region, but the
+      `ibus` + CJK check is a manual one that has not been run. ADR 0005 makes
+      composition across a block boundary Phase 3 work and gives Phase 3 a hard
+      exit gate for exactly this.
 
 ### Tests
 
-- [ ] Widget test table for Enter/Backspace behaviour in every element type
-- [ ] Integration test: type 500 characters, verify the Rust document matches
-- [ ] Benchmark: keystroke-to-frame p99 < 16 ms on the reference script
+- [x] Widget test table for Enter/Backspace behaviour in every element type
+- [x] Integration test: type 500 characters, verify the Rust document matches
+- [x] Benchmark: keystroke-to-frame p99 < 16 ms on the reference script
 
 ### Exit criteria
 
 - [ ] You can write a scene, with dialogue, using only the keyboard, and it looks like a
-      screenplay
+      screenplay — **half true, by design.** Everything above is done, and a
+      *parsed* script renders and edits as a screenplay. But nothing in Phase 2's
+      list infers an element type or binds a key to one: "automatic detection on
+      the current block as you type", the element shortcuts and the element
+      selector are all Phase 3's list, so a script typed from nothing is Action
+      throughout until Phase 3 lands. The command underneath (`SetKind`) is wired
+      and covered end to end.
 
 ---
 
@@ -1096,7 +1107,8 @@ agents producing a codebase you cannot reason about:
 
 Resolve these and record them in `docs/DECISIONS.md`.
 
-- [ ] **Editor implementation approach** (Phase 0 spike) — blocks everything
+- [x] **Editor implementation approach** (Phase 0 spike) — one custom editing
+      surface (ADR 0005)
 - [ ] Exact keyboard shortcut map — write `docs/KEYMAP.md` before Phase 3
 - [x] Application name, binary name, and reverse-DNS app ID — **Slugline**, `slugline`,
       `com.phagmaier.slugline` (ADR 0006)

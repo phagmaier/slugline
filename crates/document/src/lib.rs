@@ -29,7 +29,7 @@ mod document;
 mod edit;
 mod history;
 
-pub use document::{Block, Document};
+pub use document::{parse_blocks, Block, Document, Grouped};
 pub use edit::{
     DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
 };

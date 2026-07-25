@@ -995,6 +995,7 @@ name = "slugline_bridge"
 version = "0.1.0"
 dependencies = [
  "flutter_rust_bridge",
+ "slugline_document",
 ]
 
 [[package]]

@@ -1,32 +1,27 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/core.dart';
+import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_surface.dart';
 
-/// Phase 0 handshake window.
-///
-/// This is not the application. It renders the four things Phase 0 has to
-/// prove — struct round trip, event stream, non-ASCII fidelity, and UTF-16
-/// offset agreement — so that a human can see them pass. It is deleted when the
-/// editor shell lands in Phase 3.
+/// Phase 2: you can type a screenplay in a window. Nothing is saved yet —
+/// opening, saving and the library are Phase 4, and the window says so.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final core = await Core.init();
-  runApp(HandshakeApp(core: core));
+  await Core.init();
+  runApp(SluglineApp(controller: EditorController(RustDocumentCore.create())));
 }
 
-/// The string Phase 0 requires to survive the bridge unchanged: ASCII, a
-/// Latin-1 accent, CJK, and an astral-plane emoji (a surrogate pair in Dart).
-const proofText = 'café 日本 🎬';
+class SluglineApp extends StatelessWidget {
+  const SluglineApp({required this.controller, super.key});
 
-class HandshakeApp extends StatelessWidget {
-  const HandshakeApp({required this.core, super.key});
-
-  final Core core;
+  final EditorController controller;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Slugline — Phase 0',
+      title: 'Slugline',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -35,204 +30,85 @@ class HandshakeApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: HandshakePage(core: core),
+      home: EditorPage(controller: controller),
     );
   }
 }
 
-class HandshakePage extends StatefulWidget {
-  const HandshakePage({required this.core, super.key});
+class EditorPage extends StatelessWidget {
+  const EditorPage({required this.controller, super.key});
 
-  final Core core;
-
-  @override
-  State<HandshakePage> createState() => _HandshakePageState();
-}
-
-class _HandshakePageState extends State<HandshakePage> {
-  late final CoreInfo _info = widget.core.info();
-  final List<String> _log = [];
-
-  @override
-  void initState() {
-    super.initState();
-    widget.core.events.listen(_onEvent);
-  }
-
-  void _onEvent(CoreEvent event) {
-    final description = switch (event) {
-      CoreEvent_Ready(:final coreVersion) => 'Ready — core $coreVersion',
-      CoreEvent_Pong(:final text, :final lenUtf16) =>
-        'Pong — "$text" ($lenUtf16 UTF-16 units)',
-    };
-    if (mounted) setState(() => _log.add(description));
-  }
+  final EditorController controller;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Slugline — Phase 0 handshake'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(28),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 8),
-              child: Text(
-                'core ${_info.coreVersion}  ·  flutter_rust_bridge ${_info.frbVersion}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
+      body: Column(
         children: [
-          _ProofCard(
-            title: 'Struct round trip',
-            detail: 'Dart called core_info() and got a struct back, '
-                'including a nested List<CrateInfo>.',
-            passed: _info.crates.length == 7,
-            child: _CrateTable(crates: _info.crates),
-          ),
-          const SizedBox(height: 16),
-          _NonAsciiProof(core: widget.core),
-          const SizedBox(height: 16),
-          _ProofCard(
-            title: 'Event stream',
-            detail: 'Rust pushes over a single StreamSink<CoreEvent>. '
-                'Ping asks the core to reply from a worker thread.',
-            passed: _log.isNotEmpty,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final line in _log)
-                  Text(line, style: const TextStyle(fontFamily: 'monospace')),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => widget.core.ping(proofText),
-                  child: const Text('Ping the core'),
-                ),
-              ],
-            ),
-          ),
+          Expanded(child: EditorSurface(controller: controller)),
+          _StatusBar(controller: controller),
         ],
       ),
     );
   }
 }
 
-class _NonAsciiProof extends StatelessWidget {
-  const _NonAsciiProof({required this.core});
+/// The element the caret is in, and whether the last edit was refused.
+///
+/// Phase 3 replaces this with a real element selector and a command palette;
+/// for now it exists so that "what am I typing?" has an answer on screen.
+class _StatusBar extends StatelessWidget {
+  const _StatusBar({required this.controller});
 
-  final Core core;
-
-  @override
-  Widget build(BuildContext context) {
-    final echoed = core.echo(proofText);
-    final metrics = core.metrics(proofText);
-    // In 'café 日本 🎬', UTF-16 offsets 8..10 are the two halves of the emoji's
-    // surrogate pair, so this slice is only correct if both sides agree.
-    final emoji = core.slice(proofText, 8, 10);
-    final splitPair = core.slice(proofText, 8, 9);
-
-    final passed = echoed == proofText &&
-        metrics.lenUtf16 == proofText.length &&
-        emoji == '🎬' &&
-        splitPair == null;
-
-    return _ProofCard(
-      title: 'Non-ASCII and UTF-16 offsets',
-      detail: 'Text crosses as UTF-8 and comes back as UTF-16 unchanged, '
-          'and both sides count offsets the same way (§2.4).',
-      passed: passed,
-      child: DefaultTextStyle.merge(
-        style: const TextStyle(fontFamily: 'monospace'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('sent             $proofText'),
-            Text('received         $echoed'),
-            Text('identical        ${echoed == proofText}'),
-            Text('dart .length     ${proofText.length}'),
-            Text('rust len_utf16   ${metrics.lenUtf16}'),
-            Text('rust len_utf8    ${metrics.lenUtf8}'),
-            Text('rust char_count  ${metrics.charCount}'),
-            Text('slice 8..10      ${emoji ?? "null"}'),
-            Text('slice 8..9       ${splitPair ?? "null — surrogate pair refused"}'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CrateTable extends StatelessWidget {
-  const _CrateTable({required this.crates});
-
-  final List<CrateInfo> crates;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final crate in crates)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: Text(
-              '${crate.name.padRight(12)}→ '
-              '${crate.dependsOn.isEmpty ? "nothing" : crate.dependsOn.join(", ")}',
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ProofCard extends StatelessWidget {
-  const _ProofCard({
-    required this.title,
-    required this.detail,
-    required this.passed,
-    required this.child,
-  });
-
-  final String title;
-  final String detail;
-  final bool passed;
-  final Widget child;
+  final EditorController controller;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  passed ? Icons.check_circle : Icons.pending_outlined,
-                  color: passed ? Colors.green : theme.disabledColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(title, style: theme.textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(detail, style: theme.textTheme.bodySmall),
-            const Divider(height: 24),
-            child,
-          ],
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: SizedBox(
+        height: 28,
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            final rejection = controller.lastRejection;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Text(
+                    currentKindLabel(controller),
+                    style: theme.textTheme.labelMedium,
+                  ),
+                  const Spacer(),
+                  if (rejection != null)
+                    Text(
+                      _rejectionMessage(rejection),
+                      style: theme.textTheme.labelMedium
+                          ?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  const SizedBox(width: 16),
+                  Text(
+                    '${controller.blocks.length} blocks · not saved',
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(color: theme.disabledColor),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
+
+  /// Two of these are ordinary things to try, not bugs, so they get a sentence
+  /// a writer can act on. The rest are the core telling us we asked wrongly.
+  String _rejectionMessage(EditRejection rejection) => switch (rejection) {
+        EditRejection.notEditable =>
+          'That block round-trips verbatim and cannot be edited.',
+        EditRejection.noBlockAfter => 'Nothing to join this to.',
+        _ => 'That edit was refused.',
+      };
 }

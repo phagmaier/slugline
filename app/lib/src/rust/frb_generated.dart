@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/doc.dart';
 import 'api/handshake.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -66,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -606423771;
+  int get rustContentHash => -1120506456;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -81,6 +82,45 @@ abstract class RustLibApi extends BaseApi {
   Stream<CoreEvent> crateApiHandshakeCoreEvents();
 
   CoreInfo crateApiHandshakeCoreInfo();
+
+  EditOutcome crateApiDocDocApply({
+    required DocumentHandle handle,
+    required EditCommand command,
+    DocSelection? before,
+  });
+
+  int crateApiDocDocBlockCount({required DocumentHandle handle});
+
+  List<BlockView> crateApiDocDocBlocks({
+    required DocumentHandle handle,
+    required int from,
+    required int to,
+  });
+
+  void crateApiDocDocClose({required DocumentHandle handle});
+
+  String? crateApiDocDocExtract({
+    required DocumentHandle handle,
+    required DocPosition from,
+    required DocPosition to,
+  });
+
+  DocumentHandle crateApiDocDocNew();
+
+  DocumentHandle crateApiDocDocParse({required String source});
+
+  EditOutcome crateApiDocDocPaste({
+    required DocumentHandle handle,
+    required DocSelection at,
+    required String text,
+    required bool plain,
+  });
+
+  EditResult? crateApiDocDocRedo({required DocumentHandle handle});
+
+  String crateApiDocDocSource({required DocumentHandle handle});
+
+  EditResult? crateApiDocDocUndo({required DocumentHandle handle});
 
   String crateApiHandshakeEcho({required String text});
 
@@ -160,13 +200,299 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "core_info", argNames: []);
 
   @override
+  EditOutcome crateApiDocDocApply({
+    required DocumentHandle handle,
+    required EditCommand command,
+    DocSelection? before,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_edit_command(command, serializer);
+          sse_encode_opt_box_autoadd_doc_selection(before, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_edit_outcome,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocApplyConstMeta,
+        argValues: [handle, command, before],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocApplyConstMeta => const TaskConstMeta(
+    debugName: "doc_apply",
+    argNames: ["handle", "command", "before"],
+  );
+
+  @override
+  int crateApiDocDocBlockCount({required DocumentHandle handle}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocBlockCountConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocBlockCountConstMeta =>
+      const TaskConstMeta(debugName: "doc_block_count", argNames: ["handle"]);
+
+  @override
+  List<BlockView> crateApiDocDocBlocks({
+    required DocumentHandle handle,
+    required int from,
+    required int to,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_u_32(from, serializer);
+          sse_encode_u_32(to, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_block_view,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocBlocksConstMeta,
+        argValues: [handle, from, to],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocBlocksConstMeta => const TaskConstMeta(
+    debugName: "doc_blocks",
+    argNames: ["handle", "from", "to"],
+  );
+
+  @override
+  void crateApiDocDocClose({required DocumentHandle handle}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocCloseConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocCloseConstMeta =>
+      const TaskConstMeta(debugName: "doc_close", argNames: ["handle"]);
+
+  @override
+  String? crateApiDocDocExtract({
+    required DocumentHandle handle,
+    required DocPosition from,
+    required DocPosition to,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_doc_position(from, serializer);
+          sse_encode_box_autoadd_doc_position(to, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocExtractConstMeta,
+        argValues: [handle, from, to],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocExtractConstMeta => const TaskConstMeta(
+    debugName: "doc_extract",
+    argNames: ["handle", "from", "to"],
+  );
+
+  @override
+  DocumentHandle crateApiDocDocNew() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_document_handle,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocNewConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocNewConstMeta =>
+      const TaskConstMeta(debugName: "doc_new", argNames: []);
+
+  @override
+  DocumentHandle crateApiDocDocParse({required String source}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(source, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_document_handle,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocParseConstMeta,
+        argValues: [source],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocParseConstMeta =>
+      const TaskConstMeta(debugName: "doc_parse", argNames: ["source"]);
+
+  @override
+  EditOutcome crateApiDocDocPaste({
+    required DocumentHandle handle,
+    required DocSelection at,
+    required String text,
+    required bool plain,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_box_autoadd_doc_selection(at, serializer);
+          sse_encode_String(text, serializer);
+          sse_encode_bool(plain, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_edit_outcome,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocPasteConstMeta,
+        argValues: [handle, at, text, plain],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocPasteConstMeta => const TaskConstMeta(
+    debugName: "doc_paste",
+    argNames: ["handle", "at", "text", "plain"],
+  );
+
+  @override
+  EditResult? crateApiDocDocRedo({required DocumentHandle handle}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_edit_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocRedoConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocRedoConstMeta =>
+      const TaskConstMeta(debugName: "doc_redo", argNames: ["handle"]);
+
+  @override
+  String crateApiDocDocSource({required DocumentHandle handle}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocSourceConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocSourceConstMeta =>
+      const TaskConstMeta(debugName: "doc_source", argNames: ["handle"]);
+
+  @override
+  EditResult? crateApiDocDocUndo({required DocumentHandle handle}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_edit_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDocDocUndoConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDocDocUndoConstMeta =>
+      const TaskConstMeta(debugName: "doc_undo", argNames: ["handle"]);
+
+  @override
   String crateApiHandshakeEcho({required String text}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -191,7 +517,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 15,
             port: port_,
           );
         },
@@ -216,7 +542,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -245,7 +571,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(text, serializer);
           sse_encode_u_32(startUtf16, serializer);
           sse_encode_u_32(endUtf16, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -271,7 +597,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_text_metrics,
@@ -294,6 +620,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int dco_decode_CastedPrimitive_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError(
+      'Not implemented in this codec, please use the other one',
+    );
+  }
+
+  @protected
   RustStreamSink<CoreEvent> dco_decode_StreamSink_core_event_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
@@ -303,6 +637,65 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  BlockKind dco_decode_block_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BlockKind.values[raw as int];
+  }
+
+  @protected
+  BlockView dco_decode_block_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return BlockView(
+      id: dco_decode_CastedPrimitive_u_64(arr[0]),
+      kind: dco_decode_block_kind(arr[1]),
+      sectionLevel: dco_decode_u_8(arr[2]),
+      text: dco_decode_String(arr[3]),
+      forced: dco_decode_bool(arr[4]),
+      dual: dco_decode_bool(arr[5]),
+      readOnly: dco_decode_bool(arr[6]),
+    );
+  }
+
+  @protected
+  bool dco_decode_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
+  DocPosition dco_decode_box_autoadd_doc_position(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_doc_position(raw);
+  }
+
+  @protected
+  DocSelection dco_decode_box_autoadd_doc_selection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_doc_selection(raw);
+  }
+
+  @protected
+  DocumentHandle dco_decode_box_autoadd_document_handle(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_document_handle(raw);
+  }
+
+  @protected
+  EditCommand dco_decode_box_autoadd_edit_command(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_edit_command(raw);
+  }
+
+  @protected
+  EditResult dco_decode_box_autoadd_edit_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_edit_result(raw);
   }
 
   @protected
@@ -348,9 +741,158 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DocPosition dco_decode_doc_position(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return DocPosition(
+      block: dco_decode_CastedPrimitive_u_64(arr[0]),
+      offsetUtf16: dco_decode_u_32(arr[1]),
+    );
+  }
+
+  @protected
+  DocSelection dco_decode_doc_selection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return DocSelection(
+      anchor: dco_decode_doc_position(arr[0]),
+      focus: dco_decode_doc_position(arr[1]),
+    );
+  }
+
+  @protected
+  DocumentHandle dco_decode_document_handle(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return DocumentHandle(id: dco_decode_CastedPrimitive_u_64(arr[0]));
+  }
+
+  @protected
+  EditCommand dco_decode_edit_command(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return EditCommand_ReplaceText(
+          block: dco_decode_CastedPrimitive_u_64(raw[1]),
+          startUtf16: dco_decode_u_32(raw[2]),
+          endUtf16: dco_decode_u_32(raw[3]),
+          with_: dco_decode_String(raw[4]),
+        );
+      case 1:
+        return EditCommand_SplitBlock(
+          block: dco_decode_CastedPrimitive_u_64(raw[1]),
+          atUtf16: dco_decode_u_32(raw[2]),
+        );
+      case 2:
+        return EditCommand_MergeBlocks(
+          first: dco_decode_CastedPrimitive_u_64(raw[1]),
+        );
+      case 3:
+        return EditCommand_SetKind(
+          block: dco_decode_CastedPrimitive_u_64(raw[1]),
+          kind: dco_decode_block_kind(raw[2]),
+          sectionLevel: dco_decode_u_8(raw[3]),
+          forced: dco_decode_bool(raw[4]),
+        );
+      case 4:
+        return EditCommand_InsertBlocks(
+          after: dco_decode_opt_CastedPrimitive_u_64(raw[1]),
+          blocks: dco_decode_list_new_block(raw[2]),
+        );
+      case 5:
+        return EditCommand_DeleteRange(
+          from: dco_decode_box_autoadd_doc_position(raw[1]),
+          to: dco_decode_box_autoadd_doc_position(raw[2]),
+        );
+      case 6:
+        return EditCommand_SetDual(
+          block: dco_decode_CastedPrimitive_u_64(raw[1]),
+          dual: dco_decode_bool(raw[2]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  EditOutcome dco_decode_edit_outcome(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return EditOutcome_Applied(
+          result: dco_decode_box_autoadd_edit_result(raw[1]),
+        );
+      case 1:
+        return EditOutcome_Rejected(
+          reason: dco_decode_edit_rejection(raw[1]),
+          message: dco_decode_String(raw[2]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  EditRejection dco_decode_edit_rejection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return EditRejection.values[raw as int];
+  }
+
+  @protected
+  EditResult dco_decode_edit_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return EditResult(
+      changed: dco_decode_list_block_view(arr[0]),
+      removed: dco_decode_list_CastedPrimitive_u_64(arr[1]),
+      inserted: dco_decode_list_inserted_block(arr[2]),
+      selection: dco_decode_opt_box_autoadd_doc_selection(arr[3]),
+      blockCount: dco_decode_u_32(arr[4]),
+    );
+  }
+
+  @protected
+  int dco_decode_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
+  InsertedBlock dco_decode_inserted_block(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return InsertedBlock(
+      index: dco_decode_u_32(arr[0]),
+      block: dco_decode_block_view(arr[1]),
+    );
+  }
+
+  @protected
+  List<int> dco_decode_list_CastedPrimitive_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_CastedPrimitive_u_64).toList();
+  }
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<BlockView> dco_decode_list_block_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_block_view).toList();
   }
 
   @protected
@@ -360,15 +902,60 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<InsertedBlock> dco_decode_list_inserted_block(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_inserted_block).toList();
+  }
+
+  @protected
+  List<NewBlock> dco_decode_list_new_block(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_new_block).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
   }
 
   @protected
+  NewBlock dco_decode_new_block(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return NewBlock(
+      kind: dco_decode_block_kind(arr[0]),
+      sectionLevel: dco_decode_u_8(arr[1]),
+      text: dco_decode_String(arr[2]),
+      forced: dco_decode_bool(arr[3]),
+      dual: dco_decode_bool(arr[4]),
+    );
+  }
+
+  @protected
+  int? dco_decode_opt_CastedPrimitive_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_CastedPrimitive_u_64(raw);
+  }
+
+  @protected
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  DocSelection? dco_decode_opt_box_autoadd_doc_selection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_doc_selection(raw);
+  }
+
+  @protected
+  EditResult? dco_decode_opt_box_autoadd_edit_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_edit_result(raw);
   }
 
   @protected
@@ -391,6 +978,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BigInt dco_decode_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeU64(raw);
+  }
+
+  @protected
   int dco_decode_u_8(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -410,6 +1003,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int sse_decode_CastedPrimitive_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_u_64(deserializer);
+    return inner.toInt();
+  }
+
+  @protected
   RustStreamSink<CoreEvent> sse_decode_StreamSink_core_event_Sse(
     SseDeserializer deserializer,
   ) {
@@ -422,6 +1022,78 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  BlockKind sse_decode_block_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return BlockKind.values[inner];
+  }
+
+  @protected
+  BlockView sse_decode_block_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_kind = sse_decode_block_kind(deserializer);
+    var var_sectionLevel = sse_decode_u_8(deserializer);
+    var var_text = sse_decode_String(deserializer);
+    var var_forced = sse_decode_bool(deserializer);
+    var var_dual = sse_decode_bool(deserializer);
+    var var_readOnly = sse_decode_bool(deserializer);
+    return BlockView(
+      id: var_id,
+      kind: var_kind,
+      sectionLevel: var_sectionLevel,
+      text: var_text,
+      forced: var_forced,
+      dual: var_dual,
+      readOnly: var_readOnly,
+    );
+  }
+
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  DocPosition sse_decode_box_autoadd_doc_position(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_doc_position(deserializer));
+  }
+
+  @protected
+  DocSelection sse_decode_box_autoadd_doc_selection(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_doc_selection(deserializer));
+  }
+
+  @protected
+  DocumentHandle sse_decode_box_autoadd_document_handle(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_document_handle(deserializer));
+  }
+
+  @protected
+  EditCommand sse_decode_box_autoadd_edit_command(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_edit_command(deserializer));
+  }
+
+  @protected
+  EditResult sse_decode_box_autoadd_edit_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_edit_result(deserializer));
   }
 
   @protected
@@ -465,6 +1137,149 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DocPosition sse_decode_doc_position(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_offsetUtf16 = sse_decode_u_32(deserializer);
+    return DocPosition(block: var_block, offsetUtf16: var_offsetUtf16);
+  }
+
+  @protected
+  DocSelection sse_decode_doc_selection(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_anchor = sse_decode_doc_position(deserializer);
+    var var_focus = sse_decode_doc_position(deserializer);
+    return DocSelection(anchor: var_anchor, focus: var_focus);
+  }
+
+  @protected
+  DocumentHandle sse_decode_document_handle(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_CastedPrimitive_u_64(deserializer);
+    return DocumentHandle(id: var_id);
+  }
+
+  @protected
+  EditCommand sse_decode_edit_command(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+        var var_startUtf16 = sse_decode_u_32(deserializer);
+        var var_endUtf16 = sse_decode_u_32(deserializer);
+        var var_with_ = sse_decode_String(deserializer);
+        return EditCommand_ReplaceText(
+          block: var_block,
+          startUtf16: var_startUtf16,
+          endUtf16: var_endUtf16,
+          with_: var_with_,
+        );
+      case 1:
+        var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+        var var_atUtf16 = sse_decode_u_32(deserializer);
+        return EditCommand_SplitBlock(block: var_block, atUtf16: var_atUtf16);
+      case 2:
+        var var_first = sse_decode_CastedPrimitive_u_64(deserializer);
+        return EditCommand_MergeBlocks(first: var_first);
+      case 3:
+        var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+        var var_kind = sse_decode_block_kind(deserializer);
+        var var_sectionLevel = sse_decode_u_8(deserializer);
+        var var_forced = sse_decode_bool(deserializer);
+        return EditCommand_SetKind(
+          block: var_block,
+          kind: var_kind,
+          sectionLevel: var_sectionLevel,
+          forced: var_forced,
+        );
+      case 4:
+        var var_after = sse_decode_opt_CastedPrimitive_u_64(deserializer);
+        var var_blocks = sse_decode_list_new_block(deserializer);
+        return EditCommand_InsertBlocks(after: var_after, blocks: var_blocks);
+      case 5:
+        var var_from = sse_decode_box_autoadd_doc_position(deserializer);
+        var var_to = sse_decode_box_autoadd_doc_position(deserializer);
+        return EditCommand_DeleteRange(from: var_from, to: var_to);
+      case 6:
+        var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+        var var_dual = sse_decode_bool(deserializer);
+        return EditCommand_SetDual(block: var_block, dual: var_dual);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  EditOutcome sse_decode_edit_outcome(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_result = sse_decode_box_autoadd_edit_result(deserializer);
+        return EditOutcome_Applied(result: var_result);
+      case 1:
+        var var_reason = sse_decode_edit_rejection(deserializer);
+        var var_message = sse_decode_String(deserializer);
+        return EditOutcome_Rejected(reason: var_reason, message: var_message);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  EditRejection sse_decode_edit_rejection(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return EditRejection.values[inner];
+  }
+
+  @protected
+  EditResult sse_decode_edit_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_changed = sse_decode_list_block_view(deserializer);
+    var var_removed = sse_decode_list_CastedPrimitive_u_64(deserializer);
+    var var_inserted = sse_decode_list_inserted_block(deserializer);
+    var var_selection = sse_decode_opt_box_autoadd_doc_selection(deserializer);
+    var var_blockCount = sse_decode_u_32(deserializer);
+    return EditResult(
+      changed: var_changed,
+      removed: var_removed,
+      inserted: var_inserted,
+      selection: var_selection,
+      blockCount: var_blockCount,
+    );
+  }
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getInt32();
+  }
+
+  @protected
+  InsertedBlock sse_decode_inserted_block(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_index = sse_decode_u_32(deserializer);
+    var var_block = sse_decode_block_view(deserializer);
+    return InsertedBlock(index: var_index, block: var_block);
+  }
+
+  @protected
+  List<int> sse_decode_list_CastedPrimitive_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <int>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_CastedPrimitive_u_64(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -472,6 +1287,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<BlockView> sse_decode_list_block_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <BlockView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_block_view(deserializer));
     }
     return ans_;
   }
@@ -489,10 +1316,64 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<InsertedBlock> sse_decode_list_inserted_block(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <InsertedBlock>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_inserted_block(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<NewBlock> sse_decode_list_new_block(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NewBlock>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_new_block(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  NewBlock sse_decode_new_block(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_block_kind(deserializer);
+    var var_sectionLevel = sse_decode_u_8(deserializer);
+    var var_text = sse_decode_String(deserializer);
+    var var_forced = sse_decode_bool(deserializer);
+    var var_dual = sse_decode_bool(deserializer);
+    return NewBlock(
+      kind: var_kind,
+      sectionLevel: var_sectionLevel,
+      text: var_text,
+      forced: var_forced,
+      dual: var_dual,
+    );
+  }
+
+  @protected
+  int? sse_decode_opt_CastedPrimitive_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_CastedPrimitive_u_64(deserializer));
+    } else {
+      return null;
+    }
   }
 
   @protected
@@ -501,6 +1382,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  DocSelection? sse_decode_opt_box_autoadd_doc_selection(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_doc_selection(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  EditResult? sse_decode_opt_box_autoadd_edit_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_edit_result(deserializer));
     } else {
       return null;
     }
@@ -526,6 +1433,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getBigUint64();
+  }
+
+  @protected
   int sse_decode_u_8(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8();
@@ -537,24 +1450,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getInt32();
-  }
-
-  @protected
-  bool sse_decode_bool(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getUint8() != 0;
-  }
-
-  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_CastedPrimitive_u_64(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(sseEncodeCastedPrimitiveU64(self), serializer);
   }
 
   @protected
@@ -578,6 +1485,75 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_block_kind(BlockKind self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_block_view(BlockView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.id, serializer);
+    sse_encode_block_kind(self.kind, serializer);
+    sse_encode_u_8(self.sectionLevel, serializer);
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.forced, serializer);
+    sse_encode_bool(self.dual, serializer);
+    sse_encode_bool(self.readOnly, serializer);
+  }
+
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_doc_position(
+    DocPosition self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_doc_position(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_doc_selection(
+    DocSelection self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_doc_selection(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_document_handle(
+    DocumentHandle self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_document_handle(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_edit_command(
+    EditCommand self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_edit_command(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_edit_result(
+    EditResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_edit_result(self, serializer);
   }
 
   @protected
@@ -611,11 +1587,149 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_doc_position(DocPosition self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.block, serializer);
+    sse_encode_u_32(self.offsetUtf16, serializer);
+  }
+
+  @protected
+  void sse_encode_doc_selection(DocSelection self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_doc_position(self.anchor, serializer);
+    sse_encode_doc_position(self.focus, serializer);
+  }
+
+  @protected
+  void sse_encode_document_handle(
+    DocumentHandle self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.id, serializer);
+  }
+
+  @protected
+  void sse_encode_edit_command(EditCommand self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case EditCommand_ReplaceText(
+        block: final block,
+        startUtf16: final startUtf16,
+        endUtf16: final endUtf16,
+        with_: final with_,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_CastedPrimitive_u_64(block, serializer);
+        sse_encode_u_32(startUtf16, serializer);
+        sse_encode_u_32(endUtf16, serializer);
+        sse_encode_String(with_, serializer);
+      case EditCommand_SplitBlock(block: final block, atUtf16: final atUtf16):
+        sse_encode_i_32(1, serializer);
+        sse_encode_CastedPrimitive_u_64(block, serializer);
+        sse_encode_u_32(atUtf16, serializer);
+      case EditCommand_MergeBlocks(first: final first):
+        sse_encode_i_32(2, serializer);
+        sse_encode_CastedPrimitive_u_64(first, serializer);
+      case EditCommand_SetKind(
+        block: final block,
+        kind: final kind,
+        sectionLevel: final sectionLevel,
+        forced: final forced,
+      ):
+        sse_encode_i_32(3, serializer);
+        sse_encode_CastedPrimitive_u_64(block, serializer);
+        sse_encode_block_kind(kind, serializer);
+        sse_encode_u_8(sectionLevel, serializer);
+        sse_encode_bool(forced, serializer);
+      case EditCommand_InsertBlocks(after: final after, blocks: final blocks):
+        sse_encode_i_32(4, serializer);
+        sse_encode_opt_CastedPrimitive_u_64(after, serializer);
+        sse_encode_list_new_block(blocks, serializer);
+      case EditCommand_DeleteRange(from: final from, to: final to):
+        sse_encode_i_32(5, serializer);
+        sse_encode_box_autoadd_doc_position(from, serializer);
+        sse_encode_box_autoadd_doc_position(to, serializer);
+      case EditCommand_SetDual(block: final block, dual: final dual):
+        sse_encode_i_32(6, serializer);
+        sse_encode_CastedPrimitive_u_64(block, serializer);
+        sse_encode_bool(dual, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_edit_outcome(EditOutcome self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case EditOutcome_Applied(result: final result):
+        sse_encode_i_32(0, serializer);
+        sse_encode_box_autoadd_edit_result(result, serializer);
+      case EditOutcome_Rejected(reason: final reason, message: final message):
+        sse_encode_i_32(1, serializer);
+        sse_encode_edit_rejection(reason, serializer);
+        sse_encode_String(message, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_edit_rejection(EditRejection self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_edit_result(EditResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_block_view(self.changed, serializer);
+    sse_encode_list_CastedPrimitive_u_64(self.removed, serializer);
+    sse_encode_list_inserted_block(self.inserted, serializer);
+    sse_encode_opt_box_autoadd_doc_selection(self.selection, serializer);
+    sse_encode_u_32(self.blockCount, serializer);
+  }
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putInt32(self);
+  }
+
+  @protected
+  void sse_encode_inserted_block(InsertedBlock self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.index, serializer);
+    sse_encode_block_view(self.block, serializer);
+  }
+
+  @protected
+  void sse_encode_list_CastedPrimitive_u_64(
+    List<int> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_CastedPrimitive_u_64(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_block_view(
+    List<BlockView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_block_view(item, serializer);
     }
   }
 
@@ -632,6 +1746,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_inserted_block(
+    List<InsertedBlock> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_inserted_block(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_new_block(
+    List<NewBlock> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_new_block(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -642,12 +1780,61 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_new_block(NewBlock self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_block_kind(self.kind, serializer);
+    sse_encode_u_8(self.sectionLevel, serializer);
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.forced, serializer);
+    sse_encode_bool(self.dual, serializer);
+  }
+
+  @protected
+  void sse_encode_opt_CastedPrimitive_u_64(
+    int? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_CastedPrimitive_u_64(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_doc_selection(
+    DocSelection? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_doc_selection(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_edit_result(
+    EditResult? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_edit_result(self, serializer);
     }
   }
 
@@ -666,6 +1853,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putBigUint64(self);
+  }
+
+  @protected
   void sse_encode_u_8(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self);
@@ -674,17 +1867,5 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_unit(void self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-  }
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putInt32(self);
-  }
-
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putUint8(self ? 1 : 0);
   }
 }
