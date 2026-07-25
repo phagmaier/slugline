@@ -1,0 +1,6 @@
+PAGE 1
+   -3 -> ( 58, "1.")
+    0 -> (  0, "")
+    1 -> (  0, "INT. STUDY - NIGHT")
+    2 -> (  0, "")
+    3 -> (  0, "He writes a sentence  and then another  one.")

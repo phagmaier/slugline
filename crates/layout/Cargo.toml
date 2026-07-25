@@ -9,3 +9,10 @@ publish.workspace = true
 
 [dependencies]
 slugline_document.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "pagination"
+harness = false

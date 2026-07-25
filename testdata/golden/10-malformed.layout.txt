@@ -1,0 +1,20 @@
+TITLE PAGE
+   18 -> ( 25, "Truncated")
+PAGE 1
+   -3 -> ( 58, "1.")
+    0 -> (  0, "Author")
+    1 -> (  0, "")
+    2 -> (  0, "")
+    3 -> (  0, "INT.")
+    4 -> (  0, "")
+    5 -> (  0, "[[ an unterminated note")
+    6 -> (  0, "")
+    7 -> (  0, "(a parenthetical with nobody speaking")
+    8 -> (  0, "")
+    9 -> ( 22, "")
+   10 -> (  0, "")
+   11 -> (  0, ".")
+PAGE 2
+   -3 -> ( 58, "2.")
+    0 -> ( 22, "MARTHA")
+    1 -> ( 10, "The file stops mid-sen")

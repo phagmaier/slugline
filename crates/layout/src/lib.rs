@@ -1,20 +1,21 @@
-//! Line breaking and pagination.
+//! Deterministic line breaking and pagination on the screenplay grid.
 //!
-//! Layering rule (§2.5): may depend on `document` only. No I/O, no clock, no
-//! locale, no floating point in break decisions — pagination must be
-//! bit-identical on every machine.
-//!
-//! Phase 0 placeholder — the engine in §5 lands in Phase 5.
+//! Layering rule (§2.5): this crate depends on `document` only. Pagination has
+//! no I/O, clock, locale, or floating-point break decisions. [`ScriptSnapshot`]
+//! is the owned value a worker thread receives after briefly visiting the
+//! document actor.
 
-/// Text lines per page on US Letter with 1" top and bottom margins at 6 lpi (§5.2).
-pub const LINES_PER_PAGE_US_LETTER: u32 = 54;
+mod engine;
+mod line_break;
+pub mod metrics;
+mod model;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use engine::{paginate, LayoutEngine};
+pub use line_break::break_lines;
+pub use model::{
+    CacheStats, LayoutLine, LayoutLineKind, Page, PageConfig, PageSize, PaginatedScript,
+    PaginationCheckpoint, SceneNumberGutters, ScriptSnapshot,
+};
 
-    #[test]
-    fn us_letter_grid_is_fifty_four_lines() {
-        assert_eq!(LINES_PER_PAGE_US_LETTER, 54);
-    }
-}
+/// Compatibility name retained for callers of the Phase 0 placeholder.
+pub const LINES_PER_PAGE_US_LETTER: u16 = metrics::US_LETTER_LINES_PER_PAGE;

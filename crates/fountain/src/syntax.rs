@@ -6,6 +6,7 @@
 //! implementation is what makes "parse, edit one block, serialise, reparse"
 //! stable: there is no second opinion about what a line means.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::BlockKind;
@@ -170,6 +171,48 @@ pub(crate) fn standalone_protected_starts(source: &str) -> Vec<usize> {
     starts
 }
 
+/// Removes balanced inline notes and boneyards from printable text. An
+/// unclosed boneyard hides the remainder, matching Fountain's comment rule;
+/// an unclosed note remains visible because tolerant parsing treats it as text.
+pub fn without_notes_and_boneyards(source: &str) -> Cow<'_, str> {
+    let bytes = source.as_bytes();
+    let mut spans = matched_spans(bytes, b"[[", b"]]");
+    let boneyards = matched_spans(bytes, b"/*", b"*/");
+    let mut index = 0usize;
+    while index + 1 < bytes.len() {
+        if &bytes[index..index + 2] == b"/*" {
+            match span_at(&boneyards, index) {
+                Some(span) => index = span.end,
+                None => {
+                    spans.push(index..bytes.len());
+                    break;
+                }
+            }
+        } else {
+            index += 1;
+        }
+    }
+    spans.extend(boneyards);
+    if spans.is_empty() {
+        return Cow::Borrowed(source);
+    }
+    spans.sort_by_key(|span| span.start);
+
+    let mut visible = String::with_capacity(source.len());
+    let mut copied_through = 0usize;
+    for span in spans {
+        if span.end <= copied_through {
+            continue;
+        }
+        if span.start > copied_through {
+            visible.push_str(&source[copied_through..span.start]);
+        }
+        copied_through = copied_through.max(span.end);
+    }
+    visible.push_str(&source[copied_through..]);
+    Cow::Owned(visible)
+}
+
 pub(crate) fn note_text_is_balanced(text: &str) -> bool {
     let bytes = text.as_bytes();
     let mut depth = 0usize;
@@ -224,6 +267,25 @@ pub(crate) fn is_scene_heading(line: &str) -> bool {
                 .strip_prefix(prefix)
                 .is_some_and(|rest| rest.starts_with([' ', '.', '/']))
     })
+}
+
+/// Splits Fountain's optional trailing scene number (`#12A#`) from a scene
+/// heading. Recognition lives beside the other Fountain syntax rules so
+/// layout and future navigation code do not grow competing parsers.
+pub fn split_scene_number(line: &str) -> (&str, Option<&str>) {
+    let trimmed = line.trim_end();
+    let Some(without_closing) = trimmed.strip_suffix('#') else {
+        return (line, None);
+    };
+    let Some(opening) = without_closing.rfind('#') else {
+        return (line, None);
+    };
+    let number = &without_closing[opening + 1..];
+    let heading = without_closing[..opening].trim_end();
+    if number.trim().is_empty() || heading.is_empty() {
+        return (line, None);
+    }
+    (heading, Some(number.trim()))
 }
 
 /// All-caps and ending in `TO:` (§4.1). The caller checks that a blank line
@@ -306,6 +368,38 @@ mod tests {
                 "{other:?} should not be a heading"
             );
         }
+    }
+
+    #[test]
+    fn scene_numbers_are_recognised_only_as_a_complete_trailing_pair() {
+        assert_eq!(
+            split_scene_number("INT. LAB - DAY #12A#"),
+            ("INT. LAB - DAY", Some("12A"))
+        );
+        assert_eq!(
+            split_scene_number("INT. LAB # DAY"),
+            ("INT. LAB # DAY", None)
+        );
+        assert_eq!(
+            split_scene_number("INT. LAB - DAY ##"),
+            ("INT. LAB - DAY ##", None)
+        );
+    }
+
+    #[test]
+    fn inline_notes_and_boneyards_are_removed_from_printable_text() {
+        assert_eq!(
+            without_notes_and_boneyards("Before [[private note]] middle /* old version */ after"),
+            "Before  middle  after"
+        );
+        assert_eq!(
+            without_notes_and_boneyards("Visible /* unfinished"),
+            "Visible "
+        );
+        assert_eq!(
+            without_notes_and_boneyards("An [[unfinished note"),
+            "An [[unfinished note"
+        );
     }
 
     #[test]

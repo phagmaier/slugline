@@ -1,0 +1,10 @@
+PAGE 1
+   -3 -> ( 58, "1.")
+    0 -> (  0, "")
+    1 -> (  0, "INT. KITCHEN - MORNING")
+    2 -> (  0, "")
+    3 -> (  0, "Every line here ends with a carriage return and a line feed.")
+    4 -> (  0, "")
+    5 -> ( 22, "MARTHA")
+    6 -> ( 16, "(flatly)")
+    7 -> ( 10, "Windows.")

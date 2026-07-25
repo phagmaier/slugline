@@ -44,6 +44,7 @@ pub use model::{
 };
 pub use parse::parse;
 pub use serialise::{needs_blank_between, serialise, Output};
+pub use syntax::{split_scene_number, without_notes_and_boneyards};
 
 /// Name of the format this crate reads and writes.
 pub const FORMAT_NAME: &str = "fountain";

@@ -970,34 +970,34 @@ Requirement §7.
 
 Requirement §12. No UI work in this phase beyond a debug dump view.
 
-- [ ] `layout::metrics` module with every constant from §5.2, each with a source comment
-- [ ] Monospace line breaking with correct whitespace handling (break on spaces, never
+- [x] `layout::metrics` module with every constant from §5.2, each with a source comment
+- [x] Monospace line breaking with correct whitespace handling (break on spaces, never
       mid-word unless a single word exceeds the column width)
-- [ ] Element indents and widths applied
-- [ ] Blank-line spacing rules
-- [ ] Naive page fill
-- [ ] All break rules from §5.3, as a capped fixed-point loop
-- [ ] `(MORE)` / `(CONT'D)` insertion on split dialogue
-- [ ] Explicit page breaks honoured
-- [ ] Scene numbering (left and right gutters) when enabled
-- [ ] Sections, synopses, notes, and boneyard excluded from output
-- [ ] Title page laid out (and **not** counted as page 1)
-- [ ] A4 config derived, not hardcoded
-- [ ] Per-block layout cache + checkpointing for incremental repagination
+- [x] Element indents and widths applied
+- [x] Blank-line spacing rules
+- [x] Naive page fill
+- [x] All break rules from §5.3, as a capped fixed-point loop
+- [x] `(MORE)` / `(CONT'D)` insertion on split dialogue
+- [x] Explicit page breaks honoured
+- [x] Scene numbering (left and right gutters) when enabled
+- [x] Sections, synopses, notes, and boneyard excluded from output
+- [x] Title page laid out (and **not** counted as page 1)
+- [x] A4 config derived, not hardcoded
+- [x] Per-block layout cache + checkpointing for incremental repagination
 
 ### Tests
 
-- [ ] Golden tests: each corpus file produces a stable text dump of
+- [x] Golden tests: each corpus file produces a stable text dump of
       `page → line → (column, content)`, committed to `testdata/golden/`
-- [ ] Determinism test: paginate the reference script 100 times, assert identical output
-- [ ] Break-rule tests, one per rule, with a minimal script that triggers it
-- [ ] Convergence test: a pathological script (alternating one-line scenes at page
+- [x] Determinism test: paginate the reference script 100 times, assert identical output
+- [x] Break-rule tests, one per rule, with a minimal script that triggers it
+- [x] Convergence test: a pathological script (alternating one-line scenes at page
       boundaries) terminates within the iteration cap
-- [ ] Benchmark: full pagination of 120 pages < 50 ms; incremental < 5 ms
+- [x] Benchmark: full pagination of 120 pages < 50 ms; incremental < 5 ms
 
 ### Exit criteria
 
-- [ ] Page count and every line position are reproducible and covered by golden files
+- [x] Page count and every line position are reproducible and covered by golden files
 
 ---
 

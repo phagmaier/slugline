@@ -1155,6 +1155,7 @@ dependencies = [
 name = "slugline_layout"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "slugline_document",
 ]
 

@@ -1,0 +1,12 @@
+TITLE PAGE
+   18 -> ( 22, "Byte Order Mark")
+PAGE 1
+   -3 -> ( 58, "1.")
+    0 -> (  0, "")
+    1 -> (  0, "INT. KITCHEN - MORNING")
+    2 -> (  0, "")
+    3 -> (  0, "The file begins with a UTF-8 BOM, which must survive being")
+    4 -> (  0, "saved.")
+    5 -> (  0, "")
+    6 -> ( 22, "MARTHA")
+    7 -> ( 10, "Still here.")
