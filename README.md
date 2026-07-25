@@ -8,6 +8,17 @@ writes Fountain losslessly and `crates/document` holds the model, the edit
 commands and undo. There is still no editor: `flutter run` opens the Phase 0
 window that proves the Rust ↔ Dart boundary works. See `docs/DECISIONS.md`.
 
+## Remediation status
+
+The project is in a **stabilization gate**, not new feature work. A mid-project
+audit is recorded in `REVIEW.md`; the repairs it calls for are tracked phase by
+phase in `REMEDIATION_PLAN.md`, on branch `fix/mid-project-remediation`. Phase 7
+(PDF export and preview) does not begin until that plan's Phase 10 authorization
+gate passes.
+
+The status line above is known to be stale — correcting it is remediation
+Phase 3 (audit finding F7), not a claim this README currently makes accurately.
+
 ## Requirements
 
 Flutter (stable), a Rust toolchain, and the GTK desktop build dependencies.
