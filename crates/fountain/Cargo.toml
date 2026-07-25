@@ -1,0 +1,10 @@
+[package]
+name = "screenplay_fountain"
+description = "Fountain parsing and serialisation. Pure; depends on nothing else in the workspace."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

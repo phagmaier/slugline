@@ -1,0 +1,11 @@
+[package]
+name = "screenplay_render_pdf"
+description = "PDF writer. Consumes layout output; embeds Courier Prime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+screenplay_layout.workspace = true

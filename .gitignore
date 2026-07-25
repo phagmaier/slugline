@@ -1,0 +1,5 @@
+# Rust build output. `app/` and `spike/` carry their own Flutter .gitignore.
+/target/
+
+# Local tooling
+.direnv/
