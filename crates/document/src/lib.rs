@@ -16,7 +16,7 @@
 //! let mut doc = Document::parse(source);
 //! assert_eq!(doc.serialise(), source);
 //!
-//! let id = doc.blocks[1].id;
+//! let id = doc.blocks()[1].id();
 //! doc.apply(EditCommand::ReplaceText { block: id, range: 0..4, with: "Mary".into() }).unwrap();
 //! assert_eq!(doc.serialise(), "INT. HOUSE - DAY\n\nMary enters.\n");
 //!
@@ -30,7 +30,9 @@ mod edit;
 mod history;
 
 pub use document::{Block, Document};
-pub use edit::{DocPosition, DocSelection, EditCommand, EditError, EditResult, NewBlock};
+pub use edit::{
+    DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
+};
 
 // Re-exported so a caller does not have to depend on `fountain` directly to
 // name a block's kind or a title-page field.

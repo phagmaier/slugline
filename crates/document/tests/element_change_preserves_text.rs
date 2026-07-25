@@ -45,7 +45,7 @@ const SCRIPT: &str = concat!(
 fn changing_a_block_to_every_other_kind_never_alters_its_text() {
     let original = Document::parse(SCRIPT);
 
-    for index in 0..original.blocks.len() {
+    for index in 0..original.blocks().len() {
         for kind in KINDS {
             // A page break carries no text, so switching *to* it is the one
             // case where there is nothing to preserve on the way back.
@@ -53,8 +53,8 @@ fn changing_a_block_to_every_other_kind_never_alters_its_text() {
                 continue;
             }
             let mut document = Document::parse(SCRIPT);
-            let block = &document.blocks[index];
-            let (id, text, was) = (block.id, block.text.clone(), block.kind);
+            let block = &document.blocks()[index];
+            let (id, text, was) = (block.id(), block.text().to_string(), block.kind());
             // Likewise switching *away* from a page break: there are no
             // characters to preserve, and a block with none is dropped on save.
             if text.is_empty() {
@@ -71,10 +71,11 @@ fn changing_a_block_to_every_other_kind_never_alters_its_text() {
 
             let after = document.block(id).expect("the block is still there");
             assert_eq!(
-                after.text, text,
+                after.text(),
+                text,
                 "{was:?} -> {kind:?} altered the text in the model"
             );
-            assert_eq!(after.kind, kind);
+            assert_eq!(after.kind(), kind);
 
             // And the same again through a save and a reopen, which is where a
             // marker leaks into the text if the serialiser gets it wrong.
@@ -96,9 +97,9 @@ fn changing_a_block_to_every_other_kind_never_alters_its_text() {
             };
             assert!(
                 reopened
-                    .blocks
+                    .blocks()
                     .iter()
-                    .any(|block| block.text.contains(expected)),
+                    .any(|block| block.text().contains(expected)),
                 "{was:?} -> {kind:?} lost the text {expected:?} on save:\n{written}"
             );
 
@@ -114,21 +115,22 @@ fn changing_a_block_to_every_other_kind_never_alters_its_text() {
                 BlockKind::Dialogue => {
                     !parenthesised
                         && after_cue
-                        && original.blocks[index - 1].kind != BlockKind::Dialogue
+                        && original.blocks()[index - 1].kind() != BlockKind::Dialogue
                 }
                 BlockKind::Parenthetical => parenthesised && after_cue,
                 _ => true,
             };
             if representable {
                 let matching = reopened
-                    .blocks
+                    .blocks()
                     .iter()
-                    .find(|candidate| candidate.text == expected)
+                    .find(|candidate| candidate.text() == expected)
                     .unwrap_or_else(|| {
                         panic!("{was:?} -> {kind:?} split the text {text:?} on save:\n{written}")
                     });
                 assert_eq!(
-                    matching.kind, kind,
+                    matching.kind(),
+                    kind,
                     "{was:?} -> {kind:?} did not survive a save:\n{written}"
                 );
             }
@@ -157,13 +159,13 @@ fn trims_its_whitespace(kind: BlockKind) -> bool {
 fn follows_a_cue(document: &Document, index: usize) -> bool {
     index
         .checked_sub(1)
-        .is_some_and(|before| document.blocks[before].kind.opens_dialogue())
+        .is_some_and(|before| document.blocks()[before].kind().opens_dialogue())
 }
 
 #[test]
 fn changing_a_page_break_to_a_kind_that_carries_text_keeps_it_empty() {
     let mut document = Document::parse("Action.\n\n===\n");
-    let id = document.blocks[1].id;
+    let id = document.blocks()[1].id();
     document
         .apply(EditCommand::SetKind {
             block: id,
@@ -171,20 +173,20 @@ fn changing_a_page_break_to_a_kind_that_carries_text_keeps_it_empty() {
             forced: true,
         })
         .unwrap();
-    assert_eq!(document.block(id).expect("still there").text, "");
+    assert_eq!(document.block(id).expect("still there").text(), "");
     // An empty action block has no Fountain representation, so it is dropped on
     // save rather than written as a blank line that would split its neighbours.
     // The blank line that follows "Action." is that block's own trailing bytes,
     // and untouched bytes are never rewritten — §1.2 puts byte fidelity above
     // tidiness, and reparsing gives back the same single block either way.
     assert_eq!(document.serialise(), "Action.\n\n");
-    assert_eq!(Document::parse(&document.serialise()).blocks.len(), 1);
+    assert_eq!(Document::parse(&document.serialise()).blocks().len(), 1);
 }
 
 #[test]
 fn setting_forced_does_not_touch_the_text_either() {
     let mut document = Document::parse("INT. HOUSE - DAY\n");
-    let id = document.blocks[0].id;
+    let id = document.blocks()[0].id();
     document
         .apply(EditCommand::SetKind {
             block: id,
@@ -194,11 +196,11 @@ fn setting_forced_does_not_touch_the_text_either() {
         .unwrap();
 
     assert_eq!(
-        document.block(id).expect("still there").text,
+        document.block(id).expect("still there").text(),
         "INT. HOUSE - DAY"
     );
     assert_eq!(document.serialise(), ".INT. HOUSE - DAY\n");
     let reopened = Document::parse(&document.serialise());
-    assert_eq!(reopened.blocks[0].text, "INT. HOUSE - DAY");
-    assert!(reopened.blocks[0].forced);
+    assert_eq!(reopened.blocks()[0].text(), "INT. HOUSE - DAY");
+    assert!(reopened.blocks()[0].forced());
 }

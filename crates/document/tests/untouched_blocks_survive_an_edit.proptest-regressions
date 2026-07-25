@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc a7eb6015bef3b2722404254797183b9a6949fe349c63ad8c7a8b765ec9cf98d8 # shrinks to file = "INT. STUDY - NIGHT\n\n[[ A note that spans\n\na blank line, and keeps going. ]]\n\n/* A boneyard comment\n\nthat also spans a blank line. */\n\n[[ first note ]]\n[[ second note, adjacent ]]\n\nHe writes a sentence [[ inline note ]] and then another /* inline boneyard */ one.\n\n/* An unterminated boneyard swallows the rest of the file,\nwhich is what every other Fountain implementation does.\n", block = 23, start = 39, length = 15, with = ""
+cc 1db35231ec5088aadc6aeb75d3d202e4d2cffdb5cbbdaa31cb68e25b736d7c88 # shrinks to file = "INT. KITCHEN - MORNING\r\n\r\nEvery line here ends with a carriage return and a line feed.\r\n\r\nMARTHA\r\n(flatly)\r\nWindows.\r\n", block = 37, start = 0, length = 0, with = "x"

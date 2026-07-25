@@ -58,11 +58,16 @@ pub fn serialise(out: &Output<'_>) -> String {
     // instead. Dropping it here — rather than emitting an empty line — is what
     // keeps a cue whose dialogue was just deleted from silently becoming
     // action. Nothing is lost; the block has no text to lose.
-    let elements: Vec<&ElementRef<'_>> = out.elements.iter().filter(|e| !vanishes(e)).collect();
+    let elements: Vec<(usize, &ElementRef<'_>)> = out
+        .elements
+        .iter()
+        .enumerate()
+        .filter(|(_, element)| !vanishes(element))
+        .collect();
 
-    for (index, element) in elements.iter().enumerate() {
-        let previous = index.checked_sub(1).map(|i| elements[i].kind);
-        let next = elements.get(index + 1).map(|e| e.kind);
+    for (index, &(original_index, element)) in elements.iter().enumerate() {
+        let previous = index.checked_sub(1).map(|i| elements[i].1.kind);
+        let next = elements.get(index + 1).map(|(_, element)| element.kind);
 
         // The blank line that ends a title page is written only once something
         // follows it, so a document that is nothing but a title page still ends
@@ -71,7 +76,34 @@ pub fn serialise(out: &Output<'_>) -> String {
             result.push_str(nl);
         }
 
-        match verbatim(out.source, &element.provenance) {
+        // Filtering an edited-away dialogue block can orphan an untouched cue.
+        // Rewriting that cue adds `@`, rather than letting it reopen as Action.
+        let removed_dialogue_context = out
+            .elements
+            .get(original_index + 1)
+            .is_some_and(|element| element.kind.continues_dialogue() && vanishes(element));
+        let orphaned_character = element.kind == BlockKind::Character
+            && !element.forced
+            && removed_dialogue_context
+            && !next.is_some_and(BlockKind::continues_dialogue);
+        if orphaned_character {
+            if let Some(text) = verbatim(out.source, &element.provenance) {
+                if !result.is_empty() && !ends_with_terminator(&result) {
+                    result.push_str(nl);
+                }
+                push_forced_character_verbatim(&mut result, text);
+                if next.is_some_and(|next| needs_blank_between(element.kind, next))
+                    && !ends_with_blank_line(&result)
+                {
+                    result.push_str(nl);
+                }
+                continue;
+            }
+        }
+        let original = (!orphaned_character)
+            .then(|| verbatim(out.source, &element.provenance))
+            .flatten();
+        match original {
             Some(text) => {
                 // A verbatim block carries the blank lines that followed it, so
                 // it needs no separator of its own. The guard is for the block
@@ -241,16 +273,25 @@ fn canonical(
             push_line(result, &prefixed(">", forced, text), nl);
         }
         BlockKind::Action => {
+            let protected_starts = syntax::standalone_protected_starts(text);
+            let mut offset = 0;
             for (index, line) in text.split('\n').enumerate() {
                 let first = index == 0;
+                let leading = line.len() - line.trim_start().len();
+                let opens_protected = protected_starts.binary_search(&(offset + leading)).is_ok();
                 let ambiguous = if first {
                     element.forced
                         || opens_another_element(line, text.contains('\n'))
+                        || opens_protected
                         || (at_top && title_page.is_empty() && looks_like_title_key(line))
                 } else {
-                    syntax::marker_of(line.trim_start()).is_some()
+                    syntax::marker_of(line.trim_start()).is_some() || opens_protected
                 };
                 push_line(result, &prefixed("!", ambiguous, line), nl);
+                offset += line.len();
+                if offset < text.len() {
+                    offset += 1;
+                }
             }
         }
         BlockKind::Centered => push_line(result, &format!("> {text} <"), nl),
@@ -272,8 +313,27 @@ fn canonical(
             };
             push_line(result, &line, nl);
         }
-        BlockKind::Note => push_lines(result, &format!("[[{text}]]"), nl),
-        BlockKind::PageBreak => push_line(result, "===", nl),
+        BlockKind::Note if syntax::note_text_is_balanced(text) => {
+            push_lines(result, &format!("[[{text}]]"), nl);
+        }
+        BlockKind::Note => {
+            // While a nested note delimiter is incomplete, wrapping it would
+            // expose the writer's own delimiters as user text on reopen. Keep
+            // the user's text exact as forced Action until it is balanced.
+            for line in text.split('\n') {
+                push_line(result, &format!("!{line}"), nl);
+            }
+        }
+        BlockKind::PageBreak => {
+            push_line(result, "===", nl);
+            // PageBreak normally has no text. If an invalid raw ElementRef does
+            // carry some, preserve it as forced Action rather than dropping it.
+            if !text.is_empty() {
+                for line in text.split('\n') {
+                    push_line(result, &format!("!{line}"), nl);
+                }
+            }
+        }
         // Dialogue, Parenthetical and Opaque are written as they stand.
         // Dialogue and a parenthetical have no marker of their own in Fountain:
         // they are defined by the cue above them, which the separator rules put
@@ -301,6 +361,16 @@ fn prefixed(marker: &str, apply: bool, text: &str) -> String {
     } else {
         text.to_string()
     }
+}
+
+fn push_forced_character_verbatim(result: &mut String, text: &str) {
+    let marker_at = text
+        .char_indices()
+        .find_map(|(index, c)| (!c.is_whitespace()).then_some(index))
+        .unwrap_or(0);
+    result.push_str(&text[..marker_at]);
+    result.push('@');
+    result.push_str(&text[marker_at..]);
 }
 
 fn push_line(result: &mut String, line: &str, nl: &str) {
@@ -420,6 +490,134 @@ mod tests {
         let written = canonical_text("Action.\n!# still action\n");
         assert_eq!(written, "Action.\n!# still action\n");
         assert_stable("Action.\n!# still action\n");
+    }
+
+    #[test]
+    fn action_lines_that_open_protected_spans_are_forced() {
+        for protected in ["[[not a note]]", "/* not boneyard */"] {
+            let first = format!("!{protected}\n");
+            assert_eq!(canonical_text(&first), first);
+            assert_stable(&first);
+
+            let later = format!("Action.\n!  {protected}\n");
+            assert_eq!(canonical_text(&later), later);
+            assert_stable(&later);
+        }
+
+        for natural_action in [
+            "[[note]] visible\n",
+            "[[unfinished\n",
+            "/* hidden */ visible\n",
+        ] {
+            assert_eq!(canonical_text(natural_action), natural_action);
+            assert_stable(natural_action);
+        }
+
+        assert_eq!(canonical_text("!/* unclosed\n"), "!/* unclosed\n");
+        assert_stable("!/* unclosed\n");
+    }
+
+    fn remove_dialogue(source: &str) -> String {
+        let script = parse(source);
+        let elements: Vec<ElementRef<'_>> = script
+            .elements
+            .iter()
+            .map(|element| {
+                if element.kind == BlockKind::Dialogue {
+                    ElementRef {
+                        text: "",
+                        provenance: None,
+                        ..element.as_ref()
+                    }
+                } else {
+                    element.as_ref()
+                }
+            })
+            .collect();
+        serialise(&Output {
+            title_page: &script.title_page,
+            elements: &elements,
+            source: Some(source),
+            bom: script.bom,
+            line_ending: script.line_ending,
+        })
+    }
+
+    #[test]
+    fn a_verbatim_character_orphaned_by_vanished_dialogue_is_forced() {
+        let at_eof = remove_dialogue("JOHN\nHello.\n");
+        assert_eq!(at_eof, "@JOHN\n");
+        assert_eq!(parse(&at_eof).elements[0].kind, BlockKind::Character);
+
+        let before_action = remove_dialogue("JOHN\nHello.\n\nAction.\n");
+        assert_eq!(before_action, "@JOHN\n\nAction.\n");
+        assert_eq!(
+            parse(&before_action)
+                .elements
+                .iter()
+                .map(|element| element.kind)
+                .collect::<Vec<_>>(),
+            [BlockKind::Character, BlockKind::Action]
+        );
+    }
+
+    #[test]
+    fn an_already_forced_orphaned_character_stays_verbatim() {
+        let written = remove_dialogue("@JOHN  \r\nHello.\r\n");
+        assert_eq!(written, "@JOHN  \r\n");
+    }
+
+    #[test]
+    fn forcing_an_orphaned_character_only_adds_the_marker() {
+        let written = remove_dialogue("Action.\n\n  JOHN  \r\nHello.\r\n");
+        assert_eq!(written, "Action.\n\n  @JOHN  \r\n");
+    }
+
+    #[test]
+    fn a_page_break_defensively_preserves_invalid_text() {
+        let page_break = ElementRef {
+            kind: BlockKind::PageBreak,
+            text: "keep this\n[[and this]]",
+            forced: false,
+            dual: false,
+            provenance: None,
+        };
+        let written = serialise(&Output {
+            title_page: &TitlePage::default(),
+            elements: &[page_break],
+            source: None,
+            bom: false,
+            line_ending: LineEnding::Lf,
+        });
+        assert_eq!(written, "===\n!keep this\n![[and this]]\n");
+        let reparsed = parse(&written);
+        assert_eq!(reparsed.elements[0].kind, BlockKind::PageBreak);
+        assert_eq!(reparsed.elements[1].kind, BlockKind::Action);
+        assert_eq!(reparsed.elements[1].text, "keep this\n[[and this]]");
+
+        assert_eq!(canonical_text("===\n"), "===\n");
+    }
+
+    #[test]
+    fn an_unbalanced_note_preserves_user_text_as_action() {
+        let note = ElementRef {
+            kind: BlockKind::Note,
+            text: "note[[",
+            forced: false,
+            dual: false,
+            provenance: None,
+        };
+        let written = serialise(&Output {
+            title_page: &TitlePage::default(),
+            elements: &[note],
+            source: None,
+            bom: false,
+            line_ending: LineEnding::Lf,
+        });
+        assert_eq!(written, "!note[[\n");
+        let reparsed = parse(&written);
+        assert_eq!(reparsed.elements[0].kind, BlockKind::Action);
+        assert_eq!(reparsed.elements[0].text, "note[[");
     }
 
     #[test]

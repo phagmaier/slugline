@@ -124,7 +124,21 @@ pub struct EditResult {
     pub changed: Vec<BlockId>,
     pub removed: Vec<BlockId>,
     pub inserted: Vec<BlockId>,
-    pub selection: DocSelection,
+    /// The caret/selection after the edit. `None` when the document has no body
+    /// block to anchor a selection to (for example, a title-page-only file).
+    pub selection: Option<DocSelection>,
+}
+
+/// Why a prospective block state cannot be stored in a document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvalidBlockReason {
+    Opaque,
+    PageBreakHasText,
+    DualNonCharacter,
+    InvalidSectionLevel,
+    CharacterEndsWithDualMarker,
+    MultilineSingleLineKind,
+    CarriageReturn,
 }
 
 /// A command that could not be applied. The document is untouched when one of
@@ -144,6 +158,12 @@ pub enum EditError {
     /// take that away, and an edit that removes the `*/` from a boneyard
     /// comment turns the rest of the script into a comment.
     NotEditable(BlockId),
+    /// Applying the command would leave a block in a state the model cannot
+    /// represent safely. `block` is `None` for a not-yet-inserted block.
+    InvalidBlock {
+        block: Option<BlockId>,
+        reason: InvalidBlockReason,
+    },
 }
 
 impl fmt::Display for EditError {
@@ -159,6 +179,31 @@ impl fmt::Display for EditError {
             EditError::BadRange => write!(f, "the range is not coherent"),
             EditError::NotEditable(id) => {
                 write!(f, "block {} is opaque and round-trips verbatim", id.0)
+            }
+            EditError::InvalidBlock { block, reason } => {
+                let subject = block
+                    .map(|id| format!("block {}", id.0))
+                    .unwrap_or_else(|| "new block".to_string());
+                let reason = match reason {
+                    InvalidBlockReason::Opaque => "cannot be opaque",
+                    InvalidBlockReason::PageBreakHasText => "a page break must have empty text",
+                    InvalidBlockReason::DualNonCharacter => {
+                        "only a character block can be dual dialogue"
+                    }
+                    InvalidBlockReason::InvalidSectionLevel => {
+                        "a section level must be between 1 and 6"
+                    }
+                    InvalidBlockReason::CharacterEndsWithDualMarker => {
+                        "a non-dual character block cannot end in '^'"
+                    }
+                    InvalidBlockReason::MultilineSingleLineKind => {
+                        "this block kind cannot contain a newline"
+                    }
+                    InvalidBlockReason::CarriageReturn => {
+                        "a carriage return cannot end a model-text line"
+                    }
+                };
+                write!(f, "{subject} is invalid: {reason}")
             }
         }
     }

@@ -6,6 +6,8 @@
 //! implementation is what makes "parse, edit one block, serialise, reparse"
 //! stable: there is no second opinion about what a line means.
 
+use std::ops::Range;
+
 use crate::BlockKind;
 
 /// An explicit Fountain element marker at the start of a line.
@@ -83,6 +85,125 @@ pub(crate) fn marker_of(line: &str) -> Option<(Marker, &str)> {
         '>' => Some((Marker::Transition, line[1..].trim())),
         _ => None,
     }
+}
+
+/// The kind opened by a protected-span delimiter at the start of a line.
+/// Whether the delimiter is closed, and whether anything follows it, is the
+/// parser's responsibility.
+pub(crate) fn protected_kind(line: &str) -> Option<BlockKind> {
+    let line = line.trim_start();
+    if line.starts_with("[[") {
+        Some(BlockKind::Note)
+    } else if line.starts_with("/*") {
+        Some(BlockKind::Opaque)
+    } else {
+        None
+    }
+}
+
+/// Matches same-kind spans in source order. An unmatched opener is omitted,
+/// but a balanced span nested inside it remains available so tolerant parsing
+/// can recover at the later opener.
+pub(crate) fn matched_spans(source: &[u8], open: &[u8; 2], close: &[u8; 2]) -> Vec<Range<usize>> {
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while index + 1 < source.len() {
+        if &source[index..index + 2] == open {
+            tokens.push((index, true));
+            index += 2;
+        } else if &source[index..index + 2] == close {
+            tokens.push((index, false));
+            index += 2;
+        } else {
+            index += 1;
+        }
+    }
+
+    let mut closes = Vec::new();
+    let mut spans = Vec::new();
+    for (position, is_open) in tokens.into_iter().rev() {
+        if is_open {
+            if let Some(end) = closes.pop() {
+                spans.push(position..end);
+            }
+        } else {
+            closes.push(position + 2);
+        }
+    }
+    spans.reverse();
+    spans
+}
+
+/// Starts of protected spans that would displace an Action block. Inline spans
+/// followed by visible text stay Action naturally and are omitted.
+pub(crate) fn standalone_protected_starts(source: &str) -> Vec<usize> {
+    let bytes = source.as_bytes();
+    let notes = matched_spans(bytes, b"[[", b"]]");
+    let boneyards = matched_spans(bytes, b"/*", b"*/");
+    let mut starts = Vec::new();
+    let mut index = 0;
+
+    while index + 1 < bytes.len() {
+        let (span, unclosed_boneyard) = if &bytes[index..index + 2] == b"/*" {
+            (span_at(&boneyards, index), true)
+        } else if &bytes[index..index + 2] == b"[[" {
+            (span_at(&notes, index), false)
+        } else {
+            index += 1;
+            continue;
+        };
+
+        match span {
+            Some(span) => {
+                if closes_at_end_of_line(&source[span.end..]) {
+                    starts.push(index);
+                }
+                index = span.end;
+            }
+            None if unclosed_boneyard => {
+                starts.push(index);
+                break;
+            }
+            None => index += 2,
+        }
+    }
+    starts
+}
+
+pub(crate) fn note_text_is_balanced(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut depth = 0usize;
+    let mut index = 0;
+    while index + 1 < bytes.len() {
+        if &bytes[index..index + 2] == b"[[" {
+            depth += 1;
+            index += 2;
+        } else if &bytes[index..index + 2] == b"]]" {
+            let Some(next) = depth.checked_sub(1) else {
+                return false;
+            };
+            depth = next;
+            index += 2;
+        } else {
+            index += 1;
+        }
+    }
+    depth == 0
+}
+
+fn span_at(spans: &[Range<usize>], position: usize) -> Option<&Range<usize>> {
+    spans
+        .binary_search_by_key(&position, |span| span.start)
+        .ok()
+        .map(|index| &spans[index])
+}
+
+fn closes_at_end_of_line(rest: &str) -> bool {
+    rest.split('\n')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
 }
 
 /// A line of three or more `=` and nothing else (§4.1).
@@ -254,6 +375,33 @@ mod tests {
         assert_eq!(marker_of("####### seven"), None);
         assert_eq!(marker_of("Ordinary action."), None);
         assert_eq!(marker_of("=="), Some((Marker::Synopsis, "=")));
+    }
+
+    #[test]
+    fn protected_delimiters_are_recognised_after_indentation() {
+        assert_eq!(protected_kind("  [[note]]"), Some(BlockKind::Note));
+        assert_eq!(protected_kind("\t/* boneyard */"), Some(BlockKind::Opaque));
+        assert_eq!(protected_kind("Action."), None);
+    }
+
+    #[test]
+    fn only_standalone_protected_spans_displace_action() {
+        assert_eq!(standalone_protected_starts("[[note]]"), [0]);
+        assert_eq!(
+            standalone_protected_starts("[[outer [[inner]] outer]]\nnext"),
+            [0]
+        );
+        assert_eq!(standalone_protected_starts("/* unclosed"), [0]);
+        assert!(standalone_protected_starts("[[unfinished").is_empty());
+        assert!(standalone_protected_starts("[[note]] visible").is_empty());
+        assert!(standalone_protected_starts("/* hidden */ visible").is_empty());
+    }
+
+    #[test]
+    fn nested_note_text_must_be_balanced_before_wrapping() {
+        assert!(note_text_is_balanced("outer [[ inner ]] outer"));
+        assert!(!note_text_is_balanced("unfinished [["));
+        assert!(!note_text_is_balanced("closes ]] early"));
     }
 
     #[test]

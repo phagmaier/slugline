@@ -20,7 +20,7 @@
 
 use slugline_fountain::TitlePage;
 
-use crate::Block;
+use crate::{Block, BlockId, DocSelection};
 
 /// Undo depth caps from §3.4. Whichever is reached first drops the oldest
 /// transaction.
@@ -43,7 +43,7 @@ impl Inverse {
     fn bytes(&self) -> usize {
         match self {
             Inverse::Splice { insert, .. } => {
-                insert.iter().map(|block| block.text.len() + 64).sum()
+                insert.iter().map(|block| block.text().len() + 64).sum()
             }
             Inverse::TitlePage(page) => page
                 .entries
@@ -55,15 +55,43 @@ impl Inverse {
 }
 
 /// One undo step. Inverses are applied in reverse order.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Transaction {
     pub(crate) inverses: Vec<Inverse>,
+    pub(crate) before_revision: u64,
+    pub(crate) after_revision: u64,
+    pub(crate) before_selection: Option<DocSelection>,
+    pub(crate) after_selection: Option<DocSelection>,
+    pub(crate) selection_initialized: bool,
 }
 
 impl Transaction {
+    fn new(before_revision: u64, after_revision: u64) -> Transaction {
+        Transaction {
+            inverses: Vec::new(),
+            before_revision,
+            after_revision,
+            before_selection: None,
+            after_selection: None,
+            selection_initialized: false,
+        }
+    }
+
     fn bytes(&self) -> usize {
         self.inverses.iter().map(Inverse::bytes).sum()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextEditKind {
+    Insert,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CoalesceKey {
+    pub(crate) block: BlockId,
+    pub(crate) kind: TextEditKind,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -71,30 +99,41 @@ pub(crate) struct History {
     done: Vec<Transaction>,
     undone: Vec<Transaction>,
     open: Option<Transaction>,
-    /// The block index the open transaction is coalescing text edits into.
-    coalescing: Option<usize>,
+    /// The block identity and operation the open transaction is coalescing.
+    coalescing: Option<CoalesceKey>,
 }
 
 impl History {
     /// Records an inverse into the open transaction, opening one if needed.
     ///
-    /// `coalesce_at` is `Some(index)` for a text edit that may join the
-    /// previous one when it targets the same block. The first inverse recorded
-    /// for a block already restores that block's original state, so a run of
-    /// keystrokes costs one clone, not one per keystroke.
-    pub(crate) fn record(&mut self, inverse: Inverse, coalesce_at: Option<usize>) {
-        match (coalesce_at, self.coalescing) {
-            (Some(index), Some(open)) if index == open => return,
+    /// `coalesce` is present only for a pure insertion or pure deletion. The
+    /// first inverse recorded for that operation already restores the block's
+    /// original state, so a run of keystrokes costs one clone.
+    pub(crate) fn record(
+        &mut self,
+        inverse: Inverse,
+        coalesce: Option<CoalesceKey>,
+        before_revision: u64,
+        after_revision: u64,
+    ) {
+        match (coalesce, self.coalescing) {
+            (Some(key), Some(open)) if key == open => {
+                self.open
+                    .as_mut()
+                    .expect("a coalescing transaction is open")
+                    .after_revision = after_revision;
+                return;
+            }
             (Some(_), _) => self.close(),
             (None, _) => self.close(),
         }
-        self.coalescing = coalesce_at;
+        self.coalescing = coalesce;
         self.open
-            .get_or_insert_with(Transaction::default)
+            .get_or_insert_with(|| Transaction::new(before_revision, after_revision))
             .inverses
             .push(inverse);
         self.undone.clear();
-        if coalesce_at.is_none() {
+        if coalesce.is_none() {
             self.close();
         }
     }
@@ -123,6 +162,7 @@ impl History {
     /// Pushes the transaction that would put back what an undo just removed.
     pub(crate) fn push_redo(&mut self, transaction: Transaction) {
         self.undone.push(transaction);
+        self.trim();
     }
 
     /// Pushes the transaction that would undo what a redo just applied.
@@ -143,13 +183,101 @@ impl History {
         *self = History::default();
     }
 
+    /// Attaches the UI selection to the transaction that produced `revision`.
+    /// A coalesced typing run keeps the first pre-edit selection and updates the
+    /// post-edit selection after every keystroke.
+    pub(crate) fn set_selections(
+        &mut self,
+        revision: u64,
+        before: Option<DocSelection>,
+        after: Option<DocSelection>,
+    ) {
+        let transaction = self
+            .open
+            .as_mut()
+            .filter(|transaction| transaction.after_revision == revision)
+            .or_else(|| {
+                self.done
+                    .last_mut()
+                    .filter(|transaction| transaction.after_revision == revision)
+            });
+        if let Some(transaction) = transaction {
+            if !transaction.selection_initialized {
+                transaction.before_selection = before;
+                transaction.selection_initialized = true;
+            }
+            transaction.after_selection = after;
+        }
+    }
+
     fn trim(&mut self) {
-        while self.done.len() > MAX_TRANSACTIONS {
-            self.done.remove(0);
+        self.trim_to(MAX_TRANSACTIONS, MAX_BYTES);
+    }
+
+    fn trim_to(&mut self, max_transactions: usize, max_bytes: usize) {
+        let mut count = self.done.len() + self.undone.len();
+        let mut total: usize = self
+            .done
+            .iter()
+            .chain(&self.undone)
+            .map(Transaction::bytes)
+            .sum();
+        // Keep the newest/nearest transaction even if that one edit exceeds
+        // the byte budget. Dropping it would make a successful edit impossible
+        // to undo; the limit is therefore soft for one transaction only.
+        while (count > max_transactions || total > max_bytes) && count > 1 {
+            // Index zero is furthest from the current state in both stacks.
+            let remove_done = match (self.done.first(), self.undone.first()) {
+                (Some(done), Some(undone)) => done.after_revision <= undone.after_revision,
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (None, None) => break,
+            };
+            let removed = if remove_done {
+                self.done.remove(0)
+            } else {
+                self.undone.remove(0)
+            };
+            count -= 1;
+            total = total.saturating_sub(removed.bytes());
         }
-        let mut total: usize = self.done.iter().map(Transaction::bytes).sum();
-        while total > MAX_BYTES && self.done.len() > 1 {
-            total -= self.done.remove(0).bytes();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slugline_fountain::{TitleEntry, TitleField};
+
+    fn transaction(bytes: usize) -> Transaction {
+        Transaction {
+            inverses: vec![Inverse::TitlePage(Box::new(TitlePage {
+                entries: vec![TitleEntry {
+                    field: TitleField::Title,
+                    value: "x".repeat(bytes),
+                }],
+                provenance: None,
+            }))],
+            before_revision: 0,
+            after_revision: 1,
+            before_selection: None,
+            after_selection: None,
+            selection_initialized: false,
         }
+    }
+
+    #[test]
+    fn byte_limit_covers_both_stacks_but_keeps_one_undoable_edit() {
+        let mut history = History::default();
+        history.done.push(transaction(40));
+        history.undone.push(transaction(40));
+        history.trim_to(10, 100);
+        assert_eq!(history.done.len() + history.undone.len(), 1);
+
+        history.done.clear();
+        history.undone.clear();
+        history.done.push(transaction(100));
+        history.trim_to(10, 100);
+        assert_eq!(history.done.len(), 1);
     }
 }

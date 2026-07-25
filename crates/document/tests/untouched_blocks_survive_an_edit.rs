@@ -8,12 +8,8 @@
 //! rewritten.
 //!
 //! "Outside the edit" means outside the edited block *and its two neighbours*,
-//! which is precisely §4.2's re-inference window. That is not slack in the
-//! test: typing `=== ` at the start of a parenthetical genuinely makes it a
-//! line of dialogue, and a line of dialogue genuinely joins the speech below
-//! it. No text is lost when that happens — the boundary between two blocks
-//! moves — and a parser that refused to notice would be the defect. What must
-//! never move is a block the caret was nowhere near.
+//! which is precisely §4.2's re-inference window. What must never move is a
+//! block the caret was nowhere near.
 //!
 //! Blocks are compared by kind and text: the ids are the same objects, so
 //! comparing them would prove nothing about the file that was written.
@@ -56,16 +52,15 @@ fn insertion() -> impl Strategy<Value = String> {
         Just("MARTHA".to_string()),
         Just("(beat)".to_string()),
         Just("=== ".to_string()),
-        Just("a\nb".to_string()),
         Just("  indented".to_string()),
     ]
 }
 
 fn snapshot(document: &Document) -> Vec<(BlockKind, String)> {
     document
-        .blocks
+        .blocks()
         .iter()
-        .map(|block| (block.kind, block.text.clone()))
+        .map(|block| (block.kind(), block.text().to_string()))
         .collect()
 }
 
@@ -99,6 +94,30 @@ fn assert_bystanders_survived(
     Ok(())
 }
 
+fn assert_bystander_bytes_survived(
+    document: &Document,
+    source: &str,
+    index: usize,
+    written: &str,
+) -> Result<(), TestCaseError> {
+    let leading = index.saturating_sub(1);
+    let affected_end = (index + 1).min(document.blocks().len().saturating_sub(1));
+
+    let bystanders = document.blocks()[..leading]
+        .iter()
+        .chain(&document.blocks()[affected_end + 1..]);
+    let mut cursor = 0;
+    for block in bystanders {
+        let range = block.provenance().expect("parsed block has provenance");
+        let bytes = &source[range.clone()];
+        let relative = written[cursor..].find(bytes).ok_or_else(|| {
+            TestCaseError::fail(format!("untouched bytes disappeared: {bytes:?}\n{written}"))
+        })?;
+        cursor += relative + bytes.len();
+    }
+    Ok(())
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
@@ -111,16 +130,19 @@ proptest! {
         with in insertion(),
     ) {
         let mut document = Document::parse(&file);
-        prop_assume!(!document.blocks.is_empty());
-        let index = block % document.blocks.len();
+        prop_assume!(!document.blocks().is_empty());
+        let index = block % document.blocks().len();
         // An Opaque block refuses every edit by design (§3.2), which is a
         // property of its own rather than a case for this one.
-        prop_assume!(document.blocks[index].kind != BlockKind::Opaque);
-        let id = document.blocks[index].id;
+        prop_assume!(!matches!(
+            document.blocks()[index].kind(),
+            BlockKind::Opaque | BlockKind::PageBreak
+        ));
+        let id = document.blocks()[index].id();
 
         // Offsets are clamped onto character boundaries: an offset that is not
         // one is rejected by `apply`, which is a different property.
-        let text = document.blocks[index].text.clone();
+        let text = document.blocks()[index].text().to_string();
         let start = (start % (text.len() + 1)).min(text.len());
         let start = (0..=start).rev().find(|at| text.is_char_boundary(*at)).unwrap_or(0);
         let end = (start + length).min(text.len());
@@ -138,6 +160,7 @@ proptest! {
         let written = document.serialise();
         let after = snapshot(&Document::parse(&written));
         assert_bystanders_survived(&before, &after, index, &written)?;
+        assert_bystander_bytes_survived(&Document::parse(&file), &file, index, &written)?;
     }
 
     #[test]
@@ -155,11 +178,23 @@ proptest! {
         which in 0usize..4,
     ) {
         let mut document = Document::parse(&file);
-        prop_assume!(!document.blocks.is_empty());
-        let index = block % document.blocks.len();
-        prop_assume!(document.blocks[index].kind != BlockKind::Opaque);
-        let id = document.blocks[index].id;
-        let length = document.blocks[index].text.len();
+        prop_assume!(!document.blocks().is_empty());
+        let index = block % document.blocks().len();
+        prop_assume!(!matches!(
+            document.blocks()[index].kind(),
+            BlockKind::Opaque | BlockKind::PageBreak
+        ));
+        prop_assume!(!document.blocks()[index].dual());
+        let id = document.blocks()[index].id();
+        let length = document.blocks()[index].text().len();
+        prop_assume!(!document.blocks()[index].text().contains(['\n', '\r']));
+        prop_assume!(!document.blocks()[index].text().ends_with('^'));
+        prop_assume!(which != 0 || !with.is_empty());
+        prop_assume!(
+            which != 1
+                || document.blocks()[index].kind() != kind
+                || !document.blocks()[index].forced()
+        );
 
         let command = match which {
             0 => EditCommand::ReplaceText { block: id, range: 0..0, with },

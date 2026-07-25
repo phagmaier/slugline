@@ -8,32 +8,60 @@ use slugline_fountain::{
     needs_blank_between, parse, serialise, BlockKind, ElementRef, LineEnding, Output, TitlePage,
 };
 
-use crate::edit::{DocPosition, DocSelection, EditCommand, EditError, EditResult, NewBlock};
-use crate::history::{History, Inverse, Transaction};
+use crate::edit::{
+    DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
+};
+use crate::history::{CoalesceKey, History, Inverse, TextEditKind, Transaction};
 use crate::BlockId;
 
 /// One element of the script, with an identity Flutter can hold on to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
-    pub id: BlockId,
-    pub kind: BlockKind,
+    id: BlockId,
+    kind: BlockKind,
     /// User-visible text with emphasis markup retained inline (§3.1).
-    pub text: String,
+    text: String,
     /// The element type was pinned, by the user or by explicit syntax.
-    pub forced: bool,
+    forced: bool,
     /// Dual-dialogue right column marker.
-    pub dual: bool,
+    dual: bool,
     /// Byte range in the original source this block came from. `None` once the
     /// block has been edited, which is what sends it down the serialiser's
     /// canonical path instead of the verbatim one (§3.2).
-    pub provenance: Option<Range<usize>>,
+    provenance: Option<Range<usize>>,
+}
+
+impl Block {
+    pub fn id(&self) -> BlockId {
+        self.id
+    }
+
+    pub fn kind(&self) -> BlockKind {
+        self.kind
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn forced(&self) -> bool {
+        self.forced
+    }
+
+    pub fn dual(&self) -> bool {
+        self.dual
+    }
+
+    pub fn provenance(&self) -> Option<&Range<usize>> {
+        self.provenance.as_ref()
+    }
 }
 
 /// A parsed script, its edit history, and the bytes it was opened from.
 #[derive(Debug, Clone, Default)]
 pub struct Document {
-    pub title_page: TitlePage,
-    pub blocks: Vec<Block>,
+    title_page: TitlePage,
+    blocks: Vec<Block>,
     next_id: u64,
     /// Byte-for-byte original file content, retained for lossless
     /// round-tripping (§3.1).
@@ -41,7 +69,9 @@ pub struct Document {
     bom: bool,
     line_ending: LineEnding,
     history: History,
-    dirty: bool,
+    revision: u64,
+    saved_revision: u64,
+    next_revision: u64,
 }
 
 impl Document {
@@ -78,7 +108,9 @@ impl Document {
             bom: script.bom,
             line_ending: script.line_ending,
             history: History::default(),
-            dirty: false,
+            revision: 0,
+            saved_revision: 0,
+            next_revision: 0,
         }
     }
 
@@ -108,16 +140,34 @@ impl Document {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.blocks.is_empty() && self.title_page.is_empty()
+        self.title_page.is_empty()
+            && self.blocks.iter().all(|block| {
+                block.text.is_empty()
+                    && matches!(
+                        block.kind,
+                        BlockKind::Action
+                            | BlockKind::Dialogue
+                            | BlockKind::Parenthetical
+                            | BlockKind::SceneHeading
+                    )
+            })
     }
 
     pub fn line_ending(&self) -> LineEnding {
         self.line_ending
     }
 
+    pub fn title_page(&self) -> &TitlePage {
+        &self.title_page
+    }
+
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
     /// Whether the document has unsaved edits (§6, `doc_dirty`).
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.revision != self.saved_revision
     }
 
     /// Clears the dirty flag. Re-anchoring provenance to the newly written
@@ -125,7 +175,8 @@ impl Document {
     /// on serialising from the source it was opened with, which is correct but
     /// keeps the old bytes alive.
     pub fn mark_saved(&mut self) {
-        self.dirty = false;
+        self.history.close();
+        self.saved_revision = self.revision;
     }
 
     pub fn index_of(&self, id: BlockId) -> Option<usize> {
@@ -153,6 +204,31 @@ impl Document {
 
     /// Applies a command, or returns an error having changed nothing.
     pub fn apply(&mut self, command: EditCommand) -> Result<EditResult, EditError> {
+        let before = self.inferred_selection(&command);
+        self.apply_with_selection(command, before)
+    }
+
+    /// Applies a command while recording the caller's exact pre-edit
+    /// selection, so undo and redo can restore selection direction as well as
+    /// document content.
+    pub fn apply_with_selection(
+        &mut self,
+        command: EditCommand,
+        before: Option<DocSelection>,
+    ) -> Result<EditResult, EditError> {
+        if let Some(selection) = before {
+            self.check_selection(selection)?;
+        }
+        let revision = self.revision;
+        let result = self.apply_command(command)?;
+        if self.revision != revision {
+            self.history
+                .set_selections(self.revision, before, result.selection);
+        }
+        Ok(result)
+    }
+
+    fn apply_command(&mut self, command: EditCommand) -> Result<EditResult, EditError> {
         let result = match command {
             EditCommand::ReplaceText { block, range, with } => {
                 self.replace_text(block, range, &with)
@@ -168,8 +244,15 @@ impl Document {
             EditCommand::DeleteRange { from, to } => self.delete_range(from, to),
             EditCommand::SetDual { block, dual } => self.set_dual(block, dual),
             EditCommand::SetTitlePage { field, value } => {
-                self.history
-                    .record(Inverse::TitlePage(Box::new(self.title_page.clone())), None);
+                if self.title_page.get(&field) == (!value.is_empty()).then_some(value.as_str()) {
+                    return Ok(EditResult {
+                        changed: Vec::new(),
+                        removed: Vec::new(),
+                        inserted: Vec::new(),
+                        selection: self.caret_at_start(),
+                    });
+                }
+                self.record(Inverse::TitlePage(Box::new(self.title_page.clone())), None);
                 self.title_page.set(field, value);
                 Ok(EditResult {
                     changed: Vec::new(),
@@ -179,23 +262,26 @@ impl Document {
                 })
             }
         }?;
-        self.dirty = true;
         Ok(result)
     }
 
     pub fn undo(&mut self) -> Option<EditResult> {
         let transaction = self.history.take_undo()?;
-        let (redo, result) = self.invert(transaction);
+        let revision = transaction.before_revision;
+        let selection = transaction.before_selection;
+        let (redo, result) = self.invert(transaction, selection);
         self.history.push_redo(redo);
-        self.dirty = true;
+        self.revision = revision;
         Some(result)
     }
 
     pub fn redo(&mut self) -> Option<EditResult> {
         let transaction = self.history.take_redo()?;
-        let (undo, result) = self.invert(transaction);
+        let revision = transaction.after_revision;
+        let selection = transaction.after_selection;
+        let (undo, result) = self.invert(transaction, selection);
         self.history.push_done(undo);
-        self.dirty = true;
+        self.revision = revision;
         Some(result)
     }
 
@@ -216,26 +302,54 @@ impl Document {
         check_offset(block, range.start)?;
         check_offset(block, range.end)?;
 
-        self.history.record(
+        if block.text[range.start as usize..range.end as usize] == *with {
+            return Ok(EditResult {
+                changed: Vec::new(),
+                removed: Vec::new(),
+                inserted: Vec::new(),
+                selection: Some(DocSelection::caret(DocPosition::new(
+                    id,
+                    range.start + with.len() as u32,
+                ))),
+            });
+        }
+
+        let mut text = block.text.clone();
+        text.replace_range(range.start as usize..range.end as usize, with);
+        validate_block_state(Some(id), block.kind, &text, block.dual)?;
+        let coalesce = match (range.is_empty(), with.is_empty()) {
+            (true, false) => Some(CoalesceKey {
+                block: id,
+                kind: TextEditKind::Insert,
+            }),
+            (false, true) => Some(CoalesceKey {
+                block: id,
+                kind: TextEditKind::Delete,
+            }),
+            _ => None,
+        };
+
+        self.record(
             Inverse::Splice {
                 at: index,
                 remove: 1,
                 insert: vec![block.clone()],
             },
-            Some(index),
+            coalesce,
         );
 
         let block = &mut self.blocks[index];
-        block
-            .text
-            .replace_range(range.start as usize..range.end as usize, with);
+        block.text = text;
         block.provenance = None;
 
         Ok(EditResult {
             changed: vec![id],
             removed: Vec::new(),
             inserted: Vec::new(),
-            selection: DocSelection::caret(DocPosition::new(id, range.start + with.len() as u32)),
+            selection: Some(DocSelection::caret(DocPosition::new(
+                id,
+                range.start + with.len() as u32,
+            ))),
         })
     }
 
@@ -244,7 +358,13 @@ impl Document {
         check_editable(&self.blocks[index])?;
         check_offset(&self.blocks[index], at)?;
 
-        self.history.record(
+        let block = &self.blocks[index];
+        let head = &block.text[..at as usize];
+        let tail = &block.text[at as usize..];
+        validate_block_state(Some(id), block.kind, head, block.dual)?;
+        validate_block_state(None, block.kind, tail, false)?;
+
+        self.record(
             Inverse::Splice {
                 at: index,
                 remove: 2,
@@ -275,7 +395,7 @@ impl Document {
             changed: vec![id],
             removed: Vec::new(),
             inserted: vec![new_id],
-            selection: DocSelection::caret(DocPosition::new(new_id, 0)),
+            selection: Some(DocSelection::caret(DocPosition::new(new_id, 0))),
         })
     }
 
@@ -287,7 +407,16 @@ impl Document {
         check_editable(&self.blocks[index])?;
         check_editable(&self.blocks[index + 1])?;
 
-        self.history.record(
+        let mut text = self.blocks[index].text.clone();
+        text.push_str(&self.blocks[index + 1].text);
+        validate_block_state(
+            Some(first),
+            self.blocks[index].kind,
+            &text,
+            self.blocks[index].dual,
+        )?;
+
+        self.record(
             Inverse::Splice {
                 at: index,
                 remove: 1,
@@ -299,14 +428,14 @@ impl Document {
         let removed = self.blocks.remove(index + 1);
         let block = &mut self.blocks[index];
         let junction = block.text.len() as u32;
-        block.text.push_str(&removed.text);
+        block.text = text;
         block.provenance = None;
 
         Ok(EditResult {
             changed: vec![first],
             removed: vec![removed.id],
             inserted: Vec::new(),
-            selection: DocSelection::caret(DocPosition::new(first, junction)),
+            selection: Some(DocSelection::caret(DocPosition::new(first, junction))),
         })
     }
 
@@ -318,14 +447,25 @@ impl Document {
     ) -> Result<EditResult, EditError> {
         let index = self.index_of(id).ok_or(EditError::UnknownBlock(id))?;
         check_editable(&self.blocks[index])?;
-        if kind == BlockKind::Opaque {
-            return Err(EditError::NotEditable(id));
+        if self.blocks[index].kind == kind && self.blocks[index].forced == forced {
+            return Ok(EditResult {
+                changed: Vec::new(),
+                removed: Vec::new(),
+                inserted: Vec::new(),
+                selection: self.caret_in(index),
+            });
         }
+        validate_block_state(
+            Some(id),
+            kind,
+            &self.blocks[index].text,
+            self.blocks[index].dual,
+        )?;
         let old_kind = self.blocks[index].kind;
         let resettle = self.predecessor_needs_rewriting(index, Some(old_kind), Some(kind));
         let at = if resettle { index - 1 } else { index };
 
-        self.history.record(
+        self.record(
             Inverse::Splice {
                 at,
                 remove: index + 1 - at,
@@ -354,7 +494,22 @@ impl Document {
         let index = self.index_of(id).ok_or(EditError::UnknownBlock(id))?;
         check_editable(&self.blocks[index])?;
 
-        self.history.record(
+        if self.blocks[index].dual == dual {
+            return Ok(EditResult {
+                changed: Vec::new(),
+                removed: Vec::new(),
+                inserted: Vec::new(),
+                selection: self.caret_in(index),
+            });
+        }
+        validate_block_state(
+            Some(id),
+            self.blocks[index].kind,
+            &self.blocks[index].text,
+            dual,
+        )?;
+
+        self.record(
             Inverse::Splice {
                 at: index,
                 remove: 1,
@@ -387,10 +542,8 @@ impl Document {
         let Some(first_new) = blocks.first().map(|block| block.kind) else {
             return Err(EditError::BadRange);
         };
-        // A newly inserted block has no provenance, so it cannot be Opaque
-        // without breaking §3.2's guarantee about what Opaque means.
-        if let Some(after) = after.filter(|_| blocks.iter().any(|b| b.kind == BlockKind::Opaque)) {
-            return Err(EditError::NotEditable(after));
+        for block in &blocks {
+            validate_block_state(None, block.kind, &block.text, block.dual)?;
         }
 
         let old_next = self.blocks.get(index).map(|block| block.kind);
@@ -398,7 +551,7 @@ impl Document {
             index > 0 && self.predecessor_needs_rewriting(index, old_next, Some(first_new));
         let at = if resettle { index - 1 } else { index };
 
-        self.history.record(
+        self.record(
             Inverse::Splice {
                 at,
                 remove: index - at + blocks.len(),
@@ -434,7 +587,7 @@ impl Document {
             changed: Vec::new(),
             removed: Vec::new(),
             inserted: ids,
-            selection: DocSelection::caret(DocPosition::new(last, caret)),
+            selection: Some(DocSelection::caret(DocPosition::new(last, caret))),
         })
     }
 
@@ -460,7 +613,25 @@ impl Document {
         check_offset(&self.blocks[first], from.offset)?;
         check_offset(&self.blocks[last], to.offset)?;
 
-        self.history.record(
+        if first == last && from.offset == to.offset {
+            return Ok(EditResult {
+                changed: Vec::new(),
+                removed: Vec::new(),
+                inserted: Vec::new(),
+                selection: Some(DocSelection::caret(from)),
+            });
+        }
+
+        let mut text = self.blocks[first].text[..from.offset as usize].to_string();
+        text.push_str(&self.blocks[last].text[to.offset as usize..]);
+        validate_block_state(
+            Some(self.blocks[first].id),
+            self.blocks[first].kind,
+            &text,
+            self.blocks[first].dual,
+        )?;
+
+        self.record(
             Inverse::Splice {
                 at: first,
                 remove: 1,
@@ -476,12 +647,10 @@ impl Document {
         // The surviving block keeps what was before the start of the range and
         // what was after its end; everything between them, blocks included,
         // goes.
-        let tail = self.blocks[last].text[to.offset as usize..].to_string();
         self.blocks.drain(first + 1..=last);
 
         let block = &mut self.blocks[first];
-        block.text.truncate(from.offset as usize);
-        block.text.push_str(&tail);
+        block.text = text;
         block.provenance = None;
         let id = block.id;
 
@@ -489,7 +658,7 @@ impl Document {
             changed: vec![id],
             removed,
             inserted: Vec::new(),
-            selection: DocSelection::caret(DocPosition::new(id, from.offset)),
+            selection: Some(DocSelection::caret(DocPosition::new(id, from.offset))),
         })
     }
 
@@ -497,12 +666,22 @@ impl Document {
 
     /// Applies a transaction's inverses and returns the transaction that undoes
     /// *that*, so undo and redo are the same operation in opposite directions.
-    fn invert(&mut self, transaction: Transaction) -> (Transaction, EditResult) {
-        let mut opposite = Transaction::default();
+    fn invert(
+        &mut self,
+        transaction: Transaction,
+        selection: Option<DocSelection>,
+    ) -> (Transaction, EditResult) {
+        let mut opposite = Transaction {
+            inverses: Vec::new(),
+            before_revision: transaction.before_revision,
+            after_revision: transaction.after_revision,
+            before_selection: transaction.before_selection,
+            after_selection: transaction.after_selection,
+            selection_initialized: true,
+        };
         let mut changed = Vec::new();
         let mut removed = Vec::new();
         let mut inserted = Vec::new();
-        let mut caret = None;
 
         for inverse in transaction.inverses.into_iter().rev() {
             match inverse {
@@ -525,11 +704,6 @@ impl Document {
                             inserted.push(*id);
                         }
                     }
-                    caret = insert
-                        .last()
-                        .map(|block| DocPosition::new(block.id, block.text.len() as u32))
-                        .or(caret);
-
                     opposite.inverses.push(Inverse::Splice {
                         at,
                         remove: insert.len(),
@@ -546,9 +720,6 @@ impl Document {
             }
         }
 
-        let selection = caret
-            .map(DocSelection::caret)
-            .unwrap_or_else(|| self.caret_at_start());
         for ids in [&mut changed, &mut removed, &mut inserted] {
             ids.sort_unstable();
             ids.dedup();
@@ -565,6 +736,47 @@ impl Document {
     }
 
     // ---- helpers ----
+
+    fn inferred_selection(&self, command: &EditCommand) -> Option<DocSelection> {
+        match command {
+            EditCommand::ReplaceText { block, range, .. } => Some(DocSelection {
+                anchor: DocPosition::new(*block, range.start),
+                focus: DocPosition::new(*block, range.end),
+            }),
+            EditCommand::SplitBlock { block, at } => {
+                Some(DocSelection::caret(DocPosition::new(*block, *at)))
+            }
+            EditCommand::MergeBlocks { first } => self.block(*first).map(|block| {
+                DocSelection::caret(DocPosition::new(*first, block.text.len() as u32))
+            }),
+            EditCommand::SetKind { block, .. } | EditCommand::SetDual { block, .. } => {
+                self.block(*block).map(|candidate| {
+                    DocSelection::caret(DocPosition::new(*block, candidate.text.len() as u32))
+                })
+            }
+            EditCommand::InsertBlocks { after, .. } => after
+                .and_then(|id| self.block(id))
+                .map(|block| {
+                    DocSelection::caret(DocPosition::new(block.id, block.text.len() as u32))
+                })
+                .or_else(|| self.caret_at_start()),
+            EditCommand::DeleteRange { from, to } => Some(DocSelection {
+                anchor: *from,
+                focus: *to,
+            }),
+            EditCommand::SetTitlePage { .. } => self.caret_at_start(),
+        }
+    }
+
+    fn check_selection(&self, selection: DocSelection) -> Result<(), EditError> {
+        for position in [selection.anchor, selection.focus] {
+            let block = self
+                .block(position.block)
+                .ok_or(EditError::UnknownBlock(position.block))?;
+            check_offset(block, position.offset)?;
+        }
+        Ok(())
+    }
 
     /// Whether the block before `index` has to be re-serialised because the
     /// blank line it carries — or does not carry — no longer matches the kind
@@ -600,20 +812,25 @@ impl Document {
         BlockId(self.next_id)
     }
 
-    fn caret_in(&self, index: usize) -> DocSelection {
-        match self.blocks.get(index) {
-            Some(block) => DocSelection::caret(DocPosition::new(block.id, block.text.len() as u32)),
-            None => self.caret_at_start(),
-        }
+    fn record(&mut self, inverse: Inverse, coalesce: Option<CoalesceKey>) {
+        let before_revision = self.revision;
+        self.next_revision += 1;
+        let after_revision = self.next_revision;
+        self.history
+            .record(inverse, coalesce, before_revision, after_revision);
+        self.revision = after_revision;
     }
 
-    fn caret_at_start(&self) -> DocSelection {
-        let block = self
-            .blocks
+    fn caret_in(&self, index: usize) -> Option<DocSelection> {
+        self.blocks
+            .get(index)
+            .map(|block| DocSelection::caret(DocPosition::new(block.id, block.text.len() as u32)))
+    }
+
+    fn caret_at_start(&self) -> Option<DocSelection> {
+        self.blocks
             .first()
-            .map(|block| block.id)
-            .unwrap_or(BlockId(0));
-        DocSelection::caret(DocPosition::new(block, 0))
+            .map(|block| DocSelection::caret(DocPosition::new(block.id, 0)))
     }
 }
 
@@ -635,6 +852,36 @@ fn check_offset(block: &Block, offset: u32) -> Result<(), EditError> {
             block: block.id,
             offset,
         })
+    }
+}
+
+fn validate_block_state(
+    block: Option<BlockId>,
+    kind: BlockKind,
+    text: &str,
+    dual: bool,
+) -> Result<(), EditError> {
+    let reason = if kind == BlockKind::Opaque {
+        Some(InvalidBlockReason::Opaque)
+    } else if kind == BlockKind::PageBreak && !text.is_empty() {
+        Some(InvalidBlockReason::PageBreakHasText)
+    } else if dual && kind != BlockKind::Character {
+        Some(InvalidBlockReason::DualNonCharacter)
+    } else if matches!(kind, BlockKind::Section { level } if !(1..=6).contains(&level)) {
+        Some(InvalidBlockReason::InvalidSectionLevel)
+    } else if kind == BlockKind::Character && !dual && text.ends_with('^') {
+        Some(InvalidBlockReason::CharacterEndsWithDualMarker)
+    } else if !kind.is_multiline() && (text.contains('\n') || text.contains('\r')) {
+        Some(InvalidBlockReason::MultilineSingleLineKind)
+    } else if text.split('\n').any(|line| line.ends_with('\r')) {
+        Some(InvalidBlockReason::CarriageReturn)
+    } else {
+        None
+    };
+
+    match reason {
+        Some(reason) => Err(EditError::InvalidBlock { block, reason }),
+        None => Ok(()),
     }
 }
 
@@ -1027,5 +1274,430 @@ mod tests {
         assert_eq!(doc.serialise(), "JOHN\nHi.\n\nMARY ^\nHi back.\n");
         doc.undo().unwrap();
         assert_eq!(doc.serialise(), "JOHN\nHi.\n\nMARY\nHi back.\n");
+    }
+
+    #[test]
+    fn every_invalid_new_block_state_is_rejected_atomically() {
+        let cases = [
+            (
+                BlockKind::Opaque,
+                "verbatim",
+                false,
+                InvalidBlockReason::Opaque,
+            ),
+            (
+                BlockKind::PageBreak,
+                "not empty",
+                false,
+                InvalidBlockReason::PageBreakHasText,
+            ),
+            (
+                BlockKind::Action,
+                "text",
+                true,
+                InvalidBlockReason::DualNonCharacter,
+            ),
+            (
+                BlockKind::Section { level: 0 },
+                "Act",
+                false,
+                InvalidBlockReason::InvalidSectionLevel,
+            ),
+            (
+                BlockKind::Section { level: 7 },
+                "Act",
+                false,
+                InvalidBlockReason::InvalidSectionLevel,
+            ),
+            (
+                BlockKind::Character,
+                "MARY^",
+                false,
+                InvalidBlockReason::CharacterEndsWithDualMarker,
+            ),
+            (
+                BlockKind::SceneHeading,
+                "INT. HOUSE\nDAY",
+                false,
+                InvalidBlockReason::MultilineSingleLineKind,
+            ),
+            (
+                BlockKind::Action,
+                "carriage\r\nreturn",
+                false,
+                InvalidBlockReason::CarriageReturn,
+            ),
+        ];
+
+        for (kind, text, dual, reason) in cases {
+            let mut document = doc();
+            let before = document.serialise();
+            let mut block = NewBlock::new(kind, text);
+            block.dual = dual;
+
+            assert_eq!(
+                document.apply(EditCommand::InsertBlocks {
+                    after: None,
+                    blocks: vec![block],
+                }),
+                Err(EditError::InvalidBlock {
+                    block: None,
+                    reason,
+                })
+            );
+            assert_eq!(document.serialise(), before);
+            assert!(!document.is_dirty());
+            assert!(!document.can_undo());
+        }
+    }
+
+    #[test]
+    fn invalid_resulting_states_are_rejected_before_history() {
+        let mut replace = Document::parse("INT. HOUSE - DAY\n");
+        let id = replace.blocks[0].id;
+        assert_invalid_atomically(
+            &mut replace,
+            EditCommand::ReplaceText {
+                block: id,
+                range: 3..3,
+                with: "\n".into(),
+            },
+            InvalidBlockReason::MultilineSingleLineKind,
+        );
+
+        let mut set_kind = Document::parse("Action.\n");
+        let id = set_kind.blocks[0].id;
+        assert_invalid_atomically(
+            &mut set_kind,
+            EditCommand::SetKind {
+                block: id,
+                kind: BlockKind::PageBreak,
+                forced: false,
+            },
+            InvalidBlockReason::PageBreakHasText,
+        );
+
+        let mut set_dual = Document::parse("Action.\n");
+        let id = set_dual.blocks[0].id;
+        assert_invalid_atomically(
+            &mut set_dual,
+            EditCommand::SetDual {
+                block: id,
+                dual: true,
+            },
+            InvalidBlockReason::DualNonCharacter,
+        );
+
+        let mut merge = Document::parse("@MARY\n\n!^\n");
+        let id = merge.blocks[0].id;
+        assert_invalid_atomically(
+            &mut merge,
+            EditCommand::MergeBlocks { first: id },
+            InvalidBlockReason::CharacterEndsWithDualMarker,
+        );
+
+        let mut delete = Document::parse("@MARY X\n\n!^\n");
+        let first = delete.blocks[0].id;
+        let second = delete.blocks[1].id;
+        assert_invalid_atomically(
+            &mut delete,
+            EditCommand::DeleteRange {
+                from: DocPosition::new(first, 4),
+                to: DocPosition::new(second, 0),
+            },
+            InvalidBlockReason::CharacterEndsWithDualMarker,
+        );
+
+        let mut split = Document::parse("@MARY^^\n");
+        assert_eq!(split.blocks[0].text, "MARY^");
+        assert!(split.blocks[0].dual);
+        let id = split.blocks[0].id;
+        assert_invalid_atomically(
+            &mut split,
+            EditCommand::SplitBlock { block: id, at: 0 },
+            InvalidBlockReason::CharacterEndsWithDualMarker,
+        );
+    }
+
+    fn assert_invalid_atomically(
+        document: &mut Document,
+        command: EditCommand,
+        reason: InvalidBlockReason,
+    ) {
+        let before = document.serialise();
+        assert!(matches!(
+            document.apply(command),
+            Err(EditError::InvalidBlock {
+                reason: actual,
+                ..
+            }) if actual == reason
+        ));
+        assert_eq!(document.serialise(), before);
+        assert!(!document.is_dirty());
+        assert!(!document.can_undo());
+    }
+
+    #[test]
+    fn no_op_commands_preserve_provenance_history_and_dirty_state() {
+        let mut document = Document::parse("Title: Big Fish\n\nAction.\n");
+        let id = document.blocks[0].id;
+        let block_provenance = document.blocks[0].provenance.clone();
+        let title_provenance = document.title_page.provenance.clone();
+
+        let results = [
+            document
+                .apply(EditCommand::ReplaceText {
+                    block: id,
+                    range: 0..7,
+                    with: "Action.".into(),
+                })
+                .unwrap(),
+            document
+                .apply(EditCommand::DeleteRange {
+                    from: DocPosition::new(id, 3),
+                    to: DocPosition::new(id, 3),
+                })
+                .unwrap(),
+            document
+                .apply(EditCommand::SetKind {
+                    block: id,
+                    kind: BlockKind::Action,
+                    forced: false,
+                })
+                .unwrap(),
+            document
+                .apply(EditCommand::SetDual {
+                    block: id,
+                    dual: false,
+                })
+                .unwrap(),
+            document
+                .apply(EditCommand::SetTitlePage {
+                    field: TitleField::Title,
+                    value: "Big Fish".into(),
+                })
+                .unwrap(),
+        ];
+
+        assert!(results.iter().all(|result| result.changed.is_empty()));
+        assert_eq!(document.blocks[0].provenance, block_provenance);
+        assert_eq!(document.title_page.provenance, title_provenance);
+        assert!(!document.is_dirty());
+        assert!(!document.can_undo());
+    }
+
+    #[test]
+    fn insertion_and_deletion_do_not_coalesce_together() {
+        let mut document = Document::parse("abc\n");
+        let id = document.blocks[0].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..0,
+                with: "x".into(),
+            })
+            .unwrap();
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..1,
+                with: String::new(),
+            })
+            .unwrap();
+
+        assert_eq!(document.blocks[0].text, "abc");
+        assert!(document.is_dirty());
+        document.undo().unwrap();
+        assert_eq!(document.blocks[0].text, "xabc");
+        document.undo().unwrap();
+        assert_eq!(document.blocks[0].text, "abc");
+        assert!(!document.is_dirty());
+    }
+
+    #[test]
+    fn replacements_never_coalesce() {
+        let mut document = Document::parse("abc\n");
+        let id = document.blocks[0].id;
+        for with in ["x", "y"] {
+            document
+                .apply(EditCommand::ReplaceText {
+                    block: id,
+                    range: 0..1,
+                    with: with.into(),
+                })
+                .unwrap();
+        }
+
+        document.undo().unwrap();
+        assert_eq!(document.blocks[0].text, "xbc");
+        document.undo().unwrap();
+        assert_eq!(document.blocks[0].text, "abc");
+    }
+
+    #[test]
+    fn undoing_to_the_initial_revision_clears_dirty() {
+        let mut document = Document::parse("abc\n");
+        let id = document.blocks[0].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..0,
+                with: "x".into(),
+            })
+            .unwrap();
+        assert!(document.is_dirty());
+
+        document.undo().unwrap();
+        assert!(!document.is_dirty());
+    }
+
+    #[test]
+    fn undo_and_redo_track_a_saved_revision() {
+        let mut document = Document::parse("abc\n");
+        let id = document.blocks[0].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..0,
+                with: "x".into(),
+            })
+            .unwrap();
+        document.mark_saved();
+        assert!(!document.is_dirty());
+
+        document.undo().unwrap();
+        assert!(document.is_dirty());
+        document.redo().unwrap();
+        assert!(!document.is_dirty());
+
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 1..1,
+                with: "y".into(),
+            })
+            .unwrap();
+        assert!(document.is_dirty());
+        document.undo().unwrap();
+        assert!(!document.is_dirty());
+    }
+
+    #[test]
+    fn a_nested_note_remains_editable() {
+        let mut document = Document::parse("[[ outer [[ inner ]] outer ]]\n");
+        let id = document.blocks[0].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 1..6,
+                with: "changed".into(),
+            })
+            .unwrap();
+
+        let written = document.serialise();
+        assert_eq!(written, "[[ changed [[ inner ]] outer ]]\n");
+        assert_eq!(Document::parse(&written).blocks[0].kind, BlockKind::Note);
+    }
+
+    #[test]
+    fn undo_and_redo_restore_exact_selections() {
+        let mut document = Document::parse("abcdef\n");
+        let id = document.blocks[0].id;
+        let before = DocSelection {
+            anchor: DocPosition::new(id, 4),
+            focus: DocPosition::new(id, 1),
+        };
+        let applied = document
+            .apply_with_selection(
+                EditCommand::ReplaceText {
+                    block: id,
+                    range: 1..4,
+                    with: "X".into(),
+                },
+                Some(before),
+            )
+            .unwrap();
+
+        assert_eq!(document.undo().unwrap().selection, Some(before));
+        assert_eq!(document.redo().unwrap().selection, applied.selection);
+    }
+
+    #[test]
+    fn a_blockless_document_has_no_fake_selection() {
+        let mut document = Document::empty();
+        let applied = document
+            .apply(EditCommand::SetTitlePage {
+                field: TitleField::Title,
+                value: "Big Fish".into(),
+            })
+            .unwrap();
+        assert_eq!(applied.selection, None);
+        assert_eq!(document.undo().unwrap().selection, None);
+        assert_eq!(document.redo().unwrap().selection, None);
+    }
+
+    #[test]
+    fn an_emptied_vanishing_block_is_semantically_empty() {
+        let mut document = Document::parse("x\n");
+        let id = document.blocks[0].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..1,
+                with: String::new(),
+            })
+            .unwrap();
+        assert!(document.is_empty());
+        assert_eq!(document.serialise(), "");
+
+        let page_break = Document::parse("===\n");
+        assert!(!page_break.is_empty());
+    }
+
+    #[test]
+    fn tolerant_note_edits_accept_temporarily_unbalanced_delimiters() {
+        let mut document = Document::parse("[[note]]\n");
+        let id = document.blocks[0].id;
+        for bracket in ["[", "["] {
+            let offset = document.block(id).unwrap().text.len() as u32;
+            document
+                .apply(EditCommand::ReplaceText {
+                    block: id,
+                    range: offset..offset,
+                    with: bracket.into(),
+                })
+                .unwrap();
+        }
+        assert_eq!(document.block(id).unwrap().text, "note[[");
+        let reopened = Document::parse(&document.serialise());
+        assert_eq!(reopened.blocks[0].kind, BlockKind::Action);
+        assert_eq!(reopened.blocks[0].text, "note[[");
+    }
+
+    #[test]
+    fn coalescing_does_not_overwrite_an_explicit_absent_selection() {
+        let mut document = Document::parse("abc\n");
+        let id = document.blocks[0].id;
+        document
+            .apply_with_selection(
+                EditCommand::ReplaceText {
+                    block: id,
+                    range: 0..0,
+                    with: "x".into(),
+                },
+                None,
+            )
+            .unwrap();
+        document
+            .apply_with_selection(
+                EditCommand::ReplaceText {
+                    block: id,
+                    range: 1..1,
+                    with: "y".into(),
+                },
+                Some(DocSelection::caret(DocPosition::new(id, 1))),
+            )
+            .unwrap();
+        assert_eq!(document.undo().unwrap().selection, None);
     }
 }

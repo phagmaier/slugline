@@ -100,19 +100,21 @@ pub fn parse(source: &str) -> Script {
 /// change kind between keystrokes.
 fn protected_spans(source: &str, from: usize) -> Vec<Range<usize>> {
     let bytes = source.as_bytes();
+    let notes = syntax::matched_spans(bytes, b"[[", b"]]");
+    let boneyards = syntax::matched_spans(bytes, b"/*", b"*/");
     let mut spans = Vec::new();
     let mut index = from;
 
     while index + 1 < bytes.len() {
         if &bytes[index..index + 2] == b"/*" {
-            let end = find(bytes, index + 2, b"*/").map_or(bytes.len(), |at| at + 2);
+            let end = span_at(&boneyards, index).map_or(bytes.len(), |span| span.end);
             spans.push(index..end);
             index = end;
         } else if &bytes[index..index + 2] == b"[[" {
-            match find(bytes, index + 2, b"]]") {
-                Some(at) => {
-                    spans.push(index..at + 2);
-                    index = at + 2;
+            match span_at(&notes, index) {
+                Some(span) => {
+                    spans.push(span.clone());
+                    index = span.end;
                 }
                 None => index += 2,
             }
@@ -124,8 +126,11 @@ fn protected_spans(source: &str, from: usize) -> Vec<Range<usize>> {
     spans
 }
 
-fn find(haystack: &[u8], from: usize, needle: &[u8; 2]) -> Option<usize> {
-    (from..haystack.len().saturating_sub(1)).find(|&at| &haystack[at..at + 2] == needle)
+fn span_at(spans: &[Range<usize>], position: usize) -> Option<&Range<usize>> {
+    spans
+        .binary_search_by_key(&position, |span| span.start)
+        .ok()
+        .map(|index| &spans[index])
 }
 
 /// Whether `position` is inside a span rather than at its edge. A line that
@@ -139,8 +144,18 @@ fn inside_span(spans: &[Range<usize>], position: usize) -> bool {
     candidate(spans, position).is_some_and(|span| span.start < position && position < span.end)
 }
 
-fn span_starts_at(spans: &[Range<usize>], position: usize) -> bool {
-    candidate(spans, position).is_some_and(|span| span.start == position)
+/// A protected span is a standalone element only if its closing line contains
+/// no further visible text. Otherwise the entire line remains Action.
+fn span_stands_alone(source: &str, spans: &[Range<usize>], position: usize) -> bool {
+    let Some(span) = candidate(spans, position).filter(|span| span.start == position) else {
+        return false;
+    };
+    source[span.end..]
+        .split('\n')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
 }
 
 /// The last span that begins at or before `position` — the only one that can
@@ -169,23 +184,22 @@ fn parse_title_page(source: &str, lines: &[Line], spans: &[Range<usize>]) -> (Ti
     let mut index = 0;
     while index < lines.len() && !is_separator(&lines[index], source, spans) {
         let content = lines[index].content(source);
-        match key_value(content) {
+        if content.starts_with([' ', '\t']) {
             // An indented line continues the previous value even if it happens
             // to contain a colon — "Contact:\n   me@example.com" is one value.
-            Some((key, value)) if !content.starts_with([' ', '\t']) => {
-                page.entries.push(TitleEntry {
-                    field: TitleField::from_key(key),
-                    value: value.trim().to_string(),
-                });
-            }
-            _ => match page.entries.last_mut() {
-                Some(entry) if entry.value.is_empty() => entry.value = content.trim().to_string(),
-                Some(entry) => {
+            if let Some(entry) = page.entries.last_mut() {
+                if !entry.value.is_empty() {
                     entry.value.push('\n');
-                    entry.value.push_str(content.trim());
                 }
-                None => {}
-            },
+                entry.value.push_str(content.trim());
+            }
+        } else if let Some((key, value)) = key_value(content) {
+            page.entries.push(TitleEntry {
+                field: TitleField::from_key(key),
+                value: value.trim().to_string(),
+            });
+        } else {
+            break;
         }
         index += 1;
     }
@@ -274,15 +288,13 @@ fn classify_chunk(
 
         // Boneyard and standalone notes. Both may span lines; the span table
         // above guarantees the chunk already contains all of them.
-        if head.starts_with("/*") && span_starts_at(spans, line.start + leading) {
-            out.push(new_block(BlockKind::Opaque, head, false, false, index));
-            index += 1;
-            continue;
-        }
-        if head.starts_with("[[") && span_starts_at(spans, line.start + leading) {
-            out.push(new_block(BlockKind::Note, head, false, false, index));
-            index += 1;
-            continue;
+        if let Some(kind) = syntax::protected_kind(head) {
+            let position = line.start + leading;
+            if span_stands_alone(source, spans, position) {
+                out.push(new_block(kind, head, false, false, index));
+                index += 1;
+                continue;
+            }
         }
 
         // Explicit markers.
@@ -554,9 +566,41 @@ mod tests {
     }
 
     #[test]
+    fn nested_notes_and_boneyards_match_at_their_outer_delimiter() {
+        let source = concat!(
+            "[[ outer [[ inner ]] outer ]]\n\n",
+            "/* outer /* inner */ outer */\n",
+        );
+        assert_eq!(kinds(source), [BlockKind::Note, BlockKind::Opaque]);
+        assert_eq!(texts(source)[0], " outer [[ inner ]] outer ");
+        assert_eq!(texts(source)[1], "/* outer /* inner */ outer */");
+        assert_tiles(source);
+    }
+
+    #[test]
+    fn protected_spans_with_visible_text_after_the_close_are_action() {
+        let source = concat!(
+            "[[ note\nstill note ]] VISIBLE\n\n",
+            "/* hidden\nstill hidden */ VISIBLE\n",
+        );
+        assert_eq!(kinds(source), [BlockKind::Action, BlockKind::Action]);
+        assert_eq!(texts(source)[0], "[[ note\nstill note ]] VISIBLE");
+        assert_eq!(texts(source)[1], "/* hidden\nstill hidden */ VISIBLE");
+        assert_tiles(source);
+    }
+
+    #[test]
     fn an_unclosed_note_is_ordinary_text() {
         let source = "[[ unfinished\n\nINT. HOUSE - DAY\n";
         assert_eq!(kinds(source), [BlockKind::Action, BlockKind::SceneHeading]);
+        assert_tiles(source);
+    }
+
+    #[test]
+    fn an_unclosed_note_does_not_suppress_a_later_note() {
+        let source = "[[ unfinished\n\n[[ existing ]]\n";
+        assert_eq!(kinds(source), [BlockKind::Action, BlockKind::Note]);
+        assert_eq!(texts(source)[1], " existing ");
         assert_tiles(source);
     }
 
@@ -586,6 +630,25 @@ mod tests {
             Some("Blue")
         );
         assert_eq!(script.elements.len(), 1);
+        assert_tiles(source);
+    }
+
+    #[test]
+    fn an_unindented_non_key_terminates_the_title_page() {
+        let source = "Title: Big Fish\nThis is body action.\n\nINT. HOUSE - DAY\n";
+        let script = parse(source);
+        assert_eq!(script.title_page.get(&TitleField::Title), Some("Big Fish"));
+        assert_eq!(
+            script
+                .elements
+                .iter()
+                .map(|element| (element.kind, element.text.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (BlockKind::Action, "This is body action."),
+                (BlockKind::SceneHeading, "INT. HOUSE - DAY"),
+            ]
+        );
         assert_tiles(source);
     }
 
