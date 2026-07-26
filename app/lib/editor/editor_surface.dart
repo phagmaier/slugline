@@ -985,6 +985,10 @@ class _SurfacePainter extends CustomPainter {
       final block = blocks[index];
       final lines = layout.linesOf(index);
       final first = layout.firstRowOf(index);
+      // Capitalised once for the block, not once per row: the rule is per
+      // scalar and never moves an offset, so a row still slices this string by
+      // its own model bounds.
+      final display = displayText(block.kind, block.text);
 
       if (block.kind == BlockKind.pageBreak) {
         final y = _padding + first * _lineHeight + _lineHeight / 2;
@@ -1020,11 +1024,8 @@ class _SurfacePainter extends CustomPainter {
           );
         }
 
-        if (line.length > 0) {
-          final text = displayText(
-            block.kind,
-            block.text.substring(line.start, line.end),
-          );
+        if (line.columns > 0) {
+          final text = line.textIn(display);
           TextPainter(
               text: TextSpan(
                 text: text,
@@ -1080,15 +1081,14 @@ class _SurfacePainter extends CustomPainter {
         math.max(selectionStart, line.start).clamp(line.start, line.end);
     final endOffset =
         math.min(selectionEnd, line.end).clamp(line.start, line.end);
-    final textWidth = (endOffset - startOffset) * advance;
+    // Grid cells, not code units: an astral scalar is one cell of two units and
+    // a tab is one unit of up to four cells.
+    final startColumn = line.columnAtOffset(startOffset);
+    final endColumn = line.columnAtOffset(endOffset);
+    final textWidth = (endColumn - startColumn) * advance;
     if (textWidth > 0) {
       canvas.drawRect(
-        Rect.fromLTWH(
-          x + (startOffset - line.start) * advance,
-          y,
-          textWidth,
-          _lineHeight,
-        ),
+        Rect.fromLTWH(x + startColumn * advance, y, textWidth, _lineHeight),
         paint,
       );
     }
@@ -1101,14 +1101,14 @@ class _SurfacePainter extends CustomPainter {
       // makes its inclusion visible without shifting the next line's geometry.
       canvas.drawRect(
         Rect.fromLTWH(
-          x + (hardBreak - line.start) * advance,
+          x + line.columnAtOffset(hardBreak) * advance,
           y,
           advance / 2,
           _lineHeight,
         ),
         paint,
       );
-    } else if (line.length == 0 && index < toIndex) {
+    } else if (line.columns == 0 && index < toIndex) {
       // A selected empty block still needs a visible mark.
       canvas.drawRect(Rect.fromLTWH(x, y, advance / 2, _lineHeight), paint);
     }
@@ -1123,10 +1123,12 @@ class _SurfacePainter extends CustomPainter {
     final start = math.max(composing.start, line.start);
     final end = math.min(composing.end, line.end);
     if (end <= start) return;
-    final x = pageLeft + (column + start - line.start) * advance;
+    final startColumn = line.columnAtOffset(start);
+    final endColumn = line.columnAtOffset(end);
+    final x = pageLeft + (column + startColumn) * advance;
     canvas.drawLine(
       Offset(x, y + _lineHeight - 2),
-      Offset(x + (end - start) * advance, y + _lineHeight - 2),
+      Offset(x + (endColumn - startColumn) * advance, y + _lineHeight - 2),
       Paint()
         ..color = colours.text
         ..strokeWidth = 1.5,
@@ -1143,7 +1145,8 @@ class _SurfacePainter extends CustomPainter {
     final lineIndex = layout.lineIndexAt(index, focus.offsetUtf16);
     final line = layout.linesOf(index)[lineIndex];
     final column =
-        layout.columnOf(index, lineIndex) + (focus.offsetUtf16 - line.start);
+        layout.columnOf(index, lineIndex) +
+        line.columnAtOffset(focus.offsetUtf16);
     // Static, not blinking. A blink is an animation loop and §1.3 asks for 0%
     // idle CPU.
     canvas.drawRect(

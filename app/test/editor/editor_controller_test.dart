@@ -241,19 +241,61 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 4);
     });
 
-    testWidgets('a click inside an emoji lands on its boundary', (tester) async {
-      // Columns are UTF-16 code units, so a click can land between the halves of
-      // a surrogate pair. The caret has to come to rest on a boundary or the
-      // next keystroke is an offset the core refuses (ADR 0001).
+    testWidgets('no click lands inside an emoji', (tester) async {
+      // One scalar is one column (`docs/LINE_BREAKING.md`), so the emoji is
+      // column 1 whole and no column addresses the middle of its surrogate
+      // pair. The caret cannot come to rest on an offset the core refuses
+      // (ADR 0001) because no click can name one.
       final controller = await pumpEditor(tester, FakeCore.single(BlockKind.action, 'a\u{1F3AC}b'));
+
+      controller.placeCaretAt(0, 1);
+      await tester.pump();
+      expect(controller.selection.focus.offsetUtf16, 1, reason: 'before it');
 
       controller.placeCaretAt(0, 2);
       await tester.pump();
-      expect(controller.selection.focus.offsetUtf16, 1);
+      expect(controller.selection.focus.offsetUtf16, 3, reason: 'after it');
 
       controller.placeCaretAt(0, 3);
       await tester.pump();
-      expect(controller.selection.focus.offsetUtf16, 3);
+      expect(controller.selection.focus.offsetUtf16, 4, reason: 'end of line');
+    });
+
+    testWidgets('a click inside a tab expansion is still a model offset',
+        (tester) async {
+      // The tab is one character of the model and four columns of the grid.
+      // Clicking any of them puts the caret before the tab: a click resolves to
+      // a model offset, never to a column the document does not have.
+      final controller = await pumpEditor(
+          tester, FakeCore.single(BlockKind.action, '\tabc'));
+
+      for (final column in [0, 1, 2, 3]) {
+        controller.placeCaretAt(0, column);
+        await tester.pump();
+        expect(controller.selection.focus.offsetUtf16, 0,
+            reason: 'column $column is inside the tab');
+      }
+
+      controller.placeCaretAt(0, 4);
+      await tester.pump();
+      expect(controller.selection.focus.offsetUtf16, 1, reason: 'the a');
+
+      controller.placeCaretAt(0, 7);
+      await tester.pump();
+      expect(controller.selection.focus.offsetUtf16, 4, reason: 'end of line');
+    });
+
+    testWidgets('a caret in a combining sequence steps off the cluster',
+        (tester) async {
+      // A cluster is one column per scalar, so a click can land between the
+      // letter and its mark. Grapheme safety is the editor's, not the grid's.
+      final controller = await pumpEditor(
+          tester, FakeCore.single(BlockKind.action, 'ae\u{301}b'));
+
+      controller.placeCaretAt(0, 2);
+      await tester.pump();
+      expect(controller.selection.focus.offsetUtf16, 1,
+          reason: 'back to the start of the cluster');
     });
 
     testWidgets('a click places the caret and a drag extends from it',

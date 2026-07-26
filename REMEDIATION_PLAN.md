@@ -2073,41 +2073,158 @@ and page-level layout cannot be mistaken for a soft-wrap disagreement.
 
 ### Counting units
 
-- [ ] Determine the authoritative unit for wrap columns.
-- [ ] Align Dart and Rust behavior for astral-plane characters.
-- [ ] Ensure caret safety still uses grapheme boundaries where required.
-- [ ] Add emoji/non-BMP regression cases.
+- [x] Determine the authoritative unit for wrap columns. — one Unicode scalar,
+  one column; `VisualLine.columns` is that count and is no longer `end - start`.
+- [x] Align Dart and Rust behavior for astral-plane characters.
+- [x] Ensure caret safety still uses grapheme boundaries where required. —
+  `previousBoundary`/`nextBoundary`/`_snapToBoundary` are unchanged; a cluster is
+  several columns and a click inside one still steps off it.
+- [x] Add emoji/non-BMP regression cases.
 
 ### Space runs
 
-- [ ] Make Dart consume spaces at wrap boundaries the same way Rust does.
-- [ ] Add repeated-space cases.
-- [ ] Verify source offsets remain correct even when display spaces are skipped.
+- [x] Make Dart consume spaces at wrap boundaries the same way Rust does.
+- [x] Add repeated-space cases.
+- [x] Verify source offsets remain correct even when display spaces are skipped.
 
 ### Trailing spaces
 
-- [ ] Eliminate the Dart phantom empty line at a width boundary.
-- [ ] Add `wrapText("abc ", 3)` or equivalent regression coverage.
-- [ ] Test several trailing-space lengths.
+- [x] Eliminate the Dart phantom empty line at a width boundary.
+- [x] Add `wrapText("abc ", 3)` or equivalent regression coverage.
+- [x] Test several trailing-space lengths.
 
 ### Tabs
 
-- [ ] Match Rust 4-column tab stops.
-- [ ] Test tabs at columns 0, 1, 3, 4, and near wrap boundaries.
-- [ ] Confirm caret/click mapping remains model-offset based.
+- [x] Match Rust 4-column tab stops.
+- [x] Test tabs at columns 0, 1, 3, 4, and near wrap boundaries.
+- [x] Confirm caret/click mapping remains model-offset based. — a click resolves
+  through `VisualLine.offsetAtColumn`, and every cell of a tab answers with the
+  tab's own offset.
 
 ### Hard newlines
 
-- [ ] Confirm Phase 2 semantics match Rust.
-- [ ] Include hard-newline cases in the shared test corpus.
+- [x] Confirm Phase 2 semantics match Rust.
+- [x] Include hard-newline cases in the shared test corpus.
 
 ### Uppercasing
 
-- [ ] Resolve editor vs paginator behavior for length-changing uppercase such as `ß`.
-- [ ] Prefer one explicit specification rather than accidental behavior.
-- [ ] Preserve caret/model offset correctness in the editor.
-- [ ] Add scene-heading and transition cases with Unicode.
-- [ ] Record the decision in the layout contract.
+- [x] Resolve editor vs paginator behavior for length-changing uppercase such as `ß`.
+- [x] Prefer one explicit specification rather than accidental behavior. —
+  refusal is per scalar, not per block.
+- [x] Preserve caret/model offset correctness in the editor.
+- [x] Add scene-heading and transition cases with Unicode.
+- [x] Record the decision in the layout contract.
+
+### Implementation log — Phase 6B
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `d685fc0`
+**Ending commit:** working tree
+
+#### Changes made
+
+- Rewrote `app/lib/editor/line_layout.dart` to wrap on grid cells rather than on
+  UTF-16 code units. A hard line is expanded once — tabs to four-column stops,
+  surrogate pairs to one cell, `\r` dropped as Rust drops it — and then broken
+  by `layout::break_lines`'s algorithm verbatim: break at the width when the
+  next cell is a space, otherwise at the rightmost space that has content before
+  it, otherwise split the word; then consume the whole space run.
+- Gave `VisualLine` the two coordinate systems it was conflating: `columns` for
+  the grid and `start`/`end` for the model, with `columnAtOffset`,
+  `offsetAtColumn` and `textIn` to cross between them. Rows carry a column map
+  only when a tab or an astral scalar makes one necessary, so the ordinary row
+  costs nothing extra.
+- Fixed the four call sites that had been treating a model offset as a column:
+  the caret, the selection rectangles, the composing underline, and
+  `moveVertical`'s sticky column. Right and centre alignment now measure
+  `columns`.
+- Made upper-casing refuse per scalar on both sides. `layout::engine`'s
+  `display_text` no longer calls `str::to_uppercase` wholesale, and the editor
+  decides once per block rather than once per painted row.
+- Recorded the per-scalar decision in `docs/LINE_BREAKING.md`.
+
+#### Tests added or changed
+
+- `crates/layout/src/line_break.rs`: eight tests pinning the contract — scalar
+  columns, consumed space runs, leading runs, trailing spaces, tab stops, a wrap
+  inside a tab expansion, hard lines, and a width below one.
+- `app/test/editor/line_layout_test.dart`: the same eight cases asserted
+  character for character against the Rust expectations, plus model-offset cases
+  for consumed gaps, tabs, astral scalars and capitals.
+- `crates/layout/src/engine.rs`: `display_text` refuses `ß` and `ﬁ` alone and
+  capitalises the rest, and `every_latin_letter_with_a_capital_gets_one` walks
+  `U+0000..U+024F` to prove the declined set is exactly `ß`, `ŉ`, `ǰ`. The Dart
+  test of the same name asserts `displayText` returns the capital of every
+  letter in that range that has one. Between them, a heading is capitals.
+- `app/test/editor/editor_controller_test.dart`: a click can no longer land
+  inside an emoji (the old test asserted that it could), a click anywhere in a
+  tab's four cells resolves to the tab's offset, and a click inside a combining
+  sequence still steps off the cluster.
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                    # clean
+cargo clippy --workspace --all-targets -- -D warnings      # clean
+cargo test --workspace                                     # 386 passed
+python3 tools/check_layering.py                            # clean
+cd app && flutter analyze                                  # No issues found
+cd app && flutter test                                     # 305 passed
+cd app && flutter build linux --release                    # built
+cd app && flutter test integration_test/bridge_test.dart -d linux        # 4
+cd app && flutter test integration_test/editor_test.dart -d linux        # 7
+cd app && flutter test integration_test/writing_test.dart -d linux       # 11
+cd app && flutter test integration_test/ime_test.dart -d linux           # 9
+cd app && flutter test integration_test/persistence_test.dart -d linux   # 14
+cd app && flutter test integration_test/keystroke_benchmark_test.dart -d linux
+                                                           # p50 0.97ms,
+                                                           # p99 1.49ms
+                                                           # journalled
+```
+
+All six integration files were run because the caret, the selection rectangles
+and the hit-testing all changed. `xvfb-run` is not installed here, so they ran
+against the real display rather than the headless one CI uses.
+
+#### Results
+
+The six divergences the audit named are gone, and each one is now pinned by the
+same assertion on both sides of the bridge. The editor and `break_lines` return
+identical rows for every case in the contract; Phase 6C's job is to prove it
+over the corpus rather than over a list.
+
+#### Deviations from plan
+
+- The plan expected the `ß` question to be settled by choosing between the two
+  existing behaviors. Neither was kept. Dart's `toUpperCase` refuses only the
+  scalars that expand, so `straße` was already displaying as `STRAßE`; Rust's
+  `to_uppercase` expanded them and would have shown `STRASSE`, moving every
+  column after it. Refusing per block — the first reading of the 6A contract —
+  would have shown an entire German scene heading in lower case, so the contract
+  and both implementations now refuse per scalar. Capitalised headings are a
+  hard product requirement, and the two tests above are what hold the exception
+  set to the three Latin letters whose capital is more than one scalar.
+- `wrapText("abc ", 3)` was already correct; the phantom row appeared with two
+  or more trailing spaces, and the fix is the consumed space run rather than a
+  special case.
+
+#### New risks or follow-up findings
+
+- `DocumentLayout` allocates a column map per row for any block containing a tab
+  or an astral scalar. It is bounded by the block's length and only touched on
+  rewrap, but it is the first per-row allocation on the keystroke path; the
+  Phase 6G paginator review should look at it if the benchmark moves.
+- The contract's uppercase rule now relies on Dart's `toUpperCase` and Rust's
+  `char::to_uppercase` agreeing scalar by scalar. They do for every scalar
+  checked, including the whole expanding class, but nothing enforces it — 6C's
+  differential test should carry uppercase blocks so a Unicode table update
+  cannot drift them apart silently.
+
+#### Reviewer notes
+
+- The two test lists are deliberately the same cases in the same order.
 
 ---
 

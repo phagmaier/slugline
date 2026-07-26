@@ -284,8 +284,9 @@ class EditorController extends ChangeNotifier {
     final column =
         _stickyColumn ??
         _layout.columnOf(index, lineIndex) +
-            (_selection.focus.offsetUtf16 -
-                _layout.linesOf(index)[lineIndex].start);
+            _layout
+                .linesOf(index)[lineIndex]
+                .columnAtOffset(_selection.focus.offsetUtf16);
 
     var block = index;
     var line = lineIndex + rows;
@@ -386,7 +387,7 @@ class EditorController extends ChangeNotifier {
   DocPosition _positionAt(int blockIndex, int lineIndex, int column) {
     final line = _layout.linesOf(blockIndex)[lineIndex];
     final startColumn = _layout.columnOf(blockIndex, lineIndex);
-    final offset = line.start + (column - startColumn).clamp(0, line.length);
+    final offset = line.offsetAtColumn(column - startColumn);
     return DocPosition(
       block: _blocks[blockIndex].id,
       offsetUtf16: _snapToBoundary(_blocks[blockIndex].text, offset),
@@ -925,8 +926,10 @@ int nextBoundary(String text, int offset) {
 
 /// Nudges an offset that landed inside a cluster back to the start of it.
 ///
-/// Only a click can produce one: the grid is measured in UTF-16 code units, and
-/// a column can land in the middle of the two units an emoji is written with.
+/// Only a click can produce one. A column is one Unicode scalar, so no click
+/// lands inside an emoji's surrogate pair any more — but a grapheme cluster is
+/// several scalars and so several columns, and a caret between a letter and its
+/// combining mark is still an offset to step off (`docs/LINE_BREAKING.md`).
 int _snapToBoundary(String text, int offset) {
   final clamped = offset.clamp(0, text.length);
   if (clamped == 0 || clamped == text.length) return clamped;

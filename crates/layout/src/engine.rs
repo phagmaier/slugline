@@ -496,12 +496,29 @@ fn layout_for(kind: BlockKind) -> Option<ElementLayout> {
     Some(layout)
 }
 
+/// Upper-cases for display, one scalar at a time.
+///
+/// A scalar is transformed only when its upper case is exactly one scalar of
+/// the same UTF-16 width, so that every display boundary still maps one-to-one
+/// to a source boundary (`docs/LINE_BREAKING.md`). `é` becomes `É`; `ß` stays
+/// `ß` rather than becoming `SS`, which would move every editor caret column
+/// after it. Refusing per scalar rather than per block is what keeps
+/// `INT. STRAßE - TAG` in capitals instead of showing the whole heading as
+/// typed. Dart's `String.toUpperCase` already behaves this way, and the
+/// editor's `displayText` holds it to it.
 fn display_text(text: &str, uppercase: bool) -> String {
-    if uppercase {
-        text.to_uppercase()
-    } else {
-        text.to_owned()
+    if !uppercase {
+        return text.to_owned();
     }
+    let mut upper = String::with_capacity(text.len());
+    for character in text.chars() {
+        let mut mapped = character.to_uppercase();
+        match (mapped.next(), mapped.next()) {
+            (Some(one), None) if one.len_utf16() == character.len_utf16() => upper.push(one),
+            _ => upper.push(character),
+        }
+    }
+    upper
 }
 
 fn fingerprint(block: &slugline_document::BlockSnapshot, width: u16) -> u64 {
@@ -1157,6 +1174,43 @@ mod tests {
             .map(|line| (line.column, line.content.as_str()))
             .collect();
         assert_eq!(numbers, [(-5, "12A"), (62, "12A")]);
+    }
+
+    #[test]
+    fn uppercase_display_is_refused_per_scalar_when_it_would_change_offsets() {
+        // `ß` upper-cases to `SS`, one scalar becoming two. Transforming it
+        // would give the paginator a column count the editor's caret arithmetic
+        // cannot reproduce, so it alone is left as written and the rest of the
+        // heading is still capitals.
+        assert_eq!(display_text("straße", true), "STRAßE");
+        assert_eq!(display_text("int. straße - tag", true), "INT. STRAßE - TAG");
+        assert_eq!(display_text("café", true), "CAFÉ");
+        assert_eq!(display_text("straße", false), "straße");
+        // A ligature expands the same way and is refused the same way.
+        assert_eq!(display_text("ﬁn", true), "ﬁN");
+    }
+
+    #[test]
+    fn every_latin_letter_with_a_capital_gets_one() {
+        // A heading is shown in capitals, and that is not negotiable. Over the
+        // whole Latin range — ASCII, the accented Latin-1 letters, and Latin
+        // Extended-A and B — the only letters `display_text` leaves alone are
+        // the three whose capital is more than one scalar. Everything a script
+        // is written in is capitalised, including `é`, `ñ`, and `ø`.
+        let mut declined = Vec::new();
+        for scalar in 0..=0x024Fu32 {
+            let Some(character) = char::from_u32(scalar) else {
+                continue;
+            };
+            let source = character.to_string();
+            if character.to_uppercase().collect::<String>() == source {
+                continue; // No capital exists, or it is already one.
+            }
+            if display_text(&source, true) == source {
+                declined.push(character);
+            }
+        }
+        assert_eq!(declined, ['ß', 'ŉ', 'ǰ']);
     }
 
     #[test]

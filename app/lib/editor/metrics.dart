@@ -97,14 +97,30 @@ ElementMetrics metricsFor(BlockKind kind) =>
 
 /// How a block's text is drawn.
 ///
-/// Upper-casing is refused when it would change the length of the string —
-/// `ß` becomes `SS`, and a display string one code unit longer than the model's
-/// would put every caret column after it in the wrong place. Better to show the
-/// text as written than to lie about where the caret is.
+/// A scalar is capitalised only when its upper case is exactly one scalar of
+/// the same UTF-16 width. `ß` would become `SS`, and a display string one code
+/// unit longer than the model's would put every caret column after it in the
+/// wrong place, so it stays as written while the rest of the heading is still
+/// capitals. `layout::engine`'s `display_text` applies the same rule scalar by
+/// scalar, which is what lets the paginator wrap the columns the editor draws
+/// (`docs/LINE_BREAKING.md`).
+///
+/// Dart's `toUpperCase` already refuses exactly those scalars, so the whole
+/// string is the fast path — but the walk below proves the offsets line up
+/// rather than assuming it, and falls back to the text as written if they ever
+/// do not.
 String displayText(BlockKind kind, String text) {
   if (!metricsFor(kind).upperCase) return text;
   final upper = text.toUpperCase();
-  return upper.length == text.length ? upper : text;
+  if (upper.length != text.length) return text;
+  // Equal totals are not enough on their own: the scalars have to line up one
+  // for one, so that every model offset is the same offset in the display.
+  final source = text.runes.iterator;
+  final mapped = upper.runes.iterator;
+  while (source.moveNext()) {
+    if (!mapped.moveNext() || mapped.rawIndex != source.rawIndex) return text;
+  }
+  return mapped.moveNext() ? text : upper;
 }
 
 /// The label the UI shows for an element type.

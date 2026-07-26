@@ -1,20 +1,46 @@
-import 'dart:math' as math;
-
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/metrics.dart';
 
 /// One visual row of one block: the slice of the block's text it shows.
 ///
-/// Offsets are UTF-16 code units, the same coordinates the bridge speaks and the
-/// same ones `String.substring` uses, so a row can be painted without conversion.
+/// A row has two coordinate systems and they are not interchangeable. [start]
+/// and [end] are UTF-16 code units, the coordinates the bridge speaks and the
+/// ones `String.substring` uses, so the model slice needs no conversion.
+/// [columns] is the row's width on the §5.1 grid, where one Unicode scalar is
+/// one cell and a tab is however many cells its stop takes. Use
+/// [columnAtOffset] and [offsetAtColumn] to cross between them: subtracting
+/// [start] from a model offset is a column only for text that happens to be
+/// plain BMP, and `docs/LINE_BREAKING.md` is what says so.
 class VisualLine {
-  const VisualLine(this.start, this.end, {this.hardBreakOffsetUtf16});
+  /// A row whose columns are its code units: no tab, no astral scalar.
+  const VisualLine(
+    this.start,
+    this.end,
+    this.columns, {
+    this.hardBreakOffsetUtf16,
+  }) : _columnOffsets = null;
+
+  /// A row that needs a column map, because a tab or an astral scalar makes a
+  /// column something other than an offset less [start].
+  const VisualLine.mapped(
+    this.start,
+    this.end,
+    this.columns,
+    this._columnOffsets, {
+    this.hardBreakOffsetUtf16,
+  });
 
   /// Inclusive.
   final int start;
 
   /// Exclusive.
   final int end;
+
+  /// Grid cells this row occupies, after tab expansion.
+  ///
+  /// Not `end - start`: an astral scalar is two code units and one column, and
+  /// a tab is one code unit and up to four.
+  final int columns;
 
   /// The model offset of the `\n` that terminates this row, when there is one.
   ///
@@ -24,7 +50,77 @@ class VisualLine {
   /// that wrapping may omit from the painted slice.
   final int? hardBreakOffsetUtf16;
 
-  int get length => end - start;
+  /// The model offset each column starts at, plus [end] at index [columns].
+  ///
+  /// Null when the row is plain — no tab and no astral scalar — which is almost
+  /// every row of almost every script, and then a column is an offset less
+  /// [start]. Cells of one tab all carry that tab's offset, so no column ever
+  /// points inside it.
+  final List<int>? _columnOffsets;
+
+  /// What this row draws, with tabs expanded to their cells.
+  ///
+  /// [source] is the block's text, or the upper-cased display text of it —
+  /// `displayText` only transforms when that leaves every offset where it was,
+  /// so the same columns hold either way.
+  String textIn(String source) {
+    final offsets = _columnOffsets;
+    if (offsets == null) return source.substring(start, end);
+    final buffer = StringBuffer();
+    for (var column = 0; column < columns; column++) {
+      final offset = offsets[column];
+      final unit = source.codeUnitAt(offset);
+      if (unit == _tab) {
+        // Every cell of the expansion, including the ones a wrap cut off.
+        buffer.writeCharCode(_space);
+        continue;
+      }
+      buffer.writeCharCode(unit);
+      if (_isHighSurrogate(unit) && offset + 1 < source.length) {
+        final low = source.codeUnitAt(offset + 1);
+        if (_isLowSurrogate(low)) buffer.writeCharCode(low);
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// The model offset a grid column lands on. Out-of-range columns clamp to the
+  /// row's ends, which is what a click past the end of a line should do.
+  int offsetAtColumn(int column) {
+    final clamped = column < 0 ? 0 : (column > columns ? columns : column);
+    final offsets = _columnOffsets;
+    return offsets == null ? start + clamped : offsets[clamped];
+  }
+
+  /// The grid column a model offset sits at. An offset inside a tab's expansion
+  /// reports the tab's first column, never a cell in the middle of it.
+  int columnAtOffset(int offset) {
+    final offsets = _columnOffsets;
+    if (offsets == null) {
+      final column = offset - start;
+      return column < 0 ? 0 : (column > columns ? columns : column);
+    }
+    // The first column at or after the offset. Linear, over at most 60 cells,
+    // and only for rows that contain a tab or an astral scalar.
+    for (var column = 0; column <= columns; column++) {
+      if (offsets[column] >= offset) return column;
+    }
+    return columns;
+  }
+
+  /// The same row, with the newline that ends its hard line attached.
+  VisualLine _terminatedBy(int hardBreak) {
+    final offsets = _columnOffsets;
+    return offsets == null
+        ? VisualLine(start, end, columns, hardBreakOffsetUtf16: hardBreak)
+        : VisualLine.mapped(
+            start,
+            end,
+            columns,
+            offsets,
+            hardBreakOffsetUtf16: hardBreak,
+          );
+  }
 }
 
 /// Wraps a block's text to [width] columns.
@@ -32,16 +128,18 @@ class VisualLine {
 /// Character counting, not text measurement: the screenplay grid is monospace
 /// and fixed (§5.1), so a line break is arithmetic. That is what makes it cheap
 /// enough to redo on the edited block on every keystroke — and it is the same
-/// arithmetic `layout::paginate` will do in Rust, so the editor and the PDF
+/// arithmetic `layout::break_lines` does in Rust, so the editor and the PDF
 /// cannot drift apart.
 ///
-/// Embedded newlines are mandatory breaks and are retained as model offsets,
-/// but never counted as printable columns. Each resulting hard line is then
-/// broken on spaces, and mid-word only when a single word is longer than the
-/// column. A break is never placed between the halves of a surrogate pair.
+/// This is the editor's half of `docs/LINE_BREAKING.md`: hard newlines are
+/// mandatory breaks that occupy no column, tabs expand to four-column stops
+/// before wrapping, a break is taken at the rightmost space that has content
+/// before it, and the whole run of spaces at a chosen boundary is consumed. A
+/// break never lands inside a scalar or inside a tab's expansion. The other
+/// half is `layout::break_lines`, and a case answered differently there is a
+/// bug on one side or the other, never a preference.
 List<VisualLine> wrapText(String text, int width) {
-  if (text.isEmpty || width <= 0) return const [VisualLine(0, 0)];
-
+  final columns = width < 1 ? 1 : width;
   final lines = <VisualLine>[];
   var hardStart = 0;
   while (true) {
@@ -51,13 +149,78 @@ List<VisualLine> wrapText(String text, int width) {
       text,
       hardStart,
       hardEnd,
-      width,
+      columns,
       newline < 0 ? null : newline,
       lines,
     );
     if (newline < 0) return lines;
     hardStart = newline + 1;
   }
+}
+
+const int _space = 0x20;
+const int _tab = 0x09;
+const int _carriageReturn = 0x0d;
+const int _tabStop = 4;
+
+/// One hard line expanded onto the grid: one entry per cell.
+class _Cells {
+  _Cells(this.scalars, this.offsets, this.plain);
+
+  /// The scalar drawn in each cell. A tab contributes spaces.
+  final List<int> scalars;
+
+  /// The model offset of the scalar each cell belongs to.
+  final List<int> offsets;
+
+  /// True when cells and code units are one to one, so no per-row map is worth
+  /// the memory.
+  final bool plain;
+
+  int get length => scalars.length;
+}
+
+_Cells _expand(String text, int hardStart, int hardEnd) {
+  final scalars = <int>[];
+  final offsets = <int>[];
+  var plain = true;
+  var column = 0;
+  var index = hardStart;
+  while (index < hardEnd) {
+    final unit = text.codeUnitAt(index);
+    if (unit == _tab) {
+      plain = false;
+      final cells = _tabStop - column % _tabStop;
+      for (var cell = 0; cell < cells; cell++) {
+        scalars.add(_space);
+        offsets.add(index);
+      }
+      column += cells;
+      index += 1;
+      continue;
+    }
+    if (unit == _carriageReturn) {
+      // Not part of the shared input domain; Rust drops it before wrapping.
+      plain = false;
+      index += 1;
+      continue;
+    }
+    var scalar = unit;
+    var units = 1;
+    if (_isHighSurrogate(unit) && index + 1 < hardEnd) {
+      final low = text.codeUnitAt(index + 1);
+      if (_isLowSurrogate(low)) {
+        scalar = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+        units = 2;
+        plain = false;
+      }
+    }
+    scalars.add(scalar);
+    offsets.add(index);
+    column += 1;
+    index += units;
+  }
+  return _Cells(scalars, offsets, plain);
 }
 
 void _wrapHardLine(
@@ -68,11 +231,15 @@ void _wrapHardLine(
   int? hardBreakOffsetUtf16,
   List<VisualLine> lines,
 ) {
-  if (hardStart == hardEnd) {
+  final cells = _expand(text, hardStart, hardEnd);
+  if (cells.length == 0) {
+    // An empty hard line still occupies a row: an empty block is where the
+    // caret goes after the Enter that made it.
     lines.add(
       VisualLine(
         hardStart,
         hardEnd,
+        0,
         hardBreakOffsetUtf16: hardBreakOffsetUtf16,
       ),
     );
@@ -80,47 +247,93 @@ void _wrapHardLine(
   }
 
   final firstLine = lines.length;
-  var start = hardStart;
-  while (hardEnd - start > width) {
-    final limit = start + width;
-    final space = text.lastIndexOf(' ', limit);
-    if (space > start) {
-      lines.add(VisualLine(start, space));
-      start = space + 1;
-    } else {
-      final breakAt = _boundaryAtOrBefore(text, limit);
-      // A single character wider than the column would otherwise loop forever.
-      final end = math.max(breakAt, start + 1);
-      lines.add(VisualLine(start, end));
-      start = end;
+  var start = 0;
+  while (cells.length - start > width) {
+    final breakAt = _breakColumn(cells, start, width);
+    if (breakAt == null) {
+      // No space to break on: the only case that splits a word.
+      lines.add(_line(cells, start, start + width, hardEnd));
+      start += width;
+      continue;
+    }
+    lines.add(_line(cells, start, start + breakAt, hardEnd));
+    start += breakAt;
+    while (start < cells.length && cells.scalars[start] == _space) {
+      start += 1;
     }
   }
 
-  if (start < hardEnd) {
+  if (start < cells.length) {
     lines.add(
-      VisualLine(start, hardEnd, hardBreakOffsetUtf16: hardBreakOffsetUtf16),
+      _line(
+        cells,
+        start,
+        cells.length,
+        hardEnd,
+        hardBreakOffsetUtf16: hardBreakOffsetUtf16,
+      ),
     );
   } else if (hardBreakOffsetUtf16 != null) {
-    // A wrap-space can consume the rest of a non-empty hard line. It does not
-    // create a phantom row, but its newline still terminates the preceding row.
+    // A consumed space run can exhaust the rest of a non-empty hard line. It
+    // does not create a phantom row, but its newline still terminates the
+    // preceding row.
     final last = lines.length - 1;
     assert(last >= firstLine);
-    final line = lines[last];
-    lines[last] = VisualLine(
-      line.start,
-      line.end,
-      hardBreakOffsetUtf16: hardBreakOffsetUtf16,
-    );
+    lines[last] = lines[last]._terminatedBy(hardBreakOffsetUtf16);
   }
 }
 
-/// Steps back off the low half of a surrogate pair.
-int _boundaryAtOrBefore(String text, int offset) {
-  if (offset <= 0 || offset >= text.length) return offset;
-  final unit = text.codeUnitAt(offset);
-  final isLowSurrogate = unit >= 0xDC00 && unit <= 0xDFFF;
-  return isLowSurrogate ? offset - 1 : offset;
+/// Where to break the unplaced suffix starting at [start], or null when there is
+/// no eligible space and the word must be split at the width.
+int? _breakColumn(_Cells cells, int start, int width) {
+  if (cells.scalars[start + width] == _space) return width;
+  for (var column = width - 1; column > 0; column--) {
+    if (cells.scalars[start + column] != _space) continue;
+    // The rightmost space inside the width, and the only candidate: a space
+    // with nothing but spaces before it would put an empty line on the page.
+    for (var before = 0; before < column; before++) {
+      if (cells.scalars[start + before] != _space) return column;
+    }
+    return null;
+  }
+  return null;
 }
+
+/// One row, from the half-open cell range that fits on it.
+VisualLine _line(
+  _Cells cells,
+  int from,
+  int to,
+  int hardEnd, {
+  int? hardBreakOffsetUtf16,
+}) {
+  // A row always begins on a scalar: a break lands either on a non-space cell
+  // or after a whole run of spaces, and every cell of a tab is a space.
+  assert(from == 0 || cells.offsets[from - 1] != cells.offsets[from]);
+  final start = cells.offsets[from];
+  // A row ends before the scalar of the next cell, so a tab straddling the
+  // boundary stays outside both rows' model slices.
+  final end = to < cells.length ? cells.offsets[to] : hardEnd;
+  if (cells.plain) {
+    return VisualLine(
+      start,
+      end,
+      to - from,
+      hardBreakOffsetUtf16: hardBreakOffsetUtf16,
+    );
+  }
+  return VisualLine.mapped(
+    start,
+    end,
+    to - from,
+    [for (var cell = from; cell < to; cell++) cells.offsets[cell], end],
+    hardBreakOffsetUtf16: hardBreakOffsetUtf16,
+  );
+}
+
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
 /// The wrapped shape of a whole document, and the row index every block starts
 /// at.
@@ -230,9 +443,9 @@ class DocumentLayout {
     final line = _lines[blockIndex][lineIndex];
     return switch (metrics.alignment) {
       ColumnAlignment.left => metrics.indent,
-      ColumnAlignment.right => metrics.indent + metrics.width - line.length,
+      ColumnAlignment.right => metrics.indent + metrics.width - line.columns,
       ColumnAlignment.centre =>
-        metrics.indent + ((metrics.width - line.length) ~/ 2),
+        metrics.indent + ((metrics.width - line.columns) ~/ 2),
     };
   }
 

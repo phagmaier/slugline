@@ -30,12 +30,28 @@ hard newline resets the tab column; a soft wrap does not. The resulting spaces
 participate in wrapping exactly like source ASCII spaces.
 
 Scene headings, character cues, and transitions use locale-independent Unicode
-uppercase for display. The transformed block is used only when every source
-scalar maps to exactly one uppercase scalar with the same UTF-16 width. If any
-scalar expands or otherwise changes offset width, the whole block is displayed
-and wrapped as written. Thus `é` may become `É`, while a block containing `ß`
-is not transformed to a block containing `SS`. This keeps every display boundary
-mapped one-to-one to a source boundary.
+uppercase for display. The transformation is decided **one scalar at a time**: a
+scalar is uppercased only when its uppercase is exactly one scalar of the same
+UTF-16 width, and is otherwise displayed as written. Thus `é` becomes `É`, while
+`ß` stays `ß` rather than becoming `SS`, and `int. straße - tag` displays as
+`INT. STRAßE - TAG`. This keeps every display boundary mapped one-to-one to a
+source boundary, so uppercasing can never move a wrap.
+
+Per scalar rather than per block is a deliberate choice: refusing a whole block
+would show an entire scene heading in lower case because of one character.
+Dart's `String.toUpperCase` already declines exactly the expanding scalars, so
+the editor takes the whole-string path and verifies scalar alignment, while Rust
+checks `char::to_uppercase` per scalar; the two agree character for character.
+
+**A heading is shown in capitals.** Across the whole Latin range — ASCII,
+Latin-1, and Latin Extended-A and B — the only letters this rule leaves in lower
+case are `ß`, `ŉ`, and `ǰ`, the three whose capital is more than one scalar. A
+test on each side pins that set, so nothing else can quietly join it. Showing
+those three as `SS`, `ʼN`, and `J̌` would mean a display string longer than the
+model, which this document exists to prevent; it is possible — a column already
+need not be a model offset, which is how tabs work — but it would also cost the
+accessibility layer its guarantee that a selection offset means the same thing
+in both strings, so it is not done for three letters.
 
 Fountain emphasis markers are not preparation syntax here. `*`, `_`, and every
 other visible marker remain ordinary scalars and each occupies one column.

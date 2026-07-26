@@ -36,7 +36,7 @@ void main() {
       // Otherwise an empty block has no row, and no row means nowhere to put
       // the caret the user just pressed Enter to create.
       expect(wrapText('', 60).length, 1);
-      expect(wrapText('', 60).single.length, 0);
+      expect(wrapText('', 60).single.columns, 0);
     });
 
     test('breaks on a space and drops it', () {
@@ -51,7 +51,7 @@ void main() {
       for (final line in lines) {
         final slice = text.substring(line.start, line.end);
         expect(slice.trim(), slice);
-        expect(line.length, lessThanOrEqualTo(12));
+        expect(line.columns, lessThanOrEqualTo(12));
       }
     });
 
@@ -59,7 +59,7 @@ void main() {
       const text = 'supercalifragilistic';
       final lines = wrapText(text, 8);
       expect(lines.map((l) => text.substring(l.start, l.end)).join(), text);
-      expect(lines.first.length, 8);
+      expect(lines.first.columns, 8);
     });
 
     test('a hard break never splits a surrogate pair', () {
@@ -132,6 +132,143 @@ void main() {
     });
   });
 
+  // Every case below is asserted verbatim in `layout::line_break`'s tests. They
+  // are the shared contract in `docs/LINE_BREAKING.md`, so an expectation that
+  // changes here has to change there in the same commit — remediation Phase 6C
+  // replaces the copying with a corpus-wide differential test.
+  group('the shared contract with layout::break_lines', () {
+    test('one scalar is one column, including astral planes', () {
+      // Nine characters and a clapperboard fill ten columns. Counting UTF-16
+      // code units wrapped the emoji onto the next line; Rust never did.
+      expect(_rendered('aaaaaaaaa🎬bbb', 10), ['aaaaaaaaa🎬', 'bbb']);
+      expect(_rendered('🎬🎬🎬', 2), ['🎬🎬', '🎬']);
+      expect(_rendered('e\u{301}xy', 2), ['e\u{301}', 'xy']);
+    });
+
+    test('a whole space run is consumed at a wrap point', () {
+      expect(_rendered('one    two', 4), ['one ', 'two']);
+      expect(_rendered('one   twothree', 4), ['one ', 'twot', 'hree']);
+      expect(_rendered('a  b cd', 5), ['a  b', 'cd']);
+    });
+
+    test('a leading space run is not a wrap opportunity', () {
+      expect(_rendered('   abcdef', 3), ['   ', 'abc', 'def']);
+    });
+
+    test('trailing spaces never make a phantom line', () {
+      expect(_rendered('abc ', 3), ['abc']);
+      expect(_rendered('abc  ', 3), ['abc']);
+      expect(_rendered('abc     ', 3), ['abc']);
+      expect(_rendered('ab ', 4), ['ab ']);
+      expect(_rendered('ab  ', 4), ['ab  ']);
+    });
+
+    test('tab stops are four columns from the start of a hard line', () {
+      expect(_rendered('\tx', 20), ['    x']);
+      expect(_rendered('a\tx', 20), ['a   x']);
+      expect(_rendered('abc\tx', 20), ['abc x']);
+      expect(_rendered('abcd\tx', 20), ['abcd    x']);
+      expect(_rendered('abcd\n\tx', 20), ['abcd', '    x']);
+      expect(_rendered('ab\tcd\tef', 8), ['ab  cd ', 'ef']);
+    });
+
+    test('a wrap inside a tab expansion consumes it', () {
+      expect(_rendered('\t\tabc', 3), ['   ', 'abc']);
+    });
+
+    test('hard lines are kept, including empty ones', () {
+      expect(_rendered('', 10), ['']);
+      expect(_rendered('\n', 10), ['', '']);
+      expect(_rendered('one\n', 10), ['one', '']);
+      expect(_rendered('\ntwo', 10), ['', 'two']);
+      expect(_rendered('one\n\n\ntwo', 10), ['one', '', '', 'two']);
+      expect(_rendered('abc \ndef', 3), ['abc', 'def']);
+    });
+
+    test('a width below one is one column', () {
+      expect(_rendered('abc', 0), ['a', 'b', 'c']);
+    });
+  });
+
+  group('model offsets under the contract', () {
+    test('a consumed space run is the gap between two rows', () {
+      const text = 'one    two';
+      final lines = wrapText(text, 4);
+      // The row keeps the space that fitted; the other three are the gap.
+      expect(_ranges(lines), [(0, 4), (7, 10)]);
+      expect(lines.first.columns, 4);
+    });
+
+    test('a row split inside a tab points at neither half of it', () {
+      const text = '\t\tabc';
+      final lines = wrapText(text, 3);
+      // Three cells of the first tab are drawn, and both tabs land in the gap:
+      // an indivisible source character cannot be half on a row.
+      expect(_ranges(lines), [(0, 0), (2, 5)]);
+      expect(lines.first.columns, 3);
+      expect(lines.first.offsetAtColumn(1), 0);
+      expect(lines.last.offsetAtColumn(0), 2);
+    });
+
+    test('a tab is one offset and up to four columns', () {
+      const text = 'a\tbc';
+      final line = wrapText(text, 20).single;
+      expect((line.start, line.end), (0, 4));
+      // The tab starts at column 1 and runs to the stop at column 4.
+      expect(line.columns, 6);
+      expect(line.textIn(text), 'a   bc');
+      // Every cell of the expansion answers with the tab itself, so a click in
+      // the middle of it puts the caret before the tab, never inside it.
+      expect([for (var c = 0; c <= 6; c++) line.offsetAtColumn(c)], [
+        0,
+        1,
+        1,
+        1,
+        2,
+        3,
+        4,
+      ]);
+      expect([for (var o = 0; o <= 4; o++) line.columnAtOffset(o)], [
+        0,
+        1,
+        4,
+        5,
+        6,
+      ]);
+    });
+
+    test('an astral scalar is two offsets and one column', () {
+      const text = 'a🎬b';
+      final line = wrapText(text, 20).single;
+      expect((line.start, line.end), (0, 4));
+      expect(line.columns, 3);
+      expect(line.columnAtOffset(3), 2, reason: 'the b, after the emoji');
+      expect(line.offsetAtColumn(2), 3);
+      // A column inside the surrogate pair is not addressable: column 1 is the
+      // whole emoji.
+      expect(line.offsetAtColumn(1), 1);
+    });
+
+    test('capitals leave every offset where it was', () {
+      const model = 'int. café - jour';
+      final display = displayText(BlockKind.sceneHeading, model);
+      expect(display, 'INT. CAFÉ - JOUR');
+      expect(display.length, model.length);
+      expect(_ranges(wrapText(display, 12)), _ranges(wrapText(model, 12)));
+    });
+
+    test('a scalar that refuses capitals keeps its column', () {
+      // `ß` upper-cases to `SS`, so it alone stays as the writer typed it and
+      // the rest of the block is still capitals. `layout::engine`'s
+      // `display_text` answers this block identically.
+      const model = 'straße to:';
+      final display = displayText(BlockKind.transition, model);
+      expect(display, 'STRAßE TO:');
+      expect(display.length, model.length);
+      expect(_ranges(wrapText(display, 6)), _ranges(wrapText(model, 6)));
+    });
+  });
+
   group('the element grid (§5.2)', () {
     test('indents are the spec\'s inches at ten characters to the inch', () {
       // 1.5" is column zero; everything else is measured from there.
@@ -165,11 +302,34 @@ void main() {
       expect(displayText(BlockKind.action, 'john enters'), 'john enters');
     });
 
-    test('capitalising is refused when it would change the length', () {
-      // 'ß'.toUpperCase() is 'SS'. One code unit longer means every caret
-      // column after it would be drawn in the wrong place, so the text is left
-      // as the writer wrote it.
+    test('every Latin letter with a capital is shown with one', () {
+      // A heading is shown in capitals, and that is not negotiable. Across the
+      // whole Latin range — ASCII, the accented Latin-1 letters, and Latin
+      // Extended-A and B — `displayText` returns the capital of every letter
+      // that has one, so nothing a script is written in is ever left in lower
+      // case.
+      for (var scalar = 0; scalar <= 0x024F; scalar++) {
+        final source = String.fromCharCode(scalar);
+        expect(displayText(BlockKind.sceneHeading, source), source.toUpperCase(),
+            reason: 'U+${scalar.toRadixString(16).padLeft(4, '0')}');
+      }
+      // The three letters Dart's own upper-casing declines are the three whose
+      // capital is more than one scalar, which is the set `layout::engine`'s
+      // `every_latin_letter_with_a_capital_gets_one` pins on the Rust side.
+      for (final letter in ['ß', 'ŉ', 'ǰ']) {
+        expect(letter.toUpperCase(), letter);
+        expect(displayText(BlockKind.sceneHeading, letter), letter);
+      }
+    });
+
+    test('capitalising is refused for a scalar that would change length', () {
+      // Full-Unicode 'ß' upper-cases to 'SS'. One code unit longer means every
+      // caret column after it would be drawn in the wrong place, so that one
+      // scalar is left as the writer wrote it and the rest is capitalised.
+      expect(displayText(BlockKind.character, 'straße'), 'STRAßE');
       expect(displayText(BlockKind.character, 'STRAßE'), 'STRAßE');
+      expect(displayText(BlockKind.sceneHeading, 'int. ﬁnca - day'),
+          'INT. ﬁNCA - DAY');
     });
   });
 
@@ -247,6 +407,12 @@ void main() {
 
 List<(int, int)> _ranges(List<VisualLine> lines) => [
       for (final line in lines) (line.start, line.end),
+    ];
+
+/// What the rows draw — the same shape `layout::break_lines` returns, so its
+/// expectations can be asserted here character for character.
+List<String> _rendered(String text, int width) => [
+      for (final line in wrapText(text, width)) line.textIn(text),
     ];
 
 bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
