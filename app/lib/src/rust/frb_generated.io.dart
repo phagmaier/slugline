@@ -223,6 +223,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RecoveryOffer dco_decode_recovery_offer(dynamic raw);
 
   @protected
+  RecoveryOutcome dco_decode_recovery_outcome(dynamic raw);
+
+  @protected
   SaveFailure dco_decode_save_failure(dynamic raw);
 
   @protected
@@ -478,6 +481,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecoveryOffer sse_decode_recovery_offer(SseDeserializer deserializer);
+
+  @protected
+  RecoveryOutcome sse_decode_recovery_outcome(SseDeserializer deserializer);
 
   @protected
   SaveFailure sse_decode_save_failure(SseDeserializer deserializer);
@@ -817,6 +823,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_recovery_offer(RecoveryOffer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_recovery_outcome(
+    RecoveryOutcome self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_save_failure(SaveFailure self, SseSerializer serializer);

@@ -144,6 +144,32 @@ pub struct RecoveryOffer {
     pub blocked: Option<String>,
 }
 
+/// What accepting a recovery offer did.
+///
+/// Three states rather than `Option<DocumentHandle>` because the middle one is
+/// real and used to be invisible: the edits replayed, but the successor journal
+/// could not be written, so the session is live with nothing recording it. That
+/// is worth a sentence to the writer, and §Phase 4's "losing user text is a P0
+/// bug" does not allow it to be the silent default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecoveryOutcome {
+    /// Replayed, and a journal describing the recovered edits is on disk. This
+    /// is the ordinary answer.
+    Recovered { handle: DocumentHandle },
+    /// Replayed and open, but not journalled: the old journal was kept, so the
+    /// recovered text is still durable, and nothing typed from here is.
+    ///
+    /// `message` names the reason. The correct advice is Save As somewhere the
+    /// state directory's problem does not apply, or relaunch — the offer will
+    /// still be there.
+    Degraded {
+        handle: DocumentHandle,
+        message: String,
+    },
+    /// Nothing was opened and nothing was removed. The offer can be made again.
+    Failed { message: String },
+}
+
 /// §6's `Preferences`, as far as Phase 4 defines them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreferencesView {
@@ -837,10 +863,53 @@ pub async fn recovery_pending() -> Vec<RecoveryOffer> {
 /// The document comes back **dirty**, and that is the point — the file on disk
 /// is still the one from before the crash, and the writer decides whether to
 /// keep what they are being shown.
-pub async fn recovery_accept(journal_path: String) -> Option<DocumentHandle> {
+///
+/// ## The durability sequence
+///
+/// Recovery is the one moment in this program where the only durable copy of the
+/// writer's text is a journal rather than a file. Everything below is arranged
+/// around one rule: **that journal does not stop existing until an equivalent
+/// one does.**
+///
+/// 1. Read and verify the old journal. Verification returns the file's real
+///    bytes, which are still the pre-crash ones.
+/// 2. Replay onto those bytes, remembering exactly which patches applied. A
+///    patch that does not fit stops the replay, and the ones after it are not in
+///    the recovered document, so they must not be in its journal either.
+/// 3. Open the document and bind it to its file, library entry and watch.
+/// 4. Write the **successor journal**: same `base` — the file has not changed —
+///    plus the patches that replayed. [`Journal::rebuild`] writes it through the
+///    atomic save, so it either exists whole or does not exist.
+/// 5. Only now remove the old journal, and only if the successor did not already
+///    replace it at the same path.
+///
+/// What this buys, and what the previous sequence did not: a second crash before
+/// the writer saves or types anything recovers exactly what the first one did,
+/// and a second crash *after* they type more recovers both. The old sequence
+/// removed the journal at step 3 and started an empty one whose `base` was the
+/// in-memory text, which matched no file — so the recovered edits existed only in
+/// memory, and a journal written against them came back from [`journal::verify`]
+/// as `blocked`.
+///
+/// Notice what is *not* here: a save. Recovery still never writes the script.
+pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
     let path = PathBuf::from(&journal_path);
-    let recovery = journal::read(&path).ok()?;
-    let source = journal::verify(&recovery.header).ok()?;
+    let recovery = match journal::read(&path) {
+        Ok(recovery) => recovery,
+        Err(why) => {
+            return RecoveryOutcome::Failed {
+                message: why.to_string(),
+            }
+        }
+    };
+    let source = match journal::verify(&recovery.header) {
+        Ok(source) => source,
+        Err(why) => {
+            return RecoveryOutcome::Failed {
+                message: why.to_string(),
+            }
+        }
+    };
     let untitled = journal::is_untitled(&recovery.header);
 
     let mut document = if untitled {
@@ -853,44 +922,104 @@ pub async fn recovery_accept(journal_path: String) -> Option<DocumentHandle> {
             parsed
         }
     };
+    // A patch that does not fit stops the replay. What is already applied is
+    // still offered — those edits did happen — and the rest is not guessed at.
+    // `applied` is where the replay stopped, and it is what the successor
+    // journal records: a journal must describe the document it belongs to.
+    let mut applied = 0;
     for patch in &recovery.patches {
-        // A patch that does not fit stops the replay. What is already applied is
-        // still offered — those edits did happen — and the rest is not guessed
-        // at.
         if document.replay(patch).is_err() {
             break;
         }
+        applied += 1;
     }
+    if applied == 0 && !recovery.patches.is_empty() {
+        // Nothing replayed, so there is nothing to recover and nothing to write
+        // a successor from — and rebuilding here would replace a journal full of
+        // the writer's text with an empty one. `recovery_pending` leaves a
+        // journal it cannot read on disk for exactly this reason: it is their
+        // text, in a form a person can still pick apart by hand.
+        return RecoveryOutcome::Failed {
+            message: "none of the recorded edits fit the file, so nothing could be \
+                      recovered; the journal has been left where it is"
+                .to_owned(),
+        };
+    }
+    let applied = &recovery.patches[..applied];
 
     let script = recovery.header.script.clone();
-    let handle = actor().run(move |state| {
-        let handle = state.open(document);
-        if !untitled {
-            let id = journal::script_id(&script);
-            if let Some(session) = state.session_mut(handle) {
-                session.set_file(script.clone(), id.clone());
+    let handle = actor().run({
+        let script = script.clone();
+        move |state| {
+            let handle = state.open(document);
+            if !untitled {
+                let id = journal::script_id(&script);
+                if let Some(session) = state.session_mut(handle) {
+                    session.set_file(script.clone(), id.clone());
+                }
+                if let Some(storage) = state.storage_mut() {
+                    storage.library.add(&script);
+                    storage.library.opened(&id);
+                }
+                hydrate_pins(state, handle, &id);
+                watch(state, &script);
+                save_library(state);
             }
-            if let Some(storage) = state.storage_mut() {
-                storage.library.add(&script);
-                storage.library.opened(&id);
-            }
-            hydrate_pins(state, handle, &id);
-            watch(state, &script);
-            save_library(state);
+            handle
         }
-        handle
     });
 
-    // The journal has been consumed. A fresh one starts from the document as it
-    // now stands, so that a second crash during recovery loses nothing either.
-    let _ = journal::discard_at(&path);
-    let recovered = actor().run(move |state| {
-        let text = state.session(handle)?.document().serialise();
-        restart_journal(state, handle, &text);
-        Some(())
+    // The successor, against the bytes the file still holds. Off the actor: it
+    // is a disk write (§2.3).
+    let directory = actor().run(|state| state.storage().map(|storage| storage.paths.journal_dir()));
+    let Some(directory) = directory else {
+        return degraded(handle, "the core has no state directory to journal into");
+    };
+    let id = if untitled {
+        format!("untitled-{}-{handle}", std::process::id())
+    } else {
+        journal::script_id(&script)
+    };
+    let successor = match Journal::rebuild(&directory, &id, &script, &source, applied) {
+        Ok(successor) => successor,
+        Err(error) => {
+            // The old journal is untouched, so the recovered text is still on
+            // disk in the form it arrived in. Nothing typed from here is.
+            return degraded(
+                handle,
+                &format!("the recovery journal could not be written: {error}"),
+            );
+        }
+    };
+
+    // The recovered edits are now described by two journals, or by one file that
+    // replaced the other. Either way there has not been an instant with none.
+    let successor_path = successor.path().to_path_buf();
+    actor().run(move |state| {
+        if let Some(session) = state.session_mut(handle) {
+            session.set_journal(Some(successor));
+        }
     });
-    recovered?;
-    Some(DocumentHandle { id: handle })
+    if successor_path != path {
+        let _ = journal::discard_at(&path);
+    }
+    RecoveryOutcome::Recovered {
+        handle: DocumentHandle { id: handle },
+    }
+}
+
+/// Open, replayed, and not being recorded. Says so rather than looking like a
+/// normal session that happens to be losing keystrokes.
+fn degraded(handle: u64, message: &str) -> RecoveryOutcome {
+    actor().run(move |state| {
+        if let Some(session) = state.session_mut(handle) {
+            session.set_journal(None);
+        }
+    });
+    RecoveryOutcome::Degraded {
+        handle: DocumentHandle { id: handle },
+        message: message.to_owned(),
+    }
 }
 
 /// Declines an offer. The journal is deleted; the file is untouched.

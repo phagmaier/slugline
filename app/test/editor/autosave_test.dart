@@ -205,6 +205,74 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(it.core.saves.length, 1, reason: 'the pending timer did not fire too');
   });
+
+  // --- adopting a document that is already dirty -----------------------------
+  //
+  // Crash recovery hands the editor a document whose edits are ahead of its
+  // file. No edit event will ever fire for those edits — they happened in a
+  // process that is no longer running — so before this the clock did not start
+  // until the writer typed. Reading what was recovered before touching the
+  // keyboard is exactly what a person does at that moment (F2).
+
+  testWidgets('a document adopted dirty is saved without waiting for a keystroke',
+      (tester) async {
+    final it = setUpDriver();
+    // Dirty on arrival, and nothing notified: this is what recovery looks like.
+    type(it.core, it.changes, 'recovered');
+    it.core.saves.clear();
+    it.driver.dispose();
+
+    final adopted = AutosaveDriver(
+      core: it.core,
+      changes: it.changes,
+      idle: const Duration(milliseconds: 20),
+      interval: const Duration(milliseconds: 100),
+      onOutcome: (_) {},
+    );
+    addTearDown(adopted.dispose);
+    expect(it.core.dirty, isTrue, reason: 'the recovered document arrives unsaved');
+
+    adopted.documentAdopted();
+    expect(adopted.pending, isTrue, reason: 'the idle timer is armed at once');
+
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pumpAndSettle();
+    expect(it.core.saves.length, 1, reason: 'and it fires without an edit event');
+  });
+
+  testWidgets('adopting a clean document arms nothing', (tester) async {
+    final it = setUpDriver();
+    expect(it.core.dirty, isFalse);
+
+    it.driver.documentAdopted();
+    expect(it.driver.pending, isFalse);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(it.core.saves, isEmpty, reason: 'an ordinary open writes nothing');
+  });
+
+  testWidgets('adopting dirty still leaves the interval running for a writer who never pauses',
+      (tester) async {
+    final it = setUpDriver(idle: const Duration(milliseconds: 200));
+    type(it.core, it.changes, 'recovered');
+    it.core.saves.clear();
+    it.driver.dispose();
+
+    final adopted = AutosaveDriver(
+      core: it.core,
+      changes: it.changes,
+      idle: const Duration(milliseconds: 200),
+      interval: const Duration(milliseconds: 50),
+      onOutcome: (_) {},
+    );
+    addTearDown(adopted.dispose);
+    adopted.documentAdopted();
+
+    // The idle timer has not come due, so this is the interval's doing.
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pumpAndSettle();
+    expect(it.core.saves.length, 1);
+  });
 }
 
 /// Stands in for the `EditorController` as "something that says an edit

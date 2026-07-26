@@ -101,13 +101,30 @@ class _SluglineAppState extends State<SluglineApp> {
       for (final entry in choices.entries) {
         switch (entry.value) {
           case RecoveryChoice.recover:
-            final handle = await files.recoveryAccept(journalPath: entry.key);
-            if (handle != null) {
-              await _adopt(RustDocumentCore.of(handle));
-              // One at a time: the editor holds one script. The rest of the
-              // offers stay on disk and are offered again next launch, which is
-              // better than silently dropping them.
-              return;
+            final outcome = await files.recoveryAccept(journalPath: entry.key);
+            switch (outcome) {
+              case files.RecoveryOutcome_Recovered(:final handle):
+                await _adopt(RustDocumentCore.of(handle));
+                // One at a time: the editor holds one script. The rest of the
+                // offers stay on disk and are offered again next launch, which
+                // is better than silently dropping them.
+                return;
+              case files.RecoveryOutcome_Degraded(
+                  :final handle,
+                  :final message
+                ):
+                // The text is here and the old journal is still on disk, but
+                // nothing typed from now on is being recorded. That is not a
+                // thing to discover later.
+                await _adopt(RustDocumentCore.of(handle));
+                if (context.mounted) {
+                  await showRecoveryNotJournalled(context, message);
+                }
+                return;
+              case files.RecoveryOutcome_Failed(:final message):
+                if (context.mounted) {
+                  await showRecoveryFailed(context, message);
+                }
             }
           case RecoveryChoice.discard:
             await widget.core.discardRecovery(entry.key);
@@ -150,6 +167,11 @@ class _SluglineAppState extends State<SluglineApp> {
     // The status line reads the core's dirty flag, so it has to be told when
     // anything might have moved it.
     controller.addListener(status.refresh);
+    // A document can arrive already dirty — crash recovery is the case that
+    // matters — and no edit event will ever fire for the edits it arrived with.
+    // Without this the autosave clock would not start until the writer typed,
+    // which is exactly the moment they are least likely to.
+    autosave.documentAdopted();
     setState(() {
       _open = _OpenScript(
         core: core,

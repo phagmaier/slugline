@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phase 0 complete, Phase 1 next
+**Status:** in progress — Phases 0 and 1 complete, Phase 2 next
 
 ---
 
@@ -36,7 +36,7 @@ This is the execution companion to `REVIEW.md`.
 
 The remediation effort is complete only when all of the following are true:
 
-- [ ] No known path can lose recovered user text after accepting crash recovery.
+- [x] No known path can lose recovered user text after accepting crash recovery.
 - [ ] Multi-line Fountain blocks render, wrap, select, click, and position the caret correctly.
 - [ ] Enter splits the block whether or not a completion is offered, and Escape closes every panel.
 - [ ] Dart and Rust line breaking agree on the defined shared behavior.
@@ -340,8 +340,9 @@ A recovered document adopted in a dirty state must immediately enter the autosav
 
 ### 1.1 Reproduce and pin the failure first
 
-- [ ] Locate the existing bridge persistence/kill-test harness.
-- [ ] Add a failing regression test for:
+- [x] Locate the existing bridge persistence/kill-test harness.
+  - `crates/bridge/tests/persistence.rs`. Note it cannot link the bridge — `slugline_bridge` is `cdylib`/`staticlib` only — so it drives `document` + `storage` directly, and the new tests match that level with an `accept` helper mirroring `recovery_accept`.
+- [x] Add a failing regression test for:
   1. Open a file.
   2. Make an unsaved edit.
   3. Kill the process.
@@ -349,12 +350,15 @@ A recovered document adopted in a dirty state must immediately enter the autosav
   5. Kill the process again before manual save and before further typing.
   6. Restart again.
   7. Assert that the recovered edit is still recoverable.
-- [ ] Add a second failing case:
+  - `a_second_crash_straight_after_accepting_recovery_loses_nothing`.
+- [x] Add a second failing case:
   1. Accept recovery.
   2. Type additional text.
   3. Crash before a completed save.
   4. Assert both recovered and newly typed text remain recoverable.
-- [ ] Confirm the new tests fail for the reason described in F2.
+  - `a_second_crash_after_typing_more_keeps_both`.
+- [x] Confirm the new tests fail for the reason described in F2.
+  - Checked by reinstating the old sequence in the helper: four tests fail, and the untitled one reports `left: "" right: "FADE IN:\n"` — the whole recovered document gone, exactly F2(a).
 
 ### 1.2 Choose and document the durability sequence
 
@@ -362,82 +366,165 @@ Implement one coherent strategy rather than patching symptoms.
 
 Preferred sequence:
 
-- [ ] Replay the old journal into memory.
-- [ ] Keep the old journal intact while recovery is unresolved.
-- [ ] Persist the recovered state immediately when a valid bound path exists.
-- [ ] Only after durable write success:
-  - discard/checkpoint the old journal;
-  - create or restart the active journal against the bytes actually written;
-  - mark the document saved at the correct revision.
-- [ ] For an untitled or pathless recovery:
+- [x] Replay the old journal into memory.
+- [x] Keep the old journal intact while recovery is unresolved.
+- [-] Persist the recovered state immediately when a valid bound path exists.
+  - **Deliberately not done.** Writing the script on accept contradicts what Phase 4 promises and what the kill test asserts: recovery never auto-applies, and the document comes back dirty so the writer still has to agree. It would also write a rolling backup for a state nobody approved. The alternative strategy below is used instead, and it is the one the plan explicitly permits.
+- [-] Only after durable write success: discard/checkpoint the old journal; create or restart the active journal against the bytes actually written; mark the document saved at the correct revision.
+  - Not applicable for the same reason — there is no write to succeed. The equivalent gate is kept: the old journal is removed only after the successor journal exists.
+- [x] For an untitled or pathless recovery:
   - do not discard the only durable recovery data;
   - require Save As or maintain a valid recovery journal until a path is established.
-- [ ] Define failure behavior for immediate recovery persistence:
+  - The successor journal is maintained. An untitled recovery gets one under this process's own name, and the old one is removed only once it exists — `an_untitled_recovery_survives_a_second_crash_too`.
+- [x] Define failure behavior for immediate recovery persistence:
   - retain the old journal;
   - keep the recovered document open;
   - surface a clear save/recovery error;
   - never silently downgrade to memory-only state.
+  - `RecoveryOutcome::Degraded` — open, old journal retained, and a dialog that says nothing typed from here is being recorded.
 
 Alternative strategy is allowed only if:
 
-- [ ] The new journal is based on the actual file bytes.
-- [ ] Recovered edits are represented as replayable records before the old journal is deleted.
-- [ ] The double-crash tests prove durability.
+- [x] The new journal is based on the actual file bytes.
+  - Its `base` is the `source` that `journal::verify` read from the file, so `verify` succeeds after a second crash instead of returning `blocked`.
+- [x] Recovered edits are represented as replayable records before the old journal is deleted.
+  - `Journal::rebuild` writes header plus records through `atomic::save_atomically`; the old journal is removed after, and only when the successor did not already replace it at the same path.
+- [x] The double-crash tests prove durability.
 
 ### 1.3 Repair the bridge recovery sequence
 
 Likely area: `crates/bridge/src/api/files.rs::recovery_accept`.
 
-- [ ] Remove the sequence that discards the old journal before durability is established.
-- [ ] Ensure journal base checksums correspond to actual bytes on disk.
-- [ ] Ensure journal checkpoint/restart occurs only after the durable state transition.
-- [ ] Update the inaccurate comment claiming a second crash loses nothing.
-- [ ] Ensure partial failures leave a recoverable state.
-- [ ] Preserve refusal/error-as-value conventions.
-- [ ] Avoid introducing disk I/O on the actor thread beyond the project’s established write architecture.
+- [x] Remove the sequence that discards the old journal before durability is established.
+- [x] Ensure journal base checksums correspond to actual bytes on disk.
+- [x] Ensure journal checkpoint/restart occurs only after the durable state transition.
+- [x] Update the inaccurate comment claiming a second crash loses nothing.
+  - Replaced with a numbered account of the sequence and of what the old one did instead.
+- [x] Ensure partial failures leave a recoverable state.
+  - Three of them: a successor that cannot be written → `Degraded` with the old journal kept; a journal none of whose records replay → `Failed`, journal untouched; a replay that stops early → the successor records only what applied.
+- [x] Preserve refusal/error-as-value conventions.
+  - `RecoveryOutcome` carries the message, matching `SaveOutcome`. No panics, no exceptions.
+- [x] Avoid introducing disk I/O on the actor thread beyond the project’s established write architecture.
+  - `Journal::rebuild` runs between actor calls, not inside a closure — the same shape as `write_document`.
 
 ### 1.4 Arm autosave when adopting dirty state
 
 Likely area: `app/lib/editor/autosave.dart`.
 
-- [ ] Identify the document-adoption path used after recovery.
-- [ ] Add an explicit API or event that tells `AutosaveDriver` a dirty document has been adopted.
-- [ ] Arm the idle autosave timer immediately after recovery acceptance.
-- [ ] Preserve the interval autosave behavior.
-- [ ] Ensure autosave is not armed for a clean document.
-- [ ] Ensure recovery adoption does not require a fake edit or controller mutation.
-- [ ] Add a widget/unit test proving dirty-on-adopt schedules autosave.
+- [x] Identify the document-adoption path used after recovery.
+  - `_SluglineAppState._adopt` in `app/lib/app.dart`, shared by recovery, session restore and library open.
+- [x] Add an explicit API or event that tells `AutosaveDriver` a dirty document has been adopted.
+  - `AutosaveDriver.documentAdopted()`.
+- [x] Arm the idle autosave timer immediately after recovery acceptance.
+- [x] Preserve the interval autosave behavior.
+  - Both timers start, and a test covers the interval firing for a recovered document.
+- [x] Ensure autosave is not armed for a clean document.
+- [x] Ensure recovery adoption does not require a fake edit or controller mutation.
+  - `documentAdopted` reads `core.dirty`; nothing is written to the document.
+- [x] Add a widget/unit test proving dirty-on-adopt schedules autosave.
 
 ### 1.5 Verify recovery UX
 
-- [ ] Recovery acceptance still restores the correct text.
-- [ ] Recovery rejection still discards only what the user rejected.
-- [ ] Broken/blocked recovery still reports its existing distinct state.
-- [ ] Save failures after recovery do not destroy the journal.
-- [ ] Recovery of one offer per launch remains unchanged for 1.0.
-- [ ] No unrelated rewrite of `journal.rs` or `atomic.rs` was introduced.
+- [x] Recovery acceptance still restores the correct text.
+- [x] Recovery rejection still discards only what the user rejected.
+  - `recovery_discard` is untouched.
+- [x] Broken/blocked recovery still reports its existing distinct state.
+  - `recovery_pending`'s `blocked` field is untouched; a journal that fails `verify` still comes back blocked rather than being accepted.
+- [x] Save failures after recovery do not destroy the journal.
+  - `write_document` checkpoints only after a successful write; unchanged.
+- [x] Recovery of one offer per launch remains unchanged for 1.0.
+  - `app.dart` still returns after the first offer it opens, including on the `Degraded` path.
+- [x] No unrelated rewrite of `journal.rs` or `atomic.rs` was introduced.
+  - `atomic.rs` untouched. `journal.rs` gained `rebuild` and two small shared helpers; `create`, `append`, `checkpoint`, `discard`, `read` and `verify` are unchanged.
 
 ## Tests
 
-- [ ] Second crash immediately after accepting recovery.
-- [ ] Second crash after typing more text.
-- [ ] Recovery immediate-save failure retains recoverability.
-- [ ] Dirty-on-adopt arms autosave.
-- [ ] Clean-on-adopt does not arm autosave.
-- [ ] Existing journal truncation/fuzz tests still pass.
-- [ ] Existing kill tests still pass.
+- [x] Second crash immediately after accepting recovery.
+- [x] Second crash after typing more text.
+- [x] Recovery immediate-save failure retains recoverability.
+  - `a_failed_successor_leaves_the_offer_where_it_was`, which makes the journal directory read-only.
+- [x] Dirty-on-adopt arms autosave.
+- [x] Clean-on-adopt does not arm autosave.
+- [x] Existing journal truncation/fuzz tests still pass.
+- [x] Existing kill tests still pass.
 
 ## Exit conditions
 
-- [ ] The two new crash regression tests pass.
-- [ ] No old journal is discarded before a durable successor exists.
-- [ ] Autosave begins for a recovered dirty document without another edit.
-- [ ] All Rust and Flutter tests pass.
-- [ ] A code comment or ADR clearly states the recovery durability sequence.
+- [x] The two new crash regression tests pass.
+- [x] No old journal is discarded before a durable successor exists.
+- [x] Autosave begins for a recovered dirty document without another edit.
+- [x] All Rust and Flutter tests pass.
+  - Rust 340 passed. Flutter 263 passed. `editor_test` and `writing_test` still fail on F13/F14 with the same counts as the Phase 0 baseline — Phase 2B's work, untouched here.
+- [x] A code comment or ADR clearly states the recovery durability sequence.
+  - Both: the numbered sequence on `recovery_accept`, and ADR 0016 in `docs/DECISIONS.md`.
 
 ## Suggested commit boundary
 
-- [ ] `fix(storage): preserve recovered edits across a second crash`
+- [x] `fix(storage): preserve recovered edits across a second crash`
+
+## Implementation log — Phase 1
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `ae77ea6` (Phase 0)
+**Ending commit:** this commit
+
+### Changes made
+
+- `crates/storage/src/journal.rs`: added `Journal::rebuild`, which writes a whole journal — header plus a run of records — through `atomic::save_atomically` and reopens it for appends. Factored the record encoder out of `append` so the two writers cannot drift.
+- `crates/bridge/src/api/files.rs`: rewrote `recovery_accept` to the sequence in ADR 0016, and changed its return type from `Option<DocumentHandle>` to a new `RecoveryOutcome` enum.
+- `app/lib/app.dart`: handles the three outcomes; calls `autosave.documentAdopted()` on every adoption.
+- `app/lib/editor/autosave.dart`: added `documentAdopted()`.
+- `app/lib/library/recovery_dialog.dart`: added `showRecoveryNotJournalled` and `showRecoveryFailed`.
+- `docs/DECISIONS.md`: ADR 0016.
+- Regenerated bindings with `flutter_rust_bridge_codegen generate`; no generated file was hand-edited.
+
+### Tests added or changed
+
+Six in `crates/bridge/tests/persistence.rs`, three in `crates/storage/src/journal.rs`, three in `app/test/editor/autosave_test.dart`. Named in ADR 0016.
+
+### Commands run
+
+```text
+cargo fmt --all --check                                       # clean
+cargo clippy --workspace --all-targets -- -D warnings         # clean
+cargo test --workspace                                        # 340 passed, 0 failed
+python3 tools/check_layering.py                               # clean
+cd app && flutter analyze                                     # No issues found
+cd app && flutter test                                        # 263 passed
+
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/persistence_test.dart         -d linux   # 12 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+flutter test integration_test/editor_test.dart              -d linux   # 5 passed, 1 failed (F13)
+flutter test integration_test/writing_test.dart             -d linux   # 8 passed, 3 failed (F13, F14)
+```
+
+### Results
+
+Rust 334 → 340; Flutter 260 → 263. `editor_test` and `writing_test` fail with exactly the Phase 0 baseline counts, on F13/F14, which Phase 2B owns.
+
+The keystroke path is not on the recovery path and the benchmark confirms it — p99 1.30 ms patched and 1.31 ms journalled, against 2.42 and 2.07 at baseline, 0 of 271 builds over 16 ms.
+
+### Deviations from plan
+
+**The preferred sequence was not used; the permitted alternative was.** The plan's first choice is to save the script immediately on accept and checkpoint a fresh journal against the written bytes. That writes the writer's file as a side effect of clicking "Recover", which contradicts Phase 4's "recovery never auto-applies" and the kill test's assertion that the file is untouched, and it would write a rolling backup for a state nobody approved. The alternative the plan allows — a successor journal based on the file's real bytes, carrying the replayed patches, written before the old journal is removed — gives the same durability without touching the script. Its three conditions are all met and checked off above. ADR 0016 records the reasoning and the alternatives.
+
+**One case the plan did not name.** A journal *none* of whose records replay would, under a naive rebuild, be replaced by an empty successor — and an empty journal is discarded at the next startup, turning "we could not read your edits" into "your edits are gone". `recovery_accept` now refuses that case outright and leaves the journal on disk, which is the same view `recovery_pending` already takes of a journal it cannot read. Covered by `a_journal_that_cannot_replay_is_left_on_disk_rather_than_emptied`.
+
+**An API change was needed.** `recovery_accept` returns `RecoveryOutcome` rather than `Option<DocumentHandle>`, because the plan asks for a failure that is surfaced rather than silent. Bindings were regenerated through the documented command.
+
+### New risks or follow-up findings
+
+- `RecoveryOutcome::Degraded` leaves a live session with no journal and the old journal still on disk. If that session then saves, the stale journal stays behind and will be offered — and refused as `blocked` — at the next launch, because the file no longer matches its base. That is the honest state and it loses nothing, but it is worth a look during Phase 3's documentation pass so the behaviour is written down somewhere a user-facing message can be checked against.
+- Nothing in Phase 1 touched the save path, so F4/F5/F8 are exactly as the audit left them.
+
+### Reviewer notes
+
+- The claim that the new tests catch F2 was verified, not assumed: the old sequence was reinstated in the test helper and four tests failed with F2's symptoms before it was reverted.
+- `crates/bridge/tests/persistence.rs` cannot call `recovery_accept` — the crate has no `rlib` — so its `accept` helper mirrors the bridge sequence by hand. The two must be kept in step; both carry a comment saying so.
 
 ---
 
@@ -1468,7 +1555,7 @@ Phase 7 may begin only when:
 # Recommended execution order summary
 
 1. [x] Phase 0 — Baseline and branch
-2. [ ] Phase 1 — Recovery durability
+2. [x] Phase 1 — Recovery durability
 3. [ ] Phase 2 — Multi-line editor correctness
 3b. [ ] Phase 2B — Keys swallowed by editor panels (F13, F14)
 4. [ ] Phase 3 — Documentation, ADRs, and CI

@@ -246,7 +246,7 @@ abstract class RustLibApi extends BaseApi {
 
   Stream<ProofEvent> crateApiHandshakeProofEvents();
 
-  Future<DocumentHandle?> crateApiFilesRecoveryAccept({
+  Future<RecoveryOutcome> crateApiFilesRecoveryAccept({
     required String journalPath,
   });
 
@@ -1568,7 +1568,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "proof_events", argNames: ["sink"]);
 
   @override
-  Future<DocumentHandle?> crateApiFilesRecoveryAccept({
+  Future<RecoveryOutcome> crateApiFilesRecoveryAccept({
     required String journalPath,
   }) {
     return handler.executeNormal(
@@ -1584,7 +1584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_opt_box_autoadd_document_handle,
+          decodeSuccessData: sse_decode_recovery_outcome,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiFilesRecoveryAcceptConstMeta,
@@ -2388,6 +2388,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       damaged: dco_decode_bool(arr[4]),
       blocked: dco_decode_opt_String(arr[5]),
     );
+  }
+
+  @protected
+  RecoveryOutcome dco_decode_recovery_outcome(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RecoveryOutcome_Recovered(
+          handle: dco_decode_box_autoadd_document_handle(raw[1]),
+        );
+      case 1:
+        return RecoveryOutcome_Degraded(
+          handle: dco_decode_box_autoadd_document_handle(raw[1]),
+          message: dco_decode_String(raw[2]),
+        );
+      case 2:
+        return RecoveryOutcome_Failed(message: dco_decode_String(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   @protected
@@ -3268,6 +3288,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RecoveryOutcome sse_decode_recovery_outcome(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_handle = sse_decode_box_autoadd_document_handle(deserializer);
+        return RecoveryOutcome_Recovered(handle: var_handle);
+      case 1:
+        var var_handle = sse_decode_box_autoadd_document_handle(deserializer);
+        var var_message = sse_decode_String(deserializer);
+        return RecoveryOutcome_Degraded(
+          handle: var_handle,
+          message: var_message,
+        );
+      case 2:
+        var var_message = sse_decode_String(deserializer);
+        return RecoveryOutcome_Failed(message: var_message);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   SaveFailure sse_decode_save_failure(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -4113,6 +4157,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.edits, serializer);
     sse_encode_bool(self.damaged, serializer);
     sse_encode_opt_String(self.blocked, serializer);
+  }
+
+  @protected
+  void sse_encode_recovery_outcome(
+    RecoveryOutcome self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RecoveryOutcome_Recovered(handle: final handle):
+        sse_encode_i_32(0, serializer);
+        sse_encode_box_autoadd_document_handle(handle, serializer);
+      case RecoveryOutcome_Degraded(
+        handle: final handle,
+        message: final message,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_box_autoadd_document_handle(handle, serializer);
+        sse_encode_String(message, serializer);
+      case RecoveryOutcome_Failed(message: final message):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(message, serializer);
+    }
   }
 
   @protected

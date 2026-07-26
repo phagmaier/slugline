@@ -9,9 +9,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `failed`, `failure_of`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
+// These functions are ignored because they are not marked as `pub`: `degraded`, `failed`, `failure_of`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Plan`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
 /// them.
@@ -176,7 +176,36 @@ Future<List<RecoveryOffer>> recoveryPending() =>
 /// The document comes back **dirty**, and that is the point — the file on disk
 /// is still the one from before the crash, and the writer decides whether to
 /// keep what they are being shown.
-Future<DocumentHandle?> recoveryAccept({required String journalPath}) =>
+///
+/// ## The durability sequence
+///
+/// Recovery is the one moment in this program where the only durable copy of the
+/// writer's text is a journal rather than a file. Everything below is arranged
+/// around one rule: **that journal does not stop existing until an equivalent
+/// one does.**
+///
+/// 1. Read and verify the old journal. Verification returns the file's real
+///    bytes, which are still the pre-crash ones.
+/// 2. Replay onto those bytes, remembering exactly which patches applied. A
+///    patch that does not fit stops the replay, and the ones after it are not in
+///    the recovered document, so they must not be in its journal either.
+/// 3. Open the document and bind it to its file, library entry and watch.
+/// 4. Write the **successor journal**: same `base` — the file has not changed —
+///    plus the patches that replayed. [`Journal::rebuild`] writes it through the
+///    atomic save, so it either exists whole or does not exist.
+/// 5. Only now remove the old journal, and only if the successor did not already
+///    replace it at the same path.
+///
+/// What this buys, and what the previous sequence did not: a second crash before
+/// the writer saves or types anything recovers exactly what the first one did,
+/// and a second crash *after* they type more recovers both. The old sequence
+/// removed the journal at step 3 and started an empty one whose `base` was the
+/// in-memory text, which matched no file — so the recovered edits existed only in
+/// memory, and a journal written against them came back from [`journal::verify`]
+/// as `blocked`.
+///
+/// Notice what is *not* here: a save. Recovery still never writes the script.
+Future<RecoveryOutcome> recoveryAccept({required String journalPath}) =>
     RustLib.instance.api.crateApiFilesRecoveryAccept(journalPath: journalPath);
 
 /// Declines an offer. The journal is deleted; the file is untouched.
@@ -311,6 +340,31 @@ class RecoveryOffer {
           edits == other.edits &&
           damaged == other.damaged &&
           blocked == other.blocked;
+}
+
+@freezed
+sealed class RecoveryOutcome with _$RecoveryOutcome {
+  const RecoveryOutcome._();
+
+  /// Replayed, and a journal describing the recovered edits is on disk. This
+  /// is the ordinary answer.
+  const factory RecoveryOutcome.recovered({required DocumentHandle handle}) =
+      RecoveryOutcome_Recovered;
+
+  /// Replayed and open, but not journalled: the old journal was kept, so the
+  /// recovered text is still durable, and nothing typed from here is.
+  ///
+  /// `message` names the reason. The correct advice is Save As somewhere the
+  /// state directory's problem does not apply, or relaunch — the offer will
+  /// still be there.
+  const factory RecoveryOutcome.degraded({
+    required DocumentHandle handle,
+    required String message,
+  }) = RecoveryOutcome_Degraded;
+
+  /// Nothing was opened and nothing was removed. The offer can be made again.
+  const factory RecoveryOutcome.failed({required String message}) =
+      RecoveryOutcome_Failed;
 }
 
 /// Why a write did not happen. One variant per message §Phase 4 asks for.

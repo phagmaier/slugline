@@ -2670,6 +2670,36 @@ impl SseDecode for crate::api::files::RecoveryOffer {
     }
 }
 
+impl SseDecode for crate::api::files::RecoveryOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_handle = <crate::api::doc::DocumentHandle>::sse_decode(deserializer);
+                return crate::api::files::RecoveryOutcome::Recovered { handle: var_handle };
+            }
+            1 => {
+                let mut var_handle = <crate::api::doc::DocumentHandle>::sse_decode(deserializer);
+                let mut var_message = <String>::sse_decode(deserializer);
+                return crate::api::files::RecoveryOutcome::Degraded {
+                    handle: var_handle,
+                    message: var_message,
+                };
+            }
+            2 => {
+                let mut var_message = <String>::sse_decode(deserializer);
+                return crate::api::files::RecoveryOutcome::Failed {
+                    message: var_message,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for crate::api::files::SaveFailure {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3428,6 +3458,39 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::files::RecoveryOffer>
     for crate::api::files::RecoveryOffer
 {
     fn into_into_dart(self) -> crate::api::files::RecoveryOffer {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::files::RecoveryOutcome {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::files::RecoveryOutcome::Recovered { handle } => {
+                [0.into_dart(), handle.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::files::RecoveryOutcome::Degraded { handle, message } => [
+                1.into_dart(),
+                handle.into_into_dart().into_dart(),
+                message.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::files::RecoveryOutcome::Failed { message } => {
+                [2.into_dart(), message.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::files::RecoveryOutcome
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::files::RecoveryOutcome>
+    for crate::api::files::RecoveryOutcome
+{
+    fn into_into_dart(self) -> crate::api::files::RecoveryOutcome {
         self
     }
 }
@@ -4197,6 +4260,30 @@ impl SseEncode for crate::api::files::RecoveryOffer {
         <u32>::sse_encode(self.edits, serializer);
         <bool>::sse_encode(self.damaged, serializer);
         <Option<String>>::sse_encode(self.blocked, serializer);
+    }
+}
+
+impl SseEncode for crate::api::files::RecoveryOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::files::RecoveryOutcome::Recovered { handle } => {
+                <i32>::sse_encode(0, serializer);
+                <crate::api::doc::DocumentHandle>::sse_encode(handle, serializer);
+            }
+            crate::api::files::RecoveryOutcome::Degraded { handle, message } => {
+                <i32>::sse_encode(1, serializer);
+                <crate::api::doc::DocumentHandle>::sse_encode(handle, serializer);
+                <String>::sse_encode(message, serializer);
+            }
+            crate::api::files::RecoveryOutcome::Failed { message } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(message, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 

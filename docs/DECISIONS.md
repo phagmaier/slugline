@@ -976,3 +976,123 @@ for.
   interface stops needing one. Until one of those happens, a native dialog costs
   more than it is worth.
 * No dependency was added for Phase 4 on the Dart side at all.
+
+---
+
+## ADR 0016 — Accepting a recovery rewrites the journal; it does not write the script
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (repaired during the
+mid-project remediation) · **Supersedes:** nothing; it states a sequence ADR 0013
+left implicit
+
+### Context
+
+Crash recovery is the one moment in this program where the writer's text exists
+on disk only as a **journal**. Everywhere else the file is the truth and the
+journal is the tail; here the journal is ahead of the file, and it is the only
+thing that can reconstruct what was typed.
+
+The sequence Phase 4 shipped was: replay the journal into memory → delete it →
+start a new journal whose `base` was a checksum of the recovered *in-memory*
+text. At the instant between the second and third steps there was no durable copy
+of the recovered edits at all, and after the third there was one whose `base`
+matched no file on any disk. Two things followed, and the audit (`REVIEW.md`, F2)
+found both:
+
+* A second crash before the writer saved or typed left a journal with **zero
+  records**, which startup discards as "nothing was typed since the last save".
+  Every recovered edit was gone, silently.
+* A second crash *after* the writer typed left a journal `journal::verify`
+  refused, because its `base` did not match the file. The recovered edits and the
+  new typing became unreachable together, reported as `blocked`.
+
+The doc comment on `recovery_accept` said the opposite: "so that a second crash
+during recovery loses nothing either."
+
+### Decision
+
+**The successor journal is written before the old one is removed, and it is based
+on the bytes the file still holds.**
+
+Accepting an offer now does this, in order:
+
+1. Read and verify the old journal. Verification returns the file's real bytes —
+   still the pre-crash ones, because nothing has written to the script.
+2. Replay onto those bytes, counting how many patches actually applied.
+3. Open the document and bind it to its file, library entry and watch.
+4. Write the successor with [`Journal::rebuild`]: the **same `base`**, plus the
+   patches that replayed. It goes through `atomic::save_atomically`, so it either
+   exists whole or does not exist.
+5. Only now remove the old journal, and only when the successor did not already
+   replace it at the same path.
+
+There is no instant at which no journal describes the recovered edits.
+
+A document adopted dirty also arms the autosave clock immediately
+(`AutosaveDriver.documentAdopted`). Before, the clock started on the first edit
+event, and a recovered document produces none — so nothing was saved until the
+writer typed, which is not what a person does while reading recovered text.
+
+### Alternatives considered
+
+**Save the script immediately on accept, then checkpoint a fresh journal against
+the written bytes.** This was the audit's first suggestion and it is simpler. It
+was rejected because it overwrites the writer's file as a side effect of clicking
+"Recover", which contradicts what Phase 4 promises and what the kill test
+asserts: recovery never auto-applies, and the document comes back *dirty* so the
+writer still has to say yes. It would also write a backup for a state nobody
+approved.
+
+**Adopt the old journal file as-is and keep appending.** Tempting — for a titled
+script the successor would have the same name anyway — but wrong whenever the
+replay stopped early or the journal was damaged. Its later records describe edits
+the in-memory document does not have, so a future replay would diverge from what
+is on screen. Rebuilding from the patches that actually applied is what keeps a
+journal a description of *its own* document.
+
+**Refuse to open when the successor cannot be written.** Safe, but it shows the
+writer nothing at the moment they most want their text. `RecoveryOutcome` has a
+`Degraded` arm instead: open, with the old journal kept, and a dialog saying that
+nothing typed from here is being recorded.
+
+### Consequences
+
+* `recovery_accept` returns `RecoveryOutcome` — `Recovered`, `Degraded` or
+  `Failed` — rather than `Option<DocumentHandle>`. A failure is a value with a
+  message, per this file's existing convention for saves.
+* A journal **none** of whose records replay is refused and left on disk
+  untouched. Rebuilding would replace the writer's text with an empty file, and
+  an empty journal is discarded at the next startup; `recovery_pending` already
+  takes the view that an unreadable journal stays put, because a person can pick
+  it apart by hand.
+* Recovery still writes nothing to the script. That property is now load-bearing
+  in two tests rather than one.
+* `Journal::rebuild` is the only place that writes a journal wholesale. It shares
+  its record encoder with `Journal::append`, and a test holds the two to
+  producing identical bytes, so a rebuilt journal cannot drift into a format the
+  reader treats as damage.
+
+### Tests and invariants
+
+In `crates/bridge/tests/persistence.rs`:
+
+* `a_second_crash_straight_after_accepting_recovery_loses_nothing`
+* `a_second_crash_after_typing_more_keeps_both`
+* `a_failed_successor_leaves_the_offer_where_it_was`
+* `the_successor_records_only_the_patches_that_replayed`
+* `a_journal_that_cannot_replay_is_left_on_disk_rather_than_emptied`
+* `an_untitled_recovery_survives_a_second_crash_too`
+
+In `crates/storage/src/journal.rs`:
+
+* `a_rebuilt_journal_is_what_an_appended_one_would_have_been`
+* `rebuilding_replaces_a_journal_whole`
+* `a_rebuilt_journal_carries_on_being_written_to`
+
+In `app/test/editor/autosave_test.dart`:
+
+* `a document adopted dirty is saved without waiting for a keystroke`
+* `adopting a clean document arms nothing`
+
+The first four fail against the previous sequence, each for the reason F2
+describes; that was checked by reinstating it.

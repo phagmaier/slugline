@@ -19,7 +19,7 @@
 //! them on every commit rather than only in the integration run.
 
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -87,6 +87,53 @@ fn recover(journal_path: &Path) -> (Document, bool) {
         document.replay(patch).expect("the patch fits");
     }
     (document, recovery.damaged)
+}
+
+/// Accepting a recovery offer, as `api::files::recovery_accept` does it: replay
+/// the journal, then write the **successor** journal against the bytes the file
+/// still holds, carrying the patches that actually replayed.
+///
+/// The successor is what makes a second crash survivable, and it is the whole
+/// subject of the tests below. Note what is missing: the script is not written.
+/// Recovery does not decide for the writer.
+fn accept(journal_path: &Path, dir: &Path) -> io::Result<(Document, Journal)> {
+    let recovery = journal::read(journal_path).expect("the journal reads");
+    let source = journal::verify(&recovery.header).expect("the file is as it was");
+    let untitled = journal::is_untitled(&recovery.header);
+    let script = recovery.header.script.clone();
+
+    let mut document = if untitled {
+        Document::blank()
+    } else {
+        Document::parse(&source)
+    };
+    let mut applied = 0;
+    for patch in &recovery.patches {
+        if document.replay(patch).is_err() {
+            break;
+        }
+        applied += 1;
+    }
+    if applied == 0 && !recovery.patches.is_empty() {
+        // `recovery_accept` refuses here rather than rebuilding, because the
+        // rebuild would replace a journal full of the writer's text with an
+        // empty one.
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "none of the recorded edits fit the file",
+        ));
+    }
+
+    let id = if untitled {
+        "untitled-recovered".to_owned()
+    } else {
+        journal::script_id(&script)
+    };
+    let successor = Journal::rebuild(dir, &id, &script, &source, &recovery.patches[..applied])?;
+    if successor.path() != journal_path {
+        journal::discard_at(journal_path)?;
+    }
+    Ok((document, successor))
 }
 
 // ---------------------------------------------------------------------------
@@ -554,6 +601,315 @@ fn recovery_will_not_replay_onto_a_file_that_moved_on() {
         "Somebody else rewrote this entirely.\n",
         "and refusing means changing nothing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The second crash
+// ---------------------------------------------------------------------------
+//
+// A crash is not a thing that happens once. Whatever made the process die —
+// a driver, an OOM killer, a bad `unwrap` on a path the writer keeps taking —
+// is still there after they click Recover, and the moment right after accepting
+// recovery is the most dangerous one in the program: the recovered text is ahead
+// of the file, so a file is not enough to reconstruct it, and the journal it came
+// from is the only thing that can. These tests are about not deleting that.
+
+/// F2: kill it again straight after accepting recovery, before the writer types
+/// or saves anything, and the recovered edits are still there.
+///
+/// This is the case the old sequence lost outright. It removed the offered
+/// journal and started an empty one whose `base` was the *in-memory* recovered
+/// text — a checksum matching no file anywhere — so a second crash left a journal
+/// with no records, which startup discards as "nothing was typed after the last
+/// save", and a file that never had the edits in the first place.
+#[test]
+fn a_second_crash_straight_after_accepting_recovery_loses_nothing() {
+    let dir = TempDir::new("second-crash");
+    let journals = dir.path().join("journal");
+    let script = dir.path().join("heat.fountain");
+    fs::write(&script, BASE).unwrap();
+
+    // The first session, and the first crash.
+    let mut document = Document::parse(BASE);
+    let mut journal =
+        Journal::create(&journals, &journal::script_id(&script), &script, BASE).unwrap();
+    let id = document.blocks()[1].id();
+    for letter in TYPED.chars() {
+        keystroke(&mut document, &mut journal, id, letter);
+    }
+    let first = journal.path().to_path_buf();
+    drop(journal);
+
+    // The writer accepts the offer — and then it dies again, immediately.
+    let (recovered, successor) = accept(&first, &journals).expect("the successor is written");
+    let expected = recovered.serialise();
+    assert_eq!(
+        expected,
+        format!("INT. HOUSE - DAY\n\nJohn enters.{TYPED}\n")
+    );
+    let second = successor.path().to_path_buf();
+    drop(successor);
+
+    // The third launch. This is the assertion the whole finding is about.
+    let pending = journal::pending(&journals);
+    assert_eq!(
+        pending.len(),
+        1,
+        "exactly one journal survives: the successor replaced the offer in place"
+    );
+    assert_eq!(pending[0], second);
+
+    let recovery = journal::read(&second).expect("the successor reads");
+    assert!(
+        !recovery.is_empty(),
+        "and it is not empty — an empty journal is silently discarded at startup, \
+         which is precisely how the recovered edits used to disappear"
+    );
+    assert!(
+        journal::verify(&recovery.header).is_ok(),
+        "its base is the file's real bytes, so the offer is not blocked"
+    );
+
+    let (again, _) = recover(&second);
+    assert_eq!(
+        again.serialise(),
+        expected,
+        "every keystroke from before the first crash is still recoverable"
+    );
+    assert_eq!(
+        fs::read_to_string(&script).unwrap(),
+        BASE,
+        "and recovery still never wrote to the script"
+    );
+}
+
+/// The other half of F2: accept recovery, type more, crash again — and both the
+/// recovered edits and the new typing come back.
+///
+/// Under the old sequence this was worse than losing the new text. The journal's
+/// `base` was a checksum of the in-memory recovered document, so `verify` found
+/// it did not match the file and refused the whole journal: the offer came back
+/// `blocked`, and the recovered edits *and* everything typed after them were
+/// unreachable together.
+#[test]
+fn a_second_crash_after_typing_more_keeps_both() {
+    let dir = TempDir::new("second-crash-typing");
+    let journals = dir.path().join("journal");
+    let script = dir.path().join("heat.fountain");
+    fs::write(&script, BASE).unwrap();
+
+    let mut document = Document::parse(BASE);
+    let mut journal =
+        Journal::create(&journals, &journal::script_id(&script), &script, BASE).unwrap();
+    let id = document.blocks()[1].id();
+    for letter in " Before.".chars() {
+        keystroke(&mut document, &mut journal, id, letter);
+    }
+    let first = journal.path().to_path_buf();
+    drop(journal);
+
+    let (mut recovered, mut successor) = accept(&first, &journals).expect("the successor");
+    let id = recovered.blocks()[1].id();
+    for letter in " After.".chars() {
+        keystroke(&mut recovered, &mut successor, id, letter);
+    }
+    let expected = recovered.serialise();
+    let second = successor.path().to_path_buf();
+    drop(successor);
+
+    let recovery = journal::read(&second).expect("the successor reads");
+    assert!(
+        journal::verify(&recovery.header).is_ok(),
+        "the base is still the file's, so this offer is takeable rather than blocked"
+    );
+
+    let (again, _) = recover(&second);
+    assert_eq!(
+        again.blocks()[1].text(),
+        "John enters. Before. After.",
+        "the edits from before the first crash and the ones typed after it"
+    );
+    assert_eq!(again.serialise(), expected);
+}
+
+/// If the successor cannot be written, the offer is still on disk. A recovery
+/// that fails must cost nothing, because the journal it was offering is the only
+/// copy of the text in it.
+#[test]
+fn a_failed_successor_leaves_the_offer_where_it_was() {
+    let dir = TempDir::new("successor-fails");
+    let journals = dir.path().join("journal");
+    let script = dir.path().join("heat.fountain");
+    fs::write(&script, BASE).unwrap();
+
+    let mut document = Document::parse(BASE);
+    let mut journal =
+        Journal::create(&journals, &journal::script_id(&script), &script, BASE).unwrap();
+    let id = document.blocks()[1].id();
+    for letter in TYPED.chars() {
+        keystroke(&mut document, &mut journal, id, letter);
+    }
+    let first = journal.path().to_path_buf();
+    let whole = fs::read(&first).unwrap();
+    drop(journal);
+
+    // The journal directory stops taking new files, which is what a full disk or
+    // a state directory the user has broken the permissions on looks like.
+    fs::set_permissions(&journals, permissions(0o555)).unwrap();
+    let failed = accept(&first, &journals);
+    fs::set_permissions(&journals, permissions(0o755)).unwrap();
+
+    assert!(failed.is_err(), "the successor could not be written");
+    assert_eq!(
+        fs::read(&first).unwrap(),
+        whole,
+        "so the journal that was offered is byte-for-byte where it was"
+    );
+    let (again, _) = recover(&first);
+    assert_eq!(
+        again.serialise(),
+        format!("INT. HOUSE - DAY\n\nJohn enters.{TYPED}\n"),
+        "and it still recovers everything, so the offer can simply be made again"
+    );
+}
+
+/// A replay that stops early journals only what it applied.
+///
+/// `recovery_accept` stops at the first patch that does not fit and offers what
+/// it has. The successor journal has to stop in the same place: a journal that
+/// described edits the document does not have would replay into a different
+/// document than the one on screen.
+#[test]
+fn the_successor_records_only_the_patches_that_replayed() {
+    let dir = TempDir::new("partial-replay");
+    let journals = dir.path().join("journal");
+    let script = dir.path().join("heat.fountain");
+    fs::write(&script, BASE).unwrap();
+
+    let mut document = Document::parse(BASE);
+    let mut journal =
+        Journal::create(&journals, &journal::script_id(&script), &script, BASE).unwrap();
+    let id = document.blocks()[1].id();
+    keystroke(&mut document, &mut journal, id, '!');
+
+    // A record naming a block that is not in the document. Replay refuses it,
+    // and everything after it is unreachable.
+    journal
+        .append(&Patch {
+            changed: vec![slugline_document::BlockSnapshot {
+                id: BlockId(9999),
+                kind: document.blocks()[1].kind(),
+                text: "a block that was never here".to_owned(),
+                forced: false,
+                dual: false,
+            }],
+            ..Patch::default()
+        })
+        .unwrap();
+    let first = journal.path().to_path_buf();
+    drop(journal);
+
+    let (recovered, successor) = accept(&first, &journals).expect("the successor");
+    assert_eq!(
+        successor.records(),
+        1,
+        "one patch replayed, so the successor holds one"
+    );
+    let second = successor.path().to_path_buf();
+    drop(successor);
+
+    let (again, _) = recover(&second);
+    assert_eq!(
+        again.serialise(),
+        recovered.serialise(),
+        "replaying the successor reproduces exactly the document that was recovered"
+    );
+}
+
+/// A journal none of whose records replay is refused, and left exactly where it
+/// is.
+///
+/// The rebuild would otherwise overwrite it with an empty successor, and an
+/// empty journal is discarded at the next startup. That would turn "we could not
+/// read your edits" into "your edits are gone" — and `recovery_pending` already
+/// takes the opposite view on purpose: a journal it cannot read is left on disk,
+/// because it is the writer's text in a form a person can still pick apart.
+#[test]
+fn a_journal_that_cannot_replay_is_left_on_disk_rather_than_emptied() {
+    let dir = TempDir::new("nothing-replays");
+    let journals = dir.path().join("journal");
+    let script = dir.path().join("heat.fountain");
+    fs::write(&script, BASE).unwrap();
+
+    let document = Document::parse(BASE);
+    let mut journal =
+        Journal::create(&journals, &journal::script_id(&script), &script, BASE).unwrap();
+    // A first record naming a block that is not in the document: the replay
+    // stops before it applies anything.
+    journal
+        .append(&Patch {
+            changed: vec![slugline_document::BlockSnapshot {
+                id: BlockId(4242),
+                kind: document.blocks()[1].kind(),
+                text: "text from a document that is not this one".to_owned(),
+                forced: false,
+                dual: false,
+            }],
+            ..Patch::default()
+        })
+        .unwrap();
+    let path = journal.path().to_path_buf();
+    let whole = fs::read(&path).unwrap();
+    drop(journal);
+
+    assert!(accept(&path, &journals).is_err(), "the offer is refused");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        whole,
+        "and the journal is byte-for-byte where it was, text and all"
+    );
+    let recovery = journal::read(&path).expect("it still reads");
+    assert!(
+        !recovery.is_empty(),
+        "an empty journal is discarded at startup, which is what this must not become"
+    );
+}
+
+/// An untitled recovery has no file to be durable against, so the successor is
+/// the only copy — and it still has to be one.
+#[test]
+fn an_untitled_recovery_survives_a_second_crash_too() {
+    let dir = TempDir::new("second-crash-untitled");
+    let journals = dir.path().join("journal");
+
+    let mut document = Document::blank();
+    let mut journal = Journal::create(&journals, "untitled-1-1", Path::new(""), "").unwrap();
+    let id = document.blocks()[0].id();
+    for letter in "FADE IN:".chars() {
+        keystroke(&mut document, &mut journal, id, letter);
+    }
+    let first = journal.path().to_path_buf();
+    drop(journal);
+
+    let (recovered, successor) = accept(&first, &journals).expect("the successor");
+    let second = successor.path().to_path_buf();
+    drop(successor);
+
+    assert!(second.is_file(), "the successor is on disk");
+    assert!(
+        !first.exists(),
+        "and the offer was removed, because the successor is under a different name"
+    );
+
+    let recovery = journal::read(&second).expect("the successor reads");
+    assert!(journal::is_untitled(&recovery.header));
+    let mut again = Document::blank();
+    for patch in &recovery.patches {
+        again
+            .replay(patch)
+            .expect("it replays onto a blank document");
+    }
+    assert_eq!(again.serialise(), recovered.serialise());
 }
 
 /// A script that was never saved is journalled too, and recovers onto a blank

@@ -104,6 +104,22 @@ class AutosaveDriver {
     return _save();
   }
 
+  /// Tells the driver a document has just been adopted, so that it can start
+  /// ticking for one that arrives already dirty.
+  ///
+  /// Every other way into this class is an *edit*, and for a document opened
+  /// from a file that is right: it arrives clean and nothing needs saving until
+  /// something changes. Crash recovery is the exception. A recovered document is
+  /// dirty on arrival — its edits are ahead of the file, which is the whole
+  /// point — but no edit event ever fires for them, so without this the first
+  /// autosave would wait for the writer to type. Reading the recovered text
+  /// before touching the keyboard is exactly what a person does at that moment,
+  /// and it could last minutes.
+  ///
+  /// A clean document arms nothing, which is why this defers to the same rule as
+  /// an edit rather than starting the timers outright.
+  void documentAdopted() => _onChanged();
+
   void _onChanged() {
     if (_disposed || !enabled) return;
     if (!core.dirty) {

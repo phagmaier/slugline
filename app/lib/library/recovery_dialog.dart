@@ -144,3 +144,83 @@ class RecoveryDialog extends StatelessWidget {
 }
 
 enum RecoveryChoice { recover, discard }
+
+/// Recovery replayed the edits but could not write the journal that would carry
+/// them through a *second* crash.
+///
+/// The old journal is deliberately still on disk, so what is on screen is not at
+/// risk; what is at risk is everything typed from here, which is not being
+/// recorded by anything. Saying so is the whole point — §Phase 4 treats losing
+/// user text as a P0 defect, and a session that has quietly stopped journalling
+/// looks exactly like one that has not.
+Future<void> showRecoveryNotJournalled(
+  BuildContext context,
+  String message,
+) {
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      icon: const Icon(Icons.warning_amber_outlined),
+      title: const Text('Recovered, but not protected'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Your recovered text is here and the crash journal it came from is '
+            'still on disk. But a new journal could not be written, so nothing '
+            'you type from now on would survive another crash.',
+          ),
+          const SizedBox(height: 12),
+          Text(message, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          Text(
+            'Save this script somewhere writable, or restart Slugline — the '
+            'recovery will be offered again.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Continue'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Recovery could not be taken at all. Nothing was opened and nothing was
+/// deleted, so the offer will still be there next launch — which is what the
+/// last line says, because otherwise a failed recovery reads like a lost script.
+Future<void> showRecoveryFailed(BuildContext context, String message) {
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      icon: const Icon(Icons.error_outline),
+      title: const Text('That recovery could not be opened'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(message),
+          const SizedBox(height: 12),
+          Text(
+            'Nothing was changed and nothing was deleted. The crash journal is '
+            'still on disk and will be offered again next time you start.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}

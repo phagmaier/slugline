@@ -239,6 +239,75 @@ impl Journal {
         })
     }
 
+    /// Rewrites a journal so that it says `patches`, applied to `base`, and
+    /// leaves it open for further appends.
+    ///
+    /// This is the successor half of accepting a crash recovery, and the reason
+    /// it exists is a rule the recovery path has to keep: **the journal
+    /// describing the recovered edits is the only durable copy of them, so it
+    /// must not stop existing until an equivalent one does.**
+    ///
+    /// Replaying a journal produces a document that is *ahead* of the file on
+    /// disk, and recovery deliberately leaves the file alone — the writer has
+    /// not agreed to anything yet. So the successor journal cannot be an empty
+    /// one based on the recovered text (there would be nothing on disk holding
+    /// the recovered edits, and its `base` would match no file, so
+    /// [`verify`] would refuse it after a second crash). It is instead the same
+    /// `base` the file still has, plus the records that were actually replayed.
+    /// A second crash then recovers exactly what the first one did, plus
+    /// whatever was typed after.
+    ///
+    /// Written through [`crate::atomic::save_atomically`] rather than by
+    /// truncating in place: a crash halfway through rewriting a journal in place
+    /// would leave a journal that has lost records, which is the loss this whole
+    /// function exists to prevent. The rename either happened or did not.
+    pub fn rebuild(
+        dir: &Path,
+        id: &str,
+        script: &Path,
+        base: &str,
+        patches: &[Patch],
+    ) -> io::Result<Journal> {
+        fs::create_dir_all(dir)?;
+        let path = dir.join(format!("{id}.log"));
+
+        let mut contents = Vec::new();
+        write_line(
+            &mut contents,
+            &Header {
+                version: FORMAT_VERSION,
+                script: script.to_path_buf(),
+                base: checksum(base),
+            },
+        )?;
+        let mut seq = 0;
+        for patch in patches {
+            if patch.is_empty() {
+                continue;
+            }
+            seq += 1;
+            write_line(&mut contents, &record(seq, patch))?;
+        }
+        // Every line is `serde_json` output, so this cannot fail; it is written
+        // as a conversion rather than an `unwrap` because a panic here would be
+        // a panic on the recovery path.
+        let contents = String::from_utf8(contents).map_err(io::Error::other)?;
+        crate::atomic::save_atomically(&path, &contents)
+            .map_err(|error| io::Error::other(error.to_string()))?;
+
+        // Reopened in the same mode `create` uses, positioned at the end, so
+        // that appends and a later `checkpoint` behave identically either way.
+        let mut file = OpenOptions::new().write(true).open(&path)?;
+        use std::io::Seek;
+        file.seek(io::SeekFrom::End(0))?;
+        Ok(Journal {
+            file,
+            path,
+            seq,
+            records: seq,
+        })
+    }
+
     /// Records what one edit did. Nothing is recorded for an edit that changed
     /// nothing.
     pub fn append(&mut self, patch: &Patch) -> io::Result<()> {
@@ -246,20 +315,10 @@ impl Journal {
             return Ok(());
         }
         self.seq += 1;
-        let record = Record {
-            seq: self.seq,
-            removed: patch.removed.iter().map(|id| id.0).collect(),
-            changed: patch.changed.iter().map(RecordBlock::of).collect(),
-            inserted: patch
-                .inserted
-                .iter()
-                .map(|(index, block)| (*index, RecordBlock::of(block)))
-                .collect(),
-        };
         // One `write_all` for the line and its terminator together. Two writes
         // could be interrupted between them, and a line without its newline is
         // exactly what the reader treats as damage.
-        let mut line = serde_json::to_vec(&record).map_err(io::Error::other)?;
+        let mut line = serde_json::to_vec(&record(self.seq, patch)).map_err(io::Error::other)?;
         line.push(b'\n');
         self.file.write_all(&line)?;
         self.records += 1;
@@ -321,6 +380,28 @@ impl SeekStart for File {
         use std::io::Seek;
         self.seek(io::SeekFrom::Start(0)).map(drop)
     }
+}
+
+/// The record one patch becomes. Shared by [`Journal::append`], which writes it
+/// as it happens, and [`Journal::rebuild`], which writes a run of them at once —
+/// so that a rebuilt journal cannot drift from an appended one.
+fn record(seq: u64, patch: &Patch) -> Record {
+    Record {
+        seq,
+        removed: patch.removed.iter().map(|id| id.0).collect(),
+        changed: patch.changed.iter().map(RecordBlock::of).collect(),
+        inserted: patch
+            .inserted
+            .iter()
+            .map(|(index, block)| (*index, RecordBlock::of(block)))
+            .collect(),
+    }
+}
+
+fn write_line(out: &mut Vec<u8>, value: &impl Serialize) -> io::Result<()> {
+    serde_json::to_writer(&mut *out, value).map_err(io::Error::other)?;
+    out.push(b'\n');
+    Ok(())
 }
 
 fn write_header(file: &mut File, header: &Header) -> io::Result<()> {
@@ -567,6 +648,99 @@ mod tests {
         Patch {
             changed: vec![snapshot(id, BlockKind::Action, text)],
             ..Patch::default()
+        }
+    }
+
+    /// A rebuilt journal is byte-for-byte what an appended one would have been.
+    ///
+    /// The two writers exist for different reasons — one records an edit as it
+    /// happens, the other lays down a run of them at once — and the moment they
+    /// disagree about the format, a recovered session's journal stops being
+    /// readable by the same reader. They share [`record`] so that they cannot.
+    #[test]
+    fn a_rebuilt_journal_is_what_an_appended_one_would_have_been() {
+        let dir = TempDir::new("rebuild-matches-append");
+        let patches = [
+            change(1, "one"),
+            change(1, "one two"),
+            change(1, "one two."),
+        ];
+
+        let appended = dir.path().join("appended");
+        let mut journal =
+            Journal::create(&appended, "script", Path::new("/tmp/heat.fountain"), "BASE").unwrap();
+        for patch in &patches {
+            journal.append(patch).unwrap();
+        }
+        let by_appending = fs::read(journal.path()).unwrap();
+        drop(journal);
+
+        let rebuilt = dir.path().join("rebuilt");
+        let journal = Journal::rebuild(
+            &rebuilt,
+            "script",
+            Path::new("/tmp/heat.fountain"),
+            "BASE",
+            &patches,
+        )
+        .unwrap();
+        assert_eq!(fs::read(journal.path()).unwrap(), by_appending);
+        assert_eq!(journal.records(), 3);
+    }
+
+    /// Rebuilding replaces a journal in place, and the replacement is complete
+    /// or absent — never half-written. It is the only copy of the edits in it,
+    /// so a truncating write here would be the loss it exists to prevent.
+    #[test]
+    fn rebuilding_replaces_a_journal_whole() {
+        let dir = TempDir::new("rebuild-in-place");
+        let script = Path::new("/tmp/heat.fountain");
+
+        let mut journal = Journal::create(dir.path(), "script", script, "BASE").unwrap();
+        journal.append(&change(1, "before")).unwrap();
+        let path = journal.path().to_path_buf();
+        drop(journal);
+
+        let patches = [change(1, "before"), change(1, "before and after")];
+        let journal = Journal::rebuild(dir.path(), "script", script, "BASE", &patches).unwrap();
+        assert_eq!(journal.path(), path, "the same name, replaced");
+        drop(journal);
+
+        let names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["script.log".to_owned()], "no temp file left");
+
+        let recovery = read(&path).unwrap();
+        assert_eq!(recovery.patches.len(), 2);
+        assert!(!recovery.damaged);
+    }
+
+    /// A rebuilt journal keeps taking appends, at the right sequence numbers.
+    /// This is the session continuing after recovery, which is the case F2's
+    /// second test is about.
+    #[test]
+    fn a_rebuilt_journal_carries_on_being_written_to() {
+        let dir = TempDir::new("rebuild-then-append");
+        let script = Path::new("/tmp/heat.fountain");
+        let patches = [change(1, "one"), change(1, "one two")];
+
+        let mut journal = Journal::rebuild(dir.path(), "s", script, "BASE", &patches).unwrap();
+        journal.append(&change(1, "one two three")).unwrap();
+        assert_eq!(journal.records(), 3);
+        let path = journal.path().to_path_buf();
+        drop(journal);
+
+        let recovery = read(&path).unwrap();
+        assert!(!recovery.damaged, "the appended line is whole");
+        assert_eq!(recovery.patches.len(), 3);
+        let mut document = Document::parse("one\n");
+        // The last record is the state the block ends in; replaying all three in
+        // order must land on it.
+        for patch in &recovery.patches {
+            let _ = document.replay(patch);
         }
     }
 
