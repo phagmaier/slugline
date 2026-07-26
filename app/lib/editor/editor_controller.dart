@@ -66,9 +66,13 @@ class EditorController extends ChangeNotifier {
   List<Completion> _completions = const [];
   final Set<String> _suppressedCompletions = {};
   int _completionIndex = 0;
+  // Enter accepts only after the writer moves through the popup; its initial
+  // highlight is an offer, not a choice (ADR 0017).
+  bool _completionWasNavigated = false;
 
   List<Completion> get completions => _completions;
   int get completionIndex => _completionIndex;
+  bool get completionWasNavigated => _completionWasNavigated;
   Completion? get highlightedCompletion =>
       _completions.isEmpty ? null : _completions[_completionIndex];
 
@@ -442,6 +446,7 @@ class EditorController extends ChangeNotifier {
     if (_completions.isEmpty) return;
     _completionIndex = (_completionIndex + delta) % _completions.length;
     if (_completionIndex < 0) _completionIndex += _completions.length;
+    _completionWasNavigated = true;
     notifyListeners();
   }
 
@@ -465,6 +470,7 @@ class EditorController extends ChangeNotifier {
     if (_completions.isEmpty) return;
     _completions = const [];
     _completionIndex = 0;
+    _completionWasNavigated = false;
     notifyListeners();
   }
 
@@ -799,6 +805,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void _refreshCompletions() {
+    _completionWasNavigated = false;
     if (hasSelection) {
       _completions = const [];
       _completionIndex = 0;

@@ -44,6 +44,8 @@ class FakeCore implements DocumentCore {
   /// Set to refuse the next edit, the way an Opaque block would.
   EditRejection? refuseWith;
 
+  /// Completion answers are empty unless a test opts into the popup branch.
+  /// Keep at least one such test: the real entity index is commonly non-empty.
   List<Completion> completions = const [];
 
   @override

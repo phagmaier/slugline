@@ -952,8 +952,9 @@ Requirement §7.
 - [x] Transition suggestions
 - [x] Ranking: exact prefix > frequency > recency. Deterministic, unit-tested with a fixed
       corpus.
-- [x] **Nothing is ever inserted without an explicit keypress** (Tab or Enter on a
-      highlighted item). No inline ghost-text auto-acceptance. This is a hard requirement.
+- [x] **Nothing is ever inserted without an explicit keypress** (Tab accepts the
+      default item; Enter accepts only after Up/Down explicitly navigates the popup).
+      No inline ghost-text auto-acceptance. This is a hard requirement (ADR 0017).
 - [x] `Escape` dismisses; a preference disables autocomplete entirely
 - [x] Dismissing a specific suggestion suppresses it for the session
 

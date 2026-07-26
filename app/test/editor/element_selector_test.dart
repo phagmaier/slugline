@@ -157,6 +157,36 @@ void main() {
       expect(core.commands, isEmpty);
     });
 
+    testWidgets('Escape closes it after another panel had focus', (tester) async {
+      final core = oneBlock(BlockKind.action)
+        ..completions = const [
+          Completion(
+            kind: CompletionKind.character,
+            value: 'HELLO WORLD',
+            startUtf16: 0,
+            endUtf16: 5,
+            frequency: 1,
+            pinned: false,
+          ),
+        ];
+      final controller = await pumpEditorPage(tester, core);
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyF);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await pressCtrl(tester, LogicalKeyboardKey.keyK);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Element or command'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Element or command'), findsNothing);
+      expect(controller.blocks.single.text, 'Hello world');
+      expect(core.commands, isEmpty);
+    });
+
     testWidgets('reaches every element type', (tester) async {
       // The list is longer than the panel, so each one is asked for by name —
       // which is how a writer reaches the ones below the fold too.

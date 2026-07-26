@@ -421,10 +421,14 @@ pub fn doc_complete(
         let Some((kind, start, prefix)) = completion_context(block, offset) else {
             return Vec::new();
         };
+        let current = &block.text()[start..offset];
         session
             .entities()
             .complete(kind, prefix, &suppressed)
             .into_iter()
+            // Replacing the active segment with identical text is never useful;
+            // in particular, do not offer a block's newly indexed entity to itself.
+            .filter(|candidate| candidate.value.as_str() != current)
             .map(|candidate| Completion {
                 kind: completion_kind(candidate.kind),
                 value: candidate.value,
@@ -1516,6 +1520,14 @@ mod tests {
             ]
         );
         assert_eq!(doc.text(), SCRIPT, "an untouched document round-trips");
+    }
+
+    #[test]
+    fn a_block_is_not_offered_back_to_itself_as_a_completion() {
+        let doc = Doc::parse("JOHN\nHello.\n");
+        let cue = &doc.blocks()[0];
+
+        assert!(doc_complete(doc.handle(), cue.id, 4, Vec::new()).is_empty());
     }
 
     #[test]

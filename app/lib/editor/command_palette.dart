@@ -33,16 +33,22 @@ const double _rowHeight = 44;
 
 class _CommandPaletteState extends State<CommandPalette> {
   final TextEditingController _query = TextEditingController();
-  final FocusNode _focus = FocusNode();
+  final FocusNode _queryFocus = FocusNode();
   final ScrollController _scroll = ScrollController();
   int _highlighted = 0;
 
   List<EditorCommand> get _visible => filterCommands(widget.commands, _query.text);
 
   @override
+  void initState() {
+    super.initState();
+    _queryFocus.requestFocus();
+  }
+
+  @override
   void dispose() {
     _query.dispose();
-    _focus.dispose();
+    _queryFocus.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -119,7 +125,6 @@ class _CommandPaletteState extends State<CommandPalette> {
                 borderRadius: BorderRadius.circular(10),
                 color: theme.colorScheme.surfaceContainerHigh,
                 child: Focus(
-                  focusNode: _focus,
                   onKeyEvent: _onKey,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -128,6 +133,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                         padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
                         child: TextField(
                           controller: _query,
+                          focusNode: _queryFocus,
                           autofocus: true,
                           decoration: const InputDecoration(
                             isDense: true,

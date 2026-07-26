@@ -393,7 +393,8 @@ class EditorSurfaceState extends State<EditorSurface>
       case LogicalKeyboardKey.arrowDown when _controller.completions.isNotEmpty:
         _controller.moveCompletion(1);
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
-          when _controller.completions.isNotEmpty:
+          when _controller.completions.isNotEmpty &&
+              _controller.completionWasNavigated:
         _controller.acceptCompletion();
       case LogicalKeyboardKey.tab
           when !shift && _controller.completions.isNotEmpty:

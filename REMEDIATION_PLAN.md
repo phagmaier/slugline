@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–2 complete, Phase 2B next
+**Status:** in progress — Phases 0–2B complete, Phase 3 next
 
 ---
 
@@ -38,7 +38,7 @@ The remediation effort is complete only when all of the following are true:
 
 - [x] No known path can lose recovered user text after accepting crash recovery.
 - [x] Multi-line Fountain blocks render, wrap, select, click, and position the caret correctly.
-- [ ] Enter splits the block whether or not a completion is offered, and Escape closes every panel.
+- [x] Enter splits the block whether or not a completion is offered, and Escape closes every panel.
 - [ ] Dart and Rust line breaking agree on the defined shared behavior.
 - [ ] Rust pagination is reachable through the bridge and exercised outside its isolated crate tests.
 - [ ] The library page count is updated from a saved pagination snapshot.
@@ -725,60 +725,143 @@ reproduction.
 
 ### 2B.1 Pin the failures
 
-- [ ] Confirm the four baseline failures still reproduce (`editor_test`, `writing_test`).
-- [ ] Add a widget-level regression test that drives the editor with a *non-empty*
+- [x] Confirm the four baseline failures still reproduce (`editor_test`, `writing_test`).
+- [x] Add a widget-level regression test that drives the editor with a *non-empty*
       `fake_core.completions`, so the stolen-Enter path is reachable without the `.so`.
-- [ ] Confirm that test fails before the repair.
+- [x] Confirm that test fails before the repair.
 
 ### 2B.2 Decide the acceptance gesture (F13)
 
-- [ ] Decide what accepts a completion. `SPEC.md` §Phase 5 and the audit both describe
+- [x] Decide what accepts a completion. `SPEC.md` §Phase 5 and the audit both describe
       acceptance as explicit; Tab is already wired to it.
-- [ ] Decide whether Enter accepts at all, and if so only when the writer has moved the
+- [x] Decide whether Enter accepts at all, and if so only when the writer has moved the
       highlight off the default with the arrow keys.
-- [ ] Stop the index from suggesting the block currently being typed — a scene heading
+  - Enter accepts after explicit Up/Down navigation. With one candidate the index remains
+    zero, but the arrow key itself is still an explicit choice; ADR 0017 records that edge case.
+- [x] Stop the index from suggesting the block currently being typed — a scene heading
       offered as the sole completion for itself is never a useful suggestion.
-- [ ] Record the decision as an ADR; it settles a §16 question the code answered silently.
+- [x] Record the decision as an ADR; it settles a §16 question the code answered silently.
 
 ### 2B.3 Repair the key routing
 
-- [ ] Reorder or guard the `when _controller.completions.isNotEmpty` arms in
+- [x] Reorder or guard the `when _controller.completions.isNotEmpty` arms in
       `editor_surface.dart::_onKey` so Enter reaches `splitBlock()` under the decided rule.
-- [ ] Verify Tab still accepts a completion, and still tabs when there is none.
-- [ ] Verify Escape dismisses the popup without touching the document.
-- [ ] Keep the popup's arrow-key handling.
+- [x] Verify Tab still accepts a completion, and still tabs when there is none.
+- [x] Verify Escape dismisses the popup without touching the document.
+- [x] Keep the popup's arrow-key handling.
 
 ### 2B.4 Root-cause and repair the palette Escape (F14)
 
-- [ ] Determine whether Escape genuinely fails to leave the palette's focused `TextField`,
+- [x] Determine whether Escape genuinely fails to leave the palette's focused `TextField`,
       or whether this is an artifact of the live integration binding's text-input connection.
-- [ ] If it is a real defect, repair it in `command_palette.dart` and add a widget test.
-- [ ] If it is a harness artifact, adjust `writing_test.dart` and say why in a comment —
+- [x] If it is a real defect, repair it in `command_palette.dart` and add a widget test.
+- [-] If it is a harness artifact, adjust `writing_test.dart` and say why in a comment —
       do not weaken the assertion.
+  - Not applicable. The defect reproduced in a widget test once the double was given a
+    non-empty completion list: after Find had focus, palette `autofocus` did not reclaim it,
+    and the editor's completion Escape arm consumed the key. The integration assertion is unchanged.
 
 ### 2B.5 Audit the test double for other silent gaps
 
-- [ ] Review `app/test/support/fake_core.dart` for defaults that are empty in the double and
+- [x] Review `app/test/support/fake_core.dart` for defaults that are empty in the double and
       non-empty against the real core, and which therefore hide a branch.
-- [ ] Note anything found; repair only what is cheap and in scope.
+- [x] Note anything found; repair only what is cheap and in scope.
+  - `completions = const []` was the silent gap. The new Enter and panel-focus regressions
+    opt into a non-empty list, and the field now documents that requirement. `tabAnswer` and
+    `suggestion` are intentionally injected by their focused tests; `find` computes real hits;
+    the remaining empty persistence answers do not hide an editor key-routing branch.
 
 ## Tests
 
-- [ ] Enter splits the block while a completion is offered.
-- [ ] The chosen acceptance gesture accepts the completion.
-- [ ] The block being typed is not offered as its own completion.
-- [ ] Escape closes the find bar, the palette, and then collapses the selection.
-- [ ] `editor_test.dart` and `writing_test.dart` pass in full.
+- [x] Enter splits the block while a completion is offered.
+- [x] The chosen acceptance gesture accepts the completion.
+- [x] The block being typed is not offered as its own completion.
+- [x] Escape closes the find bar, the palette, and then collapses the selection.
+- [x] `editor_test.dart` and `writing_test.dart` pass in full.
 
 ## Exit conditions
 
-- [ ] All six integration tests pass locally.
-- [ ] The acceptance gesture is specified in an ADR, not left to arm ordering.
-- [ ] No regression in `flutter test` or the keystroke benchmark.
+- [x] All six integration tests pass locally.
+- [x] The acceptance gesture is specified in an ADR, not left to arm ordering.
+- [x] No regression in `flutter test` or the keystroke benchmark.
 
 ## Suggested commit boundary
 
 - [ ] `fix(editor): stop the completion popup swallowing Enter`
+
+## Implementation log — Phase 2B
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** OpenAI GPT-5.6 Sol (OpenCode)
+**Starting commit:** `2c12109` (Phase 2)
+**Ending commit:** working tree
+
+### Changes made
+
+- `EditorSurface` now lets Enter split while the popup only has its automatic default
+  highlight. Up/Down marks the popup as explicitly navigated, after which Enter accepts;
+  Tab continues to accept the default candidate.
+- `doc_complete` removes an exact no-op replacement, so a newly indexed cue or scene
+  component cannot be offered back as its own sole completion.
+- `CommandPalette` gives its query field an explicit focus node and requests it on creation,
+  matching the already-correct Find bar rather than relying on `autofocus` to displace the
+  previously focused field.
+- Added ADR 0017 and aligned `SPEC.md` and `docs/KEYMAP.md` with the explicit gesture.
+- Audited `FakeCore`'s quiet defaults. Only `completions` hid this key-routing branch; tests
+  now opt into the non-empty state and its field comment records why.
+- No bridge signature, generated binding, dependency, Fountain semantic, or persistence code changed.
+
+### Tests added or changed
+
+- `autocomplete_test.dart`: default Enter splits with a candidate showing; Up/Down then
+  Enter accepts it. The first test failed before the repair because `core.enters` stayed empty.
+- `element_selector_test.dart`: Find → Escape → palette → Escape with non-empty editor
+  completions. It failed before the repair with the palette still visible, reproducing F14
+  without the `.so`.
+- `doc.rs`: `a_block_is_not_offered_back_to_itself_as_a_completion`.
+- The existing `writing_test.dart` assertion was not weakened or adjusted.
+
+### Commands run
+
+```text
+flutter test integration_test/editor_test.dart -d linux           # before: 6 passed, 1 failed
+flutter test integration_test/writing_test.dart -d linux          # before: 8 passed, 3 failed
+flutter test test/editor/autocomplete_test.dart --plain-name ...  # failed before repair
+flutter test test/editor/element_selector_test.dart --plain-name ...
+                                                                  # failed before repair
+
+cargo fmt --all --check                                           # clean
+cargo clippy --workspace --all-targets -- -D warnings             # clean
+cargo test --workspace                                            # 344 passed
+python3 tools/check_layering.py                                   # clean
+cd app && flutter analyze                                         # No issues found
+cd app && flutter test                                            # 282 passed
+cd app && flutter build linux --release                           # succeeds
+
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/editor_test.dart              -d linux   # 7 passed
+flutter test integration_test/writing_test.dart             -d linux   # 11 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+flutter test integration_test/persistence_test.dart         -d linux   # 12 passed
+```
+
+### Results
+
+F13 and F14 no longer reproduce. All 45 integration tests pass. The 120-page benchmark
+reported 3.03 ms keystroke-to-patch p99, 5.41 ms frame-build p99, 2.61 ms journalled
+keystroke p99, and 0 of 271 frames over 16 ms.
+
+### Deviations from plan
+
+The self-suggestion is filtered at the bridge result rather than removed from the entity
+index. The index's documented exact-prefix ranking remains intact for other consumers; the
+bridge removes only a candidate that would replace the active segment with identical text.
+
+### New risks or follow-up findings
+
+None. The real Linux `ibus` + CJK manual gate remains Phase 9A and was not claimed here.
 
 ---
 

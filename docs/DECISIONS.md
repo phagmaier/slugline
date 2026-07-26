@@ -1096,3 +1096,74 @@ In `app/test/editor/autosave_test.dart`:
 
 The first four fail against the previous sequence, each for the reason F2
 describes; that was checked by reinstating it.
+
+---
+
+## ADR 0017 — A default completion does not take Enter from the editor
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 5 (repaired during the
+mid-project remediation)
+
+### Context
+
+The completion popup highlights its first item as soon as suggestions appear.
+The shipped key routing treated that automatic highlight as a choice: Enter
+accepted it before Enter could split the block. Because the incremental entity
+index already contained the block being typed, a completed scene heading or cue
+was often its own sole suggestion. Accepting it replaced the text with identical
+text, so the primary writing gesture appeared dead.
+
+The original specification said Tab or Enter could accept a highlighted item,
+but did not distinguish the popup's automatic highlight from a highlight the
+writer deliberately moved. Arm ordering silently made the former enough.
+
+### Decision
+
+**Tab accepts the default completion. Enter accepts a completion only after the
+writer has navigated the popup with Up or Down; otherwise Enter always splits the
+block.**
+
+The controller records whether the current completion list has been navigated.
+Refreshing or dismissing the list clears that state. Up and Down retain their
+popup navigation behavior even when there is only one candidate, because the key
+press itself is the writer's choice.
+
+The bridge also removes a candidate whose replacement text is identical to the
+active completion segment. Such a candidate can make no change and, in
+particular, must not be the current block offered back to itself after the entity
+index updates.
+
+### Alternatives considered
+
+**Always let Enter accept the default.** Rejected because merely displaying a
+suggestion then disables block splitting, and an exact candidate can turn Enter
+into a no-op.
+
+**Never let Enter accept a completion.** Simpler, and Tab would still provide an
+explicit acceptance gesture, but it unnecessarily removes the Enter workflow
+already promised by Phase 5. Requiring popup navigation keeps that workflow
+without stealing ordinary Enter.
+
+**Only reorder the switch arms.** This fixes splitting but leaves the acceptance
+rule accidental and leaves the useless self-suggestion in the popup.
+
+### Consequences
+
+* A writer can always split while the popup is merely showing its default item.
+* Tab remains the fastest way to accept that default and still falls through to
+  the element workflow when no completion exists.
+* Up/Down followed by Enter explicitly accepts the selected item.
+* Exact no-op candidates do not appear through the bridge. Ranking within the
+  entity index remains unchanged for its other consumers and tests.
+* The popup remains read-only until one of those acceptance gestures occurs.
+
+### Tests and invariants
+
+* `app/test/editor/autocomplete_test.dart` proves default Enter splits, Tab
+  accepts, navigated Enter accepts, and Escape dismisses without editing.
+* `crates/bridge/src/api/doc.rs::a_block_is_not_offered_back_to_itself_as_a_completion`
+  proves the active block is not returned as an identical candidate.
+* `app/test/editor/element_selector_test.dart` proves the palette takes focus and
+  Escape after another panel had focus, even when editor completions are non-empty.
+* `app/integration_test/editor_test.dart` and `writing_test.dart` exercise the
+  complete real-core paths that originally exposed the failures.

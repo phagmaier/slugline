@@ -117,9 +117,10 @@ Tab **pins** the type it sets, for the same reason the digits do: you asked.
 
 In Phase 5, Tab in a character cue accepts the completion if one is showing, and
 falls through to this table if not. §Phase 3's row reads "accept completion, else
-Parenthetical". Enter also accepts a highlighted completion; Up/Down move the
-highlight, and Escape dismisses and suppresses that item for the rest of the
-session. Merely showing or highlighting an item never changes text.
+Parenthetical". Enter normally keeps its editing meaning and splits the block;
+after Up/Down explicitly moves through the popup, Enter accepts that chosen item.
+Escape dismisses and suppresses the highlighted item for the rest of the session.
+Merely showing or automatically highlighting an item never changes text (ADR 0017).
 
 ### The cue workflow
 
