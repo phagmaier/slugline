@@ -28,6 +28,17 @@ import 'package:slugline/core/document_core.dart';
 /// Both are cancelled the moment the document is clean, so an idle window costs
 /// no wakeups. Neither exists at all when there is nothing to save.
 ///
+/// ## Two saves at once
+///
+/// This class is not the only thing that saves. Ctrl+S goes straight to
+/// `saveWithDialogs`, and a modal suppression holds *future* autosaves rather
+/// than one already past its timer — so ordering is the core's to guarantee,
+/// and it is: a per-session lock held across the whole plan/write/record
+/// sequence, so a save that arrives during another waits and then writes
+/// whatever the document says by then. [_saving] here is only the driver
+/// declining to pile more work onto a save it already started, and what it
+/// declines is owed rather than dropped.
+///
 /// ## What a suppression means
 ///
 /// [suppress] holds the save off; it never cancels it. A save deferred by a
@@ -67,10 +78,17 @@ class AutosaveDriver {
   /// over a composition must not be able to un-suppress it by closing.
   final Set<String> _suppressions = {};
 
-  /// A save was due while suppressed and has not happened yet.
+  /// A save was due while suppressed, or while another was in flight, and has
+  /// not happened yet.
   bool _owed = false;
 
-  /// A save is in flight. Two overlapping saves would race for the same file.
+  /// A save is in flight.
+  ///
+  /// Not the guarantee that two saves cannot interleave — the core holds a
+  /// per-session lock across the whole plan/write/record sequence, which is the
+  /// only place that can be true, since Ctrl+S never comes through this class
+  /// at all. This is here so the driver does not queue work behind a save it
+  /// already knows about.
   bool _saving = false;
 
   bool _disposed = false;
@@ -148,16 +166,30 @@ class AutosaveDriver {
   }
 
   Future<SaveOutcome> _save() async {
-    if (_saving) return const SaveOutcome.unchanged();
+    if (_saving) {
+      // Owed, not dropped — the same rule as a suppression. The save in flight
+      // planned its bytes before this edit existed, so answering "unchanged"
+      // and forgetting it would be claiming a write that does not cover it.
+      _owed = true;
+      return const SaveOutcome.unchanged();
+    }
     _saving = true;
     try {
       final outcome = await core.autosave();
       if (_disposed) return outcome;
-      if (outcome is SaveOutcome_Saved) _cancelTimers();
+      // Only when the write really caught up. An edit that landed while the
+      // file was being written is still unsaved — the core says so, and
+      // stopping the timers here would leave it that way until the next
+      // keystroke.
+      if (outcome is SaveOutcome_Saved && !core.dirty) _cancelTimers();
       onOutcome(outcome);
       return outcome;
     } finally {
       _saving = false;
+      if (_owed && !suppressed && !_disposed) {
+        _owed = false;
+        unawaited(_save());
+      }
     }
   }
 

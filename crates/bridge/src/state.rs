@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slugline_document::{BlockId, Document, EntityIndex, EntityKind, Patch};
@@ -149,6 +150,25 @@ pub struct Session {
     /// Where the writer had scrolled to, for session restore. Dart owns the
     /// scroll (§2.1); this is where it parks the number.
     scroll_row: u32,
+    /// Held for the whole of one write of this document's file.
+    ///
+    /// A save is three steps on purpose — plan on the actor, write off it,
+    /// record back on it (§2.3) — and the actor serialises each step but not
+    /// the sequence. Two saves of one script could therefore plan in order and
+    /// write out of order, leaving the file holding older bytes than the save
+    /// that had already answered "Saved". This is what stops that.
+    ///
+    /// A lock rather than a "busy" flag because the second save must not be
+    /// *dropped*: §10 does not allow a save to be quietly skipped because the
+    /// timing was awkward. It waits, and because the plan is made after the
+    /// wait it writes the newest revision, or finds there is nothing left to
+    /// write and says so. It is per session, so two scripts still save at the
+    /// same time.
+    ///
+    /// It is only ever locked **off** the actor thread, by the save path in
+    /// `api::files`. Nothing that runs inside an actor closure may take it: the
+    /// whole point is that the actor stays free while the disk is busy.
+    save_lock: Arc<Mutex<()>>,
 }
 
 impl Session {
@@ -164,6 +184,7 @@ impl Session {
             journal: None,
             journal_broken: false,
             scroll_row: 0,
+            save_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -211,6 +232,15 @@ impl Session {
 
     pub fn id(&self) -> Option<&str> {
         self.id.as_deref()
+    }
+
+    /// The claim a writer of this document's file has to take first.
+    ///
+    /// Cloned out rather than locked here, because the caller holds it across a
+    /// disk write and the actor must not be inside that. See [`Session::save_lock`]
+    /// the field for why it exists.
+    pub fn save_lock(&self) -> Arc<Mutex<()>> {
+        Arc::clone(&self.save_lock)
     }
 
     pub fn scroll_row(&self) -> u32 {

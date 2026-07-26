@@ -814,12 +814,16 @@ Implement precisely this sequence, in `crates/storage`:
       composition. A suppression **holds** the save rather than cancelling it, so
       the save happens when the dialog closes — §10 does not allow a save to be
       dropped because the timing was awkward.
-- [ ] **Two saves of one script cannot interleave.** They can today: the save is
-      plan-on-actor → write-off-actor → record-on-actor, and nothing serialises
-      an explicit Ctrl+S against an autosave already past its due point, so with
-      an edit between the two plans the writes can land in reverse order and the
-      file transiently holds older bytes than the save that already reported
-      "Saved". Audit finding F5; remediation Phase 4A.
+- [x] **Two saves of one script cannot interleave.** The save is still
+      plan-on-actor → write-off-actor → record-on-actor, and the actor serialises
+      each of those steps but not the sequence — so `Session::save_lock` is held
+      across all three, per session. A save that arrives during another waits and
+      then plans again, which is also the coalescing: it writes the newest
+      revision, or finds the queue-mate wrote it and answers `Unchanged`. Two
+      different scripts still save at the same time. Audit finding F5,
+      remediation Phase 4A; `an_older_save_cannot_land_after_a_newer_one` and
+      `an_explicit_save_queued_behind_an_autosave_still_writes_the_newest_text`
+      in `crates/bridge/src/api/files.rs`.
 - [x] An append-only **edit journal** in
       `$XDG_STATE_HOME/slugline/journal/<script-id>.log` records committed edits
       between saves. It records the **outcome** of each edit rather than the

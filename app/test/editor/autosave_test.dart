@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -272,6 +274,70 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pumpAndSettle();
     expect(it.core.saves.length, 1);
+  });
+
+  // --- a save that arrives while another is in flight (Phase 4A) -------------
+  //
+  // Ordering across two saves is the core's, not this class's: `cargo test`
+  // covers the per-session lock in `crates/bridge/src/api/files.rs`. What is
+  // Dart's, and what these check, is that the driver neither forgets the save
+  // it declined nor stops its clock for text the file does not have.
+
+  testWidgets('an autosave that collides with one in flight is owed, not dropped',
+      (tester) async {
+    final it = setUpDriver();
+    final held = Completer<void>();
+    it.core.holdWrites = held;
+
+    type(it.core, it.changes, 'a');
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(it.core.saves.length, 1, reason: 'the first save is at the disk');
+
+    type(it.core, it.changes, 'b');
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(
+      it.core.saves.length,
+      1,
+      reason: 'the second does not pile on top of the first',
+    );
+
+    held.complete();
+    await tester.pumpAndSettle();
+    expect(it.core.saves.length, 2, reason: 'it happens once the first is done');
+    expect(it.core.onDisk, it.core.source(), reason: 'and it wrote the newest text');
+    expect(it.core.dirty, isFalse);
+  });
+
+  testWidgets('an edit that lands mid-write does not stop the clock',
+      (tester) async {
+    final it = setUpDriver();
+    final held = Completer<void>();
+    it.core.holdWrites = held;
+
+    type(it.core, it.changes, 'a');
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(it.core.saves.length, 1);
+
+    // Deliberately no `changes.tick()`: this is the edit the driver has
+    // already been told about, arriving after the save planned its bytes.
+    // Nothing is left to restart the timers, so if the finished save stops
+    // them the text stays out of the file for good.
+    it.core.apply(
+      EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'b'),
+    );
+    held.complete();
+    await tester.pump();
+    expect(it.core.dirty, isTrue, reason: 'that edit is not in the file');
+
+    it.core.saves.clear();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
+    expect(
+      it.core.saves,
+      isNotEmpty,
+      reason: 'the interval is still running, so the edit is written after all',
+    );
+    expect(it.core.dirty, isFalse);
   });
 }
 

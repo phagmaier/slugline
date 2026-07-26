@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:slugline/core/document_core.dart';
 
 /// A [DocumentCore] for widget tests.
@@ -421,6 +423,15 @@ class FakeCore implements DocumentCore {
   /// Set to make the next save fail, the way a full disk would.
   SaveFailure? refuseSaveWith;
 
+  /// Set to hold the next write open between planning its bytes and committing
+  /// them, and cleared as soon as that write takes it.
+  ///
+  /// A save in the real core is three steps across two threads, and a test that
+  /// cannot stop one halfway cannot say anything about what a second save does
+  /// while the first is in flight. Completing this is the write reaching the
+  /// disk.
+  Completer<void>? holdWrites;
+
   /// Marks the document saved without writing anything — what an undo back to
   /// the last saved revision looks like from outside.
   void markClean() {
@@ -461,7 +472,7 @@ class FakeCore implements DocumentCore {
     return _write(filePath, autosave: true);
   }
 
-  SaveOutcome _write(String? path, {required bool autosave}) {
+  Future<SaveOutcome> _write(String? path, {required bool autosave}) async {
     if (path == null) {
       return const SaveOutcome.failed(
         failure: SaveFailure.noPath,
@@ -470,6 +481,14 @@ class FakeCore implements DocumentCore {
       );
     }
     saves.add((path, autosave));
+    // The bytes this save is carrying, taken before it can be held. The real
+    // core plans on the actor thread and then lets go of it, so text typed
+    // while the file is being written is not in the file when the write lands.
+    final planned = source();
+    if (holdWrites case final hold?) {
+      holdWrites = null;
+      await hold.future;
+    }
     if (refuseSaveWith case final failure?) {
       return SaveOutcome.failed(
         failure: failure,
@@ -477,9 +496,12 @@ class FakeCore implements DocumentCore {
         message: 'refused for the test',
       );
     }
-    onDisk = source();
-    _dirty = false;
-    _journalled = 0;
+    onDisk = planned;
+    // Clean only as far as what was written — `mark_saved_at(plan.revision)`.
+    if (source() == planned) {
+      _dirty = false;
+      _journalled = 0;
+    }
     return SaveOutcome.saved(path: path, bytes: onDisk.length, backup: null);
   }
 

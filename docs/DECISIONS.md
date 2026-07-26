@@ -1779,3 +1779,118 @@ pages are correct", and no human has checked the second.
   golden dump, and for any defect it finds.
 * Recorded in `REMEDIATION_PLAN.md` Phase 6G; the review is not complete until
   its findings are written there.
+
+---
+
+## ADR 0026 — One save of a script at a time, by a per-session lock
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (mid-project
+remediation, Phase 4A)
+
+### Context
+
+`write_document` is deliberately three steps (§2.3): plan on the actor thread,
+write off it, record back on it. The actor serialises each step. It does not
+serialise the *sequence*, and nothing else did either.
+
+So two saves of one script could plan in order and write in reverse. The pair
+that reaches this in practice is an autosave already past its due point and an
+explicit Ctrl+S: `AutosaveDriver._saving` guards only the driver's own calls, and
+Ctrl+S goes through `saveWithDialogs → core.save()` without touching the driver,
+while `withModal`'s suppression holds *future* autosaves rather than one already
+in flight. With an edit landing between the two plans, the file transiently held
+older bytes than the save that had already answered "Saved". Audit finding F5.
+
+`mark_saved_at(min)` made it self-heal at the next autosave and both journal
+checkpoints stayed consistent with whatever text won, so no text was lost. But
+"the file briefly contains something older than what I was told was saved" is not
+a property this codebase tolerates anywhere else.
+
+### Decision
+
+**A `Session` owns an `Arc<Mutex<()>>`, and every writer of that session's file
+holds it across all three steps.** `write_document` takes it first, before it
+plans; so does `backup_restore`, which is also a write of the document's file.
+
+The lock is taken **off** the actor thread, by code that is already on an FRB
+worker. Nothing inside an actor closure may take it — the point is that the actor
+stays free while the disk is busy, and the one actor round trip this adds is two
+channel sends to fetch the `Arc`.
+
+Three consequences are the decision as much as the lock is:
+
+1. **A second save waits; it is never refused.** §10 does not allow a save to be
+   dropped because the timing was awkward.
+2. **The plan is made after the wait.** So the save that queued writes whatever
+   the document says by then — which is the coalescing, without a queue: if the
+   save it waited for already wrote everything, it finds the document clean and
+   answers `Unchanged`.
+3. **It is per session.** Two scripts still save at the same time, and will still
+   do so if the application ever opens more than one at once.
+
+Alongside it, `SaveStateChanged` now carries the document's real dirty state
+rather than a hardcoded `false`, and `AutosaveDriver` stops its timers only when
+the document actually came back clean. An edit that lands while the file is being
+written is genuinely unsaved, and both of those used to say otherwise.
+
+### Alternatives considered
+
+**A "save in flight" boolean, second save refused.** The audit's own first
+suggestion. Rejected because refusing needs somewhere to reschedule from, and the
+core has no timer and must not grow one (§1.3, ADR 0014) — so the refusal would
+have to be handed back to Dart, and an explicit Ctrl+S that answers "busy" is a
+worse thing to show a writer than one that takes 30 ms.
+
+**A queue of pending saves on the session.** More machinery for the same result:
+the queue can never usefully hold more than one entry, because a second waiter
+would plan the same document state as the first. Replanning after the wait gets
+that for free.
+
+**One global save lock.** Simpler, and wrong the moment two scripts are open: one
+script on a slow disk would stall an unrelated one. `one_script_at_the_disk_does_
+not_hold_up_another` exists to stop this being reintroduced.
+
+**Fixing it in Dart, by routing Ctrl+S through `AutosaveDriver`.** Rejected on
+the same principle as ADR 0011: the guarantee belongs where the writes are. Dart
+would still not cover `backup_restore`, a second window, or anything the bridge
+gains later.
+
+### Consequences
+
+* A save can now block an FRB worker thread for the length of another save. That
+  is bounded by one file write, saves of one script are rare, and FRB's default
+  handler grows its pool rather than starving.
+* `doc_save` can answer `Unchanged` where it previously answered `Saved` — when
+  it queued behind a save that wrote its bytes for it. `SaveStatus.record`
+  already treats `Unchanged` as success, and the status line reads `core.dirty`
+  live, so the writer sees "saved".
+* The lock is deliberately not held for `library_rename` or `library_duplicate`:
+  neither writes the open document's own file through the save path.
+* Poisoning is recovered from with `PoisonError::into_inner`. The lock guards
+  ordering, not data; refusing to save because an earlier save panicked would be
+  the wrong way round.
+
+### Tests and invariants
+
+In `crates/bridge/src/api/files.rs`, against the real save path:
+
+* `an_older_save_cannot_land_after_a_newer_one` — the audit's scenario exactly.
+  A `#[cfg(test)]` seam holds the first save between its plan and the disk; the
+  second save is started after an edit and given half a second to overtake it.
+  It must not, and the file must end with the newest text.
+* `an_explicit_save_queued_behind_an_autosave_still_writes_the_newest_text` —
+  the overlap that is reachable today.
+* `a_save_with_nothing_left_to_write_says_unchanged` — the coalescing.
+* `one_script_at_the_disk_does_not_hold_up_another` — the per-session half, and
+  the one test here that passes without the lock as well as with it.
+* `opening_one_path_twice_over_is_one_document` — the same check-then-act the
+  audit found beside F5: `library_open` reads the file off the actor between its
+  check and its insert, so `open_source` makes the check again where it is atomic.
+
+In `app/test/editor/autosave_test.dart`:
+
+* `an autosave that collides with one in flight is owed, not dropped`.
+* `an edit that lands mid-write does not stop the clock`.
+
+All four Rust save tests and both Dart tests were confirmed to fail with the lock
+and the Dart changes reverted, not assumed to.

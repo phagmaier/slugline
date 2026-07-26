@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–3 complete, Phase 4 next
+**Status:** in progress — Phases 0–3 and 4A complete, Phase 4B next
 
 ---
 
@@ -43,7 +43,7 @@ The remediation effort is complete only when all of the following are true:
 - [ ] Rust pagination is reachable through the bridge and exercised outside its isolated crate tests.
 - [ ] The library page count is updated from a saved pagination snapshot.
 - [ ] The application does not treat its own save as an external file modification.
-- [ ] Overlapping saves for the same session cannot write out of order.
+- [x] Overlapping saves for the same session cannot write out of order.
 - [ ] External-change checks perform disk I/O off the actor thread.
 - [ ] Persisted scroll position is applied when reopening a script.
 - [ ] Fountain “Export Copy” semantics are separate from “Save As.”
@@ -1200,41 +1200,220 @@ Guarantee that saves for one document cannot interleave, that self-generated wat
 
 ### Tasks
 
-- [ ] Identify every caller of `write_document`.
-- [ ] Confirm overlap is possible between:
+- [x] Identify every caller of `write_document`.
+  - Three, all in `files.rs`: `doc_save`, `doc_save_as`, `doc_autosave`. From Dart:
+    `core.save()` (Ctrl+S and the palette, via `saveWithDialogs`), `core.saveAs()` (Save As,
+    Export, and the external-change dialog's "Save as"), and `core.autosave()` (both
+    `AutosaveDriver` timers and `saveNow`). `backup_restore` does not call it but writes the
+    same file by the same three-step shape, so it is covered too.
+- [x] Confirm overlap is possible between:
   - interval autosave;
   - idle autosave;
   - explicit Ctrl+S;
   - dialog-mediated save;
   - recovery-triggered save if introduced in Phase 1.
-- [ ] Add per-session save coordination in `AppState` or the session object.
-- [ ] Choose one behavior:
+  - Confirmed for the first four, and the audit's pair — Ctrl+S against an autosave already
+    past `_due` — is the one that is reachable today. The two timers cannot overlap *each
+    other*: both go through `_due → _save`, which the driver's `_saving` flag guards. Phase 1
+    introduced no recovery-triggered save on purpose (it writes a successor journal, not the
+    script), so there is nothing there to overlap.
+- [x] Add per-session save coordination in `AppState` or the session object.
+  - `Session::save_lock`, an `Arc<Mutex<()>>` taken off the actor thread and held across all
+    three steps. ADR 0026.
+- [x] Choose one behavior:
   - queue the latest requested save; or
   - reject/coalesce redundant overlapping saves and schedule the newest revision.
-- [ ] Do not rely only on Dart-side `_saving`.
-- [ ] Ensure two save plans for the same session cannot write in reverse order.
-- [ ] Allow unrelated sessions to save independently if the architecture later supports them.
-- [ ] Ensure save completion marks only the revision actually persisted.
-- [ ] Ensure journals checkpoint against the bytes that actually won.
-- [ ] Apply equivalent protection to concurrent `library_open` check-then-act behavior, or explicitly separate it into a follow-up task with a regression test.
+  - Both, and they turn out to be one thing: the second save waits, then **plans again**. So
+    it writes the newest revision, or discovers the save it waited for already wrote those
+    bytes and answers `Unchanged`. Nothing is refused and nothing is dropped.
+- [x] Do not rely only on Dart-side `_saving`.
+  - The guarantee is entirely in Rust; `_saving` cannot cover Ctrl+S, which never reaches the
+    driver. It is kept, with its comment rewritten to say what it is and is not, and it now
+    *owes* the save it declines rather than dropping it.
+- [x] Ensure two save plans for the same session cannot write in reverse order.
+- [x] Allow unrelated sessions to save independently if the architecture later supports them.
+  - Per session, and `one_script_at_the_disk_does_not_hold_up_another` is the test that stops
+    a future global lock being introduced by accident.
+- [x] Ensure save completion marks only the revision actually persisted.
+  - `mark_saved_at(plan.revision)` was already correct. What was not: `SaveStateChanged`
+    emitted a hardcoded `dirty: false`, and `AutosaveDriver` cancelled its timers on any
+    `Saved`. Both now read the document's real state, so an edit that landed mid-write is
+    reported unsaved and stays on the clock.
+- [x] Ensure journals checkpoint against the bytes that actually won.
+  - Asserted directly: `journal_agrees_with_the_file` reads the live journal off disk and
+    requires `journal::verify` to accept it against the file's current contents.
+- [x] Apply equivalent protection to concurrent `library_open` check-then-act behavior, or explicitly separate it into a follow-up task with a regression test.
+  - Repaired here rather than deferred: `open_source` makes the `handle_for` check again
+    inside the actor closure that inserts, where it is atomic. `library_open`'s earlier check
+    is now documented as the optimisation it is.
 
 ### Tests
 
-- [ ] Start save A.
-- [ ] Edit the document.
-- [ ] Start save B.
-- [ ] Force A and B completion order to invert.
-- [ ] Assert the file ends with the newest revision.
-- [ ] Assert UI “Saved” status corresponds to durable bytes.
-- [ ] Assert journal state matches the resulting file.
-- [ ] Test explicit save overlapping autosave.
-- [ ] Test duplicate concurrent library open if repaired here.
+- [x] Start save A.
+- [x] Edit the document.
+- [x] Start save B.
+- [x] Force A and B completion order to invert.
+  - A `#[cfg(test)]` seam holds A between its plan and the disk. It is the only way to make
+    the inversion deterministic, and it is keyed by path so tests cannot stall each other.
+- [x] Assert the file ends with the newest revision.
+- [x] Assert UI “Saved” status corresponds to durable bytes.
+  - Two halves. In Rust: each save reports the byte count it actually wrote, and the document
+    is clean at the end. In Dart: `an edit that lands mid-write does not stop the clock`,
+    since `SaveStatus.label` reads `core.dirty` and the clock is what gets it to false.
+- [x] Assert journal state matches the resulting file.
+- [x] Test explicit save overlapping autosave.
+- [x] Test duplicate concurrent library open if repaired here.
+  - Both halves: `open_source` called twice over one path (deterministic), and eight
+    concurrent `library_open` calls (realistic).
 
 ### Exit conditions
 
-- [ ] Same-session saves are serialized or safely coalesced.
-- [ ] No older save can overwrite a newer acknowledged save.
-- [ ] Regression tests pass.
+- [x] Same-session saves are serialized or safely coalesced.
+- [x] No older save can overwrite a newer acknowledged save.
+- [x] Regression tests pass.
+  - And were confirmed to fail first: with the lock and the `handle_for` re-check reverted,
+    four of the five Rust tests fail; with the Dart changes reverted, both Dart tests fail.
+
+### Implementation log — Phase 4A
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `792d6b5` (Phase 3)
+**Ending commit:** this commit
+
+#### Changes made
+
+- `crates/bridge/src/state.rs`: `Session` gained `save_lock: Arc<Mutex<()>>` and
+  `Session::save_lock()`. The field comment says what it is for and the one rule that keeps
+  it safe — it is never locked on the actor thread.
+- `crates/bridge/src/api/files.rs`:
+  - `write_document` gained a step zero that takes the lock before it plans, so plan, write
+    and record are one atomic sequence per session.
+  - `backup_restore` takes the same lock: it is a write of the document's file by another
+    name, and an autosave landing inside one would leave the file and the document
+    describing different versions.
+  - Step three now answers whether the document is *still* dirty, and `SaveStateChanged`
+    carries that instead of a hardcoded `false`.
+  - `open_source` re-checks `handle_for` inside the actor closure that inserts.
+  - A `#[cfg(test)]` `stall` module: the seam the inversion test needs. No call site and no
+    static exist outside `cargo test`.
+- `app/lib/editor/autosave.dart`: an autosave that collides with one in flight is now *owed*
+  rather than dropped, and paid when the in-flight save returns; the timers are cancelled
+  only when the document actually came back clean. The class doc gained a "Two saves at
+  once" section saying where the guarantee lives, and `_saving`'s comment no longer claims
+  to be it.
+- `app/test/support/fake_core.dart`: writes can be held open (`holdWrites`), and a write
+  now snapshots its bytes before the hold and clears the dirty flag only if nothing changed
+  meanwhile — the same shape as `mark_saved_at(plan.revision)`.
+- `SPEC.md` §Phase 4: the "two saves cannot interleave" box is ticked, with what makes it
+  true and the tests that hold it.
+- `docs/DECISIONS.md`: ADR 0026.
+- No bridge signature changed, so no binding regeneration was needed. No dependency was
+  added.
+
+#### Tests added or changed
+
+Five in `crates/bridge/src/api/files.rs` (the first unit tests that file has had) and two in
+`app/test/editor/autosave_test.dart`. All seven are named in ADR 0026.
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                       # clean
+cargo clippy --workspace --all-targets -- -D warnings         # clean
+cargo test --workspace                                        # 349 passed, 1 failed (F16,
+                                                              #   pre-existing, see below)
+python3 tools/check_layering.py                               # clean, 7 crates
+cd app && flutter analyze                                     # No issues found
+cd app && flutter test                                        # 284 passed
+cd app && flutter build linux --release                       # succeeds
+
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/persistence_test.dart         -d linux   # 12 passed
+flutter test integration_test/editor_test.dart              -d linux   # 7 passed
+flutter test integration_test/writing_test.dart             -d linux   # 11 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+
+# The negative controls, run before trusting any of the above:
+#   lock + handle_for re-check reverted → 4 of 5 Rust tests fail
+#   autosave.dart reverted              → both Dart tests fail
+```
+
+#### Results
+
+Rust 344 → 349, Flutter 282 → 284. One Rust test fails, and it is not this phase's: F16
+below, a pre-existing `fountain` round-trip case that proptest happened to find during this
+verification run.
+
+The integration suite and the benchmark are unchanged by this phase — the keystroke path does
+not touch `write_document` — and were run as the Phase 4 gate rather than as evidence for 4A.
+
+#### Deviations from plan
+
+**`library_open` was repaired here rather than deferred.** The plan allows either. It was one
+line inside a closure that already existed, in the same file and the same class of defect, and
+splitting it out would have cost more in ceremony than it saved in review.
+
+**The tests needed a `#[cfg(test)]` seam in production code.** "Force A and B completion order
+to invert" cannot be done from outside — the window is between two steps on two threads. The
+seam is a map of holds keyed by the file being written; it is compiled only under `cargo test`
+and the shipped library has neither the map nor the call site.
+
+#### New risks or follow-up findings
+
+**F15 — a save checkpoints away the journal record of an edit that landed while it was
+writing.** Found while asserting "journals checkpoint against the bytes that actually won",
+which is true, but not the whole story.
+
+In step three, `journal.checkpoint(&path, &text)` truncates the journal to a bare header
+whose base is the bytes just written, and resets `records` to 0. Its comment says "the
+records before it describe edits that are now in the file" — true only if nothing was typed
+during the write. If something was, `mark_saved_at(plan.revision)` correctly leaves the
+document dirty, but that edit's journal record has just been erased. A crash in the window
+between the checkpoint and the next autosave loses it silently: `recovery_pending` finds an
+empty journal, treats it as a clean session, and discards it.
+
+The window is one file write plus an actor round trip, which is small; the consequence is
+losing user text, which §1.2 calls a P0. Serialization does not widen or narrow it — the
+same window existed before Phase 4A and exists after.
+
+It is not repaired here because it is not what 4A is: the fix is for the session to retain
+the patches applied since the plan and rebuild the journal through `Journal::rebuild` (which
+Phase 1 already added) with base = the written bytes and those patches as its records. That
+means a new buffer on `Session`, invalidation rules for it, and its own kill test. It wants
+its own phase, in the same neighbourhood as 4B and 4C.
+
+**F16 — the serialiser does not force a transition that would reparse as a title-page
+entry.** Not found by reading anything: `cargo test --workspace` failed once during this
+phase's verification, in `crates/fountain/tests/canonical_form_is_stable.rs`, and proptest
+wrote the shrunk seed into `canonical_form_is_stable.proptest-regressions`. That new line is
+the only change to `crates/fountain` in this commit, and it is left in on purpose — deleting
+it would un-find the defect.
+
+The case is a `Transition` whose text is `IN: TO:`. Serialised bare, it reparses as nothing:
+
+```text
+parse("IN: TO:\n")
+  title entries: [TitleEntry { field: Other("IN"), value: "TO:" }]
+  elements: []
+```
+
+Confirmed against a clean checkout with this phase's changes stashed, so it predates them and
+nothing here caused it. The regressions file already pins three siblings — `=== TO:`,
+`INT. TO:`, and `.` — which pass, so the serialiser's "would this line be read as something
+else" check exists and simply has no case for a title-page key. Per ADR 0007 and `AGENTS.md`
+that check lives in `fountain/src/syntax.rs` and is the parser's rules run backwards, so the
+repair belongs there and nowhere else.
+
+Severity: Low in practice — a writer would have to name a transition `SOMETHING: SOMETHING`
+at the very top of a script — but it is a **byte-exact round-trip** failure, which §13 lists
+as an invariant and `SPEC.md` ticks. It is not repaired here because `crates/fountain` is on
+this plan's protected list, the change is a Fountain semantics change rather than a save one,
+and folding it into a commit about save ordering is exactly what "one focused commit per
+logically independent repair" forbids. It needs its own task; until it has one,
+`cargo test --workspace` fails this one test.
 
 ---
 

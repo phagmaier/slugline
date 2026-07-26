@@ -32,6 +32,7 @@
 //! something happens.
 
 use std::path::{Path, PathBuf};
+use std::sync::PoisonError;
 
 use flutter_rust_bridge::frb;
 
@@ -267,6 +268,11 @@ pub async fn library_list() -> Vec<ScriptView> {
 /// Opening a file that is already open returns the handle it is already open
 /// under. Two documents over one file would be two undo histories racing to
 /// overwrite each other.
+///
+/// The check below is an optimisation, not the guarantee: the read between it
+/// and the open is off the actor, so two concurrent opens of one path can both
+/// miss it. [`open_source`] makes the same check again where it is atomic with
+/// the insert, and that is the one that holds.
 pub async fn library_open(path: String) -> Option<DocumentHandle> {
     let path = PathBuf::from(path);
     if let Some(existing) = actor().run({
@@ -502,11 +508,41 @@ pub async fn doc_autosave(handle: DocumentHandle) -> SaveOutcome {
 }
 
 /// The common path behind save, Save As and autosave.
+///
+/// ## Why it starts by waiting
+///
+/// The three steps below are each serialised by the actor thread; the *sequence*
+/// is not. Two saves of one script — an autosave already past its timer and a
+/// Ctrl+S, most often — could plan in order and write out of order, leaving the
+/// file holding older bytes than the save that had already answered "Saved".
+/// [`Session::save_lock`] makes the sequence atomic per session, and step zero
+/// is where it is taken.
+///
+/// The second save **waits** rather than being refused. The plan is made after
+/// the wait, so it writes whatever the document says by then: the newest
+/// revision, or — if the save it queued behind already wrote everything —
+/// nothing, and it says [`SaveOutcome::Unchanged`]. That is the coalescing, and
+/// it falls out of replanning rather than needing a queue.
 async fn write_document(
     handle: DocumentHandle,
     save_as: Option<PathBuf>,
     with_backup: bool,
 ) -> SaveOutcome {
+    // Step zero, off the actor thread: wait for any write of this document that
+    // is already in flight.
+    let lock = actor().run(move |state| state.session(handle.id).map(Session::save_lock));
+    let Some(lock) = lock else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            Path::new(""),
+            "no document with that handle",
+        );
+    };
+    // A poisoned lock means a previous save panicked. It guards ordering, not
+    // data, so there is nothing to be inconsistent — and refusing to save
+    // because an earlier save crashed is the wrong way round.
+    let _writing = lock.lock().unwrap_or_else(PoisonError::into_inner);
+
     // Step one, on the actor thread: what to write and where. This is the only
     // part that touches the document.
     let plan = actor().run({
@@ -555,6 +591,8 @@ async fn write_document(
     }
 
     // Step two, off the actor thread: the disk (§2.3).
+    #[cfg(test)]
+    stall::reached(&path);
     if let Err(error) = atomic::save_atomically(&path, &plan.text) {
         return SaveOutcome::Failed {
             failure: failure_of(&error),
@@ -582,14 +620,18 @@ async fn write_document(
         });
     }
 
-    // Step three, back on the actor thread: record that it happened.
+    // Step three, back on the actor thread: record that it happened. Answers
+    // whether the document is *still* dirty, which is not the same question as
+    // "did the save work": an edit that landed while the file was being written
+    // is unsaved, and the event below must say so rather than assert a clean
+    // document the disk does not have.
     let bytes = plan.text.len().min(u32::MAX as usize) as u32;
-    actor().run({
+    let still_dirty = actor().run({
         let path = path.clone();
         let text = plan.text;
         move |state| {
             let Some(session) = state.session_mut(handle.id) else {
-                return;
+                return false;
             };
             // Only as far as the revision we actually wrote. An edit that landed
             // while the file was being written is still unsaved, and marking the
@@ -612,12 +654,15 @@ async fn write_document(
                 storage.library.refresh();
             }
             save_library(state);
+            state
+                .session(handle.id)
+                .is_some_and(|session| session.document().is_dirty())
         }
     });
 
     emit(CoreEvent::SaveStateChanged {
         handle: handle.id,
-        dirty: false,
+        dirty: still_dirty,
     });
     SaveOutcome::Saved {
         path: path.to_string_lossy().into_owned(),
@@ -632,6 +677,57 @@ struct Plan {
     revision: u64,
     dirty: bool,
     storage: Option<(PathBuf, Retention)>,
+}
+
+/// A seam for the save-serialisation tests, and nothing else.
+///
+/// [`write_document`] spans two threads, and the property Phase 4A repairs —
+/// that two saves of one script cannot land out of order — is only observable
+/// if one of them can be held between planning its bytes and writing them. This
+/// is that hold. Everything in here is `#[cfg(test)]`, so the shipped library
+/// has neither the map nor the call site.
+///
+/// Holds are keyed by the file being written so that tests running side by side
+/// in one binary cannot stall each other's saves.
+#[cfg(test)]
+mod stall {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex, PoisonError};
+
+    type Hold = Arc<dyn Fn() + Send + Sync>;
+
+    static HOLDS: Mutex<Option<HashMap<PathBuf, Hold>>> = Mutex::new(None);
+
+    fn holds() -> impl std::ops::DerefMut<Target = Option<HashMap<PathBuf, Hold>>> {
+        HOLDS.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Runs `hold` on the writing thread, immediately before the bytes for
+    /// `path` reach the disk.
+    pub fn before_writing(path: &Path, hold: impl Fn() + Send + Sync + 'static) {
+        holds()
+            .get_or_insert_with(HashMap::new)
+            .insert(path.to_path_buf(), Arc::new(hold));
+    }
+
+    pub fn forget(path: &Path) {
+        if let Some(holds) = holds().as_mut() {
+            holds.remove(path);
+        }
+    }
+
+    pub fn reached(path: &Path) {
+        // Cloned out and the map unlocked before the hold runs: a hold blocks,
+        // and blocking with the map locked would stall every other test too.
+        let hold = holds()
+            .as_ref()
+            .and_then(|holds| holds.get(path))
+            .map(Arc::clone);
+        if let Some(hold) = hold {
+            hold();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +828,20 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
             "that backup cannot be read",
         );
     };
+
+    // The same claim [`write_document`] takes, for the same reason: a restore
+    // *is* a write of this document's file, and an autosave landing in the
+    // middle of one would leave the file and the document describing different
+    // versions of the script.
+    let lock = actor().run(move |state| state.session(handle.id).map(Session::save_lock));
+    let Some(lock) = lock else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            Path::new(&backup_path),
+            "no document with that handle",
+        );
+    };
+    let _writing = lock.lock().unwrap_or_else(PoisonError::into_inner);
 
     // The current state, backed up first. If this fails there is nothing to
     // restore *to*, so it stops here.
@@ -1079,6 +1189,16 @@ fn open_source(path: PathBuf, source: String, blank_if_empty: bool) -> DocumentH
     let id = journal::script_id(&path);
     DocumentHandle {
         id: actor().run(move |state| {
+            // The check `library_open` already made, made again where it is
+            // atomic with the insert. Both callers read the file off the actor
+            // first, so two opens of one path can arrive here having both been
+            // told it was free — and two documents over one file is two undo
+            // histories, two journals and two savers racing for it. The parse
+            // above is thrown away in that case, which costs a read the loser
+            // had already paid for.
+            if let Some(existing) = state.handle_for(&path) {
+                return existing;
+            }
             let handle = state.open(document);
             if let Some(session) = state.session_mut(handle) {
                 session.set_file(path.clone(), id.clone());
@@ -1252,4 +1372,467 @@ fn unused_path(path: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+/// Phase 4A: two saves of one script cannot write out of order.
+///
+/// These run against the real save path — the actor, the plan, the atomic
+/// write, the journal checkpoint — rather than against a model of it, because
+/// the defect they cover lives in the *seam* between those steps and a model
+/// would have to reproduce the seam to be wrong in the same way.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::fs;
+    use std::future::Future;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::mpsc::{self, Receiver, Sender};
+    use std::sync::{Mutex, MutexGuard};
+    use std::task::{Context, Poll, Waker};
+    use std::thread;
+    use std::time::Duration;
+
+    use crate::api::doc::{doc_apply, doc_blocks, doc_source, EditCommand};
+
+    const SCRIPT: &str = "The house is quiet.\n";
+
+    /// How long a save is given to reach the disk before the test calls it
+    /// stuck. Generous: a wrong answer here should mean a deadlock, not a busy
+    /// machine.
+    const PATIENCE: Duration = Duration::from_secs(10);
+
+    /// How long a queued save is given to overtake the one in flight. It never
+    /// should, so this is time the test spends *not* seeing something — long
+    /// enough that its absence means the lock held, short enough to pay twice.
+    const LONG_ENOUGH_TO_OVERTAKE: Duration = Duration::from_millis(500);
+
+    /// The async functions in this module have no `.await` in them — they call
+    /// the actor, which blocks — so a single poll drives one to completion.
+    /// That is the whole runtime this crate needs, and the panic below is what
+    /// would notice if it ever stopped being true.
+    fn block_on<F: Future>(future: F) -> F::Output {
+        let mut future = Box::pin(future);
+        match future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            Poll::Ready(value) => value,
+            Poll::Pending => panic!("a bridge future yielded, and this crate has no runtime"),
+        }
+    }
+
+    /// `AppState` has one `storage`, and these tests point it at their own
+    /// temporary directories, so they must not run beside each other. Every
+    /// fixture holds this for its whole life.
+    static STORAGE: Mutex<()> = Mutex::new(());
+
+    /// A state directory, a script file, and that script open.
+    struct Fixture {
+        _storage: MutexGuard<'static, ()>,
+        root: PathBuf,
+        script: PathBuf,
+        handle: DocumentHandle,
+    }
+
+    impl Fixture {
+        fn open(label: &str) -> Fixture {
+            let storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+            let root = temp_root(label);
+            let script = root.join(format!("{label}.fountain"));
+            fs::write(&script, SCRIPT).expect("the script is written");
+
+            let paths = Paths::under(&root);
+            let library = Library::load(&paths.library_index());
+            let storage_state = Storage {
+                paths,
+                prefs: CorePreferences::default(),
+                library,
+                // No inotify: nothing here is testing the watcher, and a watch
+                // descriptor per test would be a slow way to find that out.
+                watcher: None,
+            };
+            actor().run(move |state| state.set_storage(storage_state));
+
+            let handle = block_on(library_open(script.to_string_lossy().into_owned()))
+                .expect("the script opens");
+            Fixture {
+                _storage: storage,
+                root,
+                script,
+                handle,
+            }
+        }
+
+        /// A second script under the same state directory. A second `Fixture`
+        /// would deadlock on [`STORAGE`] and install a second set of
+        /// directories over the first.
+        fn beside(&self, label: &str) -> Sibling {
+            let script = self.root.join(format!("{label}.fountain"));
+            fs::write(&script, SCRIPT).expect("the script is written");
+            let handle = block_on(library_open(script.to_string_lossy().into_owned()))
+                .expect("the script opens");
+            Sibling { script, handle }
+        }
+
+        fn on_disk(&self) -> String {
+            fs::read_to_string(&self.script).expect("the script is readable")
+        }
+
+        fn in_memory(&self) -> String {
+            doc_source(self.handle)
+        }
+
+        fn dirty(&self) -> bool {
+            doc_dirty(self.handle)
+        }
+
+        /// Types at the front of the first block, through the same edit path
+        /// the editor uses — so the journal sees it too.
+        fn types(&self, text: &str) {
+            let block = doc_blocks(self.handle, 0, 1)[0].id;
+            let _ = doc_apply(
+                self.handle,
+                EditCommand::ReplaceText {
+                    block,
+                    start_utf16: 0,
+                    end_utf16: 0,
+                    with: text.to_owned(),
+                },
+                None,
+            );
+        }
+
+        /// What the crash journal would recover to. `Ok` only if the journal on
+        /// disk still describes the file on disk — which is the property a save
+        /// that checkpointed against bytes it did not write would break.
+        fn journal_agrees_with_the_file(&self) -> bool {
+            let directory = actor().run(|state| {
+                state
+                    .storage()
+                    .map(|storage| storage.paths.journal_dir())
+                    .expect("storage is installed")
+            });
+            let path = directory.join(format!("{}.log", journal::script_id(&self.script)));
+            let Ok(recovery) = journal::read(&path) else {
+                return false;
+            };
+            journal::verify(&recovery.header).is_ok_and(|base| base == self.on_disk())
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            stall::forget(&self.script);
+            let handle = self.handle;
+            actor().run(move |state| state.close(handle.id));
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// A second open script, sharing the fixture's state directory.
+    struct Sibling {
+        script: PathBuf,
+        handle: DocumentHandle,
+    }
+
+    impl Sibling {
+        fn types(&self, text: &str) {
+            let block = doc_blocks(self.handle, 0, 1)[0].id;
+            let _ = doc_apply(
+                self.handle,
+                EditCommand::ReplaceText {
+                    block,
+                    start_utf16: 0,
+                    end_utf16: 0,
+                    with: text.to_owned(),
+                },
+                None,
+            );
+        }
+
+        fn on_disk(&self) -> String {
+            fs::read_to_string(&self.script).expect("the script is readable")
+        }
+
+        fn in_memory(&self) -> String {
+            doc_source(self.handle)
+        }
+    }
+
+    impl Drop for Sibling {
+        fn drop(&mut self) {
+            stall::forget(&self.script);
+            let handle = self.handle;
+            actor().run(move |state| state.close(handle.id));
+        }
+    }
+
+    fn temp_root(label: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "slugline-4a-{label}-{}-{unique}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("a temporary directory");
+        root
+    }
+
+    /// Holds the **first** write of `path` between its plan and the disk, so a
+    /// second save has somewhere to overtake it from.
+    struct Gate {
+        arrived: Receiver<()>,
+        release: Sender<()>,
+    }
+
+    impl Gate {
+        fn hold_the_first_write(path: &Path) -> Gate {
+            let (arrived, waiting) = mpsc::channel();
+            let (release, released) = mpsc::channel::<()>();
+            let released = Mutex::new(released);
+            let first = AtomicBool::new(true);
+            stall::before_writing(path, move || {
+                if !first.swap(false, Ordering::SeqCst) {
+                    return;
+                }
+                arrived.send(()).expect("the test is waiting for this save");
+                released
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .recv()
+                    .expect("the test releases this save");
+            });
+            Gate {
+                arrived: waiting,
+                release,
+            }
+        }
+
+        fn wait(&self) {
+            self.arrived
+                .recv_timeout(PATIENCE)
+                .expect("the save reached the disk");
+        }
+
+        fn release(&self) {
+            self.release
+                .send(())
+                .expect("a save is waiting on the gate");
+        }
+    }
+
+    /// A save running on its own thread, the way a save really runs: `doc_save`
+    /// and `doc_autosave` are `async` and FRB calls them from a worker pool.
+    struct Saving {
+        thread: thread::JoinHandle<SaveOutcome>,
+        finished: Receiver<()>,
+    }
+
+    impl Saving {
+        fn explicit(handle: DocumentHandle) -> Saving {
+            Saving::spawn(move || block_on(doc_save(handle)))
+        }
+
+        fn auto(handle: DocumentHandle) -> Saving {
+            Saving::spawn(move || block_on(doc_autosave(handle)))
+        }
+
+        fn spawn(save: impl FnOnce() -> SaveOutcome + Send + 'static) -> Saving {
+            let (done, finished) = mpsc::channel();
+            let thread = thread::spawn(move || {
+                let outcome = save();
+                let _ = done.send(());
+                outcome
+            });
+            Saving { thread, finished }
+        }
+
+        /// Whether this save finished while another was still in flight. The
+        /// answer must be no, and the wait is how long it is given to be wrong.
+        fn overtook(&self) -> bool {
+            self.finished.recv_timeout(LONG_ENOUGH_TO_OVERTAKE).is_ok()
+        }
+
+        fn outcome(self) -> SaveOutcome {
+            self.thread.join().expect("the save thread finished")
+        }
+    }
+
+    fn bytes_of(outcome: &SaveOutcome) -> u32 {
+        match outcome {
+            SaveOutcome::Saved { bytes, .. } => *bytes,
+            other => panic!("expected a save, got {other:?}"),
+        }
+    }
+
+    /// F5, exactly as the audit describes it: two saves plan in order and could
+    /// write in reverse, leaving the file holding older bytes than the save that
+    /// already answered "Saved".
+    #[test]
+    fn an_older_save_cannot_land_after_a_newer_one() {
+        let it = Fixture::open("inversion");
+        let gate = Gate::hold_the_first_write(&it.script);
+
+        it.types("One. ");
+        let older = it.in_memory();
+        let first = Saving::explicit(it.handle);
+        gate.wait();
+
+        // The edit that makes the second save newer. It lands while the first
+        // is at the disk, which is the whole difficulty: the bytes the first
+        // save is carrying are already out of date.
+        it.types("Two. ");
+        let newest = it.in_memory();
+        assert_ne!(older, newest);
+        let second = Saving::explicit(it.handle);
+
+        assert!(
+            !second.overtook(),
+            "the second save wrote while the first was still in flight"
+        );
+        gate.release();
+
+        let first = first.outcome();
+        let second = second.outcome();
+        assert_eq!(
+            it.on_disk(),
+            newest,
+            "the file must end with the newest text, not the save that started first"
+        );
+        assert_eq!(
+            bytes_of(&first),
+            older.len() as u32,
+            "the first save reports the bytes it actually wrote"
+        );
+        assert_eq!(bytes_of(&second), newest.len() as u32);
+        assert!(!it.dirty(), "everything typed is now in the file");
+        assert!(
+            it.journal_agrees_with_the_file(),
+            "the journal is checkpointed against the bytes that won"
+        );
+    }
+
+    /// The overlap the audit says is reachable today: `AutosaveDriver._saving`
+    /// guards the driver's own calls, and Ctrl+S is not one of them.
+    #[test]
+    fn an_explicit_save_queued_behind_an_autosave_still_writes_the_newest_text() {
+        let it = Fixture::open("explicit-over-auto");
+        let gate = Gate::hold_the_first_write(&it.script);
+
+        it.types("Autosaved. ");
+        let automatic = Saving::auto(it.handle);
+        gate.wait();
+
+        it.types("Then Ctrl+S. ");
+        let newest = it.in_memory();
+        let explicit = Saving::explicit(it.handle);
+
+        assert!(
+            !explicit.overtook(),
+            "Ctrl+S wrote over an autosave in flight"
+        );
+        gate.release();
+
+        let automatic = automatic.outcome();
+        let explicit = explicit.outcome();
+        assert!(matches!(automatic, SaveOutcome::Saved { .. }));
+        assert!(matches!(explicit, SaveOutcome::Saved { .. }));
+        assert_eq!(it.on_disk(), newest);
+        assert!(!it.dirty());
+        assert!(it.journal_agrees_with_the_file());
+    }
+
+    /// The coalescing half of the decision. A save that queues behind one which
+    /// wrote everything it would have written does not write again — and says
+    /// so, rather than reporting a save that did not happen.
+    #[test]
+    fn a_save_with_nothing_left_to_write_says_unchanged() {
+        let it = Fixture::open("coalesce");
+        let gate = Gate::hold_the_first_write(&it.script);
+
+        it.types("Once. ");
+        let text = it.in_memory();
+        let first = Saving::explicit(it.handle);
+        gate.wait();
+
+        // No edit this time: by the time the second save can plan, the first
+        // has written exactly the bytes it would have.
+        let second = Saving::auto(it.handle);
+        assert!(!second.overtook());
+        gate.release();
+
+        assert!(matches!(first.outcome(), SaveOutcome::Saved { .. }));
+        assert_eq!(
+            second.outcome(),
+            SaveOutcome::Unchanged,
+            "a redundant queued save writes nothing and reports nothing"
+        );
+        assert_eq!(it.on_disk(), text);
+    }
+
+    /// The lock is per session, not per process: one script stuck at the disk
+    /// must not hold up another. Without this the repair would trade a rare
+    /// interleaving for a common stall.
+    #[test]
+    fn one_script_at_the_disk_does_not_hold_up_another() {
+        let held = Fixture::open("held");
+        let free = held.beside("free");
+        let gate = Gate::hold_the_first_write(&held.script);
+
+        held.types("Waiting. ");
+        let stuck = Saving::explicit(held.handle);
+        gate.wait();
+
+        free.types("Not waiting. ");
+        let independent = Saving::explicit(free.handle);
+        assert!(
+            independent.overtook(),
+            "a save of a different script waited for one it has nothing to do with"
+        );
+        assert!(matches!(independent.outcome(), SaveOutcome::Saved { .. }));
+        assert_eq!(free.on_disk(), free.in_memory());
+
+        gate.release();
+        assert!(matches!(stuck.outcome(), SaveOutcome::Saved { .. }));
+    }
+
+    /// The same check-then-act the audit found beside F5. Both callers of
+    /// `open_source` read the file off the actor first, so both can arrive here
+    /// having been told the path was free; the second must still get the first
+    /// one's handle.
+    #[test]
+    fn opening_one_path_twice_over_is_one_document() {
+        let it = Fixture::open("one-document");
+
+        // Exactly what two concurrent `library_open` calls do once both have
+        // passed the check and read the file.
+        let again = open_source(it.script.clone(), SCRIPT.to_owned(), false);
+        assert_eq!(
+            again.id, it.handle.id,
+            "a second open of one path must not make a second document"
+        );
+
+        let opens: Vec<u64> = thread::scope(|scope| {
+            let racers: Vec<_> = (0..8)
+                .map(|_| {
+                    let path = it.script.to_string_lossy().into_owned();
+                    scope.spawn(move || block_on(library_open(path)).expect("it opens").id)
+                })
+                .collect();
+            racers
+                .into_iter()
+                .map(|racer| racer.join().unwrap())
+                .collect()
+        });
+        assert!(
+            opens.iter().all(|id| *id == it.handle.id),
+            "eight concurrent opens produced more than one document: {opens:?}"
+        );
+    }
 }
