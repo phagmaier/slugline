@@ -195,10 +195,16 @@ impl EntityIndex {
         if let Some(old) = self.by_block.remove(&id) {
             for contribution in old {
                 let aggregate_key = (contribution.kind, contribution.key);
+                // Saturating, not `-= 1`: the counts and `by_block` are two
+                // views of one fact, and if they ever disagree the answer is a
+                // slightly wrong completion list, not a panicked actor thread
+                // that takes the writer's session with it (F12). Reaching zero
+                // drops the entity, which is also how a desynchronised count
+                // repairs itself.
                 let remove = if let Some(aggregate) = self.entities.get_mut(&aggregate_key) {
-                    aggregate.frequency -= 1;
+                    aggregate.frequency = aggregate.frequency.saturating_sub(1);
                     if let Some(count) = aggregate.displays.get_mut(&contribution.display) {
-                        *count -= 1;
+                        *count = count.saturating_sub(1);
                         if *count == 0 {
                             aggregate.displays.remove(&contribution.display);
                         }
@@ -301,14 +307,45 @@ pub fn normalize_character(text: &str) -> String {
     let mut value = text.trim();
     loop {
         let trimmed = value.trim_end();
-        let Some(extension) = CHARACTER_EXTENSIONS
+        let Some(stripped) = CHARACTER_EXTENSIONS
             .into_iter()
-            .find(|extension| trimmed.to_uppercase().ends_with(extension))
+            .find_map(|extension| strip_extension(trimmed, extension))
         else {
             return trimmed.to_owned();
         };
-        value = trimmed[..trimmed.len() - extension.len()].trim_end();
+        value = stripped;
     }
+}
+
+/// `text` without a trailing `extension`, matched without regard to case, or
+/// `None` if it does not end with one.
+///
+/// The suffix is found by walking `text`'s own character boundaries, so the
+/// range that gets sliced is always a range of `text`. Measuring the match on an
+/// uppercased copy and then slicing `text` by that length is F11: uppercasing is
+/// not length-preserving — `ſ` → `S` and `ı` → `I` each lose a byte — and two of
+/// them in one extension is enough to put the split inside a character and panic
+/// the actor thread. `BOB (ſUBTıTLE)` did exactly that.
+fn strip_extension<'a>(text: &'a str, extension: &str) -> Option<&'a str> {
+    // Uppercasing never yields fewer characters than it consumed, so a suffix
+    // that uppercases to `extension` is at most that many characters long. This
+    // is also the loop the audit asked to stop uppercasing the whole cue in:
+    // nothing longer than the extension is ever examined, and nothing allocates.
+    let mut start = text.len();
+    for _ in 0..extension.chars().count() {
+        let previous = text[..start].chars().next_back()?;
+        start -= previous.len_utf8();
+        if uppercases_to(&text[start..], extension) {
+            return Some(&text[..start]);
+        }
+    }
+    None
+}
+
+fn uppercases_to(text: &str, extension: &str) -> bool {
+    text.chars()
+        .flat_map(char::to_uppercase)
+        .eq(extension.chars())
 }
 
 fn key(value: &str) -> String {
@@ -367,6 +404,136 @@ mod tests {
             .map(|candidate| candidate.value)
             .collect();
         assert_eq!(values, ["CONTINUOUS"]);
+    }
+
+    #[test]
+    fn extensions_are_stripped_whatever_case_they_arrive_in() {
+        assert_eq!(normalize_character("BOB (V.O.)"), "BOB");
+        assert_eq!(normalize_character("Bob (v.o.)"), "Bob");
+        assert_eq!(normalize_character("BOB (Cont'd)"), "BOB");
+        assert_eq!(normalize_character("  BOB (O.S.) (CONT'D)  "), "BOB");
+        assert_eq!(normalize_character("BOB"), "BOB");
+        assert_eq!(normalize_character("(V.O.)"), "");
+        assert_eq!(normalize_character(""), "");
+    }
+
+    #[test]
+    fn a_name_that_merely_resembles_an_extension_keeps_it() {
+        assert_eq!(normalize_character("BOB (V.O)"), "BOB (V.O)");
+        assert_eq!(normalize_character("BOB (VO.)"), "BOB (VO.)");
+        assert_eq!(normalize_character("V.O.)"), "V.O.)");
+        // The whole cue is shorter than the extension being tested for.
+        assert_eq!(normalize_character("O.)"), "O.)");
+    }
+
+    /// F11. Uppercasing is not length-preserving, so the old check — uppercase
+    /// the cue, then slice the *original* by the uppercased suffix's length —
+    /// measured one string and cut another. `ſ` and `ı` each lose a byte on the
+    /// way to `S` and `I`, and two of them in `(SUBTITLE)` moved the split two
+    /// bytes right, into the middle of the `ſ`: a char-boundary panic on the
+    /// actor thread. One of them was merely wrong, which is how it got missed.
+    #[test]
+    fn an_extension_that_shortens_when_uppercased_neither_panics_nor_mis_slices() {
+        assert_eq!(normalize_character("BOB (ſUBTıTLE)"), "BOB");
+        assert_eq!(normalize_character("BOB (SUBTıTLE)"), "BOB");
+        assert_eq!(normalize_character("BOB (ſUBTITLE)"), "BOB");
+    }
+
+    #[test]
+    fn a_non_ascii_cue_survives_normalisation_intact() {
+        assert_eq!(normalize_character("ANDRÉ (V.O.)"), "ANDRÉ");
+        assert_eq!(normalize_character("STRAßE (V.O.)"), "STRAßE");
+        assert_eq!(normalize_character("김민준 (O.S.)"), "김민준");
+        // A non-BMP cue: four bytes per character, and none of them a boundary
+        // the extension check may guess at.
+        assert_eq!(normalize_character("𝐁𝐎𝐁 (CONT'D)"), "𝐁𝐎𝐁");
+        assert_eq!(normalize_character("𝐁𝐎𝐁"), "𝐁𝐎𝐁");
+    }
+
+    #[test]
+    fn no_cue_at_all_can_panic_the_index() {
+        // Every prefix and suffix of a cue built out of the awkward cases, so
+        // that a split landing anywhere is exercised rather than argued about.
+        let cue = "Bƒob ſı (ſUBTıTLE) (v.o.) 𝐁 é(CONT'D)";
+        for end in 0..=cue.len() {
+            if !cue.is_char_boundary(end) {
+                continue;
+            }
+            for start in 0..=end {
+                if cue.is_char_boundary(start) {
+                    normalize_character(&cue[start..end]);
+                }
+            }
+        }
+    }
+
+    /// F12. The counts and `by_block` are two views of one fact; an unchecked
+    /// `-= 1` turned any disagreement between them into a panic on the actor
+    /// thread. The index is a cache of completions — the worst it may do when it
+    /// is wrong is offer a wrong completion.
+    #[test]
+    fn a_desynchronised_count_degrades_instead_of_panicking() {
+        let document = Document::parse("BOB\nHello.\n\nBOB\nAgain.\n");
+        let first = document.blocks()[0].id();
+        let mut index = EntityIndex::build(&document);
+        let entity = (EntityKind::Character, "BOB".to_owned());
+        assert_eq!(index.entities[&entity].frequency, 2);
+
+        // What a lost update looks like from here: the blocks still claim their
+        // contributions, the aggregate has already forgotten both of them.
+        let aggregate = index.entities.get_mut(&entity).unwrap();
+        aggregate.frequency = 0;
+        aggregate.displays.clear();
+
+        index.replace(first, None);
+        assert!(index.complete(EntityKind::Character, "", &[]).is_empty());
+    }
+
+    /// The invariant behind the decrement: after any run of edits, the counts
+    /// the index has been maintaining incrementally are the counts a full scan
+    /// of the same document would produce. Recency is deliberately not compared
+    /// — it is a clock, and an incremental index has ticked it a different
+    /// number of times than a rebuild has.
+    #[test]
+    fn incremental_counts_match_a_rebuild_after_a_run_of_edits() {
+        let mut document =
+            Document::parse("BOB\nHi.\n\nINT. KITCHEN - DAY\n\nBOB (V.O.)\nAgain.\n\nCUT TO:\n");
+        let mut index = EntityIndex::build(&document);
+        let ids: Vec<_> = document.blocks().iter().map(|block| block.id()).collect();
+
+        for (step, id) in ids.iter().enumerate() {
+            if let Ok(result) = document.apply(EditCommand::ReplaceText {
+                block: *id,
+                range: 0..0,
+                with: format!("{step} "),
+            }) {
+                index.update(result.changed, &document);
+            }
+        }
+        for id in &ids {
+            if let Ok(result) = document.apply(EditCommand::SetKind {
+                block: *id,
+                kind: BlockKind::Action,
+                forced: true,
+            }) {
+                index.update(result.changed, &document);
+            }
+        }
+
+        assert_eq!(counts(&index), counts(&EntityIndex::build(&document)));
+    }
+
+    fn counts(index: &EntityIndex) -> Vec<String> {
+        index
+            .entities
+            .iter()
+            .map(|((kind, key), aggregate)| {
+                format!(
+                    "{kind:?} {key} x{} {:?}",
+                    aggregate.frequency, aggregate.displays
+                )
+            })
+            .collect()
     }
 
     #[test]

@@ -1225,6 +1225,36 @@ Requirement §14.
       blocked (`unshare -rn`) — this is the proof of the zero-network claim
 - [ ] `CHANGELOG.md`, tagged release, reproducible build instructions
 
+### Retiring the Phase 0 scaffolding
+
+Phase 0's handshake surface was written to prove the bridge worked and says in its own
+header that it is deleted once the §6 API lands. It was not, and it still ships in the
+release `.so` and in the app. That is deliberate for now — ADR 0005 keeps the fallback
+evidence alive until the IME gate settles — but it was only ever *implicitly* deferred, and
+an implicit deferral is how scaffolding becomes permanent. Remediation Phase 8 wrote it
+down; these are the tasks.
+
+- [ ] **`crates/bridge/src/api/handshake.rs`** — delete the module and its entry in
+      `api/mod.rs`, then regenerate the bindings. `core_info`, `echo`, `ping`,
+      `slice_utf16`, `text_metrics` and `proof_events` all go with it; `init_app` is the one
+      thing in the file the application actually needs, so move it before deleting the rest.
+- [ ] **`proofEvents`** — remove the second stream from `app/lib/core/core.dart` (the field,
+      the `asBroadcastStream`, and the `await core.proofEvents.first` in startup), along
+      with `proofText` and `app/test/proof_text_test.dart`. The UTF-16 boundary it proves is
+      covered from Phase 1 onward by `crates/bridge/src/offsets.rs`'s own tests and by
+      `integration_test/ime_test.dart`.
+- [ ] **`spike/`** — delete the directory and the ADR 0005 evidence note that points at it.
+      **Blocked on Phase 9A.** ADR 0005 keeps the spike in the tree precisely because
+      `super_editor` is the fallback if the real `ibus` + CJK gate fails, and the fallback
+      is worth nothing without the prototypes. Do not delete it until that gate has been
+      performed and recorded as passed; if it fails, ADR 0005 is superseded and this task is
+      the wrong one.
+- [ ] **Production binary surface** — after the above, confirm what the release build
+      actually exports: no `handshake` symbol survives in
+      `build/linux/x64/release/bundle/lib/libslugline_bridge.so`, `app/lib/src/rust/api/`
+      has no `handshake.dart`, and the app starts without it. A cleanup that leaves the
+      generated bindings behind has removed the source and shipped the surface.
+
 ---
 
 ## 12. Requirements Traceability

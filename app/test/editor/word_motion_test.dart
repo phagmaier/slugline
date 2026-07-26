@@ -75,6 +75,39 @@ void main() {
       expect(wordEndAfter(_line, 20), 24);
       expect(wordStartBefore(_line, 23), 22);
     });
+
+    // F12. A word was classified one UTF-16 code unit at a time, and half a
+    // surrogate pair is not a character: `\p{L}` matches neither half, so every
+    // letter outside the BMP read as punctuation and Ctrl+arrow stepped over it
+    // as if it were a comma. Offsets are still UTF-16 (ADR 0008) — only what
+    // counts as a letter is now asked per whole character.
+    test('a letter outside the BMP is a letter', () {
+      // 'Hi ' then three mathematical bold capitals, two code units each.
+      const line = 'Hi 𝐁𝐎𝐁 there.';
+      expect(line.length, 16, reason: 'UTF-16 code units, not characters');
+
+      expect(wordEndAfter(line, 2), 9, reason: 'over 𝐁𝐎𝐁, and no further');
+      expect(wordStartBefore(line, 9), 3, reason: 'back to the start of it');
+      expect(wordEndAfter(line, 0), 2, reason: 'Hi');
+      expect(wordEndAfter(line, 9), 15, reason: ' there');
+
+      // And an astral letter still holds a word together across an apostrophe.
+      const cue = "𝐁𝐎𝐁's hat";
+      expect(wordEndAfter(cue, 0), 8);
+      expect(wordStartBefore(cue, 8), 0);
+    });
+
+    test('an emoji is punctuation, and is stepped over whole', () {
+      const line = 'A 🎬 slate';
+      expect(line.length, 10);
+      expect(wordEndAfter(line, 1), 10, reason: 'skipped, then "slate"');
+      expect(wordStartBefore(line, 10), 5, reason: 'slate');
+      // From between the halves of the pair — where no caret may rest, but
+      // where a clamped offset can still arrive — the step is over the whole
+      // character rather than round and round one half of it.
+      expect(wordEndAfter(line, 3), 10);
+      expect(wordStartBefore(line, 3), 0);
+    });
   });
 
   group('Ctrl+arrow:', () {
@@ -214,6 +247,30 @@ void main() {
       final controller = await pumpEditor(tester, twoBlocks());
       controller.selectBlockAt(0, 13);
       expect(controller.selectedText(), _line);
+    });
+
+    testWidgets('a word written outside the BMP', (tester) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'Hi 𝐁𝐎𝐁 there.'),
+      );
+
+      controller.selectWordAt(0, 4); // the second character of 𝐁𝐎𝐁
+      expect(controller.selectedText(), '𝐁𝐎𝐁');
+    });
+
+    // The probe used to be one code unit clamped to `text.length - 1`, which on
+    // an empty block is -1 — and `clamp(0, -1)` throws. A blank action line
+    // between two paragraphs is not an unusual thing to double-click on.
+    testWidgets('nothing at all, on an empty block', (tester) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, ''),
+      );
+
+      controller.selectWordAt(0, 0);
+      expect(controller.hasSelection, isFalse);
+      expect(controller.selection.focus.offsetUtf16, 0);
     });
   });
 

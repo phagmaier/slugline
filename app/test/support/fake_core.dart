@@ -333,8 +333,13 @@ class FakeCore implements DocumentCore {
     return _restore(_redo.removeLast());
   }
 
+  /// How many times this session has been closed. One is the only right answer:
+  /// the real core's close ends an actor thread, and a second one is a side
+  /// effect applied to a session that is not there any more (F12).
+  int closes = 0;
+
   @override
-  void close() {}
+  void close() => closes++;
 
   // --- the surgery ---------------------------------------------------------
 

@@ -76,18 +76,22 @@ class EditorController extends ChangeNotifier {
   Completion? get highlightedCompletion =>
       _completions.isEmpty ? null : _completions[_completionIndex];
 
-  BlockView get focusedBlock => _blocks[_indexOf(_selection.focus.block)];
+  BlockView get focusedBlock => _blocks[_focusIndex];
 
   /// The row the caret is on, for scrolling it into view.
-  int get caretRow {
-    final index = _indexOf(_selection.focus.block);
-    return _layout.rowAt(index, _selection.focus.offsetUtf16);
-  }
+  int get caretRow => _layout.rowAt(_focusIndex, _selection.focus.offsetUtf16);
 
   /// What the core would write out. Phase 2 saves nothing; this is how a test
   /// asks what the core actually holds.
   String get source => core.source();
 
+  /// Closes the core.
+  ///
+  /// The controller owns the core it was handed: a `DocumentCore` is a session
+  /// on the actor thread, and disposing the thing that drives it is what ends
+  /// it. Nothing else may close it — two closes were harmless only for as long
+  /// as closing had no side effects (F12), and the whole point of a close is to
+  /// acquire some.
   @override
   void dispose() {
     core.close();
@@ -96,9 +100,60 @@ class EditorController extends ChangeNotifier {
 
   // --- reading -------------------------------------------------------------
 
-  int _indexOf(int blockId) => _indexById[blockId] ?? 0;
+  /// `BlockId` → index, or `null` when this document has no such block.
+  ///
+  /// F12: this used to answer `0` for an unknown id. A stale id — a caret left
+  /// behind by a patch, a find match that outlived its block — would then aim
+  /// its operation at the *first block of the script*, silently, which in a
+  /// program whose P0 is losing text is the worst answer available. It now says
+  /// it does not know, and every caller decides what that means: an edit
+  /// refuses, the caret repairs itself, and ordering sorts the id to the top.
+  /// Nothing falls back to block 0 by accident any more.
+  int? _indexOf(int blockId) => _indexById[blockId];
 
-  String _textOf(int blockId) => _blocks[_indexOf(blockId)].text;
+  String? _textOf(int blockId) {
+    final index = _indexOf(blockId);
+    return index == null ? null : _blocks[index].text;
+  }
+
+  /// The index of the block the caret is in, repairing the caret if it names a
+  /// block that is gone.
+  ///
+  /// The caret is the one id the editor cannot proceed without: the IME reads
+  /// the focused block's text and writes back into it *by id*, so a focus that
+  /// quietly answered "block 0" while the selection still named a vanished
+  /// block is precisely how a stale id becomes an edit to the top of the
+  /// script. Moving the caret somewhere that exists costs the writer a caret
+  /// position; the alternative costs them a line of their screenplay.
+  int get _focusIndex {
+    final ghost = _selection.focus.block;
+    final index = _indexOf(ghost);
+    if (index != null) return index;
+    final home = DocPosition(block: _blocks.first.id, offsetUtf16: 0);
+    _selection = DocSelection(anchor: home, focus: home);
+    _shoutAbout(ghost);
+    return 0;
+  }
+
+  /// An operation named a block that is not here. The editor and the core have
+  /// drifted apart, so the operation is refused rather than aimed somewhere
+  /// else — the same answer, and the same word for it, that the core gives.
+  void _refuseUnknownBlock(int blockId) {
+    lastRejection = EditRejection.unknownBlock;
+    notifyListeners();
+    _shoutAbout(blockId);
+  }
+
+  /// Debug builds stop here, because drift between the editor's block list and
+  /// the core's is a bug and a test run is where it should stop being quiet.
+  ///
+  /// It is deliberately the *last* thing the two callers above do. An assertion
+  /// that pre-empted the refusal or the repair would leave both of them
+  /// unreachable in every run capable of checking that they work, and an
+  /// untested recovery path is not a recovery path.
+  void _shoutAbout(int blockId) {
+    assert(false, 'block $blockId is not in this document');
+  }
 
   void _reindexIds() {
     _indexById.clear();
@@ -130,8 +185,13 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Document order for two positions.
+  ///
+  /// A comparator has no way to refuse, so an id this document does not have
+  /// sorts as if it were at the top. Nothing is edited on the strength of that:
+  /// the ids themselves are what reach the core, and the core refuses one it
+  /// does not know.
   int comparePositions(DocPosition a, DocPosition b) {
-    final byBlock = _indexOf(a.block).compareTo(_indexOf(b.block));
+    final byBlock = (_indexOf(a.block) ?? 0).compareTo(_indexOf(b.block) ?? 0);
     return byBlock != 0 ? byBlock : a.offsetUtf16.compareTo(b.offsetUtf16);
   }
 
@@ -199,8 +259,8 @@ class EditorController extends ChangeNotifier {
       _moveTo(delta < 0 ? start : end, extend: false);
       return;
     }
+    final index = _focusIndex;
     final focus = _selection.focus;
-    final index = _indexOf(focus.block);
     final text = _blocks[index].text;
 
     if (delta < 0) {
@@ -245,8 +305,8 @@ class EditorController extends ChangeNotifier {
   /// than carrying on into the next block: stopping at the end of a paragraph is
   /// what makes Ctrl+Right usable for getting *to* the end of a paragraph.
   void moveByWord(int delta, {bool extend = false}) {
+    final index = _focusIndex;
     final focus = _selection.focus;
-    final index = _indexOf(focus.block);
     final text = _blocks[index].text;
 
     if (delta < 0 && focus.offsetUtf16 == 0) {
@@ -279,7 +339,7 @@ class EditorController extends ChangeNotifier {
 
   /// [rows] visual lines up or down, skipping the blank rows between elements.
   void moveVertical(int rows, {bool extend = false}) {
-    final index = _indexOf(_selection.focus.block);
+    final index = _focusIndex;
     final lineIndex = _layout.lineIndexAt(index, _selection.focus.offsetUtf16);
     final column =
         _stickyColumn ??
@@ -312,7 +372,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void moveToLineEdge({required bool start, bool extend = false}) {
-    final index = _indexOf(_selection.focus.block);
+    final index = _focusIndex;
     final lineIndex = _layout.lineIndexAt(index, _selection.focus.offsetUtf16);
     final line = _layout.linesOf(index)[lineIndex];
     _moveTo(
@@ -346,11 +406,17 @@ class EditorController extends ChangeNotifier {
     final at = _pointIn(block, row, column);
     final text = _blocks[block].text;
     // Both ends of the same word, so a click in the middle of one selects it
-    // rather than reaching into the space beside it.
-    final start =
-        _isWordCharacter(text.codeUnitAt(at.clamp(0, text.length - 1)))
-        ? wordStartBefore(text, at + 1)
-        : at;
+    // rather than reaching into the space beside it. The probe is the whole
+    // character under the point — half of a surrogate pair matches nothing —
+    // and an empty block has no character to probe at all.
+    var start = at;
+    if (text.isNotEmpty) {
+      final (rune, after) = _runeAt(
+        text,
+        at < text.length ? at : _runeBefore(text, text.length).$2,
+      );
+      if (_isWordCharacter(rune)) start = wordStartBefore(text, after);
+    }
     setSelection(
       DocSelection(
         anchor: DocPosition(block: _blocks[block].id, offsetUtf16: start),
@@ -480,11 +546,12 @@ class EditorController extends ChangeNotifier {
     if (hasSelection) return deleteSelection();
     final focus = _selection.focus;
     final index = _indexOf(focus.block);
+    if (index == null) return _refuseUnknownBlock(focus.block);
     if (focus.offsetUtf16 > 0) {
       _apply(
         EditCommand.replaceText(
           block: focus.block,
-          startUtf16: previousBoundary(_textOf(focus.block), focus.offsetUtf16),
+          startUtf16: previousBoundary(_blocks[index].text, focus.offsetUtf16),
           endUtf16: focus.offsetUtf16,
           with_: '',
         ),
@@ -500,7 +567,8 @@ class EditorController extends ChangeNotifier {
     if (hasSelection) return deleteSelection();
     final focus = _selection.focus;
     final index = _indexOf(focus.block);
-    final text = _textOf(focus.block);
+    if (index == null) return _refuseUnknownBlock(focus.block);
+    final text = _blocks[index].text;
     if (focus.offsetUtf16 < text.length) {
       _apply(
         EditCommand.replaceText(
@@ -523,6 +591,7 @@ class EditorController extends ChangeNotifier {
     if (hasSelection) return deleteSelection();
     final focus = _selection.focus;
     final text = _textOf(focus.block);
+    if (text == null) return _refuseUnknownBlock(focus.block);
     final to = forward
         ? wordEndAfter(text, focus.offsetUtf16)
         : wordStartBefore(text, focus.offsetUtf16);
@@ -765,7 +834,11 @@ class EditorController extends ChangeNotifier {
   }
 
   bool _isAtOrAfter(FindMatch match, DocPosition position) {
-    final byBlock = _indexOf(match.block).compareTo(_indexOf(position.block));
+    // As in [comparePositions]: ordering cannot refuse, and no edit is aimed by
+    // the answer — `replaceCurrent` sends the match's own id to the core.
+    final byBlock = (_indexOf(match.block) ?? 0).compareTo(
+      _indexOf(position.block) ?? 0,
+    );
     if (byBlock != 0) return byBlock > 0;
     return match.startUtf16 >= position.offsetUtf16;
   }
@@ -880,21 +953,66 @@ class EditorController extends ChangeNotifier {
 ///
 /// Spelled out rather than `\w`, which in Dart is ASCII even with `unicode: true`
 /// and would stop at the first accent in a script full of them. Built once: this
-/// runs per code unit.
+/// runs per character.
 final RegExp _wordCharacter = RegExp(r"[\p{L}\p{N}\p{M}_'’]", unicode: true);
 
-bool _isWordCharacter(int codeUnit) =>
-    _wordCharacter.hasMatch(String.fromCharCode(codeUnit));
+/// Whether [rune] — a whole Unicode scalar, not a UTF-16 code unit — is one.
+///
+/// F12: this used to be asked per code unit, and half a surrogate pair is not a
+/// character. `\p{L}` never matches one, so every astral-plane letter — 𝐀, 𝔄,
+/// 𝕬, an emoji in a stage direction — looked like punctuation, and Ctrl+arrow
+/// stopped inside a word instead of stepping over it. Offsets stay UTF-16 (ADR
+/// 0008); only the classification is per scalar.
+bool _isWordCharacter(int rune) =>
+    _wordCharacter.hasMatch(String.fromCharCode(rune));
+
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
+
+/// The scalar ending at [end], and the offset it starts at.
+///
+/// An unpaired surrogate is returned as itself: it is not a word character, so
+/// motion steps over it one code unit at a time rather than looping.
+(int, int) _runeBefore(String text, int end) {
+  final last = text.codeUnitAt(end - 1);
+  if (end >= 2 && _isLowSurrogate(last)) {
+    final first = text.codeUnitAt(end - 2);
+    if (_isHighSurrogate(first)) {
+      return (_combine(first, last), end - 2);
+    }
+  }
+  return (last, end - 1);
+}
+
+/// The scalar starting at [start], and the offset just past it.
+(int, int) _runeAt(String text, int start) {
+  final first = text.codeUnitAt(start);
+  if (start + 1 < text.length && _isHighSurrogate(first)) {
+    final last = text.codeUnitAt(start + 1);
+    if (_isLowSurrogate(last)) {
+      return (_combine(first, last), start + 2);
+    }
+  }
+  return (first, start + 1);
+}
+
+int _combine(int high, int low) =>
+    0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00);
 
 /// The start of the word at or before [offset]: whitespace and punctuation are
 /// skipped, then the run of word characters.
 int wordStartBefore(String text, int offset) {
   var at = offset.clamp(0, text.length);
-  while (at > 0 && !_isWordCharacter(text.codeUnitAt(at - 1))) {
-    at--;
+  while (at > 0) {
+    final (rune, start) = _runeBefore(text, at);
+    if (_isWordCharacter(rune)) break;
+    at = start;
   }
-  while (at > 0 && _isWordCharacter(text.codeUnitAt(at - 1))) {
-    at--;
+  while (at > 0) {
+    final (rune, start) = _runeBefore(text, at);
+    if (!_isWordCharacter(rune)) break;
+    at = start;
   }
   return at;
 }
@@ -902,11 +1020,15 @@ int wordStartBefore(String text, int offset) {
 /// The end of the word at or after [offset], the same way round.
 int wordEndAfter(String text, int offset) {
   var at = offset.clamp(0, text.length);
-  while (at < text.length && !_isWordCharacter(text.codeUnitAt(at))) {
-    at++;
+  while (at < text.length) {
+    final (rune, end) = _runeAt(text, at);
+    if (_isWordCharacter(rune)) break;
+    at = end;
   }
-  while (at < text.length && _isWordCharacter(text.codeUnitAt(at))) {
-    at++;
+  while (at < text.length) {
+    final (rune, end) = _runeAt(text, at);
+    if (!_isWordCharacter(rune)) break;
+    at = end;
   }
   return at;
 }

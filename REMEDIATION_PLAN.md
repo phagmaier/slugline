@@ -3,8 +3,8 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–5 and 7 complete; Phase 6 complete but for its
-CI gate; Phases 8–10 not started
+**Status:** in progress — Phases 0–5, 7 and 8 complete; Phase 6 complete but for its
+CI gate; Phases 9–10 not started
 
 ---
 
@@ -3105,62 +3105,245 @@ Harden cheap failure points without distracting from architectural work.
 
 ### Character normalization
 
-- [ ] Refactor `normalize_character` to avoid slicing one string using lengths derived from another transformed string.
-- [ ] Use a safe case-insensitive suffix check.
-- [ ] Avoid repeated `to_uppercase()` inside the loop.
-- [ ] Add Unicode and suffix-edge tests.
-- [ ] Ensure no char-boundary panic is possible.
+- [x] Refactor `normalize_character` to avoid slicing one string using lengths derived from another transformed string.
+  - `strip_extension` walks `trimmed`'s own character boundaries and returns a subslice of
+    it. No length measured on a transformed copy reaches a slice any more.
+- [x] Use a safe case-insensitive suffix check.
+  - `uppercases_to` compares `text.chars().flat_map(char::to_uppercase)` against the
+    extension's characters. Allocation-free, and it keeps the old full-Unicode matching
+    (`ſ` still reads as `S`) rather than quietly narrowing to ASCII.
+- [x] Avoid repeated `to_uppercase()` inside the loop.
+  - Nothing is uppercased at all now, and nothing longer than the extension is even
+    examined. It was uppercasing the whole cue five times per iteration.
+- [x] Add Unicode and suffix-edge tests.
+  - Five: case variants and stacked extensions, near-misses that must be kept, the two
+    shortening characters, accented/CJK/non-BMP cues, and every substring of an awkward cue.
+- [x] Ensure no char-boundary panic is possible.
+  - The panic was reproduced first, standalone: `normalize_character("BOB (ſUBTıTLE)")`
+    panicked with *"end byte index 6 is not a char boundary; it is inside 'ſ'"*, and
+    `"BOB (SUBTıTLE)"` silently returned `"BOB ("`. Both are now `"BOB"`.
 
 ### Duplicate close
 
-- [ ] Remove the duplicate core close in `_OpenScript.dispose()` or make ownership explicit.
-- [ ] Add/retain idempotency only where genuinely required.
-- [ ] Verify one session produces one close side effect.
+- [x] Remove the duplicate core close in `_OpenScript.dispose()` or make ownership explicit.
+  - Both. The line is gone, and the two comments now say who owns the core: the controller
+    does, because a `DocumentCore` is a session on the actor thread and disposing the thing
+    that drives it is what ends it. Nothing else may close it.
+- [-] Add/retain idempotency only where genuinely required.
+  - Nothing needs it. With one owner there is one close, and making `close()` idempotent
+    would only make a second call cheap instead of wrong.
+- [x] Verify one session produces one close side effect.
+  - `FakeCore.close()` counts instead of doing nothing, and *the session is closed exactly
+    once when the editor goes away* asserts the count. `_OpenScript` itself is private and
+    needs the whole bridge to construct, so the count is proved one level down, at the owner.
 
 ### Unknown block IDs
 
-- [ ] Replace `_indexOf` fallback-to-zero behavior.
-- [ ] Choose a safe behavior:
+- [x] Replace `_indexOf` fallback-to-zero behavior.
+- [x] Choose a safe behavior:
   - assertion plus refusal in debug/release;
   - nullable result handled by caller;
   - explicit controlled resync.
-- [ ] Ensure stale IDs can never redirect edits to block 0.
-- [ ] Add a regression test.
+  - All three, split by what the caller can afford. `_indexOf` returns `int?`. An edit
+    (`deleteBackward`, `deleteForward`, `deleteWord`) refuses with
+    `EditRejection.unknownBlock` — the core's own word for it. The caret resyncs, in
+    `_focusIndex`, because the IME reads the focused block's text and writes back into it by
+    id, so the one thing that must never happen is a focus whose id and text disagree.
+    Ordering (`comparePositions`, `_isAtOrAfter`) cannot refuse, so it sorts an unknown id
+    to the top and says so. Debug builds then assert — **last**, after the refusal or the
+    repair, so that neither is dead code in the only kind of run that can check them.
+- [x] Ensure stale IDs can never redirect edits to block 0.
+- [x] Add a regression test.
+  - Two, on a controller with no surface attached: *an edit is refused rather than aimed at
+    block 0* (all four delete paths, no command reaches the core, no text changes) and
+    *moving the caret puts it somewhere that exists*.
 
 ### Entity frequency underflow
 
-- [ ] Replace unchecked decrement with a guarded invariant.
-- [ ] Decide whether index desynchronization should:
+- [x] Replace unchecked decrement with a guarded invariant.
+- [x] Decide whether index desynchronization should:
   - return an error;
   - rebuild the index;
   - assert in debug and recover in release.
-- [ ] Add an invariant test.
+  - **Recover, everywhere, and never panic.** `saturating_sub` on both counts, and reaching
+    zero drops the entity — which is also how a desynchronised count repairs itself. Not a
+    `debug_assert`: the index is a cache of completion candidates, the worst a wrong count
+    can do is offer a wrong completion, and this runs on the actor thread, where a panic
+    costs the writer their session. An assert would also have made the recovery
+    untestable — `cargo test` runs with debug assertions on.
+- [x] Add an invariant test.
+  - Two: *a desynchronised count degrades instead of panicking*, which corrupts the
+    bookkeeping the way a lost update would and then removes a block, and *incremental
+    counts match a rebuild after a run of edits*, which is the invariant the decrement is
+    supposed to maintain.
 
 ### Word motion
 
-- [ ] Decide whether astral-plane letter word motion must be fixed now or deferred.
-- [ ] If fixed, classify by Unicode scalar/grapheme rather than UTF-16 surrogate halves.
-- [ ] Add non-BMP letter tests.
-- [ ] If deferred, record it as cosmetic debt.
+- [x] Decide whether astral-plane letter word motion must be fixed now or deferred.
+  - Fixed. It is a dozen lines, it is in the same function the empty-block crash below was
+    in, and "deferred cosmetic debt" that costs less to fix than to write down is just debt.
+- [x] If fixed, classify by Unicode scalar/grapheme rather than UTF-16 surrogate halves.
+  - Per scalar: `_runeBefore` and `_runeAt` pair the surrogates, and `_isWordCharacter` now
+    takes a rune. Offsets stay UTF-16 (ADR 0008) — only the classification changed. Grapheme
+    clusters are deliberately not the unit here; they are already the unit for caret motion
+    (`previousBoundary`, `_snapToBoundary`), and a combining mark is a word character in its
+    own right, so the two agree at every boundary that matters.
+- [x] Add non-BMP letter tests.
+  - *A letter outside the BMP is a letter* and *an emoji is punctuation, and is stepped over
+    whole*, plus a double-click case. Checked against the old implementation rather than
+    assumed: it answered 15 where 9 is right, and 0 and 6 where 3 and 0 are.
+- [-] If deferred, record it as cosmetic debt.
+  - Not applicable; the backlog line is ticked with what happened instead.
 
 ### Phase 0 handshake/spike cleanup tracking
 
-- [ ] Add explicit Phase 11 cleanup tasks for:
+- [x] Add explicit Phase 11 cleanup tasks for:
   - `handshake.rs`;
   - `proofEvents`;
   - `spike/`;
   - production binary surface verification.
-- [ ] Do not remove them before the IME gate if existing ADRs prohibit it.
+  - `SPEC.md` § Phase 11 → "Retiring the Phase 0 scaffolding": four tasks, each naming the
+    files and the symbols, and a paragraph saying why an implicit deferral is what turns
+    scaffolding into furniture.
+- [x] Do not remove them before the IME gate if existing ADRs prohibit it.
+  - The `spike/` task is marked blocked on Phase 9A and says why: ADR 0005 keeps it because
+    `super_editor` is the fallback and the fallback is worthless without the prototypes. If
+    the gate fails, ADR 0005 is superseded and the task is the wrong one.
 
 ## Exit conditions
 
-- [ ] Cheap panic/corruption footguns are removed.
-- [ ] No broad architectural rewrite occurred.
-- [ ] Deferred cosmetic items are explicitly tracked.
+- [x] Cheap panic/corruption footguns are removed.
+  - Four, two of which were reachable panics rather than theoretical ones: the char-boundary
+    slice in `normalize_character`, and `clamp(0, -1)` on a double-click in an empty block.
+- [x] No broad architectural rewrite occurred.
+  - Two Rust functions, one Dart controller, one line of `app.dart`. No signature on the
+    bridge changed, so no bindings were regenerated.
+- [x] Deferred cosmetic items are explicitly tracked.
 
 ## Suggested commit boundary
 
-- [ ] `chore: harden low-risk editor and entity invariants`
+- [x] `chore: harden low-risk editor and entity invariants`
+
+## Implementation log — Phase 8
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `479b708` (Phase 7)
+**Ending commit:** this commit
+
+### Changes made
+
+Rust — `crates/document/src/entities.rs`:
+
+- `normalize_character` strips extensions through a new `strip_extension`, which finds the
+  suffix by walking the cue's own character boundaries and returns a subslice of it. The
+  case-insensitive comparison is `uppercases_to`, an iterator equality that allocates
+  nothing. The old version measured the suffix on an uppercased copy and cut the original by
+  that length.
+- `EntityIndex::replace` decrements both counts with `saturating_sub`.
+
+Dart — `app/lib/editor/editor_controller.dart`:
+
+- `_indexOf` returns `int?`. `_focusIndex` repairs a stale caret; `_refuseUnknownBlock`
+  refuses a stale edit; `_shoutAbout` is the debug assertion both of them end with.
+- Word motion classifies per Unicode scalar (`_runeBefore`, `_runeAt`, `_combine`).
+- `selectWordAt` probes the whole character under the point, and does not probe an empty
+  block at all.
+- `dispose` documents that the controller owns the core.
+
+Dart — `app/lib/app.dart`: `_OpenScript.dispose()` no longer closes the core a second time.
+
+Documentation — `SPEC.md` § Phase 11 gained "Retiring the Phase 0 scaffolding".
+
+### Tests added or changed
+
+Seven in `crates/document/src/entities.rs`, five in `app/test/editor/word_motion_test.dart`,
+three in `app/test/editor/editor_controller_test.dart`. `FakeCore.close()` counts its calls
+instead of doing nothing.
+
+### Commands run
+
+```text
+cargo fmt --all --check                                       # clean
+cargo clippy --workspace --all-targets -- -D warnings         # clean
+cargo test --workspace                                        # 434 passed, 0 failed
+python3 tools/check_layering.py                               # clean, 7 crates
+python3 tools/make_reference.py --check                       # fixture current
+cd app && flutter analyze                                     # No issues found
+cd app && flutter test                                        # 318 passed
+cd app && flutter build linux --release                       # built
+
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/editor_test.dart              -d linux   # 8 passed
+flutter test integration_test/writing_test.dart             -d linux   # 11 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/persistence_test.dart         -d linux   # 15 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+```
+
+### Results
+
+Rust 427 → 434, Flutter 311 → 318, all 49 integration tests passing. The keystroke path was
+not touched and the benchmark agrees: open → editable 73.8 ms against a 250 ms budget,
+keystroke → patched p99 1.82 ms, journalled p99 2.49 ms, 0 of 271 builds over 16 ms.
+
+Two of the five findings were live defects rather than the "cosmetic only" the audit
+recorded, and both were reproduced before being fixed:
+
+- **F11 is a reachable panic.** `normalize_character("BOB (ſUBTıTLE)")` panicked with *"end
+  byte index 6 is not a char boundary; it is inside 'ſ'"*. Uppercasing is not
+  length-preserving: `ſ` → `S` and `ı` → `I` each lose a byte, and `(SUBTITLE)` has room for
+  both, which moves the computed split two bytes right — into the middle of the `ſ`. One
+  such character is not enough to panic, only to be wrong: `"BOB (SUBTıTLE)"` returned
+  `"BOB ("`. A cue is user text, this runs on the actor thread, and a panic there takes the
+  session with it.
+- **A double-click on an empty block threw.** The word probe was
+  `at.clamp(0, text.length - 1)`, and on an empty block that is `clamp(0, -1)`, which Dart
+  refuses with an `ArgumentError`. A blank action line between two paragraphs is an ordinary
+  thing to double-click on. Found while making the same expression surrogate-aware.
+
+### Deviations from plan
+
+**The entity underflow guard has no `debug_assert`,** though the plan offers "assert in
+debug and recover in release" as one option. Two reasons, and they point the same way: the
+index is a cache of completion candidates whose worst failure is a wrong suggestion, and it
+lives on the actor thread, where a panic costs a writing session. An assert would also have
+made the recovery untestable, because `cargo test` runs with debug assertions on — the test
+that proves a desynchronised count degrades would itself have tripped the assert.
+
+**The Dart assertions were moved to the end of the recovery rather than the start.** The
+first attempt put `assert(index != null)` inside `_indexOf`, which is the obvious place. It
+was wrong: the assertion threw before the refusal or the repair could happen, so in every
+debug run — which is every test run — the recovery was unreachable, and the two regression
+tests could only observe a crash. The assertion is now the last statement of
+`_refuseUnknownBlock` and `_focusIndex`, so a debug build still stops, and a test can see
+both what was refused and what was repaired.
+
+**Word motion was fixed rather than deferred,** which the plan permitted either way. It cost
+about a dozen lines in the function the empty-block crash was already in.
+
+### New risks or follow-up findings
+
+- `strip_extension` keeps full-Unicode case matching, so `(ſUBTıTLE)` is still recognised as
+  `(SUBTITLE)`. That is deliberately the old behaviour — narrowing to ASCII would have been
+  a semantic change smuggled in as a robustness fix — but it is worth knowing that the cue
+  matcher is more generous than the Fountain parser is anywhere else.
+- `_focusIndex` repairs the caret during a getter, which a build can call. It does not
+  notify, so it cannot re-enter a build; a repaired caret paints one frame late. Acceptable
+  for a state that asserts in debug, but it is a mutation in a getter and should be read as
+  one.
+- Nothing here touched the bridge API surface, so no bindings were regenerated and Phase 9's
+  gates are exactly as Phase 7 left them.
+
+### Reviewer notes
+
+- Every "this was broken" claim in this log was reproduced before the repair, not inferred:
+  the F11 panic in a standalone binary, `clamp(0, -1)` in a standalone Dart program, and the
+  old word-motion answers (15, 0, 6 where 9, 3, 0 are right) in another.
+- `_OpenScript` is private and needs the real bridge to construct, so "one session, one
+  close" is proved at the owner — `EditorController.dispose` — rather than at the caller
+  whose duplicate line was removed. The removal itself is a one-line diff and is visible.
 
 ---
 
@@ -3399,9 +3582,14 @@ Copy this section beneath each phase while working.
 These items are not blockers unless testing elevates them:
 
 - [ ] Revisit multi-recovery UX only if multi-window or tabbed editing is added.
-- [ ] Remove Phase 0 handshake/spike surfaces during Phase 11 cleanup, subject to ADR constraints.
+- [x] Remove Phase 0 handshake/spike surfaces during Phase 11 cleanup, subject to ADR constraints.
+  - Written down rather than done: Phase 8 turned this line into four explicit tasks under
+    `SPEC.md` § Phase 11 → "Retiring the Phase 0 scaffolding", one each for `handshake.rs`,
+    `proofEvents`, `spike/` and the production binary surface. The `spike/` task is marked
+    blocked on the Phase 9A IME gate, because ADR 0005 keeps it as the fallback's evidence.
 - [ ] Revisit file chooser behavior per ADR 0015.
-- [ ] Improve non-BMP word-motion granularity if left deferred.
+- [x] Improve non-BMP word-motion granularity if left deferred.
+  - Not deferred: fixed in Phase 8. Word motion classifies per Unicode scalar.
 - [ ] Perform full §5.5 print calibration during Phase 7.
 - [ ] Expand Orca support beyond smoke-test level in the appropriate accessibility phase.
 - [ ] Revisit emphasis styling only after 1.0; markers remain literal for now.

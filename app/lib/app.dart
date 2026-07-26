@@ -282,11 +282,14 @@ class _OpenScript {
   final SaveStatus status;
   final int initialScrollRow;
 
+  /// Ends the session, in the order the pieces depend on each other: the
+  /// autosave timers first so nothing fires at a document that is going away,
+  /// then the listener, then the controller — which closes [core], because the
+  /// controller owns it. This used to close it a second time itself.
   void dispose() {
     autosave.dispose();
     controller.removeListener(status.refresh);
     controller.dispose();
     status.dispose();
-    core.close();
   }
 }

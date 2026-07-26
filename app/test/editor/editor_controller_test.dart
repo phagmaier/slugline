@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
 
 import '../support/fake_core.dart';
@@ -601,6 +602,78 @@ void main() {
       for (final block in controller.blocks) {
         expect(block.text, isNot(contains('\n')));
       }
+    });
+  });
+
+  // F12. An id the editor no longer has used to resolve to index 0, so a stale
+  // caret aimed its edit at the first block of the script — silently, and in the
+  // one program where the first block of the script is somebody's screenplay.
+  group('a block id this document does not have', () {
+    /// A controller with no surface attached, so that the caret can be left on
+    /// a block that does not exist. With one attached the repair below happens
+    /// on the very next repaint, which is the point of it but leaves nothing to
+    /// observe.
+    EditorController ghostCaret(FakeCore core) {
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      const ghost = DocPosition(block: 9999, offsetUtf16: 0);
+      controller.setSelection(
+        const DocSelection(anchor: ghost, focus: ghost),
+      );
+      core.commands.clear();
+      return controller;
+    }
+
+    test('an edit is refused rather than aimed at block 0', () {
+      final core = scene();
+      final controller = ghostCaret(core);
+      final before = [for (final block in controller.blocks) block.text];
+
+      for (final edit in [
+        controller.deleteForward,
+        controller.deleteBackward,
+        () => controller.deleteWord(forward: true),
+        () => controller.deleteWord(forward: false),
+      ]) {
+        controller.lastRejection = null;
+        // A debug build stops here — drift between the editor and the core is a
+        // bug, not a mode of operation. The refusal is recorded first, so both
+        // halves of the behaviour are visible from one call.
+        expect(edit, throwsAssertionError);
+        expect(controller.lastRejection, EditRejection.unknownBlock);
+      }
+
+      expect(core.commands, isEmpty, reason: 'the core was never asked');
+      expect([for (final block in controller.blocks) block.text], before);
+    });
+
+    test('moving the caret puts it somewhere that exists', () {
+      final core = scene();
+      final controller = ghostCaret(core);
+
+      expect(() => controller.moveHorizontal(1), throwsAssertionError);
+
+      // The assertion fired on the way out, but the repair happened first: the
+      // caret names a block that is here, so the next keystroke — and the IME,
+      // which writes into the focused block by id — cannot reach one that is
+      // not.
+      expect(controller.selection.focus.block, controller.blocks.first.id);
+      expect(controller.selection.focus.offsetUtf16, 0);
+      expect(controller.focusedBlock.id, controller.blocks.first.id);
+      expect(core.commands, isEmpty);
+    });
+  });
+
+  group('the session', () {
+    test('is closed exactly once when the editor goes away', () {
+      final core = scene();
+      final controller = EditorController(core);
+
+      expect(core.closes, 0);
+      controller.dispose();
+      // Closing ends an actor thread. Two closes were harmless only while
+      // closing did nothing at all (F12).
+      expect(core.closes, 1);
     });
   });
 }
