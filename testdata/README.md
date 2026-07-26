@@ -29,6 +29,16 @@ python3 tools/make_reference.py --check    # CI: fail if the committed file is s
 `golden/` holds expected layout dumps and PDF hashes, and is populated from
 Phase 6 onward.
 
+`line-breaking.json` is **generated**, not written. It is the wrap
+`layout::line_spans` produces for every block above, for every rule in
+`docs/LINE_BREAKING.md`, and for the reference feature, and it is what the
+editor's `wrapText` is held to in `app/test/editor/line_break_differential_test.dart`:
+
+```sh
+# regenerate; without the variable the same test only checks the committed file
+UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential
+```
+
 Files here are inputs to tests and are compared byte-for-byte. Do not reformat
 them, and do not let an editor strip trailing whitespace — several of them exist
 precisely because of the whitespace they contain.

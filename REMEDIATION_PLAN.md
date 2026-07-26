@@ -2230,32 +2230,154 @@ over the corpus rather than over a list.
 
 ## Phase 6C — Build a corpus-wide differential test
 
-- [ ] Choose a maintainable comparison mechanism:
+- [x] Choose a maintainable comparison mechanism:
   - expose Rust wrap results through a test-only bridge;
-  - generate fixtures from Rust and consume them in Dart tests; or
+  - generate fixtures from Rust and consume them in Dart tests; or — chosen, and
+    the fixture is regenerated and compared on every `cargo test`, so it cannot
+    lag the implementation it came from.
   - run a cross-language integration test.
-- [ ] Compare wrap boundaries, not just rendered strings.
-- [ ] Run over:
-  - every block in `testdata` corpus;
+- [x] Compare wrap boundaries, not just rendered strings. — start, end, columns
+  and terminating newline, normalized to Unicode-scalar indices.
+- [x] Run over:
+  - every block in `testdata` corpus; — as typed and as the paginator prepares
+    it, plus every block of the 120-page reference feature.
   - generated edge cases;
   - multi-line blocks;
-  - Unicode;
+  - Unicode; — including sweeps over whole Unicode blocks for display casing.
   - tabs;
   - repeated/trailing spaces;
   - empty text;
-  - extreme widths.
-- [ ] Make failures print:
+  - extreme widths. — 1 and 2 through §5.2's four element widths.
+- [x] Make failures print:
   - source block;
   - width;
   - Dart boundaries;
   - Rust boundaries;
   - first mismatch.
-- [ ] Add the differential test to CI.
-- [ ] Avoid brittle comparisons of unrelated page-level pagination decisions.
+- [x] Add the differential test to CI. — the Rust half in the `rust` job's
+  `cargo test --workspace`, the editor half in the `flutter` job's unit tests.
+- [x] Avoid brittle comparisons of unrelated page-level pagination decisions. —
+  the comparison is one block of text and one width; no page, indent, blank row
+  or break rule enters it.
 
 ## Exit condition for 6C
 
-- [ ] Dart and Rust agree for the defined shared line-break contract across the complete corpus.
+- [x] Dart and Rust agree for the defined shared line-break contract across the complete corpus.
+
+### Implementation log — Phase 6C
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `d485250`
+**Ending commit:** working tree
+
+#### Changes made
+
+- Gave `crates/layout` the boundaries it never reported. `break_lines` returned
+  rendered strings only, so there was nothing to compare offsets against;
+  `line_spans` now returns the canonical result of `docs/LINE_BREAKING.md` —
+  `LineSpan { start_utf8, end_utf8, columns, hard_break_utf8 }` — and
+  `break_lines` is the same wrap rendered, from one implementation. The wrap now
+  expands a hard line into cells that each carry the byte offset of the source
+  scalar they came from, which is what the editor has done since 6B, so a tab a
+  break splits stays out of both rows' spans instead of being half on each.
+- Exported `layout::display_text`, so the fixture generator asks the paginator
+  what a heading looks like rather than keeping a second opinion about it.
+- Added `crates/layout/tests/line_break_differential.rs`, which writes
+  `testdata/line-breaking.json` and fails when the committed copy is not what
+  the crate now produces, naming the line and column that moved.
+- Added `app/test/editor/line_break_differential_test.dart`, which wraps every
+  case with the editor's `wrapText` and compares scalar-normalized boundaries.
+- Recorded the mechanism in `docs/LINE_BREAKING.md`, `testdata/README.md`,
+  `AGENTS.md` and both CI steps, and replaced the "Phase 6C will do this"
+  comments in `line_layout_test.dart` and `line_break.rs` with what does it.
+
+#### Tests added or changed
+
+- The fixture is 1,280 cases, 3,770 wraps and 10,676 rows in 444 KB: 110
+  generated cases at eleven widths each, five Unicode casing sweeps, 110 cases
+  from the blocks of all ten corpus files at four widths — each block both as
+  typed and as the paginator prepares it — and 1,055 reference-feature blocks at
+  35 and 60 columns. Cases that wrap character for character like an earlier one
+  are dropped, which is most of a feature's cues and blank lines.
+- `crates/layout/src/line_break.rs`: five span tests — the consumed space run as
+  a gap, a row split inside a tab pointing at neither half, a column that is not
+  a byte offset, the newline that terminates a row it is not on, and that every
+  row of `break_lines` has a span of the same width.
+- `crates/layout/tests/line_break_differential.rs`: the fixture is current, it
+  covers every corpus file and both castings, and spans and strings are one wrap.
+- `app/test/editor/line_break_differential_test.dart`: five tests — the fixture
+  covers what it claims, the generated cases, the casing sweeps, every corpus
+  block, and the reference feature.
+- Both failure paths were verified by breaking them on purpose: the editor's tab
+  stop was changed to eight columns (the Dart half named the case, the width and
+  both boundary lists) and a byte of the fixture was edited (the Rust half named
+  the line and column).
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                    # clean
+cargo clippy --workspace --all-targets -- -D warnings      # clean
+cargo test --workspace                                     # 395 passed
+python3 tools/check_layering.py                            # clean
+cd app && flutter analyze                                  # No issues found
+cd app && flutter test                                     # 311 passed
+```
+
+The integration tests were not re-run: nothing outside `crates/layout` and the
+two new test files changed, and `layout` is still not reachable from the
+application until 6D.
+
+#### Results
+
+The two implementations agree on every boundary of every block of the corpus,
+the reference feature and the contract's own cases. The copying between
+`line_layout_test.dart` and `line_break.rs` that 6B left behind is no longer the
+only thing holding them together, and neither side can now be changed alone: the
+Rust half fails on a wrap the fixture does not have, and the Dart half fails on a
+fixture the editor does not agree with.
+
+#### Deviations from plan
+
+- The plan offered a test-only bridge and a cross-language integration test as
+  alternatives. Both were rejected for the same reason: they would put the
+  comparison behind the `.so`, so a divergence would fail only in the job that
+  needs a release build and a display, rather than in the two-second unit tests
+  either language runs first.
+- Corpus blocks are wrapped at four widths rather than all eleven. A
+  hundred-column paragraph at width one is a hundred rows of fixture that repeat
+  what a generated case already says in three; the degenerate widths are asked
+  of the short generated cases instead. Without that the fixture was 695 KB.
+
+#### New risks or follow-up findings
+
+- **The two runtimes' Unicode tables disagree about four scalars.** The casing
+  sweep found that Rust capitalises `ƛ` (U+019B), `ȿ` (U+023F), `ɀ` (U+0240) and
+  `ϳ` (U+03F3) and Dart 3.12.2's `String.toUpperCase` leaves them as typed, so a
+  page prints a capital the editor does not show. Every one is one BMP scalar
+  either way, so no column and no boundary moves and the wrap contract is
+  unaffected; the set is pinned in the Dart test and recorded in
+  `docs/LINE_BREAKING.md`. This is exactly the drift 6B's follow-up note asked
+  6C to look for, and it is bounded rather than fixed: matching Dart would mean
+  regressing Rust to an older Unicode table for four letters no screenplay is
+  written in. A fifth scalar joining the set fails the test; a Dart SDK that
+  catches up makes the difference vanish silently, which is the intended
+  direction.
+- ADR 0018's "Tests and invariants" section still says the corpus-wide
+  differential test is required before Phase 6 closes and that most of the
+  record is unenforced. It is now enforced, but an accepted ADR is not edited
+  (`AGENTS.md`); a superseding record or a Phase 6G note is the place to say so.
+- The fixture is 443 KB of generated JSON. Regenerating it after a deliberate
+  wrap change will produce a large diff, which is the cost of the coverage; the
+  `note` field at the top of the file says not to hand-edit it.
+
+#### Reviewer notes
+
+- `line_spans` is public API that nothing in the application calls yet. Phase 6D
+  is where pagination reaches the bridge, and a preview's source mapping is the
+  reason these spans exist in Rust at all rather than only in the test.
 
 ---
 

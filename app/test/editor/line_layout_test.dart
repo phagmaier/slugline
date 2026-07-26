@@ -3,9 +3,10 @@
 // These are the numbers §5.2 specifies, asserted where they are used. The
 // editor keeps its own wrapping for 1.0 rather than rendering rows computed in
 // Rust (ADR 0018), so this file is one half of a contract: the other half is
-// `layout::break_lines`, and the corpus-wide differential test that pins the two
-// together is remediation Phase 6C. A case added here that the Rust engine would
-// answer differently is a divergence, not a preference.
+// `layout::break_lines`, and `line_break_differential_test.dart` is what pins
+// the two together over the whole corpus. A case added here that the Rust engine
+// would answer differently is a divergence, not a preference — and one this file
+// does not cover, the differential test will.
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -134,8 +135,9 @@ void main() {
 
   // Every case below is asserted verbatim in `layout::line_break`'s tests. They
   // are the shared contract in `docs/LINE_BREAKING.md`, so an expectation that
-  // changes here has to change there in the same commit — remediation Phase 6C
-  // replaces the copying with a corpus-wide differential test.
+  // changes here has to change there in the same commit. They are kept as
+  // readable prose about the contract; the generated fixture the differential
+  // test consumes is what proves it over text nobody wrote down here.
   group('the shared contract with layout::break_lines', () {
     test('one scalar is one column, including astral planes', () {
       // Nine characters and a clapperboard fill ten columns. Counting UTF-16

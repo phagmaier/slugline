@@ -46,7 +46,16 @@ checks `char::to_uppercase` per scalar; the two agree character for character.
 **A heading is shown in capitals.** Across the whole Latin range — ASCII,
 Latin-1, and Latin Extended-A and B — the only letters this rule leaves in lower
 case are `ß`, `ŉ`, and `ǰ`, the three whose capital is more than one scalar. A
-test on each side pins that set, so nothing else can quietly join it. Showing
+test on each side pins that set, so nothing else can quietly join it.
+
+Four more scalars are shown differently by the two implementations, and they are
+not a decision: `ƛ` (U+019B), `ȿ` (U+023F), `ɀ` (U+0240) and `ϳ` (U+03F3) have a
+single-scalar capital that Rust's `char::to_uppercase` knows and the Dart SDK's
+`String.toUpperCase` does not, so a page prints them in capitals and the editor
+shows them as typed. Each is one BMP scalar either way, so no column and no
+boundary moves and nothing else about this contract is affected. The
+differential test carries the set explicitly: a fifth scalar joining it fails,
+and a Dart SDK that catches up makes the difference vanish rather than fail. Showing
 those three as `SS`, `ʼN`, and `J̌` would mean a display string longer than the
 model, which this document exists to prevent; it is possible — a column already
 need not be a model offset, which is how tabs work — but it would also cost the
@@ -108,6 +117,29 @@ original, unexpanded, non-uppercased block text:
 Dart stores these offsets as UTF-16 code units and Rust may store byte offsets.
 The differential test normalizes both to source Unicode-scalar indices before
 comparison. Different native numbers are not a semantic difference.
+
+## How This Is Enforced
+
+`layout::line_spans` and `wrapText` return the canonical result above;
+`layout::break_lines` is the same wrap rendered as strings, and shares its
+implementation. Neither language runs the other, so the comparison is a
+generated fixture:
+
+- `crates/layout/tests/line_break_differential.rs` builds every case — the rules
+  above one at a time at eleven widths, casing sweeps over whole Unicode blocks,
+  every block of every file in `testdata/corpus/` both as typed and as the
+  paginator prepares it, and every block of the 120-page reference feature — and
+  fails unless `testdata/line-breaking.json` is exactly what this crate now
+  produces. Regenerate it with
+  `UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential`.
+- `app/test/editor/line_break_differential_test.dart` wraps every case with
+  `wrapText` and compares boundaries, columns and terminating newlines, printing
+  the source block, the width, both boundary lists and the first mismatching row
+  when they differ.
+
+Both run in CI, in the Rust job and the Flutter job respectively. Changing this
+document means changing both implementations and regenerating the fixture in one
+commit; a wrap that changes on one side alone fails one of the two.
 
 ## Required Agreement
 

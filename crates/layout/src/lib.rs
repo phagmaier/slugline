@@ -10,8 +10,8 @@ mod line_break;
 pub mod metrics;
 mod model;
 
-pub use engine::{paginate, LayoutEngine};
-pub use line_break::break_lines;
+pub use engine::{display_text, paginate, LayoutEngine};
+pub use line_break::{break_lines, line_spans, LineSpan};
 pub use model::{
     CacheStats, LayoutLine, LayoutLineKind, Page, PageConfig, PageSize, PaginatedScript,
     PaginationCheckpoint, SceneNumberGutters, ScriptSnapshot,

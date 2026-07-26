@@ -45,6 +45,11 @@ jobs:
           sudo mount -t tmpfs -o size=4m,mode=1777 tmpfs /mnt/slugline-full-disk
           df -h /mnt/slugline-full-disk
 
+      # This also runs the Rust half of the line-breaking differential test,
+      # which regenerates testdata/line-breaking.json and fails if the committed
+      # copy is not what layout::line_spans now produces. The Dart half is in
+      # the flutter job's unit tests; a wrap that changes on one side alone
+      # fails one of the two (docs/LINE_BREAKING.md).
       - name: Test
         env:
           SLUGLINE_FULL_DISK_DIR: /mnt/slugline-full-disk
@@ -130,6 +135,10 @@ jobs:
         working-directory: app
         run: flutter analyze
 
+      # Includes the editor half of the line-breaking differential test, which
+      # wraps every case in testdata/line-breaking.json with the editor's own
+      # wrapText and compares boundaries. It needs the repository, not the .so,
+      # so it belongs here rather than with the integration tests.
       - name: Unit tests
         working-directory: app
         run: flutter test

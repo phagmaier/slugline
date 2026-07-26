@@ -506,7 +506,7 @@ fn layout_for(kind: BlockKind) -> Option<ElementLayout> {
 /// `INT. STRAßE - TAG` in capitals instead of showing the whole heading as
 /// typed. Dart's `String.toUpperCase` already behaves this way, and the
 /// editor's `displayText` holds it to it.
-fn display_text(text: &str, uppercase: bool) -> String {
+pub fn display_text(text: &str, uppercase: bool) -> String {
     if !uppercase {
         return text.to_owned();
     }
