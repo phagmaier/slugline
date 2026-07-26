@@ -198,8 +198,8 @@ class _LibraryPageState extends State<LibraryPage> {
           else ...[
             formatTimestamp(script.modifiedMillis),
             formatBytes(script.bytes),
-            // Phase 6's `layout` crate fills this in; until then the library
-            // says nothing rather than guessing.
+            // A successful save fills this cache through `layout`; an entry
+            // never processed by a layout-capable build says nothing.
             if (script.pageCount > 0) '${script.pageCount} pages',
           ],
         ].join(' · '),

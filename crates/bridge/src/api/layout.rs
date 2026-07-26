@@ -286,6 +286,88 @@ pub(crate) fn paginate(handle: u64, config: &PageConfig) -> Option<(Pagination, 
     })
 }
 
+/// Paginates an already-owned snapshot taken by a successful save.
+///
+/// Unlike [`paginate`], the snapshot is intentionally allowed to be older than
+/// the live document: it describes the bytes that reached disk. The caller
+/// separately guards the library write so an older save cannot replace a newer
+/// count. The per-session engine is still lent and returned when the document
+/// remains open, preserving ADR 0022's incremental cache.
+pub(crate) fn paginate_snapshot(
+    handle: u64,
+    generation: u64,
+    snapshot: ScriptSnapshot,
+    config: &PageConfig,
+) -> Pagination {
+    let lock = actor().run(move |state| state.session(handle).map(|s| s.pagination().lock()));
+    let _running = lock
+        .as_ref()
+        .map(|lock| lock.lock().unwrap_or_else(PoisonError::into_inner));
+
+    let planned_snapshot = snapshot.clone();
+    let planned = actor().run({
+        let config = config.clone();
+        move |state| {
+            let session = state.session_mut(handle)?;
+            if let Some(done) = session.pagination().ready(generation, &config) {
+                return Some(Planned::Done(done.clone()));
+            }
+            let (engine, fingerprints) = session.pagination_mut().lend();
+            Some(Planned::Run(Job {
+                generation,
+                snapshot: planned_snapshot,
+                engine,
+                fingerprints,
+            }))
+        }
+    });
+
+    let Job {
+        generation,
+        snapshot,
+        mut engine,
+        fingerprints: previous,
+    } = match planned {
+        Some(Planned::Done(pagination)) => return pagination,
+        Some(Planned::Run(job)) => job,
+        None => Job {
+            generation,
+            snapshot,
+            engine: LayoutEngine::default(),
+            fingerprints: Vec::new(),
+        },
+    };
+
+    let fingerprints = fingerprints(&snapshot);
+    let hinted_block = changed_block(&previous, &fingerprints);
+    let script = match hinted_block {
+        Some(block) => engine.repaginate(&snapshot, config, block),
+        None => engine.paginate_snapshot(&snapshot, config),
+    };
+
+    #[cfg(test)]
+    stall::reached(handle);
+
+    let pagination = Pagination {
+        generation,
+        config: config.clone(),
+        script,
+        hinted_block,
+    };
+    actor().run({
+        let pagination = pagination.clone();
+        move |state| {
+            if let Some(session) = state.session_mut(handle) {
+                session.pagination_mut().returned(engine, fingerprints);
+                if session.document_generation() == pagination.generation {
+                    session.pagination_mut().commit(pagination);
+                }
+            }
+        }
+    });
+    pagination
+}
+
 enum Planned {
     /// Already paginated at this generation and setup. Nothing to run.
     Done(Pagination),
@@ -433,7 +515,7 @@ fn clamp_u32(value: usize) -> u32 {
 /// like it, `#[cfg(test)]` throughout: the shipped library has neither the map
 /// nor the call site.
 #[cfg(test)]
-mod stall {
+pub(crate) mod stall {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, PoisonError};
 

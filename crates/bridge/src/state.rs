@@ -57,6 +57,25 @@ pub struct Storage {
     /// second thing to reason about. It is an `Arc` because the only other
     /// thread that reads it is `notify`'s.
     pub own_writes: Arc<OwnWrites>,
+    /// The newest successful save awaiting a page count, per library entry.
+    ///
+    /// Pagination is allowed to finish out of order. The token is deliberately
+    /// process-local cache bookkeeping: only the resulting count is persisted.
+    pub(crate) page_count_jobs: HashMap<String, u64>,
+    pub(crate) next_page_count_job: u64,
+}
+
+impl Storage {
+    pub fn begin_page_count(&mut self, id: &str) -> u64 {
+        self.next_page_count_job = self.next_page_count_job.wrapping_add(1);
+        let token = self.next_page_count_job;
+        self.page_count_jobs.insert(id.to_owned(), token);
+        token
+    }
+
+    pub fn page_count_is_current(&self, id: &str, token: u64) -> bool {
+        self.page_count_jobs.get(id).copied() == Some(token)
+    }
 }
 
 impl AppState {

@@ -898,10 +898,11 @@ Implement precisely this sequence, in `crates/storage`:
 - [x] Create, open, rename, duplicate, remove-from-library, delete-file. Remove
       and delete are two commands in two places in the menu, and only one of them
       asks twice.
-- [x] Recent scripts list with path, last-modified, page count. The page count is
-      still zero for every entry, and the library shows nothing rather than
-      guessing. `layout` can compute one, but nothing calls it (F3); ADR 0020
-      writes it after a successful save, in remediation Phase 6E.
+- [x] Recent scripts list with path, last-modified, page count. Every successful
+      explicit save or autosave now paginates the exact saved snapshot off the
+      actor and caches the guarded result in the library (F3; ADR 0020;
+      remediation Phase 6E). Entries never saved by a layout-capable build keep
+      the zero sentinel and display no count rather than guessing.
 - [x] Library index is a plain JSON file in `$XDG_DATA_HOME` — it is a *cache*,
       and the app works correctly if it is deleted. `Library::load` cannot fail:
       a missing, truncated or hand-mangled index is an empty one, and an
@@ -1055,11 +1056,11 @@ Requirement §12. No UI work in this phase beyond a debug dump view.
       nothing called it. Remediation Phase 6 wires it as an async snapshot job (ADR 0020),
       writes the page count after a successful save, and pins the Dart editor's own line
       breaking to `layout::break_lines` with a corpus-wide differential test (ADR 0018).
-      Phase 6C did the differential test and Phase 6D the bridge: `slugline_bridge` now
-      depends on `slugline_layout`, `doc_paginate` is §6's `paginate`, and `repaginate`
-      runs in the application rather than only in `crates/layout/tests/`. Still open —
-      `ScriptView::page_count` is always zero until a save writes it (remediation Phase
-      6E), and the debug dump is still a method with no view (Phase 6F).
+      Phase 6C did the differential test, Phase 6D the bridge, and Phase 6E the
+      saved-snapshot page count: `slugline_bridge` now depends on `slugline_layout`,
+      `doc_paginate` is §6's `paginate`, and `repaginate` runs in the application
+      rather than only in `crates/layout/tests/`. Still open — the debug dump is
+      still a method with no Dart view (Phase 6F).
 
 ---
 

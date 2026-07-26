@@ -31,6 +31,7 @@
 //! construction: the actor thread blocks on its channel and wakes only when
 //! something happens.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 
@@ -46,6 +47,7 @@ use slugline_storage::{atomic, paths::Paths, prefs, Preferences as CorePreferenc
 use crate::actor::actor;
 use crate::api::doc::DocumentHandle;
 use crate::api::events::{emit, CoreEvent};
+use crate::api::layout;
 use crate::state::{AppState, Session, Storage};
 
 // ---------------------------------------------------------------------------
@@ -106,9 +108,8 @@ pub struct ScriptView {
     /// question and the core has no locale.
     pub modified_millis: u64,
     pub bytes: u64,
-    /// Always zero today. `crates/layout` can count pages and the bridge does
-    /// not yet depend on it; ADR 0020 has this written after a successful save,
-    /// from a background pagination of the saved snapshot.
+    /// Zero until a layout-capable build successfully saves and paginates this
+    /// script; otherwise the number of screenplay pages in the saved snapshot.
     pub page_count: u32,
     /// The file was not there when the library was last refreshed. Shown as
     /// missing, never dropped (§Phase 4).
@@ -235,6 +236,8 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
             library,
             watcher,
             own_writes,
+            page_count_jobs: Default::default(),
+            next_page_count_job: 0,
         });
     });
     true
@@ -573,6 +576,7 @@ async fn write_document(
             // here until step three, in the same closure that reads the bytes
             // — so there is no instant in which an edit is in neither.
             let revision = session.begin_save();
+            let generation = session.document_generation();
             let path = save_as.or_else(|| session.path().map(Path::to_path_buf));
             Some(Plan {
                 path,
@@ -581,6 +585,8 @@ async fn write_document(
                 dirty: session.document().is_dirty(),
                 storage: storage_paths,
                 own_writes,
+                snapshot: slugline_layout::ScriptSnapshot::from_document(session.document()),
+                generation,
             })
         }
     });
@@ -657,12 +663,14 @@ async fn write_document(
     // is unsaved, and the event below must say so rather than assert a clean
     // document the disk does not have.
     let bytes = plan.text.len().min(u32::MAX as usize) as u32;
-    let still_dirty = actor().run({
+    let snapshot = plan.snapshot;
+    let generation = plan.generation;
+    let (still_dirty, page_count_job) = actor().run({
         let path = path.clone();
         let text = plan.text;
         move |state| {
             let Some(session) = state.session_mut(handle.id) else {
-                return false;
+                return (false, None);
             };
             // Only as far as the revision we actually wrote. An edit that landed
             // while the file was being written is still unsaved, and marking the
@@ -708,10 +716,26 @@ async fn write_document(
             if let Some(storage) = state.storage_mut() {
                 storage.library.refresh();
             }
-            save_library(state);
-            state
+            let page_count_job = state
                 .session(handle.id)
-                .is_some_and(|session| session.document().is_dirty())
+                .and_then(Session::id)
+                .map(str::to_owned)
+                .and_then(|id| {
+                    state.storage_mut().map(|storage| SavedPagination {
+                        token: storage.begin_page_count(&id),
+                        id,
+                        handle: handle.id,
+                        generation,
+                        snapshot,
+                    })
+                });
+            save_library(state);
+            (
+                state
+                    .session(handle.id)
+                    .is_some_and(|session| session.document().is_dirty()),
+                page_count_job,
+            )
         }
     });
 
@@ -719,6 +743,12 @@ async fn write_document(
         handle: handle.id,
         dirty: still_dirty,
     });
+    // The file is already safely on disk and the save state has already been
+    // recorded. Pagination is best-effort cache work from this point on.
+    drop(_writing);
+    if let Some(job) = page_count_job {
+        update_saved_page_count(job);
+    }
     SaveOutcome::Saved {
         path: path.to_string_lossy().into_owned(),
         bytes,
@@ -749,6 +779,54 @@ struct Plan {
     /// `None` before `init`, which is a supported state (see [`AppState`]) and
     /// one in which there is no watcher to suppress anything for either.
     own_writes: Option<Arc<OwnWrites>>,
+    /// The exact document whose serialisation is in `text`.
+    snapshot: slugline_layout::ScriptSnapshot,
+    /// Monotonic identity of that snapshot within the open session.
+    generation: u64,
+}
+
+struct SavedPagination {
+    token: u64,
+    id: String,
+    handle: u64,
+    generation: u64,
+    snapshot: slugline_layout::ScriptSnapshot,
+}
+
+fn update_saved_page_count(job: SavedPagination) {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        layout::paginate_snapshot(
+            job.handle,
+            job.generation,
+            job.snapshot,
+            &slugline_layout::PageConfig::default(),
+        )
+    }));
+    let pagination = match result {
+        Ok(pagination) => pagination,
+        Err(_) => {
+            eprintln!(
+                "slugline: pagination failed after saving library entry {}",
+                job.id
+            );
+            return;
+        }
+    };
+    let page_count = u32::try_from(pagination.script.pages.len()).unwrap_or(u32::MAX);
+    actor().run(move |state| {
+        commit_saved_page_count(state, &job.id, job.token, page_count);
+    });
+}
+
+fn commit_saved_page_count(state: &mut AppState, id: &str, token: u64, page_count: u32) {
+    let Some(storage) = state.storage_mut() else {
+        return;
+    };
+    if !storage.page_count_is_current(id, token) {
+        return;
+    }
+    storage.library.set_page_count(id, page_count);
+    save_library(state);
 }
 
 /// One write of one file, bracketed so the watcher can recognise its own echo.
@@ -1665,10 +1743,14 @@ mod tests {
 
     impl Fixture {
         fn open(label: &str) -> Fixture {
+            Self::open_source(label, SCRIPT)
+        }
+
+        fn open_source(label: &str, source: &str) -> Fixture {
             let storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
             let root = temp_root(label);
             let script = root.join(format!("{label}.fountain"));
-            fs::write(&script, SCRIPT).expect("the script is written");
+            fs::write(&script, source).expect("the script is written");
 
             let paths = Paths::under(&root);
             let library = Library::load(&paths.library_index());
@@ -1683,6 +1765,8 @@ mod tests {
                 // half the save path owns.
                 watcher: None,
                 own_writes: OwnWrites::shared(),
+                page_count_jobs: Default::default(),
+                next_page_count_job: 0,
             };
             actor().run(move |state| state.set_storage(storage_state));
 
@@ -1717,6 +1801,27 @@ mod tests {
 
         fn dirty(&self) -> bool {
             doc_dirty(self.handle)
+        }
+
+        fn page_count(&self) -> u32 {
+            let id = journal::script_id(&self.script);
+            actor().run(move |state| {
+                state
+                    .storage()
+                    .and_then(|storage| storage.library.get(&id))
+                    .map(|entry| entry.page_count)
+                    .unwrap_or(0)
+            })
+        }
+
+        fn pagination_runs(&self) -> u64 {
+            let handle = self.handle.id;
+            actor().run(move |state| {
+                state
+                    .session(handle)
+                    .map(|session| session.pagination().runs())
+                    .unwrap_or(0)
+            })
         }
 
         /// Types at the front of the first block, through the same edit path
@@ -2077,6 +2182,142 @@ mod tests {
             "a redundant queued save writes nothing and reports nothing"
         );
         assert_eq!(it.on_disk(), text);
+    }
+
+    #[test]
+    fn an_explicit_save_updates_the_library_page_count() {
+        let it = Fixture::open("page-count-explicit");
+        it.types("Saved. ");
+
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.page_count(), 1);
+    }
+
+    #[test]
+    fn an_autosave_updates_the_library_page_count() {
+        let it = Fixture::open("page-count-auto");
+        it.types("Autosaved. ");
+
+        assert!(matches!(
+            block_on(doc_autosave(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.page_count(), 1);
+    }
+
+    #[test]
+    fn pagination_failure_does_not_fail_the_save_or_replace_the_count() {
+        let it = Fixture::open("page-count-failure");
+        it.types("First. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.page_count(), 1);
+
+        it.types("Second. ");
+        layout::stall::before_recording(it.handle.id, || panic!("injected pagination failure"));
+        let outcome = block_on(doc_save(it.handle));
+        layout::stall::forget(it.handle.id);
+
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+        assert_eq!(it.page_count(), 1, "the previous cache value survives");
+    }
+
+    #[test]
+    fn an_older_pagination_result_cannot_replace_a_newer_page_count() {
+        let it = Fixture::open("page-count-stale");
+        let id = journal::script_id(&it.script);
+        let (older, newer) = actor().run({
+            let id = id.clone();
+            move |state| {
+                let storage = state.storage_mut().unwrap();
+                let older = storage.begin_page_count(&id);
+                let newer = storage.begin_page_count(&id);
+                (older, newer)
+            }
+        });
+
+        actor().run({
+            let id = id.clone();
+            move |state| {
+                commit_saved_page_count(state, &id, newer, 120);
+                commit_saved_page_count(state, &id, older, 1);
+            }
+        });
+
+        assert_eq!(it.page_count(), 120);
+    }
+
+    #[test]
+    fn listing_the_library_does_not_eagerly_paginate_scripts() {
+        let it = Fixture::open("page-count-scan");
+        assert_eq!(it.pagination_runs(), 0);
+
+        let scripts = block_on(library_list());
+
+        assert_eq!(scripts.len(), 1);
+        assert_eq!(scripts[0].page_count, 0);
+        assert_eq!(it.pagination_runs(), 0);
+    }
+
+    #[test]
+    fn page_count_survives_a_library_restart() {
+        let it = Fixture::open("page-count-restart");
+        it.types("Saved. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        let index = it.root.join("data").join("library.json");
+        let id = journal::script_id(&it.script);
+
+        let loaded = Library::load(&index);
+
+        assert_eq!(loaded.get(&id).unwrap().page_count, 1);
+    }
+
+    #[test]
+    fn bridge_rss_with_the_reference_script_and_its_saved_layout_is_under_budget() {
+        const MIB: u64 = 1024 * 1024;
+        const BUDGET: u64 = 250 * MIB;
+        let source = include_str!("../../../../testdata/reference-feature.fountain");
+        let it = Fixture::open_source("page-count-rss", source);
+        let before = linux_rss();
+        it.types(" ");
+
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert!(it.page_count() > 100, "the reference feature was paginated");
+
+        let rss = linux_rss();
+        eprintln!(
+            "bridge RSS with {}-page reference script open: {:.1} MiB; retained layout delta: {:.1} MiB (budget: 250 MiB)",
+            it.page_count(),
+            rss as f64 / MIB as f64,
+            rss.saturating_sub(before) as f64 / MIB as f64,
+        );
+        assert!(
+            rss < BUDGET,
+            "RSS is {:.1} MiB, over the 250 MiB budget",
+            rss as f64 / MIB as f64
+        );
+    }
+
+    fn linux_rss() -> u64 {
+        let status = fs::read_to_string("/proc/self/status").expect("Linux exposes process RSS");
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix("VmRSS:"))
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|kib| kib * 1024)
+            .expect("VmRSS is reported in KiB")
     }
 
     /// The lock is per session, not per process: one script stuck at the disk

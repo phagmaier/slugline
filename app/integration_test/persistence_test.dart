@@ -106,6 +106,14 @@ void main() {
     expect(outcome, isA<SaveOutcome_Saved>());
     expect(core.dirty, isFalse);
     expect(File(file).readAsStringSync(), contains('INT. HOUSE - DAY'));
+    final entry = (await files.libraryList()).singleWhere(
+      (script) => script.path == file,
+    );
+    expect(
+      entry.pageCount,
+      1,
+      reason: 'a successful save paginates the saved snapshot for the library',
+    );
   });
 
   testWidgets('a save writes atomically and leaves no temp file behind', (

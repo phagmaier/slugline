@@ -39,8 +39,9 @@ pub struct ScriptEntry {
     pub title: String,
     pub modified_millis: u64,
     pub bytes: u64,
-    /// Filled in by `layout` from Phase 6. Zero means "not counted yet", which
-    /// is what the library shows until then.
+    /// Filled in by `layout` after a successful save. Zero means "not counted
+    /// yet", which is what the library shows for an entry last written by a
+    /// build without layout support.
     pub page_count: u32,
     /// The file was not there at the last refresh.
     pub missing: bool,
@@ -210,6 +211,16 @@ impl Library {
         }
     }
 
+    /// Caches the number of screenplay pages produced for the bytes on disk.
+    ///
+    /// Zero remains the sentinel for an entry that has never been processed by
+    /// a layout-capable build. A real pagination always has at least one page.
+    pub fn set_page_count(&mut self, id: &str, page_count: u32) {
+        if let Some(index) = self.position(id) {
+            self.entries[index].page_count = page_count;
+        }
+    }
+
     /// Forgets a script. The file is untouched — deleting it is a separate
     /// decision the user makes separately (§Phase 4).
     pub fn remove(&mut self, id: &str) -> Option<ScriptEntry> {
@@ -355,6 +366,20 @@ mod tests {
         assert_eq!(entry.bytes, 17);
         assert!(entry.open);
         assert_eq!(entry.pinned_entities[0].value, "ALICE");
+    }
+
+    #[test]
+    fn a_page_count_round_trips_as_cache_data() {
+        let dir = TempDir::new("library-page-count");
+        let index = dir.path().join("library.json");
+        let path = script(&dir, "heat.fountain", "INT. HOUSE - DAY\n");
+        let mut library = Library::default();
+        let id = library.add(&path);
+
+        library.set_page_count(&id, 117);
+        library.save(&index).unwrap();
+
+        assert_eq!(Library::load(&index).get(&id).unwrap().page_count, 117);
     }
 
     #[test]

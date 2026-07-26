@@ -41,7 +41,7 @@ The remediation effort is complete only when all of the following are true:
 - [x] Enter splits the block whether or not a completion is offered, and Escape closes every panel.
 - [ ] Dart and Rust line breaking agree on the defined shared behavior.
 - [ ] Rust pagination is reachable through the bridge and exercised outside its isolated crate tests.
-- [ ] The library page count is updated from a saved pagination snapshot.
+- [x] The library page count is updated from a saved pagination snapshot.
 - [x] The application does not treat its own save as an external file modification.
 - [x] Overlapping saves for the same session cannot write out of order.
 - [x] External-change checks perform disk I/O off the actor thread.
@@ -2611,27 +2611,86 @@ zero, and no Dart code calls `docPaginate` yet.
 
 ## Phase 6E — Update library page count after save
 
-- [ ] Trigger background pagination after every successful explicit save.
-- [ ] Trigger it after every successful autosave.
-- [ ] Use the saved document snapshot, not live mutable state.
-- [ ] Store page count in the library entry as best-effort cache data.
-- [ ] Do not paginate every file during library scan.
-- [ ] Do not recompute on every keystroke.
-- [ ] Ensure stale pagination results cannot replace a newer page count.
-- [ ] Define behavior when pagination fails:
+- [x] Trigger background pagination after every successful explicit save.
+- [x] Trigger it after every successful autosave.
+- [x] Use the saved document snapshot, not live mutable state.
+- [x] Store page count in the library entry as best-effort cache data.
+- [x] Do not paginate every file during library scan.
+- [x] Do not recompute on every keystroke.
+- [x] Ensure stale pagination results cannot replace a newer page count.
+- [x] Define behavior when pagination fails:
   - save still succeeds;
   - page count remains previous/unknown;
   - error is logged or surfaced appropriately.
-- [ ] Display no page count for entries never processed by a layout-capable build, preserving current intended UX.
+- [x] Display no page count for entries never processed by a layout-capable build, preserving current intended UX.
 
 ### Tests
 
-- [ ] Save causes page count update.
-- [ ] Autosave causes page count update.
-- [ ] Pagination failure does not fail the save.
-- [ ] Older pagination result cannot overwrite newer result.
-- [ ] Library scan does not eagerly paginate all scripts.
-- [ ] Page count survives restart.
+- [x] Save causes page count update.
+- [x] Autosave causes page count update.
+- [x] Pagination failure does not fail the save.
+- [x] Older pagination result cannot overwrite newer result.
+- [x] Library scan does not eagerly paginate all scripts.
+- [x] Page count survives restart.
+
+### Implementation log — Phase 6E
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Ending commit:** working tree
+
+#### Changes made
+
+- The common `write_document` path now takes `ScriptSnapshot` and
+  `document_generation` in the same actor visit as the bytes it serialises.
+  After the atomic write and save bookkeeping succeed, both explicit save and
+  autosave paginate that owned snapshot on the calling FRB worker. No live
+  document is read during layout and the actor never runs the paginator.
+- Saved pagination reuses the session's `LayoutEngine` and returns it with its
+  fingerprints, so ADR 0022's incremental cache remains the application path.
+  The save lock is released before pagination; another save may proceed while
+  the older saved snapshot is being laid out.
+- Each successful save registers a monotonic, process-local page-count token for
+  its library entry. A result writes only while its token is still newest, so
+  an older pagination cannot replace a newer count. Only the count is persisted.
+- Paginator panics are caught after the file is safe and logged to stderr. The
+  save still returns `Saved`, and the previous count (or zero/unknown sentinel)
+  remains. Library scanning continues to stat entries only and never paginates.
+- `Library::set_page_count` records the best-effort cache value through the
+  existing atomic library-index save. The existing zero sentinel remains the
+  intended “not processed by a layout-capable build” UI state.
+
+#### Tests and measured budget
+
+- Bridge tests cover explicit save, autosave, injected pagination failure,
+  stale-token rejection, no eager pagination during library listing, and
+  persistence across a library reload. A storage test independently covers the
+  page-count JSON round trip. The persistence integration test crosses the real
+  generated bridge after an editor save and observes the page count in
+  `libraryList`.
+- The generated 120-page acceptance fixture produced 123 screenplay pages after
+  save. With the open document, retained `LayoutEngine`, wrap cache, previous
+  pagination, actor and storage state alive, the focused Linux bridge process
+  measured **10.3 MiB VmRSS**, with a **2.9 MiB retained-layout delta**, through
+  `/proc/self/status`, against §1.3's **250 MiB** ceiling. The test prints both
+  numbers and fails at the ceiling, replacing Phase 6D's estimate with an
+  executable core measurement.
+  Phase 10 still owns the release Flutter process measurement; this number does
+  not pretend the test harness is the shipped window.
+
+#### Verification
+
+```text
+cargo fmt --all --check                               # clean
+cargo clippy --workspace --all-targets -- -D warnings # clean
+cargo test --workspace                                # 416 passed
+python3 tools/check_layering.py                       # clean
+cd app && flutter analyze                            # no issues
+cd app && flutter test                               # 311 passed
+cd app && flutter build linux --release              # built
+cd app && flutter test integration_test/persistence_test.dart -d linux
+                                                       # 14 passed
+```
 
 ---
 
