@@ -131,6 +131,14 @@ jobs:
         working-directory: app
         run: flutter pub get
 
+      # Cargokit's vendored build tool is a separate Dart package. A developer
+      # checkout normally has its package config from the first Linux build,
+      # but a fresh CI checkout does not, and the root `flutter pub get` cannot
+      # resolve imports inside this nested package for `flutter analyze`.
+      - name: Resolve Cargokit build-tool packages
+        working-directory: app/rust_builder/cargokit/build_tool
+        run: dart pub get
+
       - name: Analyze
         working-directory: app
         run: flutter analyze

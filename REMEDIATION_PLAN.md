@@ -2824,18 +2824,43 @@ python3 tools/check_layering.py                       # clean
 ## Phase 6 exit conditions — Phase 7 gate
 
 - [x] Shared line-breaking contract is documented. — `docs/LINE_BREAKING.md`.
-- [ ] Five known Dart/Rust divergences are resolved.
-- [ ] Corpus-wide differential test passes in CI.
+- [x] Five known Dart/Rust divergences are resolved. — 6B resolved all six
+      divergences identified by the audit and added matching Dart/Rust cases.
+- [!] Corpus-wide differential test passes in CI.
+      - Both halves pass locally: Rust in `cargo test --workspace`, and all five
+        Dart differential groups in
+        `flutter test test/editor/line_break_differential_test.dart`.
+      - CI run `30198801885` for `52538cc` did not reach Flutter tests because
+        `flutter analyze` lacked the separate package config for Cargokit's
+        vendored build tool on a fresh checkout. The workflow now runs
+        `dart pub get` in that nested package before analysis. This gate remains
+        blocked until the corrected workflow completes successfully.
 - [x] Bridge depends on and invokes `slugline_layout`. — 6D, `api::layout::doc_paginate`.
 - [x] Pagination runs asynchronously from a document snapshot. — 6D; asserted off
       the actor thread, not only argued.
-- [ ] Page count updates after successful saves.
+- [x] Page count updates after successful saves. — 6E; explicit save,
+      autosave, stale-result, failure, scan, restart, and real-bridge cases.
 - [x] Debug pagination output is reachable through the app or integration harness. — 6F,
       debug-build editor action backed by `docPaginate`.
 - [x] Focused paginator review is recorded. — 6G; no engine rewrite, four
       coverage gaps pinned with focused tests.
-- [ ] No editor per-keystroke bridge round trip was introduced.
-- [ ] No preview or PDF feature work has started prematurely.
+- [x] No editor per-keystroke bridge round trip was introduced. — the hot path
+      remains Dart `DocumentLayout._wrap` → `wrapText`; `docPaginate` is reached
+      only through the explicit debug capability and save jobs.
+- [x] No preview or PDF feature work has started prematurely. — the only Dart
+      consumer is the `kDebugMode` diagnostic from 6F, and `render_pdf` remains
+      its Phase 7 placeholder.
+
+### Phase 6 gate audit — 2026-07-26
+
+The implementation requirements are complete. Local verification is green:
+Rust format, clippy, all workspace tests and layering; Flutter analysis, all 311
+unit/widget tests, and the corpus-wide differential test. The current remote CI
+run exposed a clean-checkout workflow defect rather than a product or
+differential failure: the nested Cargokit build-tool package had not had its own
+dependencies resolved before root analysis. The workflow fix is in this change.
+Phase 7 remains closed until a CI run containing that fix is green; once it is,
+change the blocked differential checkbox above to `[x]` and record the run.
 
 ## Suggested commit boundaries
 
