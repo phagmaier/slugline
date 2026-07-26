@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–3, 4A and 4A′ complete, Phase 4B next
+**Status:** in progress — Phases 0–3, 4A, 4A′ and 4B complete, Phase 4C next
 
 ---
 
@@ -42,7 +42,7 @@ The remediation effort is complete only when all of the following are true:
 - [ ] Dart and Rust line breaking agree on the defined shared behavior.
 - [ ] Rust pagination is reachable through the bridge and exercised outside its isolated crate tests.
 - [ ] The library page count is updated from a saved pagination snapshot.
-- [ ] The application does not treat its own save as an external file modification.
+- [x] The application does not treat its own save as an external file modification.
 - [x] Overlapping saves for the same session cannot write out of order.
 - [ ] External-change checks perform disk I/O off the actor thread.
 - [ ] Persisted scroll position is applied when reopening a script.
@@ -1575,36 +1575,188 @@ note from Phase 1 is still open for Phase 4B's dialogs work.
 
 ### Tasks
 
-- [ ] Preserve interval autosave during continuous typing.
-- [ ] Add an own-write correlation mechanism in the core.
-- [ ] Use the audit decision:
+- [x] Preserve interval autosave during continuous typing.
+  - Not a line of `autosave.dart` changed, and that is ADR 0024's whole point: the
+    timer that protects a writer who never pauses is the one that made F4 reachable,
+    and the repair had to be on the watcher side or it would have been a regression
+    dressed as a fix.
+- [x] Add an own-write correlation mechanism in the core.
+  - `OwnWrites` in `crates/storage/src/watch.rs`, consulted by the watcher's own
+    callback and written by the save path through `Storage::own_writes`.
+- [x] Use the audit decision:
   - path;
   - save generation counter;
   - recorded after successful write;
   - swallow the first matching watcher event for that generation.
-- [ ] Define behavior for platforms that emit multiple filesystem events for one atomic save.
-- [ ] Avoid suppressing a genuine external write that occurs immediately after the app’s save.
-- [ ] Keep `doc_external_change` as the correctness backstop.
-- [ ] Clear stale suppression records.
-- [ ] Document the correlation lifecycle.
+  - Path and generation as specified. The other two are deliberately not as
+    specified, and both changes are load-bearing rather than cosmetic — a record
+    made *after* the write loses the race to the event that caused it, and "the
+    first matching event" is wrong on exactly the platforms the next task asks
+    about. ADR 0028 records the refinement and the two negative controls that
+    prove each half of it. See "Deviations from plan".
+- [x] Define behavior for platforms that emit multiple filesystem events for one atomic save.
+  - Every event about a file that still matches the fingerprint we recorded is
+    swallowed, not just the first. Suppression is a property of the file, so a
+    filesystem that reports one rename as four events gets the same answer four
+    times — `every_event_from_one_save_is_swallowed_not_just_the_first`.
+- [x] Avoid suppressing a genuine external write that occurs immediately after the app’s save.
+  - The fingerprint is what makes "immediately after" harmless: another program's
+    write changes the inode (an atomic save) or the length and mtime (an in-place
+    one), so it does not match and is reported. Held by
+    `an_external_write_straight_after_our_own_save_is_still_reported` in Rust and
+    by the second half of the integration test.
+- [x] Keep `doc_external_change` as the correctness backstop.
+  - Untouched. `a_save_is_not_reported_as_somebody_elses_write` asserts it still
+    answers `(dirty, differs) = (true, true)` in the very scenario the suppression
+    exists for — the suppression is *in front of* it, never inside it.
+- [x] Clear stale suppression records.
+  - Four ways, no clock: the first event that contradicts the record, the next
+    write to the same path, `unwatch`, and `close`/Save As. §1.3's idle budget is
+    why there is no sweep — nothing here gets less true with age.
+- [x] Document the correlation lifecycle.
+  - The four numbered steps on `OwnWrites`, at the code, plus ADR 0028.
 
 ### Tests
 
-- [ ] Save a file.
-- [ ] Immediately type additional text.
-- [ ] Deliver the watcher event caused by the app’s own save.
-- [ ] Assert no external-change modal is shown.
-- [ ] Assert unsaved new typing remains intact.
-- [ ] Deliver a genuine later external modification.
-- [ ] Assert the real external-change path still runs.
-- [ ] Test multiple watcher events from one atomic rename sequence.
-- [ ] Test generation cleanup.
+- [x] Save a file.
+- [x] Immediately type additional text.
+- [x] Deliver the watcher event caused by the app’s own save.
+  - Really delivered, not simulated: `our_own_save_is_not_reported` saves through
+    `atomic::save_atomically` under a real `FileWatcher`, and the integration test
+    does it end to end through the `.so` and the `CoreEvent` stream.
+- [x] Assert no external-change modal is shown.
+  - At the level each test can reach: no `FileChangedOnDisk` reaches Dart, which is
+    the only thing `handleExternalChange` — and therefore the modal — runs from.
+- [x] Assert unsaved new typing remains intact.
+- [x] Deliver a genuine later external modification.
+- [x] Assert the real external-change path still runs.
+- [x] Test multiple watcher events from one atomic rename sequence.
+  - As repeated `is_echo` calls, since a real filesystem cannot be made to emit a
+    second event on demand. That is exactly what a second event does.
+- [x] Test generation cleanup.
+  - `a_write_cannot_finish_or_abandon_a_later_writes_record`,
+    `an_abandoned_write_suppresses_nothing`,
+    `the_event_that_did_not_match_clears_the_record`,
+    `closing_a_script_forgets_what_we_wrote_there`,
+    `save_as_suppresses_the_new_path_and_forgets_the_old_one`.
 
 ### Exit conditions
 
-- [ ] Own saves never trigger the external-change prompt.
-- [ ] Genuine external writes are still detected.
-- [ ] Interval autosave remains unchanged.
+- [x] Own saves never trigger the external-change prompt.
+- [x] Genuine external writes are still detected.
+- [x] Interval autosave remains unchanged.
+
+### Implementation log — Phase 4B
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `954b25e` (Phase 4A′)
+**Ending commit:** this commit
+
+#### Changes made
+
+- `crates/storage/src/watch.rs`: `OwnWrites`, the register of writes this process
+  made itself, with the four-step lifecycle documented on the type; a
+  `Fingerprint` of device, inode, length and nanosecond mtime; `FileWatcher::new`
+  now takes the register and filters with it, and `unwatch` forgets the path.
+- `crates/bridge/src/state.rs`: `Storage::own_writes`, held beside the watcher
+  rather than inside it because a build with no inotify still writes files;
+  `AppState::close` forgets the path it is letting go of.
+- `crates/bridge/src/api/files.rs`: `init` creates the register and hands it to
+  the watcher; `write_document` and `backup_restore` bracket their writes with a
+  small `OwnWrite` helper whose `abandoned` matters as much as its `finished`;
+  `rebind` forgets the path a Save As has left.
+- `docs/DECISIONS.md`: ADR 0028, refining ADR 0024 rather than editing it.
+- `SPEC.md` §Phase 4: "The prompt never fires for our own save" ticked, with the
+  mechanism and the tests that hold it.
+- No bridge signature changed, so no binding regeneration. No dependency added.
+  No Dart application code changed at all — the event simply stops arriving.
+
+#### Tests added or changed
+
+Ten in `crates/storage/src/watch.rs`, six in `crates/bridge/src/api/files.rs`, one
+in `app/integration_test/persistence_test.dart`. All seventeen are named in
+ADR 0028.
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                       # clean
+cargo clippy --workspace --all-targets -- -D warnings         # clean
+cargo test --workspace                                        # 370 passed, 0 failed
+python3 tools/check_layering.py                               # clean, 7 crates
+cd app && flutter analyze                                     # No issues found
+cd app && flutter test                                        # 284 passed
+cd app && flutter build linux --release                       # succeeds
+
+flutter test integration_test/persistence_test.dart         -d linux   # 13 passed
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/editor_test.dart              -d linux   # 7 passed
+flutter test integration_test/writing_test.dart             -d linux   # 11 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+
+# Negative controls, run before trusting any of the above:
+#   `is_echo` stubbed to false      → 11 tests fail, the integration test
+#                                     among them, against the real .so
+#   the bracket moved to after the write (ADR 0024's literal sequence)
+#                                   → a_save_still_at_the_disk_already_
+#                                     suppresses_its_own_event fails
+```
+
+#### Results
+
+Rust 354 → 370. Flutter unit tests unchanged at 284, which is the honest number:
+nothing in Dart changed, because the repair is that an event stops being sent.
+The integration suite is 45 → 46.
+
+#### Deviations from plan
+
+**The audit's sketch was refined in two places, and both were proved rather than
+argued.** ADR 0024 said "recorded after successful write" and "swallow the first
+matching watcher event". Neither survived contact with a real filesystem:
+
+- Recording after the write loses the race to the event it is meant to catch.
+  `notify` delivers from its own thread while `save_atomically` is still
+  returning, and step three is an actor round trip away. The bracket is therefore
+  opened *before* the write; an event arriving inside it is either our own rename
+  or a write our rename is about to overwrite. The control:
+  `a_save_still_at_the_disk_already_suppresses_its_own_event` fails against the
+  literal sequence.
+- "The first matching event" assumes one event per rename, which is the very
+  assumption the next task in this phase says not to make. Suppression is keyed on
+  the file's identity instead, so a filesystem reporting one save as four events
+  gets four consistent answers.
+
+ADR 0028 records both, refining ADR 0024 rather than editing it, per the rule in
+`AGENTS.md`.
+
+**The filtering lives inside `FileWatcher` rather than in the bridge's callback.**
+`watch.rs`'s header says the module does not decide whether to reload or ask, and
+that is still true — it now decides only whether a change was *ours*, which is a
+question about the filesystem rather than about the document. The gain is that
+the composition under test is the composition that ships: the bridge cannot
+assemble the filter differently from the way `watch.rs`'s own tests do.
+
+**The Dart-side test is an integration test, not a widget test.** A widget test
+would have to fake the event to assert the modal does not open, which asserts
+that a fake was not sent. The real proof needs a real rename producing a real
+inotify event, and its second half — a genuine external write that must still get
+through — is what stops the first half passing on a machine where the watcher
+never fires at all.
+
+#### New risks or follow-up findings
+
+- **A save whose file cannot be `stat`ed drops its record** rather than keeping an
+  in-flight one, so its echo is reported and the writer may see one spurious
+  prompt. That is the safe direction (the backstop then compares the file and
+  usually finds it in step), and it is the only reachable case where F4 survives.
+- Phase 4C now has a second reason to exist: `doc_external_change` still reads the
+  disk and serialises the whole document on the actor thread, and suppression has
+  made that path rarer without making it cheaper.
+- The `Degraded` recovery note carried since Phase 1 is still open. Phase 4B
+  touched no dialog, so it stays open for whoever next works on that surface.
 
 ---
 
@@ -1652,8 +1804,8 @@ note from Phase 1 is still open for Phase 4B's dialogs work.
 
 ## Suggested commit boundaries
 
-- [ ] `fix(storage): serialize saves per document session`
-- [ ] `fix(storage): suppress watcher events from own saves`
+- [x] `fix(storage): serialize saves per document session`
+- [x] `fix(storage): suppress watcher events from own saves`
 - [ ] `refactor(storage): move external-change IO off actor`
 
 ---

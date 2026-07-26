@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use slugline_document::{BlockId, Document, EntityIndex, EntityKind, Patch};
 use slugline_storage::journal::Journal;
 use slugline_storage::library::Library;
-use slugline_storage::watch::FileWatcher;
+use slugline_storage::watch::{FileWatcher, OwnWrites};
 use slugline_storage::{Paths, Preferences};
 
 /// §3.4: consecutive text edits to the same block coalesce into one undo
@@ -47,6 +47,15 @@ pub struct Storage {
     /// process out of watch descriptors. External-change detection is a
     /// convenience; nothing else depends on it, so it fails quietly.
     pub watcher: Option<FileWatcher>,
+    /// The files this process has itself written, so that the watcher can tell
+    /// the echo of our own save from another program's edit (F4).
+    ///
+    /// Held here rather than inside the watcher because the save path needs it
+    /// and the watcher may not exist: a build with no inotify still writes
+    /// files, and a registry that only appeared when the watcher did would be a
+    /// second thing to reason about. It is an `Arc` because the only other
+    /// thread that reads it is `notify`'s.
+    pub own_writes: Arc<OwnWrites>,
 }
 
 impl AppState {
@@ -71,10 +80,14 @@ impl AppState {
             }
             if let (Some(storage), Some(id)) = (self.storage.as_mut(), session.id.as_ref()) {
                 storage.library.closed(id, session.scroll_row());
-                if let (Some(watcher), Some(path)) =
-                    (storage.watcher.as_mut(), session.path.as_ref())
-                {
-                    let _ = watcher.unwatch(path);
+                if let Some(path) = session.path.as_ref() {
+                    // A path this session is no longer holding has nothing left
+                    // to suppress. `unwatch` forgets it too; this is the half
+                    // that still runs when there is no watcher to unwatch from.
+                    storage.own_writes.forget(path);
+                    if let Some(watcher) = storage.watcher.as_mut() {
+                        let _ = watcher.unwatch(path);
+                    }
                 }
             }
         }

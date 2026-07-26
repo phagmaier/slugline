@@ -2005,3 +2005,135 @@ In `crates/bridge/src/api/files.rs`, driving the real save path with the same
 
 Confirmed to fail with the rebuild reverted: the mid-write test reports zero
 journalled records where one was typed.
+
+---
+
+## ADR 0028 — A save is recognised by the file it left, not by a counted event
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (mid-project
+remediation, Phase 4B) · **Refines:** ADR 0024
+
+### Context
+
+ADR 0024 settled the shape of the F4 repair: the interval autosave keeps firing
+while the writer types, and the app's own watcher echo is suppressed by
+correlating writes rather than by weakening the timer. It also sketched the
+mechanism — "record each path it has itself written, with a save generation
+counter, in the step of `write_document` that already runs on the actor after a
+successful write", and "the first matching `FileChangedOnDisk` for that
+generation is swallowed."
+
+Implementing it found two things wrong with that sketch, both of which would have
+shipped a suppression that does not suppress:
+
+1. **Recording after the write loses the race it exists to win.** The rename is
+   what causes the event, and `notify` delivers it from its own thread while the
+   save is still returning from `save_atomically`. Step three is an actor round
+   trip away. The event that most needs swallowing — the one for the save that
+   just happened — routinely arrives before there is anything for it to match.
+2. **"The first matching event" assumes one event per save.** A filesystem is
+   entitled to describe one rename as several events, and inotify does exactly
+   that for some save shapes. Swallowing one and letting the rest through would
+   turn a modal into a slightly rarer modal.
+
+### Decision
+
+**A suppression record is opened before the write and closed after it, and it
+identifies the file we produced rather than counting events.**
+
+* `OwnWrites` (in `storage/watch.rs`) holds one record per path: a generation,
+  and — once the write has landed — a `Fingerprint` of the file, being its
+  device, inode, length and nanosecond mtime.
+* `OwnWrites::begin` runs immediately before `atomic::save_atomically`, and
+  `finished`/`abandoned` immediately after. While a write is in flight, every
+  event about that path is swallowed: it is either our own rename or a write our
+  rename is about to overwrite regardless.
+* `OwnWrites::is_echo` answers **every** event about the path, not the first. A
+  file that still matches the fingerprint is one nothing has happened to since we
+  wrote it, so there is nothing to report — however many times the filesystem
+  says so.
+* The first event that does *not* match drops the record and is reported. That,
+  plus the next write to the same path and `forget` on close/Save As, is the
+  whole of the expiry: nothing here gets less true with age, so nothing needs a
+  clock and §1.3's idle budget is untouched.
+* The generation is what stops an overtaken write from finishing or abandoning
+  the record of the write that replaced it.
+* Everything ADR 0024 decided stands: both autosave timers are unchanged,
+  `doc_external_change` remains authoritative, and losing a record costs one
+  spurious prompt rather than any correctness.
+
+### Alternatives considered
+
+**Record after the write, as ADR 0024 sketched.** Kept honest by a test rather
+than by argument: `a_save_still_at_the_disk_already_suppresses_its_own_event`
+fails against that sequence, because the event arrives while the save is still at
+the disk.
+
+**Compare the file's content instead of its identity.** A read of the whole
+script on `notify`'s thread, for every event, to answer a question a `stat`
+answers. The fingerprint is one `stat` of an inode this process wrote
+milliseconds ago, so it is in the kernel's cache; a content read is the disk I/O
+§2.3 forbids on exactly the thread that must not block.
+
+**Match on mtime alone.** An in-place write of the same length in the same
+nanosecond is not reachable, but an atomic save replaces the inode and that is
+free to check — so the fingerprint checks it, and a `git checkout` that restores
+byte-identical content is still reported as the external change it is.
+
+**Suppress in Dart, by ignoring events for a moment after a save returns.** A
+timer, in the layer that has one — but the app does not learn that the save
+finished until after the event may already have been handled, and "for a moment"
+is a guess about a filesystem the app cannot see.
+
+**Stop watching during the save.** ADR 0024 already rejected it: the watch is on
+the directory, so the window is not cleanly closable, and closing it would also
+miss a genuine external write in the same instant.
+
+### Consequences
+
+* `FileWatcher::new` takes the register, so the filter is inside the watcher and
+  every consumer of it gets the same answer. The bridge keeps its own `Arc` in
+  `Storage::own_writes`, because a build with no inotify still writes files.
+* Every write of a document's file must bracket itself — `write_document` and
+  `backup_restore` both do, through `OwnWrite`, whose `abandoned` matters as much
+  as its `finished`: a record left in flight would swallow the next real change.
+* A genuine external write landing inside our own write is swallowed. It was
+  already doomed — our rename overwrites it — and `doc_external_change` compares
+  against the file at the moment it is asked, so nothing is reported as agreeing
+  that does not.
+* The suppression state is per path and cleared on close, so a session holds at
+  most one record per open script.
+
+### Tests and invariants
+
+In `crates/storage/src/watch.rs`, against real inotify and the real atomic save:
+
+* `our_own_save_is_not_reported`, and its indispensable other half
+  `an_external_write_straight_after_our_own_save_is_still_reported`.
+* `every_event_from_one_save_is_swallowed_not_just_the_first`,
+  `an_event_while_we_are_still_writing_is_swallowed`,
+  `a_second_save_suppresses_its_own_event_too`.
+* `an_abandoned_write_suppresses_nothing`,
+  `a_write_cannot_finish_or_abandon_a_later_writes_record`,
+  `the_event_that_did_not_match_clears_the_record`,
+  `a_deleted_file_is_not_our_own_write`, `unwatching_forgets_what_we_wrote_there`.
+
+In `crates/bridge/src/api/files.rs`, against the real save path:
+
+* `a_save_is_not_reported_as_somebody_elses_write` — F4 exactly: save, type, and
+  the echo is still suppressed while `doc_external_change` still reports dirty
+  and different, which is why suppression happens before it and not inside it.
+* `an_external_write_straight_after_our_save_is_still_reported`,
+  `a_save_still_at_the_disk_already_suppresses_its_own_event`,
+  `a_failed_save_leaves_nothing_suppressed`,
+  `save_as_suppresses_the_new_path_and_forgets_the_old_one`,
+  `closing_a_script_forgets_what_we_wrote_there`.
+
+In `app/integration_test/persistence_test.dart`, end to end against the `.so`:
+*our own save is not reported as somebody else writing the file* — the only test
+in the repository where a real rename produces a real inotify event that a real
+`CoreEvent` stream either carries or does not.
+
+Confirmed to fail first: with `is_echo` stubbed to `false`, eleven of these fail,
+the integration test among them; with the bracket moved after the write, the
+in-flight one does.

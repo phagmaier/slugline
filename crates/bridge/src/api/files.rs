@@ -32,7 +32,7 @@
 //! something happens.
 
 use std::path::{Path, PathBuf};
-use std::sync::PoisonError;
+use std::sync::{Arc, PoisonError};
 
 use flutter_rust_bridge::frb;
 
@@ -40,7 +40,7 @@ use slugline_document as model;
 use slugline_storage::backup::{self, Retention};
 use slugline_storage::journal::{self, Journal};
 use slugline_storage::library::{Library, ScriptEntry};
-use slugline_storage::watch::FileWatcher;
+use slugline_storage::watch::{FileWatcher, OwnWrites};
 use slugline_storage::{atomic, paths::Paths, prefs, Preferences as CorePreferences};
 
 use crate::actor::actor;
@@ -215,7 +215,13 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
     // The watcher's callback runs on `notify`'s thread and does one thing: push
     // an event at Dart. It must not touch `AppState` — that would be a second
     // thread reaching the actor's data, which §2.3 exists to prevent.
-    let watcher = FileWatcher::new(|path| {
+    //
+    // `own_writes` is the exception that proves it: the one thing the callback
+    // has to know that the save path knows is which writes were ours, and it is
+    // its own lock-guarded register precisely so that asking does not mean
+    // reaching into the actor's state (F4, ADR 0028).
+    let own_writes = OwnWrites::shared();
+    let watcher = FileWatcher::new(Arc::clone(&own_writes), |path| {
         emit(CoreEvent::FileChangedOnDisk {
             path: path.to_string_lossy().into_owned(),
         });
@@ -228,6 +234,7 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
             prefs,
             library,
             watcher,
+            own_writes,
         });
     });
     true
@@ -558,6 +565,9 @@ async fn write_document(
                     storage.prefs.retention(),
                 )
             });
+            let own_writes = state
+                .storage()
+                .map(|storage| Arc::clone(&storage.own_writes));
             let session = state.session_mut(handle.id)?;
             // Arms the buffer that keeps the records for anything typed from
             // here until step three, in the same closure that reads the bytes
@@ -570,6 +580,7 @@ async fn write_document(
                 revision,
                 dirty: session.document().is_dirty(),
                 storage: storage_paths,
+                own_writes,
             })
         }
     });
@@ -600,9 +611,18 @@ async fn write_document(
     }
 
     // Step two, off the actor thread: the disk (§2.3).
+    //
+    // The write is bracketed by the own-write register, so that the watcher can
+    // recognise the event this rename is about to cause as our own (F4). It is
+    // taken *before* the write rather than recorded after it: the event can be
+    // delivered while the rename is still returning, long before an actor round
+    // trip could record anything, and an event that arrives inside the bracket
+    // is by definition about a file we are in the middle of replacing.
+    let own_write = OwnWrite::begin(plan.own_writes.as_ref(), &path);
     #[cfg(test)]
     stall::reached(&path);
     if let Err(error) = atomic::save_atomically(&path, &plan.text) {
+        own_write.abandoned();
         abandon_save(handle.id);
         return SaveOutcome::Failed {
             failure: failure_of(&error),
@@ -610,6 +630,7 @@ async fn write_document(
             message: error.to_string(),
         };
     }
+    own_write.finished();
 
     // §Phase 4's rolling backups. Written after the file, so a backup only ever
     // exists for a state that reached the disk.
@@ -725,6 +746,47 @@ struct Plan {
     revision: u64,
     dirty: bool,
     storage: Option<(PathBuf, Retention)>,
+    /// `None` before `init`, which is a supported state (see [`AppState`]) and
+    /// one in which there is no watcher to suppress anything for either.
+    own_writes: Option<Arc<OwnWrites>>,
+}
+
+/// One write of one file, bracketed so the watcher can recognise its own echo.
+///
+/// A small thing with a name because the bracket has to be closed on **every**
+/// path out of a write, and `abandoned` is as important as `finished`: a record
+/// left in flight would swallow the next real external change to that file. See
+/// [`OwnWrites`] for the lifecycle this is one turn of.
+struct OwnWrite<'a> {
+    register: Option<&'a Arc<OwnWrites>>,
+    path: &'a Path,
+    generation: u64,
+}
+
+impl<'a> OwnWrite<'a> {
+    fn begin(register: Option<&'a Arc<OwnWrites>>, path: &'a Path) -> OwnWrite<'a> {
+        let generation = register.map_or(0, |register| register.begin(path));
+        OwnWrite {
+            register,
+            path,
+            generation,
+        }
+    }
+
+    /// The bytes are on the disk. Anything the watcher says about this file from
+    /// here until somebody else touches it is our own noise.
+    fn finished(self) {
+        if let Some(register) = self.register {
+            register.finished(self.path, self.generation);
+        }
+    }
+
+    /// Nothing was written, so there is nothing to suppress.
+    fn abandoned(self) {
+        if let Some(register) = self.register {
+            register.abandoned(self.path, self.generation);
+        }
+    }
 }
 
 /// A seam for the save-serialisation tests, and nothing else.
@@ -904,14 +966,18 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
                 storage.prefs.retention(),
             )
         });
+        let own_writes = state
+            .storage()
+            .map(|storage| Arc::clone(&storage.own_writes));
         let session = state.session(handle.id)?;
         Some((
             session.path()?.to_path_buf(),
             session.document().serialise(),
             root,
+            own_writes,
         ))
     });
-    let Some((path, current, root)) = plan else {
+    let Some((path, current, root, own_writes)) = plan else {
         return failed(
             SaveFailure::NoPath,
             Path::new(""),
@@ -928,13 +994,19 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
         }
     }
 
+    // A restore is a write of this document's file by another name, so it gets
+    // the same bracket as [`write_document`]'s: the watcher must not report it
+    // as somebody else's edit either.
+    let own_write = OwnWrite::begin(own_writes.as_ref(), &path);
     if let Err(error) = atomic::save_atomically(&path, &contents) {
+        own_write.abandoned();
         return SaveOutcome::Failed {
             failure: failure_of(&error),
             path: path.to_string_lossy().into_owned(),
             message: error.to_string(),
         };
     }
+    own_write.finished();
 
     let bytes = contents.len().min(u32::MAX as usize) as u32;
     actor().run({
@@ -1272,6 +1344,10 @@ fn rebind(state: &mut AppState, handle: u64, path: PathBuf, id: String) {
         .and_then(Session::path)
         .map(Path::to_path_buf);
     if let (Some(storage), Some(old)) = (state.storage_mut(), old_path.as_ref()) {
+        // The suppression record for the path this session is leaving goes with
+        // the watch on it. A Save As has already written the *new* path by the
+        // time this runs, so only the old one is forgotten.
+        storage.own_writes.forget(old);
         if let Some(watcher) = storage.watcher.as_mut() {
             let _ = watcher.unwatch(old);
         }
@@ -1438,6 +1514,7 @@ mod tests {
 
     use std::fs;
     use std::future::Future;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::sync::{Mutex, MutexGuard};
@@ -1500,9 +1577,13 @@ mod tests {
                 paths,
                 prefs: CorePreferences::default(),
                 library,
-                // No inotify: nothing here is testing the watcher, and a watch
-                // descriptor per test would be a slow way to find that out.
+                // No inotify: the watcher's own filtering is proved against real
+                // events in `storage::watch`, and a watch descriptor per test
+                // would be a slow way to find that out again. What these tests
+                // watch instead is the register the watcher asks — which is the
+                // half the save path owns.
                 watcher: None,
+                own_writes: OwnWrites::shared(),
             };
             actor().run(move |state| state.set_storage(storage_state));
 
@@ -1603,6 +1684,23 @@ mod tests {
                     .session(handle.id)
                     .is_some_and(|session| session.is_saving())
             })
+        }
+
+        /// The register the watcher consults. Reaching for it directly is what
+        /// lets these tests ask the F4 question — "would this event be reported
+        /// as somebody else's?" — without an inotify descriptor and a wait.
+        fn own_writes(&self) -> Arc<OwnWrites> {
+            actor().run(|state| {
+                state
+                    .storage()
+                    .map(|storage| Arc::clone(&storage.own_writes))
+                    .expect("storage is installed")
+            })
+        }
+
+        /// Whether a watcher event about this script right now would reach Dart.
+        fn would_be_reported(&self) -> bool {
+            !self.own_writes().is_echo(&self.script)
         }
     }
 
@@ -2003,5 +2101,146 @@ mod tests {
             opens.iter().all(|id| *id == it.handle.id),
             "eight concurrent opens produced more than one document: {opens:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4B — the app's own save is not somebody else's edit
+    // -----------------------------------------------------------------------
+
+    /// F4, in the shape the audit describes it: the interval autosave fires
+    /// mid-typing by design, so the writer types between our rename and the
+    /// event about it, and the check then finds the document dirty and
+    /// different. Before the repair that was the full "Something else has
+    /// written to this file" modal, about our own autosave.
+    #[test]
+    fn a_save_is_not_reported_as_somebody_elses_write() {
+        let it = Fixture::open("own-echo");
+        it.types("One. ");
+        assert!(matches!(
+            block_on(doc_autosave(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+
+        // The keystroke that used to turn the echo into a modal.
+        it.types("Two. ");
+        let typed = it.in_memory();
+        assert!(
+            !it.would_be_reported(),
+            "the event caused by our own save reached Dart"
+        );
+
+        // And the backstop still says what it always said — dirty here,
+        // different there — which is exactly why suppression had to happen
+        // before it rather than inside it.
+        assert_eq!(doc_external_change(it.handle), Some((true, true)));
+        assert_eq!(it.in_memory(), typed, "nothing typed was disturbed");
+    }
+
+    /// The repair is worth nothing if it eats a real one. A write by another
+    /// program straight after ours must still be reported.
+    #[test]
+    fn an_external_write_straight_after_our_save_is_still_reported() {
+        let it = Fixture::open("own-then-theirs");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert!(!it.would_be_reported());
+
+        atomic::save_atomically(&it.script, "Somebody else wrote this.\n")
+            .expect("their save works");
+        assert!(
+            it.would_be_reported(),
+            "a real external change was swallowed as our own"
+        );
+        assert!(
+            it.own_writes().is_empty(),
+            "and the record it contradicted was dropped rather than asked again"
+        );
+        assert_eq!(doc_external_change(it.handle), Some((false, true)));
+    }
+
+    /// The window ADR 0024's sequence left open, and the reason the bracket is
+    /// taken before the write rather than recorded after it: the event can be
+    /// delivered while the rename is still returning, long before an actor round
+    /// trip could record anything.
+    #[test]
+    fn a_save_still_at_the_disk_already_suppresses_its_own_event() {
+        let it = Fixture::open("own-in-flight");
+        let gate = Gate::hold_the_first_write(&it.script);
+
+        it.types("Being written. ");
+        let saving = Saving::explicit(it.handle);
+        gate.wait();
+        assert!(
+            !it.would_be_reported(),
+            "an event arriving mid-write would have been reported as external"
+        );
+
+        gate.release();
+        assert!(matches!(saving.outcome(), SaveOutcome::Saved { .. }));
+        assert!(!it.would_be_reported());
+    }
+
+    /// A write that failed wrote nothing, so it has no echo to suppress — and a
+    /// record left in flight would swallow the next real event about the file.
+    #[test]
+    fn a_failed_save_leaves_nothing_suppressed() {
+        let it = Fixture::open("own-failed");
+        it.types("Doomed. ");
+        let read_only = fs::Permissions::from_mode(0o555);
+        fs::set_permissions(&it.root, read_only).expect("the folder is made read-only");
+
+        let outcome = block_on(doc_save(it.handle));
+        fs::set_permissions(&it.root, fs::Permissions::from_mode(0o755))
+            .expect("the folder is writable again");
+        assert!(matches!(outcome, SaveOutcome::Failed { .. }));
+        assert!(it.would_be_reported());
+        assert!(it.own_writes().is_empty());
+    }
+
+    /// Save As leaves one path and takes another. The record follows the file
+    /// that was written, and the one left behind is dropped with its watch —
+    /// otherwise a script the writer went back to editing elsewhere would have
+    /// its next real change swallowed.
+    #[test]
+    fn save_as_suppresses_the_new_path_and_forgets_the_old_one() {
+        let it = Fixture::open("own-save-as");
+        let elsewhere = it.root.join("elsewhere.fountain");
+        it.types("Moving. ");
+        let outcome = block_on(doc_save_as(
+            it.handle,
+            elsewhere.to_string_lossy().into_owned(),
+        ));
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+
+        let own = it.own_writes();
+        assert!(own.is_echo(&elsewhere), "the file we just wrote is ours");
+        assert!(
+            !own.is_echo(&it.script),
+            "the path the session left is nobody's to suppress"
+        );
+        assert_eq!(own.len(), 1);
+    }
+
+    /// Closing a script clears what it wrote. This is the third way a record
+    /// goes — the other two being the next write to the same path and the first
+    /// event that contradicts it — and together they are why nothing here needs
+    /// a timer to expire.
+    #[test]
+    fn closing_a_script_forgets_what_we_wrote_there() {
+        let it = Fixture::open("own-close");
+        it.types("Once. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        let own = it.own_writes();
+        assert_eq!(own.len(), 1);
+
+        let handle = it.handle;
+        actor().run(move |state| state.close(handle.id));
+        assert!(own.is_empty());
     }
 }

@@ -63,6 +63,28 @@ void main() {
     return controller;
   }
 
+  /// Pumps for `duration` in real time, so that anything the core pushes over
+  /// the event stream has somewhere to land. `pumpAndSettle` cannot serve: a
+  /// filesystem event owes the framework no frame, and the interesting answer is
+  /// usually that nothing arrives at all.
+  Future<void> settleFor(WidgetTester tester, Duration duration) async {
+    final deadline = DateTime.now().add(duration);
+    while (DateTime.now().isBefore(deadline)) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  /// The same, until `ready` or five seconds — generous, because a wrong answer
+  /// here should mean a broken watcher rather than a busy machine.
+  Future<void> settleUntil(WidgetTester tester, bool Function() ready) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!ready() && DateTime.now().isBefore(deadline)) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
   testWidgets('a new script is a real file, and typing into it saves', (
     tester,
   ) async {
@@ -253,6 +275,67 @@ void main() {
       expect(core.externalChange(), (false, false));
     },
   );
+
+  // F4, end to end and against real inotify: nothing else in this repository can
+  // prove it. The watcher event that a save causes is delivered by `notify`'s
+  // own thread, minutes of code away from the save that caused it, and the whole
+  // defect is that the two were never connected. The Rust tests prove the
+  // correlation; this proves that the event a real rename really produces is the
+  // one it correlates with.
+  //
+  // The two halves belong in one test. Without the second, a machine with no
+  // inotify would pass the first by never reporting anything at all.
+  testWidgets('our own save is not reported as somebody else writing the file', (
+    tester,
+  ) async {
+    final file = path('own-save.fountain');
+    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+    final handle = await files.libraryOpen(path: file);
+    final core = RustDocumentCore.of(handle!);
+    addTearDown(core.close);
+    final controller = await openEditor(tester, core);
+
+    final reported = <String>[];
+    final watching = Core.instance.events.listen((event) {
+      if (event case CoreEvent_FileChangedOnDisk(:final path)
+          when path == file) {
+        reported.add(path);
+      }
+    });
+    addTearDown(watching.cancel);
+
+    controller.insertText('X');
+    await tester.pump();
+    expect(await core.save(), isA<SaveOutcome_Saved>());
+
+    // The keystroke that turns the echo into a modal: it lands between our
+    // rename and the event about it, so the check that follows finds the
+    // document dirty and the file different — which is what
+    // `handleExternalChange` shows the "Something else has written to this file"
+    // dialog for.
+    controller.insertText('Y');
+    await tester.pump();
+    await settleFor(tester, const Duration(seconds: 2));
+
+    expect(
+      reported,
+      isEmpty,
+      reason: 'the app was told another program had written its own save',
+    );
+    expect(core.dirty, isTrue, reason: 'and the keystroke after it survived');
+    expect(core.source(), contains('Y'));
+
+    // A genuine write by something else still arrives, which is the property
+    // suppression must not buy at any price.
+    File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
+    await settleUntil(tester, () => reported.isNotEmpty);
+    expect(
+      reported,
+      isNotEmpty,
+      reason: 'suppression swallowed a real external change',
+    );
+    expect(core.externalChange(), (true, true), reason: 'and it is a real one');
+  });
 
   testWidgets(
     'the library lists what has been opened, and remembers a session',

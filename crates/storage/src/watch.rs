@@ -25,10 +25,14 @@
 //! Whether to reload silently or to ask is not this module's business. It
 //! reports that a path changed; the bridge knows whether the document is dirty,
 //! and §Phase 4 makes the decision turn entirely on that.
+//!
+//! It does decide one thing: whether the change was **ours**. See [`OwnWrites`].
 
 use std::collections::HashMap;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use notify::event::{EventKind, ModifyKind, RenameMode};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -40,17 +44,22 @@ pub struct FileWatcher {
     /// when its last file is.
     directories: HashMap<PathBuf, usize>,
     watched: Arc<Mutex<Vec<PathBuf>>>,
+    own: Arc<OwnWrites>,
 }
 
 impl FileWatcher {
     /// Starts a watcher that calls `on_change` with the path of any watched file
-    /// that changed.
+    /// that changed — except when `own` says we changed it ourselves.
     ///
     /// `on_change` runs on `notify`'s own thread, so it must not block. In the
     /// bridge it does one thing: push a `CoreEvent` at Dart.
-    pub fn new(on_change: impl Fn(PathBuf) + Send + 'static) -> notify::Result<FileWatcher> {
+    pub fn new(
+        own: Arc<OwnWrites>,
+        on_change: impl Fn(PathBuf) + Send + 'static,
+    ) -> notify::Result<FileWatcher> {
         let watched: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
         let interesting = Arc::clone(&watched);
+        let ours = Arc::clone(&own);
         let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
             let Ok(event) = event else { return };
             if !is_content_change(&event.kind) {
@@ -62,16 +71,28 @@ impl FileWatcher {
             for path in &event.paths {
                 // The directory watch reports every file in the directory. Only
                 // the ones somebody asked about are anybody's business.
-                if watched.iter().any(|candidate| candidate == path) {
-                    on_change(path.clone());
+                if !watched.iter().any(|candidate| candidate == path) {
+                    continue;
                 }
+                // …and the echo of our own save is nobody's business at all.
+                if ours.is_echo(path) {
+                    continue;
+                }
+                on_change(path.clone());
             }
         })?;
         Ok(FileWatcher {
             watcher,
             directories: HashMap::new(),
             watched,
+            own,
         })
+    }
+
+    /// The register of writes this application made itself, for the save path to
+    /// record into.
+    pub fn own_writes(&self) -> Arc<OwnWrites> {
+        Arc::clone(&self.own)
     }
 
     /// Starts reporting changes to `path`.
@@ -99,6 +120,10 @@ impl FileWatcher {
 
     /// Stops reporting changes to `path`.
     pub fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+        // A path nobody is watching cannot produce an event to suppress, so the
+        // record for it is dead weight. This is one of the two places stale
+        // suppression is cleared; the other is an event that does not match it.
+        self.own.forget(path);
         {
             let mut watched = self.watched.lock().expect("watch list mutex poisoned");
             let before = watched.len();
@@ -130,6 +155,208 @@ impl FileWatcher {
     }
 }
 
+/// The writes this application made itself, so that the watcher can tell its own
+/// echo from somebody else's editor (F4, ADR 0024, ADR 0028).
+///
+/// ## Why this is needed at all
+///
+/// [`crate::atomic`] saves by renaming over the target, and the watch is on the
+/// directory, so **every save this application makes produces an event about
+/// itself**. That was harmless while the check that follows the event —
+/// `doc_external_change` — could answer "unmodified here, identical there". It
+/// stops being harmless the moment the writer types between the rename and the
+/// event being handled: the document is then dirty and different, and they get a
+/// modal accusing another program of writing their file, about their own
+/// autosave.
+///
+/// ## The lifecycle of one record
+///
+/// One record per path, holding a generation and — once there is one — a
+/// fingerprint of the file we produced.
+///
+/// 1. **[`OwnWrites::begin`]**, immediately before the bytes go to the disk.
+///    Records the path with no fingerprint yet and returns a generation. From
+///    here until step 2 the path is *in flight*, and every event about it is
+///    swallowed: it is either the rename we are in the middle of, or a write by
+///    somebody else that our rename is about to overwrite regardless.
+/// 2. **[`OwnWrites::finished`]**, immediately after a successful write, or
+///    **[`OwnWrites::abandoned`]** after a failed one. `finished` stats the file
+///    and stores what it found; `abandoned` drops the record, because a write
+///    that did not happen has no echo to suppress. Both ignore a record a later
+///    write has since claimed, which is what the generation is for.
+/// 3. **[`OwnWrites::is_echo`]**, on `notify`'s thread, for every event about a
+///    watched path. A record whose fingerprint still describes the file means
+///    the file is *exactly* what we wrote, and there is nothing to report. A
+///    fingerprint that no longer matches means somebody else has been here
+///    since: the record is dropped and the event is reported.
+/// 4. **[`OwnWrites::forget`]**, when the path stops being watched or the
+///    session moves to another one.
+///
+/// Nothing here expires on a clock. A record is cleared by the first event that
+/// contradicts it, by the next write to the same path, or by `forget` — and one
+/// that is never cleared costs a `HashMap` entry for a file the application has
+/// open. §1.3's idle budget is why: a timer to sweep a few paths would be a
+/// wakeup in an idle process, and there is nothing here that gets less true with
+/// age.
+///
+/// ## What it deliberately does not do
+///
+/// It never decides that a file *has* changed — only that one particular event
+/// is our own noise. `doc_external_change` still reads the file and compares it,
+/// for every event that gets through, and that is what remains authoritative
+/// (ADR 0024). Losing a record costs one spurious prompt; it cannot cost
+/// correctness.
+#[derive(Default)]
+pub struct OwnWrites {
+    writes: Mutex<HashMap<PathBuf, OwnWrite>>,
+    next_generation: AtomicU64,
+}
+
+struct OwnWrite {
+    /// Which write this record belongs to. A `finished` or `abandoned` call
+    /// carrying an older generation is one whose record has already been taken
+    /// over by a newer write, and it must not touch it.
+    generation: u64,
+    /// The file as our write left it. `None` while the write is still at the
+    /// disk.
+    wrote: Option<Fingerprint>,
+}
+
+/// Enough of a file's identity to say "this is still exactly the file we wrote,
+/// and nothing has happened to it since".
+///
+/// The inode and device because an atomic save replaces the file rather than
+/// editing it, so anybody else's save changes them; the length and the
+/// modification time because an in-place write does not. Linux timestamps are
+/// nanosecond-resolution, so two distinct writes cannot share one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Fingerprint {
+    device: u64,
+    inode: u64,
+    len: u64,
+    modified_secs: i64,
+    modified_nanos: i64,
+}
+
+impl Fingerprint {
+    /// One `stat`. This runs on `notify`'s thread, where blocking is forbidden,
+    /// and only for a path this process has itself just written — so the inode
+    /// is in the kernel's cache and this is not a disk read.
+    fn of(path: &Path) -> Option<Fingerprint> {
+        let metadata = std::fs::metadata(path).ok()?;
+        Some(Fingerprint {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            len: metadata.len(),
+            modified_secs: metadata.mtime(),
+            modified_nanos: metadata.mtime_nsec(),
+        })
+    }
+}
+
+impl OwnWrites {
+    pub fn shared() -> Arc<OwnWrites> {
+        Arc::new(OwnWrites::default())
+    }
+
+    /// Step 1: we are about to write `path`. Returns the generation to hand back
+    /// when the write ends, either way.
+    pub fn begin(&self, path: &Path) -> u64 {
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed) + 1;
+        self.writes().insert(
+            path.to_path_buf(),
+            OwnWrite {
+                generation,
+                wrote: None,
+            },
+        );
+        generation
+    }
+
+    /// Step 2, on success: what we wrote is now the file.
+    ///
+    /// A file we cannot stat is one we cannot recognise later, so the record
+    /// goes rather than staying behind as an in-flight write that never ends —
+    /// the event falls through to `doc_external_change`, which is the backstop.
+    pub fn finished(&self, path: &Path, generation: u64) {
+        let mut writes = self.writes();
+        let Some(write) = writes.get_mut(path) else {
+            return;
+        };
+        if write.generation != generation {
+            return;
+        }
+        match Fingerprint::of(path) {
+            Some(fingerprint) => write.wrote = Some(fingerprint),
+            None => {
+                writes.remove(path);
+            }
+        }
+    }
+
+    /// Step 2, on failure: there is no echo, because there was no write.
+    pub fn abandoned(&self, path: &Path, generation: u64) {
+        let mut writes = self.writes();
+        if writes
+            .get(path)
+            .is_some_and(|write| write.generation == generation)
+        {
+            writes.remove(path);
+        }
+    }
+
+    /// Step 3: is this event about a file we ourselves put there?
+    ///
+    /// Answered for **every** event describing that file, not just the first.
+    /// One atomic save is one rename, but a filesystem is entitled to report it
+    /// as several events — a create and a modify, or a rename pair — and
+    /// "swallow one" would let the rest through as a phantom external change.
+    /// The fingerprint is what makes that safe: the second event is swallowed
+    /// because the file is still ours, not because we are counting.
+    pub fn is_echo(&self, path: &Path) -> bool {
+        let mut writes = self.writes();
+        let Some(write) = writes.get(path) else {
+            return false;
+        };
+        let Some(ours) = write.wrote else {
+            // In flight. See the lifecycle above: our own rename is imminent, so
+            // whatever this event is, the file is about to be ours.
+            return true;
+        };
+        if Fingerprint::of(path) == Some(ours) {
+            return true;
+        }
+        // Somebody else has written since we did. The record describes a version
+        // of this file that no longer exists, so it goes — and this event, and
+        // every one after it, is real.
+        writes.remove(path);
+        false
+    }
+
+    /// Step 4: this path is no longer ours to suppress.
+    pub fn forget(&self, path: &Path) {
+        self.writes().remove(path);
+    }
+
+    /// A poisoned lock here means a previous holder panicked mid-update. There is
+    /// nothing to be inconsistent — a map of hints — and refusing to suppress
+    /// echoes for the rest of the session would be a worse answer than carrying
+    /// on.
+    fn writes(&self) -> impl std::ops::DerefMut<Target = HashMap<PathBuf, OwnWrite>> + '_ {
+        self.writes.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// How many suppression records are being held, so that a test can prove
+    /// they do not accumulate.
+    pub fn len(&self) -> usize {
+        self.writes().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// Whether an event means "the bytes at this path may be different now".
 ///
 /// Access times and permission changes are not that. A rename **to** a path is,
@@ -157,6 +384,241 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
+    /// How long an event is given to arrive before the test calls it missing,
+    /// and how long the absence of one is watched for before the test calls it
+    /// absent. The second is the expensive direction, so it is the shorter one.
+    const ARRIVES: Duration = Duration::from_secs(5);
+    const STAYS_QUIET: Duration = Duration::from_millis(750);
+
+    /// Everything a suppression test needs: a watched script, the register the
+    /// save path writes into, and the events that got through.
+    struct Watched {
+        _dir: TempDir,
+        script: PathBuf,
+        own: Arc<OwnWrites>,
+        reported: mpsc::Receiver<PathBuf>,
+        _watcher: FileWatcher,
+    }
+
+    impl Watched {
+        fn new(label: &str) -> Watched {
+            let dir = TempDir::new(label);
+            let script = dir.path().join("heat.fountain");
+            std::fs::write(&script, "original\n").unwrap();
+
+            let own = OwnWrites::shared();
+            let (sender, reported) = mpsc::channel();
+            let mut watcher = FileWatcher::new(Arc::clone(&own), move |path| {
+                let _ = sender.send(path);
+            })
+            .expect("inotify is available");
+            watcher.watch(&script).unwrap();
+            Watched {
+                _dir: dir,
+                script,
+                own,
+                reported,
+                _watcher: watcher,
+            }
+        }
+
+        /// A save by this application, through the real atomic sequence, with the
+        /// correlation the bridge's save path performs around it.
+        fn we_save(&self, text: &str) {
+            let generation = self.own.begin(&self.script);
+            crate::atomic::save_atomically(&self.script, text).expect("the save works");
+            self.own.finished(&self.script, generation);
+        }
+
+        /// Somebody else's editor, saving the same way.
+        fn somebody_else_saves(&self, text: &str) {
+            crate::atomic::save_atomically(&self.script, text).expect("the save works");
+        }
+
+        fn reported(&self) -> bool {
+            self.reported.recv_timeout(ARRIVES).is_ok()
+        }
+
+        fn stayed_quiet(&self) -> bool {
+            self.reported.recv_timeout(STAYS_QUIET).is_err()
+        }
+    }
+
+    /// F4. The event our own save causes must not reach the bridge, because by
+    /// the time Dart handles it the writer may have typed — and then the check
+    /// finds the document dirty and different, and accuses another program of
+    /// writing the file.
+    #[test]
+    fn our_own_save_is_not_reported() {
+        let it = Watched::new("watch-own-save");
+        it.we_save("we wrote this\n");
+        assert!(
+            it.stayed_quiet(),
+            "the watcher reported the application's own save"
+        );
+    }
+
+    /// The other half, and the one that would make the repair worthless if it
+    /// failed: suppression must not outlive the write it describes.
+    #[test]
+    fn an_external_write_straight_after_our_own_save_is_still_reported() {
+        let it = Watched::new("watch-own-then-theirs");
+        it.we_save("we wrote this\n");
+        assert!(it.stayed_quiet());
+
+        it.somebody_else_saves("they wrote this\n");
+        assert!(
+            it.reported(),
+            "a real external change was eaten by the suppression of our own"
+        );
+    }
+
+    /// Two saves in a row are two records, not a record and an echo of one.
+    #[test]
+    fn a_second_save_suppresses_its_own_event_too() {
+        let it = Watched::new("watch-two-saves");
+        it.we_save("first\n");
+        it.we_save("second\n");
+        assert!(it.stayed_quiet());
+        assert_eq!(it.own.len(), 1, "one path, one record");
+    }
+
+    /// One atomic save is one rename, but a filesystem is entitled to report it
+    /// as several events. Suppression is a property of the file, not a count, so
+    /// asking twice gives the same answer — which is what a second event is.
+    #[test]
+    fn every_event_from_one_save_is_swallowed_not_just_the_first() {
+        let dir = TempDir::new("own-many-events");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        let generation = own.begin(&script);
+        crate::atomic::save_atomically(&script, "ours\n").unwrap();
+        own.finished(&script, generation);
+
+        for event in 0..5 {
+            assert!(own.is_echo(&script), "event {event} was let through");
+        }
+    }
+
+    /// The window the ADR 0024 sequence left open: the event can arrive before
+    /// the write that caused it has finished being recorded.
+    #[test]
+    fn an_event_while_we_are_still_writing_is_swallowed() {
+        let dir = TempDir::new("own-in-flight");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        own.begin(&script);
+        assert!(own.is_echo(&script), "an in-flight write reports itself");
+    }
+
+    /// A write that failed wrote nothing, so there is no echo — and leaving the
+    /// record behind would swallow the next real event about the file.
+    #[test]
+    fn an_abandoned_write_suppresses_nothing() {
+        let dir = TempDir::new("own-abandoned");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        let generation = own.begin(&script);
+        own.abandoned(&script, generation);
+        assert!(!own.is_echo(&script));
+        assert!(own.is_empty(), "and it left nothing behind");
+    }
+
+    /// Generations: a record belongs to one write, and the write that has been
+    /// overtaken must not finish or abandon somebody else's.
+    #[test]
+    fn a_write_cannot_finish_or_abandon_a_later_writes_record() {
+        let dir = TempDir::new("own-generations");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        let overtaken = own.begin(&script);
+        let current = own.begin(&script);
+        assert_ne!(overtaken, current);
+
+        own.abandoned(&script, overtaken);
+        assert!(
+            own.is_echo(&script),
+            "the older write cleared the newer one's record"
+        );
+
+        // And the older one cannot fingerprint it either: after its `finished`
+        // the record must still be the newer write's, in flight.
+        std::fs::write(&script, "somebody else\n").unwrap();
+        own.finished(&script, overtaken);
+        assert!(own.is_echo(&script));
+        own.finished(&script, current);
+        assert!(
+            own.is_echo(&script),
+            "the newer write recorded what it wrote"
+        );
+    }
+
+    /// Stale records are cleared by the event that contradicts them, so nothing
+    /// accumulates for a file somebody else is also editing.
+    #[test]
+    fn the_event_that_did_not_match_clears_the_record() {
+        let dir = TempDir::new("own-stale");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        let generation = own.begin(&script);
+        crate::atomic::save_atomically(&script, "ours\n").unwrap();
+        own.finished(&script, generation);
+        assert_eq!(own.len(), 1);
+
+        crate::atomic::save_atomically(&script, "theirs\n").unwrap();
+        assert!(!own.is_echo(&script));
+        assert!(
+            own.is_empty(),
+            "a record that has been contradicted once is not kept to be asked again"
+        );
+    }
+
+    /// A file that is gone is news, not an echo — even if the last thing that
+    /// happened to it was our own save.
+    #[test]
+    fn a_deleted_file_is_not_our_own_write() {
+        let dir = TempDir::new("own-deleted");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        let generation = own.begin(&script);
+        crate::atomic::save_atomically(&script, "ours\n").unwrap();
+        own.finished(&script, generation);
+
+        std::fs::remove_file(&script).unwrap();
+        assert!(!own.is_echo(&script));
+    }
+
+    /// Closing a script drops its suppression record with its watch.
+    #[test]
+    fn unwatching_forgets_what_we_wrote_there() {
+        let dir = TempDir::new("own-unwatch");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "original\n").unwrap();
+
+        let own = OwnWrites::shared();
+        let mut watcher = FileWatcher::new(Arc::clone(&own), |_| {}).unwrap();
+        watcher.watch(&script).unwrap();
+        let generation = own.begin(&script);
+        crate::atomic::save_atomically(&script, "ours\n").unwrap();
+        own.finished(&script, generation);
+        assert_eq!(own.len(), 1);
+
+        watcher.unwatch(&script).unwrap();
+        assert!(own.is_empty());
+    }
+
     #[test]
     fn a_write_to_a_watched_file_is_reported() {
         let dir = TempDir::new("watch-write");
@@ -164,7 +626,7 @@ mod tests {
         std::fs::write(&script, "original\n").unwrap();
 
         let (sender, receiver) = mpsc::channel();
-        let mut watcher = FileWatcher::new(move |path| {
+        let mut watcher = FileWatcher::new(OwnWrites::shared(), move |path| {
             let _ = sender.send(path);
         })
         .expect("inotify is available");
@@ -186,7 +648,7 @@ mod tests {
         std::fs::write(&script, "original\n").unwrap();
 
         let (sender, receiver) = mpsc::channel();
-        let mut watcher = FileWatcher::new(move |path| {
+        let mut watcher = FileWatcher::new(OwnWrites::shared(), move |path| {
             let _ = sender.send(path);
         })
         .unwrap();
@@ -211,7 +673,7 @@ mod tests {
         std::fs::write(&other, "b\n").unwrap();
 
         let (sender, receiver) = mpsc::channel();
-        let mut watcher = FileWatcher::new(move |path| {
+        let mut watcher = FileWatcher::new(OwnWrites::shared(), move |path| {
             let _ = sender.send(path);
         })
         .unwrap();
@@ -231,7 +693,7 @@ mod tests {
         std::fs::write(&script, "a\n").unwrap();
 
         let (sender, receiver) = mpsc::channel();
-        let mut watcher = FileWatcher::new(move |path| {
+        let mut watcher = FileWatcher::new(OwnWrites::shared(), move |path| {
             let _ = sender.send(path);
         })
         .unwrap();
@@ -252,7 +714,7 @@ mod tests {
         std::fs::write(&one, "a\n").unwrap();
         std::fs::write(&two, "b\n").unwrap();
 
-        let mut watcher = FileWatcher::new(|_| {}).unwrap();
+        let mut watcher = FileWatcher::new(OwnWrites::shared(), |_| {}).unwrap();
         watcher.watch(&one).unwrap();
         watcher.watch(&two).unwrap();
         assert_eq!(watcher.directories.len(), 1);

@@ -875,14 +875,18 @@ Implement precisely this sequence, in `crates/storage`:
 - [x] If it changes while there are unsaved edits → prompt (Keep Mine / Take
       Theirs / Save As). "Take theirs" says that it discards the undo history
       too, because it does.
-- [ ] **The prompt never fires for our own save.** It can today: the watcher
-      reports the app's own atomic rename, nothing correlates that event with the
-      save that caused it, and the 30-second interval autosave fires mid-typing
-      by design — so a keystroke landing in the window produces the full
-      external-change modal about the app's own write. Audit finding F4;
-      ADR 0024 records the fix, and remediation Phase 4B implements it. The check
-      itself also reads the disk on the actor thread, which §2.3 forbids (F8,
-      remediation Phase 4C).
+- [x] **The prompt never fires for our own save.** Every write of a document's
+      file opens a record in `storage/watch.rs`'s `OwnWrites` before the rename
+      and fingerprints the file after it, and the watcher swallows every event
+      about a file that is still exactly what we wrote — so the interval autosave
+      keeps firing mid-typing (ADR 0024) without the writer being told another
+      program touched their script. The first event that does *not* match the
+      fingerprint drops the record and is reported, which is what keeps a genuine
+      external write detectable a millisecond after our own. Audit finding F4;
+      ADR 0028 records the mechanism; `our_own_save_is_not_reported` and the
+      integration test *our own save is not reported as somebody else writing the
+      file* hold it. The check that follows the event still reads the disk on the
+      actor thread, which §2.3 forbids (F8, remediation Phase 4C).
 
 ### Library
 
