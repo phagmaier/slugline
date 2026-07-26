@@ -8,13 +8,21 @@ import 'package:slugline/editor/metrics.dart';
 /// Offsets are UTF-16 code units, the same coordinates the bridge speaks and the
 /// same ones `String.substring` uses, so a row can be painted without conversion.
 class VisualLine {
-  const VisualLine(this.start, this.end);
+  const VisualLine(this.start, this.end, {this.hardBreakOffsetUtf16});
 
   /// Inclusive.
   final int start;
 
   /// Exclusive.
   final int end;
+
+  /// The model offset of the `\n` that terminates this row, when there is one.
+  ///
+  /// The newline is not part of the printable slice [start], [end]. A caret at
+  /// this offset stays at the end of this row; the offset after it belongs to
+  /// the next row. Keeping the offset here also preserves trailing model spaces
+  /// that wrapping may omit from the painted slice.
+  final int? hardBreakOffsetUtf16;
 
   int get length => end - start;
 }
@@ -27,18 +35,53 @@ class VisualLine {
 /// arithmetic `layout::paginate` will do in Rust, so the editor and the PDF
 /// cannot drift apart.
 ///
-/// Breaks on spaces, and mid-word only when a single word is longer than the
+/// Embedded newlines are mandatory breaks and are retained as model offsets,
+/// but never counted as printable columns. Each resulting hard line is then
+/// broken on spaces, and mid-word only when a single word is longer than the
 /// column. A break is never placed between the halves of a surrogate pair.
 List<VisualLine> wrapText(String text, int width) {
   if (text.isEmpty || width <= 0) return const [VisualLine(0, 0)];
 
   final lines = <VisualLine>[];
-  var start = 0;
+  var hardStart = 0;
   while (true) {
-    if (text.length - start <= width) {
-      lines.add(VisualLine(start, text.length));
-      return lines;
-    }
+    final newline = text.indexOf('\n', hardStart);
+    final hardEnd = newline < 0 ? text.length : newline;
+    _wrapHardLine(
+      text,
+      hardStart,
+      hardEnd,
+      width,
+      newline < 0 ? null : newline,
+      lines,
+    );
+    if (newline < 0) return lines;
+    hardStart = newline + 1;
+  }
+}
+
+void _wrapHardLine(
+  String text,
+  int hardStart,
+  int hardEnd,
+  int width,
+  int? hardBreakOffsetUtf16,
+  List<VisualLine> lines,
+) {
+  if (hardStart == hardEnd) {
+    lines.add(
+      VisualLine(
+        hardStart,
+        hardEnd,
+        hardBreakOffsetUtf16: hardBreakOffsetUtf16,
+      ),
+    );
+    return;
+  }
+
+  final firstLine = lines.length;
+  var start = hardStart;
+  while (hardEnd - start > width) {
     final limit = start + width;
     final space = text.lastIndexOf(' ', limit);
     if (space > start) {
@@ -51,6 +94,23 @@ List<VisualLine> wrapText(String text, int width) {
       lines.add(VisualLine(start, end));
       start = end;
     }
+  }
+
+  if (start < hardEnd) {
+    lines.add(
+      VisualLine(start, hardEnd, hardBreakOffsetUtf16: hardBreakOffsetUtf16),
+    );
+  } else if (hardBreakOffsetUtf16 != null) {
+    // A wrap-space can consume the rest of a non-empty hard line. It does not
+    // create a phantom row, but its newline still terminates the preceding row.
+    final last = lines.length - 1;
+    assert(last >= firstLine);
+    final line = lines[last];
+    lines[last] = VisualLine(
+      line.start,
+      line.end,
+      hardBreakOffsetUtf16: hardBreakOffsetUtf16,
+    );
   }
 }
 
@@ -131,8 +191,9 @@ class DocumentLayout {
   /// One past the last row of this block.
   int endRowOf(int blockIndex) => _rowStart[blockIndex + 1];
 
-  /// Which line of [blockIndex] holds [offset]. Offsets at a wrap point belong
-  /// to the line that starts there, so the caret follows the text it typed.
+  /// Which line of [blockIndex] holds [offset]. Offsets at a soft-wrap point
+  /// belong to the line that starts there. A hard newline belongs to the line
+  /// it terminates, while the offset after it starts the next line.
   int lineIndexAt(int blockIndex, int offset) {
     final lines = _lines[blockIndex];
     for (var i = lines.length - 1; i >= 0; i--) {

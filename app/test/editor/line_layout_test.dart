@@ -70,6 +70,63 @@ void main() {
             reason: 'line starts inside a surrogate pair');
       }
     });
+
+    test('embedded newlines are mandatory visual breaks', () {
+      final twoLines = wrapText('One.\nTwo.', 60);
+      expect(_ranges(twoLines), [(0, 4), (5, 9)]);
+      expect(twoLines.first.hardBreakOffsetUtf16, 4);
+      expect(twoLines.last.hardBreakOffsetUtf16, isNull);
+      expect(_ranges(wrapText('One.\nTwo.\nThree.', 60)), [
+        (0, 4),
+        (5, 9),
+        (10, 16),
+      ]);
+    });
+
+    test('leading, trailing, and consecutive newlines keep empty lines', () {
+      expect(_ranges(wrapText('\nTwo.', 60)), [(0, 0), (1, 5)]);
+      expect(_ranges(wrapText('One.\n', 60)), [(0, 4), (5, 5)]);
+      expect(_ranges(wrapText('One.\n\nThree.', 60)), [
+        (0, 4),
+        (5, 5),
+        (6, 12),
+      ]);
+    });
+
+    test('soft wrapping is applied independently on both hard lines', () {
+      const text = 'aaaa bbbb\ncccc dddd';
+      final lines = wrapText(text, 5);
+      expect(_ranges(lines), [(0, 4), (5, 9), (10, 14), (15, 19)]);
+      expect(
+        [for (final line in lines) text.substring(line.start, line.end)],
+        ['aaaa', 'bbbb', 'cccc', 'dddd'],
+      );
+    });
+
+    test('a newline next to a wrap boundary creates no phantom row', () {
+      final atBoundary = wrapText('abc\n', 3);
+      expect(_ranges(atBoundary), [(0, 3), (4, 4)]);
+      expect(atBoundary.first.hardBreakOffsetUtf16, 3);
+
+      final afterWrapSpace = wrapText('abc \ndef', 3);
+      expect(_ranges(afterWrapSpace), [(0, 3), (5, 8)]);
+      expect(afterWrapSpace.first.hardBreakOffsetUtf16, 4);
+    });
+
+    test('Unicode offsets remain UTF-16 offsets across a newline', () {
+      const text = '🎬One\nDeux🎬';
+      expect(_ranges(wrapText(text, 60)), [(0, 5), (6, 12)]);
+    });
+
+    test('tabs and spaces next to a newline remain in the model slices', () {
+      const text = '\t One \n Two\t';
+      final lines = wrapText(text, 60);
+      expect(_ranges(lines), [(0, 6), (7, 12)]);
+      expect(
+        [for (final line in lines) text.substring(line.start, line.end)],
+        ['\t One ', ' Two\t'],
+      );
+    });
   });
 
   group('the element grid (§5.2)', () {
@@ -162,7 +219,31 @@ void main() {
       expect(layout.lineIndexAt(0, 38), 1);
       expect(layout.rowAt(0, 38), 1);
     });
+
+    test('the newline belongs to the line it terminates', () {
+      final layout = DocumentLayout([block(BlockKind.action, 'One.\nTwo.')]);
+
+      expect(layout.lineIndexAt(0, 4), 0, reason: 'before the newline');
+      expect(layout.lineIndexAt(0, 5), 1, reason: 'after the newline');
+      expect(layout.rowAt(0, 4), 0);
+      expect(layout.rowAt(0, 5), 1);
+      expect(layout.totalRows, 2);
+    });
+
+    test('hard lines increase every downstream block row', () {
+      final layout = DocumentLayout([
+        block(BlockKind.action, 'One.\nTwo.', id: 1),
+        block(BlockKind.action, 'Three.', id: 2),
+      ]);
+
+      expect(layout.firstRowOf(1), 3, reason: 'two text rows and one blank');
+      expect(layout.totalRows, 4);
+    });
   });
 }
+
+List<(int, int)> _ranges(List<VisualLine> lines) => [
+      for (final line in lines) (line.start, line.end),
+    ];
 
 bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;

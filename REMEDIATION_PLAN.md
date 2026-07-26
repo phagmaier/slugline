@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0 and 1 complete, Phase 2 next
+**Status:** in progress — Phases 0–2 complete, Phase 2B next
 
 ---
 
@@ -37,7 +37,7 @@ This is the execution companion to `REVIEW.md`.
 The remediation effort is complete only when all of the following are true:
 
 - [x] No known path can lose recovered user text after accepting crash recovery.
-- [ ] Multi-line Fountain blocks render, wrap, select, click, and position the caret correctly.
+- [x] Multi-line Fountain blocks render, wrap, select, click, and position the caret correctly.
 - [ ] Enter splits the block whether or not a completion is offered, and Escape closes every panel.
 - [ ] Dart and Rust line breaking agree on the defined shared behavior.
 - [ ] Rust pagination is reachable through the bridge and exercised outside its isolated crate tests.
@@ -542,28 +542,33 @@ Correctly handle embedded hard newlines inside one parsed screenplay block acros
 
 ### 2.1 Manually confirm the current defect
 
-- [ ] Run `flutter run -d linux`.
-- [ ] Open `testdata/reference-feature.fountain`.
-- [ ] Navigate to known multi-line dialogue/action blocks.
-- [ ] Capture a before screenshot or written observation.
-- [ ] Verify whether:
+- [-] Run `flutter run -d linux`.
+  - Deliberately replaced by a Linux-device integration test that renders `EditorSurface` over the real Rust parse of the reference fixture. This session cannot operate a human GUI, and the test exercises the exact widget and `.so` without pretending a manual pass occurred.
+- [x] Open `testdata/reference-feature.fountain`.
+  - The new integration test parses and opens the generated fixture through `RustDocumentCore`.
+- [x] Navigate to known multi-line dialogue/action blocks.
+  - The integration test inspects every parsed block containing `\n`, rather than sampling one.
+- [x] Capture a before screenshot or written observation.
+  - Before the repair, `wrapText("One.\nTwo.", 60)` returned only `(0, 9)`. Fourteen focused assertions failed: the painter's sole slice still contained `\n`, the caret after it stayed on row 0, and a row-1 click mapped into row 0.
+- [x] Verify whether:
   - text overlaps the following row;
   - caret placement is wrong after `\n`;
   - mouse clicks map to wrong offsets;
   - selection rectangles are wrong.
-- [ ] If the reported defect cannot be reproduced, stop this phase and document the discrepancy before changing code.
+- [-] If the reported defect cannot be reproduced, stop this phase and document the discrepancy before changing code.
+  - Not applicable: the focused regressions reproduced F1 before implementation.
 
 ### 2.2 Define hard-newline semantics
 
-- [ ] Treat embedded `\n` as a mandatory visual line break.
-- [ ] Match the Rust `break_lines` split-first behavior.
-- [ ] Decide and document offset ownership at the newline:
+- [x] Treat embedded `\n` as a mandatory visual line break.
+- [x] Match the Rust `break_lines` split-first behavior.
+- [x] Decide and document offset ownership at the newline:
   - visual line ending offset;
   - next line starting offset;
   - click behavior at line end;
   - caret affinity if applicable.
-- [ ] Ensure the newline remains part of the model text and is not dropped.
-- [ ] Ensure behavior is valid for:
+- [x] Ensure the newline remains part of the model text and is not dropped.
+- [x] Ensure behavior is valid for:
   - leading newline;
   - trailing newline;
   - consecutive newlines;
@@ -574,80 +579,133 @@ Correctly handle embedded hard newlines inside one parsed screenplay block acros
 
 Likely area: `app/lib/editor/line_layout.dart`.
 
-- [ ] Split the source text into hard-line segments before soft wrapping.
-- [ ] Preserve source offsets across each segment.
-- [ ] Represent empty hard lines explicitly.
-- [ ] Do not count `\n` as a printable column.
-- [ ] Ensure soft-wrap boundaries retain correct absolute offsets.
-- [ ] Avoid producing phantom lines.
-- [ ] Keep performance suitable for the keystroke path.
+- [x] Split the source text into hard-line segments before soft wrapping.
+- [x] Preserve source offsets across each segment.
+- [x] Represent empty hard lines explicitly.
+- [x] Do not count `\n` as a printable column.
+- [x] Ensure soft-wrap boundaries retain correct absolute offsets.
+- [x] Avoid producing phantom lines.
+- [x] Keep performance suitable for the keystroke path.
 
 ### 2.4 Repair `DocumentLayout`
 
-- [ ] Map block-local offsets to the correct visual line after hard breaks.
-- [ ] Map visual line/column positions back to the correct model offsets.
-- [ ] Ensure incremental rewrap invalidates all affected visual lines.
-- [ ] Ensure downstream row indexes update correctly when a block gains or loses hard lines.
-- [ ] Preserve stable block identity and patch-in-place behavior.
-- [ ] Confirm no full-document refetch was introduced.
+- [x] Map block-local offsets to the correct visual line after hard breaks.
+- [x] Map visual line/column positions back to the correct model offsets.
+- [x] Ensure incremental rewrap invalidates all affected visual lines.
+- [x] Ensure downstream row indexes update correctly when a block gains or loses hard lines.
+- [x] Preserve stable block identity and patch-in-place behavior.
+- [x] Confirm no full-document refetch was introduced.
 
 ### 2.5 Repair painting and geometry
 
 Likely area: `editor_surface.dart`.
 
-- [ ] Paint one visual line per grid row.
-- [ ] Never pass a multi-line string to a one-row paint operation.
-- [ ] Verify caret x/y after every embedded newline.
-- [ ] Verify selection rectangles spanning hard and soft wraps.
-- [ ] Verify click-to-offset mapping on every visual line.
-- [ ] Verify drag selection across newline boundaries.
-- [ ] Verify scrolling and visible-row calculation with extra visual rows.
-- [ ] Verify semantics/accessibility text remains coherent.
+- [x] Paint one visual line per grid row.
+- [x] Never pass a multi-line string to a one-row paint operation.
+- [x] Verify caret x/y after every embedded newline.
+- [x] Verify selection rectangles spanning hard and soft wraps.
+- [x] Verify click-to-offset mapping on every visual line.
+- [x] Verify drag selection across newline boundaries.
+- [x] Verify scrolling and visible-row calculation with extra visual rows.
+- [x] Verify semantics/accessibility text remains coherent.
 
 ### 2.6 Add regression tests
 
 Unit tests:
 
-- [ ] `"One.\nTwo."`
-- [ ] `"One.\nTwo.\nThree."`
-- [ ] `"\nTwo."`
-- [ ] `"One.\n"`
-- [ ] `"One.\n\nThree."`
-- [ ] Hard newline plus soft wrap on both sides.
-- [ ] Unicode before and after newline.
-- [ ] Tabs and spaces near newline, anticipating Phase 6 alignment work.
+- [x] `"One.\nTwo."`
+- [x] `"One.\nTwo.\nThree."`
+- [x] `"\nTwo."`
+- [x] `"One.\n"`
+- [x] `"One.\n\nThree."`
+- [x] Hard newline plus soft wrap on both sides.
+- [x] Unicode before and after newline.
+- [x] Tabs and spaces near newline, anticipating Phase 6 alignment work.
 
 Widget/geometry tests:
 
-- [ ] Caret after newline.
-- [ ] Caret at beginning of second hard line.
-- [ ] Mouse click on second hard line.
-- [ ] Selection across newline.
-- [ ] Selection across hard newline plus soft wrap.
-- [ ] Incremental edit inserts a newline.
-- [ ] Incremental edit removes a newline.
-- [ ] Opening the reference fixture produces non-overlapping visual rows.
+- [x] Caret after newline.
+- [x] Caret at beginning of second hard line.
+- [x] Mouse click on second hard line.
+- [x] Selection across newline.
+- [x] Selection across hard newline plus soft wrap.
+- [x] Incremental edit inserts a newline.
+- [x] Incremental edit removes a newline.
+- [x] Opening the reference fixture produces non-overlapping visual rows.
 
 ### 2.7 Manual verification
 
-- [ ] Reopen `reference-feature.fountain`.
-- [ ] Capture an after screenshot or written observation.
-- [ ] Verify typing, clicking, selecting, copying, and pasting in multi-line blocks.
-- [ ] Verify no regression in single-line editor-authored blocks.
-- [ ] Verify the keystroke benchmark remains within the existing budget.
+- [-] Reopen `reference-feature.fountain` manually.
+  - Deliberately replaced by the real Linux-device integration test described in 2.1.
+- [x] Capture an after screenshot or written observation.
+  - The reference fixture now lays out as 2,880 blocks and 6,510 rows; every visual slice from every multi-line block excludes `\n`, and every following block starts at or below its predecessor's end row.
+- [x] Verify typing, clicking, selecting, copying, and pasting in multi-line blocks.
+  - Widget tests cover incremental insertion/removal, real pointer click and drag gestures, selection across hard and soft wraps, and copy/paste while preserving the hard break.
+- [x] Verify no regression in single-line editor-authored blocks.
+  - The complete 279-test Flutter unit/widget suite passes.
+- [x] Verify the keystroke benchmark remains within the existing budget.
 
 ## Exit conditions
 
-- [ ] Embedded newlines are represented as mandatory visual breaks.
-- [ ] Painting, caret, click mapping, and selection agree.
-- [ ] Reference script no longer misrenders.
-- [ ] New unit and widget tests pass.
-- [ ] Existing editor and performance tests pass.
-- [ ] No bridge round-trip was added to the per-keystroke wrap path.
+- [x] Embedded newlines are represented as mandatory visual breaks.
+- [x] Painting, caret, click mapping, and selection agree.
+- [x] Reference script no longer misrenders.
+- [x] New unit and widget tests pass.
+- [x] Existing editor and performance tests pass.
+  - `flutter test` and the benchmark pass. The full real-core `editor_test` is 6 passed, 1 failed on the unchanged F13 stolen-Enter case assigned to Phase 2B; its new reference-fixture case passes.
+- [x] No bridge round-trip was added to the per-keystroke wrap path.
 
 ## Suggested commit boundary
 
 - [ ] `fix(editor): support hard newlines inside screenplay blocks`
+
+## Implementation log — Phase 2
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** OpenAI GPT-5.6 Sol (OpenCode)
+**Starting commit:** `67e872e` (Phase 1)
+**Ending commit:** working tree
+
+### Changes made
+
+- `app/lib/editor/line_layout.dart`: split model text into hard-line segments before soft wrapping, retained absolute UTF-16 ranges, represented empty hard lines, and recorded each terminating newline's model offset without putting it in the printable slice.
+- `DocumentLayout` keeps its existing row/index machinery; the corrected line list makes caret, click, scrolling and incremental reindexing agree without a refetch or bridge call.
+- `app/lib/editor/editor_surface.dart`: selection painting now draws each printable line independently and gives a selected non-printing newline a half-cell marker.
+- No Rust, bridge API, generated binding, dependency, or screenplay-semantic code changed.
+
+### Tests added or changed
+
+- `line_layout_test.dart`: hard-line matrices for leading, trailing and consecutive newlines, soft wraps on both sides, wrap-boundary adjacency, Unicode, tabs/spaces, newline ownership and downstream rows.
+- `editor_controller_test.dart`: caret, vertical movement, real pointer click/drag, hard-plus-soft selection, incremental newline insertion/removal and multi-line copy/paste.
+- `editor_test.dart`: opens the generated reference fixture through the real Rust core and proves every one-row paint slice excludes `\n` and downstream row ranges do not overlap.
+- The new tests were run before implementation: fourteen focused assertions failed with F1's row/offset symptoms.
+
+### Commands run
+
+```text
+cd app
+flutter analyze                                                   # clean
+flutter test                                                      # 279 passed
+flutter test integration_test/editor_test.dart -d linux           # 6 passed, 1 failed (unchanged F13; Phase 2B)
+flutter test integration_test/keystroke_benchmark_test.dart -d linux
+                                                                  # 2 passed
+
+cargo fmt --all --check                                           # clean
+cargo clippy --workspace --all-targets -- -D warnings             # clean
+cargo test --workspace                                            # 343 passed
+python3 tools/check_layering.py                                   # clean
+```
+
+### Results
+
+The reference fixture gained the missing hard rows (6,419 at the Phase 0 baseline to 6,510 now). Open-to-editable was 55.5 ms; keystroke-to-patch p99 was 1.38 ms; frame-build p99 was 4.42 ms; journalled keystroke p99 was 1.27 ms; no frame exceeded 16 ms.
+
+### Deviations from plan
+
+The two manual GUI launches were deliberately replaced, not silently checked off. A Linux-device integration test opens the actual fixture against `libslugline_bridge.so`, renders the real `EditorSurface`, and exhaustively checks every multi-line block. Human visual inspection remains useful, but no screenshot or human `flutter run` interaction was claimed.
+
+Phase 2B was not changed. Its F13 failure remains exactly visible in the full `editor_test`, and F14 remains assigned there.
 
 ---
 
@@ -1496,7 +1554,7 @@ Prove the repaired codebase is stable, documented, and ready to begin Phase 7.
 
 ## Audit finding closure table
 
-- [ ] F1 — multi-line blocks fixed and verified.
+- [x] F1 — multi-line blocks fixed and verified.
 - [ ] F2 — recovery durability fixed and verified.
 - [ ] F3 — layout contract, differential test, and bridge integration complete.
 - [ ] F4 — own-save watcher events suppressed.
@@ -1556,7 +1614,7 @@ Phase 7 may begin only when:
 
 1. [x] Phase 0 — Baseline and branch
 2. [x] Phase 1 — Recovery durability
-3. [ ] Phase 2 — Multi-line editor correctness
+3. [x] Phase 2 — Multi-line editor correctness
 3b. [ ] Phase 2B — Keys swallowed by editor panels (F13, F14)
 4. [ ] Phase 3 — Documentation, ADRs, and CI
 5. [ ] Phase 4 — Save serialization, watcher suppression, async external checks

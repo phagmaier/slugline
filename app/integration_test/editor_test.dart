@@ -9,6 +9,8 @@
 // does list surgery. What only these can prove is that the whole chain agrees:
 // keystroke → EditCommand → UTF-16 conversion → document → patch → Fountain.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +67,50 @@ void main() {
     // And what the core would write out is that text and one newline.
     expect(controller.source, '$expected\n');
   });
+
+  testWidgets(
+    'the reference fixture gives every hard line its own visual row',
+    (tester) async {
+      final source = File(
+        '../testdata/reference-feature.fountain',
+      ).readAsStringSync();
+      final controller = await open(tester, RustDocumentCore.parse(source));
+      final multiline = <int>[];
+
+      for (var blockIndex = 0;
+          blockIndex < controller.blocks.length;
+          blockIndex++) {
+        final block = controller.blocks[blockIndex];
+        if (!block.text.contains('\n')) continue;
+        multiline.add(blockIndex);
+        final lines = controller.layout.linesOf(blockIndex);
+        expect(
+          lines.length,
+          greaterThanOrEqualTo('\n'.allMatches(block.text).length + 1),
+        );
+        for (final line in lines) {
+          expect(
+            block.text.substring(line.start, line.end),
+            isNot(contains('\n')),
+            reason: 'a one-row paint slice must contain no hard newline',
+          );
+        }
+      }
+
+      expect(
+        multiline,
+        isNotEmpty,
+        reason: 'the fixture must exercise this path',
+      );
+      for (var i = 1; i < controller.blocks.length; i++) {
+        expect(
+          controller.layout.firstRowOf(i),
+          greaterThanOrEqualTo(controller.layout.endRowOf(i - 1)),
+          reason: 'block $i must start below the preceding visual rows',
+        );
+      }
+    },
+  );
 
   testWidgets('setting every element type by hand keeps the text exactly',
       (tester) async {

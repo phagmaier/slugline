@@ -1025,29 +1025,46 @@ class _SurfacePainter extends CustomPainter {
     DocPosition to,
   ) {
     if (index < fromIndex || index > toIndex) return;
-    final startOffset = index == fromIndex
-        ? math.max(from.offsetUtf16, line.start)
-        : line.start;
-    final endOffset = index == toIndex
-        ? math.min(to.offsetUtf16, line.end)
-        : line.end;
-    if (endOffset < startOffset) return;
-    // An empty line inside the selection still shows a sliver, so that a
-    // selection over a blank block is visible at all.
-    final width = math.max(
-      endOffset == startOffset ? (index == toIndex ? 0.0 : advance / 2) : 0.0,
-      (endOffset - startOffset) * advance,
-    );
-    if (width <= 0) return;
-    canvas.drawRect(
-      Rect.fromLTWH(
-        x + (startOffset - line.start) * advance,
-        y,
-        width,
-        _lineHeight,
-      ),
-      paint,
-    );
+    final selectionStart = index == fromIndex ? from.offsetUtf16 : 0;
+    final selectionEnd = index == toIndex
+        ? to.offsetUtf16
+        : controller.blocks[index].text.length;
+    final startOffset =
+        math.max(selectionStart, line.start).clamp(line.start, line.end);
+    final endOffset =
+        math.min(selectionEnd, line.end).clamp(line.start, line.end);
+    final textWidth = (endOffset - startOffset) * advance;
+    if (textWidth > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(
+          x + (startOffset - line.start) * advance,
+          y,
+          textWidth,
+          _lineHeight,
+        ),
+        paint,
+      );
+    }
+
+    final hardBreak = line.hardBreakOffsetUtf16;
+    if (hardBreak != null &&
+        selectionStart <= hardBreak &&
+        selectionEnd > hardBreak) {
+      // A newline has no printable column. A half-cell marker at the line end
+      // makes its inclusion visible without shifting the next line's geometry.
+      canvas.drawRect(
+        Rect.fromLTWH(
+          x + (hardBreak - line.start) * advance,
+          y,
+          advance / 2,
+          _lineHeight,
+        ),
+        paint,
+      );
+    } else if (line.length == 0 && index < toIndex) {
+      // A selected empty block still needs a visible mark.
+      canvas.drawRect(Rect.fromLTWH(x, y, advance / 2, _lineHeight), paint);
+    }
   }
 
   void _paintComposingUnderline(

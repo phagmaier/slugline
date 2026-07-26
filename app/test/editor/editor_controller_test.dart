@@ -91,6 +91,32 @@ void main() {
           reason: 'the original column survives the short line');
     });
 
+    testWidgets('the caret after a newline is on the next visual row',
+        (tester) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'One.\nTwo.'),
+      );
+      caretAt(controller, 0, 5);
+
+      expect(controller.caretRow, 1);
+    });
+
+    testWidgets('vertical movement reaches the start of a hard line',
+        (tester) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'One.\nTwo.'),
+      );
+      caretAt(controller, 0, 0);
+
+      controller.moveVertical(1);
+      await tester.pump();
+
+      expect(controller.selection.focus.offsetUtf16, 5);
+      expect(controller.caretRow, 1);
+    });
+
     testWidgets('Home and End move within the visual line', (tester) async {
       final controller = await pumpEditor(tester, scene());
       caretAt(controller, 1, 5);
@@ -246,6 +272,55 @@ void main() {
       expect(controller.selection.anchor, anchor, reason: 'the anchor is the click');
       expect(controller.hasSelection, isTrue);
     });
+
+    testWidgets('a click on the second hard line maps into that line',
+        (tester) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'One.\nTwo.'),
+      );
+      final surface = tester.getTopLeft(find.byType(EditorSurface));
+
+      await tester.tapAt(surface + const Offset(20, 60));
+      await tester.pump();
+
+      expect(controller.selection.focus.offsetUtf16, 5);
+    });
+
+    testWidgets('selection extends across a hard newline', (tester) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'One.\nTwo.'),
+      );
+      final surface = tester.getTopLeft(find.byType(EditorSurface));
+
+      final gesture = await tester.startGesture(surface + const Offset(20, 38));
+      await gesture.moveTo(surface + const Offset(20, 60));
+      await tester.pump();
+      await gesture.up();
+
+      expect(controller.selection.anchor.offsetUtf16, 0);
+      expect(controller.selection.focus.offsetUtf16, 5);
+      expect(controller.caretRow, 1);
+    });
+
+    testWidgets('selection crosses hard and soft wraps', (tester) async {
+      final first = 'a' * 65;
+      final second = 'b' * 65;
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, '$first\n$second'),
+      );
+      caretAt(controller, 0, 2);
+
+      controller.moveVertical(3, extend: true);
+      await tester.pump();
+
+      expect(controller.layout.linesOf(0).length, 4);
+      expect(controller.selection.anchor.offsetUtf16, 2);
+      expect(controller.selection.focus.offsetUtf16, 128);
+      expect(controller.caretRow, 3);
+    });
   });
 
   group('applying what the core says', () {
@@ -307,9 +382,62 @@ void main() {
       await tester.pump();
       expect(controller.blocks[1].text, 'John enters.');
     });
+
+    testWidgets('an incremental edit inserts and lays out a hard newline',
+        (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'One.Two.');
+      final controller = await pumpEditor(tester, core);
+      caretAt(controller, 0, 4);
+
+      controller.insertText('\n');
+      await tester.pump();
+
+      expect(controller.blocks.single.text, 'One.\nTwo.');
+      expect(controller.layout.linesOf(0).length, 2);
+      expect(controller.caretRow, 1);
+      expect(core.blockReads, 1, reason: 'the patch is applied in place');
+    });
+
+    testWidgets('an incremental edit removes and relays out a hard newline',
+        (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'One.\nTwo.');
+      final controller = await pumpEditor(tester, core);
+      expect(controller.layout.linesOf(0).length, 2);
+      caretAt(controller, 0, 5);
+
+      controller.deleteBackward();
+      await tester.pump();
+
+      expect(controller.blocks.single.text, 'One.Two.');
+      expect(controller.layout.linesOf(0).length, 1);
+      expect(controller.layout.totalRows, 1);
+      expect(core.blockReads, 1, reason: 'the patch is applied in place');
+    });
   });
 
   group('clipboard', () {
+    testWidgets('copy and paste preserve an embedded hard newline',
+        (tester) async {
+      final clipboard = _FakeClipboard(tester);
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'One.\nTwo.'),
+      );
+      selectFromTo(controller, 0, 0, 0, 9);
+
+      await controller.copy();
+      expect(clipboard.text, 'One.\nTwo.');
+
+      caretAt(controller, 0, 5);
+      clipboard.text = 'X';
+      await controller.paste(plain: true);
+      await tester.pump();
+
+      expect(controller.blocks.single.text, 'One.\nXTwo.');
+      expect(controller.layout.linesOf(0).length, 2);
+      expect(controller.caretRow, 1);
+    });
+
     testWidgets('copy asks the core for the selection as Fountain',
         (tester) async {
       final clipboard = _FakeClipboard(tester);
