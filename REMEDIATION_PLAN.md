@@ -3,7 +3,8 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–5 complete; later remediation phases not started
+**Status:** in progress — Phases 0–5 and 7 complete; Phase 6 complete but for its
+CI gate; Phases 8–10 not started
 
 ---
 
@@ -46,7 +47,7 @@ The remediation effort is complete only when all of the following are true:
 - [x] Overlapping saves for the same session cannot write out of order.
 - [x] External-change checks perform disk I/O off the actor thread.
 - [x] Persisted scroll position is applied when reopening a script.
-- [ ] Fountain “Export Copy” semantics are separate from “Save As.”
+- [x] Fountain “Export Copy” semantics are separate from “Save As.”
 - [x] CI runs all intended integration tests and a real ENOSPC/full-disk test.
 - [x] README, AGENTS, SPEC, ADRs, and implementation status agree.
 - [ ] The real Linux `ibus` + CJK IME gate has been performed and recorded.
@@ -2888,44 +2889,205 @@ Provide two distinct operations:
 
 ### API semantics
 
-- [ ] Rename or clarify any API that conflates the two operations.
-- [ ] Implement `doc_export_fountain` as a true copy operation.
-- [ ] Ensure export:
-  - serialises the current document;
-  - writes atomically;
+- [x] Rename or clarify any API that conflates the two operations. — `doc_save_as`
+      no longer claims to be `doc_export_fountain`; its documentation now names
+      the rebinding as the difference.
+- [x] Implement `doc_export_fountain` as a true copy operation. —
+      `crates/bridge/src/api/files.rs`, `(handle, path, overwrite)`.
+- [x] Ensure export:
+  - serialises the current document; — one actor trip, for the bytes.
+  - writes atomically; — `atomic::save_atomically`, off the actor (§2.3).
   - does not mark the document saved unless the product specification explicitly says it should;
-  - does not change active path;
-  - does not restart/rebind journal;
-  - does not alter library identity;
-  - does not change watcher subscription;
-  - does not affect recent-file/session restoration binding.
-- [ ] Ensure Save As retains its existing rebinding semantics.
+    — it does not: no `mark_saved_at`, no `SaveStateChanged`, and the dirty flag
+    is untouched. ADR 0029 says why the other reading is wrong.
+  - does not change active path; — no `rebind`, no `set_file`.
+  - does not restart/rebind journal; — no checkpoint, rebuild or restart, so the
+    journal's base still describes the session's own file.
+  - does not alter library identity; — no `library.add`/`opened`, no refresh.
+  - does not change watcher subscription; — no `watch`/`unwatch`, and no
+    own-write bracket either (it cannot produce a watched event: an open script
+    is refused as a destination).
+  - does not affect recent-file/session restoration binding. — nothing is
+    written to the library index at all.
+- [x] Ensure Save As retains its existing rebinding semantics. — `doc_save_as`
+      is byte-for-byte the call it was; only its documentation changed.
 
 ### Tests
 
-- [ ] Save As changes active path.
-- [ ] Save As rebinds journal and watcher.
-- [ ] Export writes the expected bytes.
-- [ ] Export leaves active path unchanged.
-- [ ] Export leaves journal base/binding unchanged.
-- [ ] Export leaves dirty state unchanged according to the chosen specification.
-- [ ] Export failure does not alter session state.
-- [ ] Exporting over an existing file uses the correct confirmation/refusal flow.
+- [x] Save As changes active path. — `save_as_changes_the_active_path`.
+- [x] Save As rebinds journal and watcher. —
+      `save_as_rebinds_the_journal_and_the_library_entry`, with the watcher half
+      in the existing `save_as_suppresses_the_new_path_and_forgets_the_old_one`.
+- [x] Export writes the expected bytes. — `an_export_writes_the_expected_bytes`.
+- [x] Export leaves active path unchanged. —
+      `an_export_leaves_the_session_exactly_where_it_was`.
+- [x] Export leaves journal base/binding unchanged. — same test: the journal
+      still names the session's file, still verifies against it, and still
+      recovers to what is in memory.
+- [x] Export leaves dirty state unchanged according to the chosen specification.
+      — same test; the specification chosen is ADR 0029's: a copy is not where
+      this script lives, so the document stays dirty.
+- [x] Export failure does not alter session state. —
+      `a_failed_export_changes_nothing`, plus `an_export_with_nowhere_to_go_says_so`
+      for the two answers that are questions rather than faults.
+- [x] Exporting over an existing file uses the correct confirmation/refusal flow.
+      — `an_export_refuses_to_overwrite_until_it_is_told_to`: refused as
+      `AlreadyExists` until the caller passes `overwrite`. The stronger refusal
+      is `an_export_never_writes_a_script_that_is_open`, which no flag lifts.
 
 ### Documentation
 
-- [ ] Update bridge API docs.
-- [ ] Update SPEC terminology if ambiguous.
-- [ ] Ensure future Phase 7 dialogs call the correct operation.
+- [x] Update bridge API docs. — the doc comments on `doc_save_as`,
+      `doc_export_fountain` and both new `SaveFailure` variants, which are what
+      the generated Dart carries; `AGENTS.md`'s persistence section; ADR 0029.
+- [x] Update SPEC terminology if ambiguous. — §6 now lists `doc_save_as` beside
+      `doc_export_fountain` and says which one moves the session.
+- [x] Ensure future Phase 7 dialogs call the correct operation. —
+      `DocumentCore.exportFountain` is the one call, and SPEC's Phase 7 checklist
+      now carries the requirement that the export command use it.
 
 ## Exit conditions
 
-- [ ] Export Copy and Save As have distinct tested semantics.
-- [ ] No Phase 7 dialog can accidentally rebind the user’s session when exporting.
+- [x] Export Copy and Save As have distinct tested semantics.
+- [x] No Phase 7 dialog can accidentally rebind the user’s session when exporting.
+      — a dialog can only rebind by calling `saveAs`; `exportFountain` has no path
+      to `write_document` at all, and the negative control below shows the tests
+      catch it if one is wired back in.
 
 ## Suggested commit boundary
 
 - [ ] `feat(storage): separate Fountain export copy from Save As`
+
+## Implementation log — Phase 7
+
+**Started:** 2026-07-26
+
+**Completed:** 2026-07-26
+
+**Primary implementer/agent:** Anthropic Claude Opus 5 (Claude Code)
+
+**Starting commit:** `bae3c5d`
+
+**Ending commit:** working tree
+
+### Changes made
+
+- `crates/bridge/src/api/files.rs`: added `doc_export_fountain(handle, path,
+  overwrite)`. It takes the serialised document from the actor in one trip
+  — together with the paths of every open script — writes it with
+  `atomic::save_atomically` off the actor, and returns. It arms nothing, records
+  nothing and emits nothing, so there is no half-finished state a failure could
+  leave behind.
+- Two `SaveFailure` variants, refusals as values like the rest of the enum:
+  `AlreadyExists` (lifted by `overwrite`) and `ScriptIsOpen` (not lifted by
+  anything). `same_file` compares destinations as written and then canonicalised,
+  so a symlinked directory cannot spell an open script past the check.
+- `doc_save_as` is unchanged in behaviour and now documents the rebinding as what
+  distinguishes it.
+- Dart: `DocumentCore.exportFountain` and its `RustDocumentCore` implementation;
+  the two new failures given sentences in `save_dialogs.dart` and a short reason
+  in `save_status.dart`; `FakeCore.exportFountain` records exports and refuses
+  the same two destinations without touching path, dirty flag or journal count.
+- Regenerated bindings (`flutter_rust_bridge_codegen generate`). The regeneration
+  also picked up Phase 6E/6F drift in `frb_generated.*` and `api/layout.dart`
+  — ignored-symbol comment lines only, no behaviour.
+- Documentation: ADR 0029, `AGENTS.md`'s persistence section, SPEC §6's API
+  sketch, and three requirements in SPEC's Phase 7 checklist so the export dialog
+  is specified to call the export.
+
+### Tests added or changed
+
+- Six Rust tests in `crates/bridge/src/api/files.rs`, written as pairs against
+  the Save As ones: `save_as_changes_the_active_path`,
+  `save_as_rebinds_the_journal_and_the_library_entry`,
+  `an_export_writes_the_expected_bytes`,
+  `an_export_leaves_the_session_exactly_where_it_was`,
+  `an_export_refuses_to_overwrite_until_it_is_told_to`,
+  `an_export_never_writes_a_script_that_is_open`,
+  `a_failed_export_changes_nothing`, `an_export_with_nowhere_to_go_says_so`.
+  Two `Fixture` helpers support them: `journal_describes` (the file the journal
+  says it is for — what Save As moves and an export must not) and `library_has`.
+- `app/integration_test/persistence_test.dart`: *an export writes a copy and
+  Save As moves the session*, against the real `.so` — the generated binding
+  carrying the distinction, `overwrite` included. No new integration file, so
+  `.github/workflows/ci.yml` needs no new step.
+
+### Commands run
+
+```text
+cargo fmt --all --check                                # clean
+cargo clippy --workspace --all-targets -- -D warnings  # clean
+cargo test --workspace                                 # 427 passed
+python3 tools/check_layering.py                        # 7 crates, no upward deps
+cd app && flutter analyze                              # no issues
+cd app && flutter test                                 # 311 passed
+cd app && flutter build linux --release                # built
+cd app && flutter test integration_test/persistence_test.dart -d linux   # 15 passed
+cd app && flutter test integration_test/bridge_test.dart -d linux        # 4 passed
+cd app && flutter test integration_test/editor_test.dart -d linux        # 8 passed
+cd app && flutter test integration_test/writing_test.dart -d linux       # 11 passed
+cd app && flutter test integration_test/ime_test.dart -d linux           # 9 passed
+cd app && flutter test integration_test/keystroke_benchmark_test.dart -d linux
+                                                                         # 2 passed
+```
+
+### Results
+
+F9 is closed. Export and Save As are two operations with two sets of tests, and
+the property that makes an export correct — that it leaves the path, the journal,
+the library entry, the watch and the dirty flag exactly as they were — is
+asserted rather than argued.
+
+Negative controls, run before trusting any of the above:
+
+```text
+doc_export_fountain reduced to write_document(handle, Some(path), true)
+  — the F9 behaviour                     → 4 of the 6 export tests fail
+the open-script refusal disabled         → an_export_never_writes_a_script_
+                                           that_is_open fails
+the overwrite check and the canonical
+  path comparison removed                → 2 fail, the symlinked-destination
+                                           half among them
+```
+
+### Deviations from plan
+
+- The plan left the overwrite behaviour to "the correct confirmation/refusal
+  flow" without saying where it lives. It is in the core, as an `overwrite`
+  argument and a refusal, rather than in the chooser — ADR 0029 argues that a
+  rule living only in a dialog is a rule the next dialog does not have.
+- The plan did not ask for the open-script refusal. It is here because the
+  alternative is a durability defect rather than a UI wrinkle: writing an open
+  script from outside its session leaves that session's journal describing bytes
+  the file no longer has, so a crash would recover onto a file that no longer
+  matches — §1.2's P0 territory. ADR 0029 records the decision.
+- No export UI was built. Phase 7 of this plan is the core split; the dialog is
+  SPEC Phase 7's, behind the Phase 10 gate, and building it here would be the
+  feature work this document forbids.
+
+### New risks or follow-up findings
+
+- The overwrite check is `path.exists()` before the rename, so it races with
+  anything else creating that file in the same instant. That is the race every
+  file chooser has, and closing it would need an `O_EXCL` create inside
+  `atomic::save_atomically`. Not worth doing blind; worth remembering when
+  SPEC Phase 7 draws the export dialog.
+- Two integration tests unrelated to this change flaked once each and passed on
+  every rerun: `writing_test`'s *double-Enter after a speech asks for the next
+  cue* lost a typed `.`, and `ime_test`'s clipboard case failed once. One early
+  `persistence_test` run also reported a single failure in a test that precedes
+  the new one; ten subsequent runs were green. Keystroke and clipboard injection
+  against a real display, not a product defect — but if CI shows the same shape,
+  it is these tests that need hardening, not the code under them.
+
+### Reviewer notes
+
+- The pairing is the point: read `save_as_changes_the_active_path` and
+  `an_export_leaves_the_session_exactly_where_it_was` together, and the second
+  is the first with every assertion inverted.
+- `an_export_leaves_the_session_exactly_where_it_was` checks `recovers_to()`,
+  not just the journal's header. That is the assertion that would catch an export
+  that re-based the journal onto its copy.
 
 ---
 
@@ -3123,7 +3285,7 @@ Prove the repaired codebase is stable, documented, and ready to begin Phase 7.
 - [ ] F6 — scroll restored.
 - [x] F7 — docs, ADRs, SPEC, and CI synchronized.
 - [ ] F8 — external-change I/O moved off actor.
-- [ ] F9 — export copy separated from Save As.
+- [x] F9 — export copy separated from Save As. — remediation Phase 7, ADR 0029.
 - [ ] F10 — uppercase rule resolved and tested.
 - [ ] F11 — character normalization hardened.
 - [ ] F12 — selected defensive items fixed or explicitly deferred.

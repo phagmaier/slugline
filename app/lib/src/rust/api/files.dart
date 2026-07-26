@@ -9,8 +9,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_view`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `SavedPagination`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
@@ -117,14 +117,58 @@ String? docPath({required DocumentHandle handle}) =>
 Future<SaveOutcome> docSave({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiFilesDocSave(handle: handle);
 
-/// Save As, and §6's `doc_export_fountain` — the same operation.
+/// Save As.
 ///
-/// The document follows the new path: after Save As, this *is* the file, and
-/// the journal, the backups and the library entry all move with it.
+/// The document **follows** the new path: after Save As, this *is* the file, and
+/// the journal, the backups, the watch and the library entry all move with it.
+/// That is the difference from [`doc_export_fountain`], which writes a copy and
+/// changes nothing (ADR 0029).
 Future<SaveOutcome> docSaveAs({
   required DocumentHandle handle,
   required String path,
 }) => RustLib.instance.api.crateApiFilesDocSaveAs(handle: handle, path: path);
+
+/// §6's `doc_export_fountain`: write a copy of the script somewhere else, and
+/// carry on editing this one.
+///
+/// ## What it deliberately does not do
+///
+/// Everything [`doc_save_as`] does. Export writes one file and touches nothing
+/// else: the document keeps its path, its identity in the library, its watch,
+/// its journal — base and all — and its dirty flag, because the copy is not
+/// where this script lives and the writer's unsaved work is still unsaved. No
+/// backup is written either: backups are the history of *this* script's file,
+/// and a copy is not a version of it. Nothing is recorded on the actor
+/// afterwards, so there is no state a failed export could be caught halfway
+/// through.
+///
+/// It follows that the session is never armed here — no [`Session::begin_save`],
+/// so no [`abandon_save`] on the way out — and that the write needs no
+/// own-write bracket: the destination is refused if it is a file this
+/// application has open, and an open script is the only file it watches.
+///
+/// ## The two refusals
+///
+/// * A destination that is already there comes back as
+///   [`SaveFailure::AlreadyExists`] unless `overwrite` says otherwise. Export is
+///   a file chooser away from silently replacing a script the writer spent a
+///   month on, and the core is the layer that can make that impossible rather
+///   than merely unlikely.
+/// * A destination that is an open script comes back as
+///   [`SaveFailure::ScriptIsOpen`], and `overwrite` does not lift it. That
+///   file's session has a journal whose base is the bytes now being replaced;
+///   after such a write a crash would recover onto a file that no longer
+///   matches, so the answer is to save that script rather than to export over
+///   it (ADR 0029).
+Future<SaveOutcome> docExportFountain({
+  required DocumentHandle handle,
+  required String path,
+  required bool overwrite,
+}) => RustLib.instance.api.crateApiFilesDocExportFountain(
+  handle: handle,
+  path: path,
+  overwrite: overwrite,
+);
 
 /// The autosave, called by Dart's own timers.
 ///
@@ -400,6 +444,16 @@ enum SaveFailure {
   /// The document has never been saved and no path was given. The UI must ask
   /// for one; this is not an error so much as a question.
   noPath,
+
+  /// There is already a file there and the caller did not say to replace it.
+  /// Like [`SaveFailure::NoPath`] this is a question rather than a fault: the
+  /// UI asks, and calls again saying yes (ADR 0029).
+  alreadyExists,
+
+  /// The destination is a script this application has open. Refused outright:
+  /// writing it from outside its own session would leave that session's
+  /// journal describing bytes the file no longer holds (ADR 0029).
+  scriptIsOpen,
 }
 
 @freezed
@@ -438,9 +492,8 @@ class ScriptView {
   final int modifiedMillis;
   final int bytes;
 
-  /// Always zero today. `crates/layout` can count pages and the bridge does
-  /// not yet depend on it; ADR 0020 has this written after a successful save,
-  /// from a background pagination of the saved snapshot.
+  /// Zero until a layout-capable build successfully saves and paginates this
+  /// script; otherwise the number of screenplay pages in the saved snapshot.
   final int pageCount;
 
   /// The file was not there when the library was last refreshed. Shown as

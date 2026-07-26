@@ -491,7 +491,13 @@ fn doc_apply(h: DocumentHandle, cmd: EditCommand) -> EditResult;
 fn doc_undo(h: DocumentHandle) -> Option<EditResult>;
 fn doc_redo(h: DocumentHandle) -> Option<EditResult>;
 async fn doc_save(h: DocumentHandle) -> Result<()>;
-async fn doc_export_fountain(h: DocumentHandle, path: String) -> Result<()>;
+// Save As: writes a new path and the session follows it — journal, watch,
+// backups and library entry all move.
+async fn doc_save_as(h: DocumentHandle, path: String) -> Result<()>;
+// Export Copy: writes a copy and the session stays exactly where it is. Refuses
+// an existing file unless `overwrite`, and refuses an open script outright
+// (ADR 0029).
+async fn doc_export_fountain(h: DocumentHandle, path: String, overwrite: bool) -> Result<()>;
 
 // ---- Assistive ----
 fn complete(h: DocumentHandle, block: BlockId, prefix: String) -> Vec<Completion>;
@@ -1107,6 +1113,17 @@ Requirements §11, §13.
 - [ ] Editor zoom does not affect the preview or the PDF (test: change zoom, assert page
       count and golden layout unchanged)
 - [ ] Preview-before-export flow in the export dialog
+
+### Export commands
+
+- [x] "Export Fountain Copy" and "Save As" are separate operations in the core:
+      `doc_export_fountain` writes a copy and leaves the session alone,
+      `doc_save_as` writes and rebinds (ADR 0029, remediation Phase 7).
+- [ ] The export command in the UI calls `DocumentCore.exportFountain`, and only
+      Save As calls `saveAs` — an export must never rebind the writer's session.
+- [ ] The export chooser handles `SaveFailure::AlreadyExists` by asking, then
+      re-exporting with `overwrite: true`, and reports `ScriptIsOpen` as the
+      refusal it is.
 
 ### Tests
 

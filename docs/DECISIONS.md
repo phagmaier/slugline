@@ -2137,3 +2137,116 @@ in the repository where a real rename produces a real inotify event that a real
 Confirmed to fail first: with `is_echo` stubbed to `false`, eleven of these fail,
 the integration test among them; with the bracket moved after the write, the
 in-flight one does.
+
+---
+
+## ADR 0029 — Exporting a copy is not Save As, and it refuses two destinations
+
+**Date:** 2026-07-26 · **Status:** accepted · **Phase:** 4 (mid-project
+remediation, Phase 7)
+
+### Context
+
+§6 lists `doc_save_as` and `doc_export_fountain` as different functions. The
+bridge had one function wearing both names, and it was the Save As one: it wrote
+the file and then *moved the session onto it* — path, journal, watch, library
+entry and the dirty flag all followed. F9 in `REVIEW.md` is that conflation.
+
+Nothing was broken by it while no menu offered an export, and that is exactly why
+it had to be settled before Phase 7 draws the export dialog: "export a copy and
+carry on editing the original" is a verb the writer will reach for, and the
+version of it that quietly rebinds the session is one that loses the thread of
+what they are editing — a Ctrl+S afterwards writes the copy, not the script.
+
+### Decision
+
+**`doc_export_fountain` writes one file and changes nothing else.** It takes the
+serialised document from the actor, writes it with `atomic::save_atomically` off
+the actor, and returns. There is no `begin_save`, no `mark_saved_at`, no journal
+checkpoint or rebuild, no `rebind`, no library refresh, no backup, no
+`SaveStateChanged`, and no pagination job. The document stays dirty if it was
+dirty, because the copy is not where this script lives.
+
+`doc_save_as` keeps its existing rebinding semantics unchanged, and now says so
+in its own documentation rather than claiming to be both.
+
+**Two destinations are refused, as values rather than as exceptions**, in the
+same style as the rest of `SaveOutcome`:
+
+* `SaveFailure::AlreadyExists` — something is already at that path and the caller
+  did not pass `overwrite`. The UI asks and calls again saying yes. Save As is
+  untouched by this: it has always replaced what the chooser was pointed at, and
+  changing that is a separate question from F9.
+* `SaveFailure::ScriptIsOpen` — the destination is a file this application has
+  open, and `overwrite` does not lift it. Paths are compared as written and then
+  canonicalised, so a symlinked directory cannot spell an open script into a
+  different name.
+
+### Alternatives considered
+
+**Leave the overwrite question to the file chooser.** A dialog is where the
+question is *asked*, but a rule that lives only in a dialog is a rule the next
+dialog does not have. The core is the layer that can make a silent overwrite
+impossible rather than merely unlikely, and it is the layer with a test.
+
+**Allow exporting over an open script, since it is our own file.** It is not this
+session's file, and that is the trouble: the other session's journal has a `base`
+of the bytes being replaced, so after such a write `journal::verify` would refuse
+the recovery — the writer's crash journal would be quietly useless, which §1.2
+calls a P0. The same argument applies to exporting over the script being edited.
+There is already a verb for writing this script's file, and it is Save As.
+
+**Bracket the export in `OwnWrites` like every other write.** Unnecessary once
+open scripts are refused: an open script is the only thing the watcher watches,
+so an export can never produce an event that reaches Dart. Bracketing it anyway
+would add a suppression record for a path nothing is listening to, and a record
+left in flight is the one failure mode `OwnWrite` exists to avoid (ADR 0028).
+
+**Mark the document saved after an export.** Tempting — the bytes are on a disk
+somewhere — and wrong: the file the writer is editing does not have them. The
+dirty flag is about *this* script's file, and any other reading of it ends with
+the editor claiming work is safe that no file the session knows about holds.
+
+### Consequences
+
+* `doc_export_fountain(handle, path, overwrite)` is the third write verb in
+  `api/files.rs`, beside `doc_save`/`doc_autosave` and `doc_save_as`. Dart reaches
+  it through `DocumentCore.exportFountain`, which is what Phase 7's export command
+  must call; `saveAs` is what Save As calls, and the two are not interchangeable.
+* `SaveFailure` grew two variants, so every exhaustive `switch` over it in Dart
+  gained an arm — `save_dialogs.dart` and `save_status.dart`. Neither reaches a
+  save; the sentences live beside the others rather than in a second table that
+  could drift.
+* An export takes no save lock. It writes a file no save writes, and holding up
+  an autosave of the script for the duration of a copy would be paying for a
+  conflict that cannot happen.
+* The overwrite check is a `path.exists()` before the rename, so it races with
+  anything else creating that file in the same instant. That is the race every
+  file chooser has; what it buys is that the ordinary case cannot overwrite
+  without having been asked.
+
+### Tests and invariants
+
+In `crates/bridge/src/api/files.rs`, written in pairs — the same question asked
+of Save As and of export:
+
+* `save_as_changes_the_active_path` and
+  `save_as_rebinds_the_journal_and_the_library_entry`, beside
+  `an_export_writes_the_expected_bytes` and
+  `an_export_leaves_the_session_exactly_where_it_was` — which checks the path,
+  the dirty flag, the script's own file, the journal's base and what it recovers
+  to, the library entry, that nothing is left armed, and that nothing is
+  suppressed.
+* `an_export_refuses_to_overwrite_until_it_is_told_to`,
+  `an_export_never_writes_a_script_that_is_open` (including through a symlinked
+  directory), `a_failed_export_changes_nothing`,
+  `an_export_with_nowhere_to_go_says_so`.
+
+In `app/integration_test/persistence_test.dart`, against the real `.so`: *an
+export writes a copy and Save As moves the session* — the generated binding
+carrying the distinction, `overwrite` argument included.
+
+Confirmed to fail first: with `doc_export_fountain` implemented as
+`write_document(handle, Some(path), true)` — the F9 behaviour — four of the six
+Rust tests fail; with the open-script refusal removed, one does; with the
+overwrite check and the canonical comparison removed, two do.

@@ -77,6 +77,12 @@ class SaveStatus extends ChangeNotifier {
         SaveFailure.noSuchDirectory => 'the folder is gone',
         SaveFailure.noSuchDocument => 'the core lost this script',
         SaveFailure.noPath => 'no file yet',
+        // Neither can reach a *save*: both are answers `doc_export_fountain`
+        // gives about a destination, and an export never touches this status.
+        // They are here because the enum is one enum, and a status line that
+        // said nothing would be worse than one that says something short.
+        SaveFailure.alreadyExists => 'there is a file there already',
+        SaveFailure.scriptIsOpen => 'that script is open here',
         SaveFailure.io => 'the write failed',
       };
 }

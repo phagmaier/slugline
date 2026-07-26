@@ -81,6 +81,8 @@ String _headline(SaveFailure failure) => switch (failure) {
       SaveFailure.noSuchDirectory => 'That folder is not there',
       SaveFailure.noPath => 'This script has no file yet',
       SaveFailure.noSuchDocument => 'That script is not open',
+      SaveFailure.alreadyExists => 'There is already a file there',
+      SaveFailure.scriptIsOpen => 'That script is open here',
       SaveFailure.io => 'The file could not be written',
     };
 
@@ -99,6 +101,14 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
       SaveFailure.noSuchDocument =>
         'The editor and the core disagree about what is open. Reopening the '
             'script will fix it.',
+      // The two an export can answer with. Neither reaches [showSaveFailure] —
+      // an export is not a save and has its own answer to give — but the enum
+      // is shared, so the sentences live beside the others rather than in a
+      // second table that could drift from this one.
+      SaveFailure.alreadyExists =>
+        '$path is already there, and Slugline did not replace it.',
+      SaveFailure.scriptIsOpen =>
+        '$path is open here. Save that script rather than writing a copy over it.',
       SaveFailure.io => 'The operating system refused to write $path.',
     };
 

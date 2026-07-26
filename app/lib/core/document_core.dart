@@ -143,8 +143,21 @@ abstract class DocumentCore {
   /// message and a Save As escape hatch.
   Future<files.SaveOutcome> save();
 
-  /// Writes the file somewhere else, and follows it there.
+  /// Writes the file somewhere else, and **follows it there**: path, journal,
+  /// backups, watch and library entry all move.
   Future<files.SaveOutcome> saveAs(String path);
+
+  /// Writes a copy somewhere else and **stays where it is** (§6's
+  /// `doc_export_fountain`). The session, its path, its journal and its dirty
+  /// flag are all untouched, so this is what an export command calls and
+  /// [saveAs] is what Save As calls — they are not interchangeable (ADR 0029).
+  ///
+  /// Refuses a destination that already exists unless [overwrite] says
+  /// otherwise, and refuses one that is a script open here at all.
+  Future<files.SaveOutcome> exportFountain(
+    String path, {
+    bool overwrite = false,
+  });
 
   /// The same as [save] but quieter: no backup is written, and nothing to write
   /// is [files.SaveOutcome_Unchanged] rather than news.
@@ -295,6 +308,17 @@ class RustDocumentCore implements DocumentCore, PaginationDebugCore {
   @override
   Future<files.SaveOutcome> saveAs(String path) =>
       files.docSaveAs(handle: _handle, path: path);
+
+  @override
+  Future<files.SaveOutcome> exportFountain(
+    String path, {
+    bool overwrite = false,
+  }) =>
+      files.docExportFountain(
+        handle: _handle,
+        path: path,
+        overwrite: overwrite,
+      );
 
   @override
   Future<files.SaveOutcome> autosave() => files.docAutosave(handle: _handle);

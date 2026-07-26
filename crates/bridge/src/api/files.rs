@@ -72,6 +72,14 @@ pub enum SaveFailure {
     /// The document has never been saved and no path was given. The UI must ask
     /// for one; this is not an error so much as a question.
     NoPath,
+    /// There is already a file there and the caller did not say to replace it.
+    /// Like [`SaveFailure::NoPath`] this is a question rather than a fault: the
+    /// UI asks, and calls again saying yes (ADR 0029).
+    AlreadyExists,
+    /// The destination is a script this application has open. Refused outright:
+    /// writing it from outside its own session would leave that session's
+    /// journal describing bytes the file no longer holds (ADR 0029).
+    ScriptIsOpen,
 }
 
 /// What a save did.
@@ -484,12 +492,116 @@ pub async fn doc_save(handle: DocumentHandle) -> SaveOutcome {
     write_document(handle, None, true).await
 }
 
-/// Save As, and §6's `doc_export_fountain` — the same operation.
+/// Save As.
 ///
-/// The document follows the new path: after Save As, this *is* the file, and
-/// the journal, the backups and the library entry all move with it.
+/// The document **follows** the new path: after Save As, this *is* the file, and
+/// the journal, the backups, the watch and the library entry all move with it.
+/// That is the difference from [`doc_export_fountain`], which writes a copy and
+/// changes nothing (ADR 0029).
 pub async fn doc_save_as(handle: DocumentHandle, path: String) -> SaveOutcome {
     write_document(handle, Some(PathBuf::from(path)), true).await
+}
+
+/// §6's `doc_export_fountain`: write a copy of the script somewhere else, and
+/// carry on editing this one.
+///
+/// ## What it deliberately does not do
+///
+/// Everything [`doc_save_as`] does. Export writes one file and touches nothing
+/// else: the document keeps its path, its identity in the library, its watch,
+/// its journal — base and all — and its dirty flag, because the copy is not
+/// where this script lives and the writer's unsaved work is still unsaved. No
+/// backup is written either: backups are the history of *this* script's file,
+/// and a copy is not a version of it. Nothing is recorded on the actor
+/// afterwards, so there is no state a failed export could be caught halfway
+/// through.
+///
+/// It follows that the session is never armed here — no [`Session::begin_save`],
+/// so no [`abandon_save`] on the way out — and that the write needs no
+/// own-write bracket: the destination is refused if it is a file this
+/// application has open, and an open script is the only file it watches.
+///
+/// ## The two refusals
+///
+/// * A destination that is already there comes back as
+///   [`SaveFailure::AlreadyExists`] unless `overwrite` says otherwise. Export is
+///   a file chooser away from silently replacing a script the writer spent a
+///   month on, and the core is the layer that can make that impossible rather
+///   than merely unlikely.
+/// * A destination that is an open script comes back as
+///   [`SaveFailure::ScriptIsOpen`], and `overwrite` does not lift it. That
+///   file's session has a journal whose base is the bytes now being replaced;
+///   after such a write a crash would recover onto a file that no longer
+///   matches, so the answer is to save that script rather than to export over
+///   it (ADR 0029).
+pub async fn doc_export_fountain(
+    handle: DocumentHandle,
+    path: String,
+    overwrite: bool,
+) -> SaveOutcome {
+    let path = PathBuf::from(path);
+    if path.as_os_str().is_empty() {
+        return failed(SaveFailure::NoPath, &path, "no file was chosen");
+    }
+
+    // The only thing this takes from the actor: the bytes, and where the open
+    // scripts live. Both in one trip, and neither leaves anything armed.
+    let Some((text, open_scripts)) = actor().run({
+        let handle = handle.id;
+        move |state| {
+            let text = state.session(handle)?.document().serialise();
+            let open_scripts = state
+                .handles()
+                .into_iter()
+                .filter_map(|open| state.session(open))
+                .filter_map(Session::path)
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>();
+            Some((text, open_scripts))
+        }
+    }) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            &path,
+            "no document with that handle",
+        );
+    };
+
+    if open_scripts.iter().any(|open| same_file(open, &path)) {
+        return failed(
+            SaveFailure::ScriptIsOpen,
+            &path,
+            &format!(
+                "{} is open here; save that script rather than exporting over it",
+                path.display()
+            ),
+        );
+    }
+    // Checked here rather than left to the write, because `save_atomically`
+    // replaces whatever is there and answers `Ok`. A race between this and the
+    // rename is possible and is the same race a file chooser has; what matters
+    // is that the ordinary case cannot overwrite without having been asked.
+    if !overwrite && path.exists() {
+        return failed(
+            SaveFailure::AlreadyExists,
+            &path,
+            &format!("{} is already there", path.display()),
+        );
+    }
+
+    // Off the actor, like every other write (§2.3).
+    if let Err(error) = atomic::save_atomically(&path, &text) {
+        return SaveOutcome::Failed {
+            failure: failure_of(&error),
+            path: path.to_string_lossy().into_owned(),
+            message: error.to_string(),
+        };
+    }
+    SaveOutcome::Saved {
+        path: path.to_string_lossy().into_owned(),
+        bytes: text.len().min(u32::MAX as usize) as u32,
+        backup: None,
+    }
 }
 
 /// The autosave, called by Dart's own timers.
@@ -1654,6 +1766,22 @@ fn failed(failure: SaveFailure, path: &Path, message: &str) -> SaveOutcome {
     }
 }
 
+/// Whether two paths name the same file.
+///
+/// Compared as written first — the cheap answer, and the only one available for
+/// a destination that does not exist yet — and through the filesystem second, so
+/// that a symlinked directory or a `..` cannot spell an open script differently
+/// enough to get past [`doc_export_fountain`]'s refusal.
+fn same_file(one: &Path, other: &Path) -> bool {
+    if one == other {
+        return true;
+    }
+    match (one.canonicalize(), other.canonicalize()) {
+        (Ok(one), Ok(other)) => one == other,
+        _ => false,
+    }
+}
+
 /// `heat.fountain` → `heat copy.fountain`, then `heat copy 2.fountain`.
 fn unused_path(path: &Path) -> Option<PathBuf> {
     let parent = path.parent()?;
@@ -1879,6 +2007,23 @@ mod tests {
 
         fn journalled(&self) -> u32 {
             doc_journal_state(self.handle).0
+        }
+
+        /// The file this session's journal says it is the journal *for*. What a
+        /// Save As moves and an export must not (F9).
+        fn journal_describes(&self) -> Option<PathBuf> {
+            journal::read(&self.journal_path())
+                .ok()
+                .map(|recovery| recovery.header.script)
+        }
+
+        fn library_has(&self, id: &str) -> bool {
+            let id = id.to_owned();
+            actor().run(move |state| {
+                state
+                    .storage()
+                    .is_some_and(|storage| storage.library.get(&id).is_some())
+            })
         }
 
         fn is_saving(&self) -> bool {
@@ -2760,5 +2905,265 @@ mod tests {
         let handle = it.handle;
         actor().run(move |state| state.close(handle.id));
         assert!(own.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 7: an export is a copy, and Save As is a move
+    //
+    // F9: the two used to be one function. These tests are written in pairs on
+    // purpose — the same question asked of `doc_save_as` and of
+    // `doc_export_fountain` — because what makes an export correct is not what
+    // it writes but everything it leaves alone (ADR 0029).
+    // -----------------------------------------------------------------------
+
+    fn exported(outcome: &SaveOutcome) -> &str {
+        match outcome {
+            SaveOutcome::Saved { path, .. } => path,
+            other => panic!("expected an export, got {other:?}"),
+        }
+    }
+
+    fn failure_of_outcome(outcome: &SaveOutcome) -> SaveFailure {
+        match outcome {
+            SaveOutcome::Failed { failure, .. } => *failure,
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    /// Save As moves the session: the path it answers to afterwards is the new
+    /// file, and the old one is left as it was.
+    #[test]
+    fn save_as_changes_the_active_path() {
+        let it = Fixture::open("save-as-path");
+        let elsewhere = it.root.join("moved.fountain");
+        it.types("Moving. ");
+        let moved = it.in_memory();
+
+        let outcome = block_on(doc_save_as(
+            it.handle,
+            elsewhere.to_string_lossy().into_owned(),
+        ));
+
+        assert_eq!(exported(&outcome), elsewhere.to_string_lossy());
+        assert_eq!(doc_path(it.handle).as_deref(), elsewhere.to_str());
+        assert_eq!(fs::read_to_string(&elsewhere).unwrap(), moved);
+        assert_eq!(it.on_disk(), SCRIPT, "the file left behind is untouched");
+        assert!(!it.dirty(), "a Save As saved this document");
+    }
+
+    /// …and takes the journal, the library entry and the watch with it. The
+    /// own-writes half is `save_as_suppresses_the_new_path_and_forgets_the_old_one`
+    /// above; this is the rest of the binding.
+    #[test]
+    fn save_as_rebinds_the_journal_and_the_library_entry() {
+        let it = Fixture::open("save-as-binding");
+        let elsewhere = it.root.join("rebound.fountain");
+        it.types("Rebinding. ");
+        block_on(doc_save_as(
+            it.handle,
+            elsewhere.to_string_lossy().into_owned(),
+        ));
+
+        assert_eq!(
+            it.journal_describes().as_deref(),
+            Some(elsewhere.as_path()),
+            "the journal now covers the file the session moved to"
+        );
+        let id = journal::script_id(&elsewhere);
+        assert!(
+            it.library_has(&id),
+            "the library learned the script's new identity"
+        );
+        assert!(it.own_writes().is_echo(&elsewhere));
+    }
+
+    /// The bytes an export writes are the document as it stands, exactly as a
+    /// save would have written them.
+    #[test]
+    fn an_export_writes_the_expected_bytes() {
+        let it = Fixture::open("export-bytes");
+        it.types("A copy of this. ");
+        let copy = it.root.join("copy.fountain");
+
+        let outcome = block_on(doc_export_fountain(
+            it.handle,
+            copy.to_string_lossy().into_owned(),
+            false,
+        ));
+
+        assert_eq!(exported(&outcome), copy.to_string_lossy());
+        assert_eq!(fs::read_to_string(&copy).unwrap(), it.in_memory());
+        assert_eq!(bytes_of(&outcome) as usize, it.in_memory().len());
+    }
+
+    /// F9 itself: the session goes on being the session. Path, journal, dirty
+    /// flag, library identity — an export moves none of them, which is the whole
+    /// difference between it and the two tests above.
+    #[test]
+    fn an_export_leaves_the_session_exactly_where_it_was() {
+        let it = Fixture::open("export-session");
+        it.types("Still editing. ");
+        let before = it.in_memory();
+        let journalled = it.journalled();
+        let id = journal::script_id(&it.script);
+        let copy = it.root.join("copy.fountain");
+
+        block_on(doc_export_fountain(
+            it.handle,
+            copy.to_string_lossy().into_owned(),
+            false,
+        ));
+
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
+        assert!(it.dirty(), "the copy is not where this script lives");
+        assert_eq!(it.in_memory(), before);
+        assert_eq!(it.on_disk(), SCRIPT, "the script's own file is untouched");
+        assert_eq!(
+            it.journal_describes().as_deref(),
+            Some(it.script.as_path()),
+            "the journal still covers the file the session is bound to"
+        );
+        assert!(
+            it.journal_agrees_with_the_file(),
+            "an export must not re-base the journal"
+        );
+        assert_eq!(it.journalled(), journalled);
+        assert_eq!(it.recovers_to(), before, "the crash journal still recovers");
+        assert!(it.library_has(&id), "the library entry did not move");
+        assert!(!it.is_saving(), "an export arms nothing");
+        assert!(
+            it.own_writes().is_empty(),
+            "the copy is not a file this session watches"
+        );
+    }
+
+    /// An export never quietly replaces a file. The refusal is the core's, not
+    /// the dialog's, so no Phase 7 chooser can skip it (ADR 0029).
+    #[test]
+    fn an_export_refuses_to_overwrite_until_it_is_told_to() {
+        let it = Fixture::open("export-overwrite");
+        it.types("New words. ");
+        let occupied = it.root.join("occupied.fountain");
+        fs::write(&occupied, "Somebody else's script.\n").expect("the file is written");
+
+        let refused = block_on(doc_export_fountain(
+            it.handle,
+            occupied.to_string_lossy().into_owned(),
+            false,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::AlreadyExists);
+        assert_eq!(
+            fs::read_to_string(&occupied).unwrap(),
+            "Somebody else's script.\n",
+            "a refused export writes nothing"
+        );
+
+        let confirmed = block_on(doc_export_fountain(
+            it.handle,
+            occupied.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert!(matches!(confirmed, SaveOutcome::Saved { .. }));
+        assert_eq!(fs::read_to_string(&occupied).unwrap(), it.in_memory());
+    }
+
+    /// A script this application has open is never a destination, however the
+    /// path is spelled and however firmly the caller insists. Writing one from
+    /// outside its session would leave its journal describing bytes the file no
+    /// longer has, and a crash would then recover onto the wrong file.
+    #[test]
+    fn an_export_never_writes_a_script_that_is_open() {
+        let it = Fixture::open("export-open");
+        let other = it.beside("also-open");
+        it.types("Mine. ");
+
+        for (destination, description) in [
+            (it.script.clone(), "its own file"),
+            (other.script.clone(), "another open script"),
+        ] {
+            let refused = block_on(doc_export_fountain(
+                it.handle,
+                destination.to_string_lossy().into_owned(),
+                true,
+            ));
+            assert_eq!(
+                failure_of_outcome(&refused),
+                SaveFailure::ScriptIsOpen,
+                "exporting over {description} must be refused"
+            );
+        }
+        assert_eq!(it.on_disk(), SCRIPT);
+        assert_eq!(other.on_disk(), SCRIPT);
+
+        // The same file, spelled through a symlinked directory. A comparison of
+        // the paths as written would let this one through.
+        let linked = it.root.join("link");
+        std::os::unix::fs::symlink(&it.root, &linked).expect("the symlink is made");
+        let sideways = linked.join(
+            other
+                .script
+                .file_name()
+                .expect("the sibling has a file name"),
+        );
+        let refused = block_on(doc_export_fountain(
+            it.handle,
+            sideways.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
+        assert_eq!(other.on_disk(), SCRIPT);
+        assert_eq!(other.in_memory(), SCRIPT);
+    }
+
+    /// A failed export is a failed write and nothing else: there is no state it
+    /// could have got halfway through, and the test says so rather than trusting
+    /// the argument.
+    #[test]
+    fn a_failed_export_changes_nothing() {
+        let it = Fixture::open("export-failed");
+        it.types("Unwritten. ");
+        let before = it.in_memory();
+        let journalled = it.journalled();
+        let nowhere = it.root.join("no-such-folder").join("copy.fountain");
+
+        let outcome = block_on(doc_export_fountain(
+            it.handle,
+            nowhere.to_string_lossy().into_owned(),
+            false,
+        ));
+
+        assert_eq!(failure_of_outcome(&outcome), SaveFailure::NoSuchDirectory);
+        assert!(!nowhere.exists());
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
+        assert_eq!(it.in_memory(), before);
+        assert!(it.dirty());
+        assert_eq!(it.journalled(), journalled);
+        assert!(it.journal_agrees_with_the_file());
+        assert!(!it.is_saving(), "a refused export leaves nothing armed");
+        assert!(it.own_writes().is_empty());
+    }
+
+    /// The two answers that are questions rather than faults, given without a
+    /// document to hand: the UI has to tell them apart before it can ask
+    /// anything.
+    #[test]
+    fn an_export_with_nowhere_to_go_says_so() {
+        let it = Fixture::open("export-nowhere");
+        assert_eq!(
+            failure_of_outcome(&block_on(doc_export_fountain(
+                it.handle,
+                String::new(),
+                false
+            ))),
+            SaveFailure::NoPath
+        );
+        assert_eq!(
+            failure_of_outcome(&block_on(doc_export_fountain(
+                DocumentHandle { id: u64::MAX },
+                it.root.join("copy.fountain").to_string_lossy().into_owned(),
+                false,
+            ))),
+            SaveFailure::NoSuchDocument
+        );
     }
 }

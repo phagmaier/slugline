@@ -142,6 +142,58 @@ void main() {
     );
   });
 
+  /// F9, end to end: the two operations that used to be one. Export writes a
+  /// copy and the writer carries on where they were; Save As takes the session
+  /// with it (ADR 0029). `cargo test` proves what happens to the journal and the
+  /// library; what this adds is that the generated binding carries the
+  /// distinction — including the `overwrite` argument a Phase 7 dialog has to
+  /// pass to replace anything.
+  testWidgets('an export writes a copy and Save As moves the session', (
+    tester,
+  ) async {
+    final file = path('export.fountain');
+    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+    final handle = await files.libraryOpen(path: file);
+    final core = RustDocumentCore.of(handle!);
+    addTearDown(core.close);
+
+    final controller = await openEditor(tester, core);
+    controller.insertText('X');
+    await tester.pump();
+    final typed = core.source();
+
+    final copy = path('export-copy.fountain');
+    expect(await core.exportFountain(copy), isA<SaveOutcome_Saved>());
+    expect(File(copy).readAsStringSync(), typed);
+    expect(core.path, file, reason: 'the session did not follow the copy');
+    expect(core.dirty, isTrue, reason: 'a copy is not where this script lives');
+    expect(
+      File(file).readAsStringSync(),
+      'INT. HOUSE - DAY\n',
+      reason: 'and the script itself is still unsaved',
+    );
+
+    // The copy exists now, so exporting there again has to be told to replace it.
+    final refused = await core.exportFountain(copy);
+    expect(refused, isA<SaveOutcome_Failed>());
+    expect((refused as SaveOutcome_Failed).failure, SaveFailure.alreadyExists);
+    expect(
+      await core.exportFountain(copy, overwrite: true),
+      isA<SaveOutcome_Saved>(),
+    );
+
+    // The script being edited is never a destination, however firmly asked.
+    final onto = await core.exportFountain(file, overwrite: true);
+    expect((onto as SaveOutcome_Failed).failure, SaveFailure.scriptIsOpen);
+
+    // Save As, by contrast, moves the session onto the file it writes.
+    final moved = path('export-moved.fountain');
+    expect(await core.saveAs(moved), isA<SaveOutcome_Saved>());
+    expect(core.path, moved);
+    expect(core.dirty, isFalse);
+    expect(File(moved).readAsStringSync(), typed);
+  });
+
   testWidgets('what was typed comes back when the file is opened again', (
     tester,
   ) async {

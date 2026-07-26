@@ -27,6 +27,7 @@
 - The journal records the **outcome** of an edit (a `Patch`), never the command (ADR 0013). Replaying is list surgery with no inference in it. Appends are not `fsync`ed on purpose; do not "fix" that without reading the ADR.
 - The library index, the session and the backups' bookkeeping are **caches**. Deleting any of them must cost nothing but convenience, and an integration test deletes the index mid-session to prove it.
 - A journal file's *absence* is what says a session ended cleanly. `Journal::discard` removes it and nothing else may.
+- **Save As moves the session; an export copies the text and moves nothing** (ADR 0029). `doc_save_as` rebinds path, journal, watch, backups and library entry; `doc_export_fountain` writes one file and leaves every one of them — and the dirty flag — alone, which is why it never arms `begin_save` and never needs an own-write bracket. It refuses a destination that already exists unless told to overwrite, and refuses one that is a script open here at all: writing an open script from outside its session would leave that session's journal describing bytes the file no longer has. Phase 7's export command calls `DocumentCore.exportFountain`; only Save As calls `saveAs`.
 
 ## The Fountain core
 

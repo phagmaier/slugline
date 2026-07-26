@@ -475,6 +475,42 @@ class FakeCore implements DocumentCore {
     return _write(filePath, autosave: true);
   }
 
+  /// Every export the editor asked for, in order, as `(path, overwrite)`.
+  final List<(String, bool)> exports = [];
+
+  /// The destinations an export must refuse: what `AlreadyExists` and
+  /// `ScriptIsOpen` are for in the real core, without a filesystem to have them
+  /// in.
+  final Set<String> existingFiles = {};
+  final Set<String> openScripts = {};
+
+  @override
+  Future<SaveOutcome> exportFountain(
+    String path, {
+    bool overwrite = false,
+  }) async {
+    if (openScripts.contains(path)) {
+      return SaveOutcome.failed(
+        failure: SaveFailure.scriptIsOpen,
+        path: path,
+        message: '$path is open here',
+      );
+    }
+    if (!overwrite && existingFiles.contains(path)) {
+      return SaveOutcome.failed(
+        failure: SaveFailure.alreadyExists,
+        path: path,
+        message: '$path is already there',
+      );
+    }
+    // Deliberately touches nothing else: an export leaves the path, the dirty
+    // flag and the journal count exactly as they were, and a double that
+    // cleared them would let a caller confuse it with [saveAs] (ADR 0029).
+    exports.add((path, overwrite));
+    existingFiles.add(path);
+    return SaveOutcome.saved(path: path, bytes: source().length, backup: null);
+  }
+
   Future<SaveOutcome> _write(String? path, {required bool autosave}) async {
     if (path == null) {
       return const SaveOutcome.failed(
