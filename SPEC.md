@@ -382,6 +382,9 @@ Rust as a pure function and produce bit-identical results everywhere.
 
 `layout::paginate(&Document, &PageConfig) -> PaginatedScript` must be **deterministic and
 side-effect free**. No I/O, no clock, no locale, no floating point in break decisions.
+The cross-language soft-wrapping rules are normative in
+[`docs/LINE_BREAKING.md`](docs/LINE_BREAKING.md); both Rust pagination and the fluid Dart
+editor must implement that contract (ADR 0018).
 
 ### 5.2 Metrics — US Letter (default)
 

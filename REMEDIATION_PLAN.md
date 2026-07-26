@@ -2011,7 +2011,7 @@ Eliminate accidental layout drift, expose Rust pagination through the bridge, an
 
 ## Phase 6A — Define the shared line-breaking contract
 
-- [ ] Write a concise shared contract covering:
+- [x] Write a concise shared contract covering:
   - character/counting unit;
   - hard newline behavior;
   - tab expansion;
@@ -2022,9 +2022,50 @@ Eliminate accidental layout drift, expose Rust pagination through the bridge, an
   - Unicode and astral-plane text;
   - uppercase display transformation;
   - emphasis-marker column counting.
-- [ ] State explicitly which behavior must match between Dart editor wrapping and Rust `break_lines`.
-- [ ] State which behavior may differ because the editor is fluid and pagination has page-level rules.
-- [ ] Record the contract in an ADR or dedicated layout contract document.
+- [x] State explicitly which behavior must match between Dart editor wrapping and Rust `break_lines`.
+- [x] State which behavior may differ because the editor is fluid and pagination has page-level rules.
+- [x] Record the contract in an ADR or dedicated layout contract document. — `docs/LINE_BREAKING.md`.
+
+### Implementation log — Phase 6A
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Primary implementer/agent:** OpenAI GPT-5.6 Sol (OpenCode)
+**Starting commit:** `da18a5e`
+**Ending commit:** working tree
+
+#### Changes made
+
+- Added `docs/LINE_BREAKING.md` as the normative contract shared by
+  `layout::break_lines` and Dart `wrapText`.
+- Fixed the common column unit at Unicode scalar values, with model/source
+  offsets normalized to scalar indices only for cross-language comparison.
+- Specified hard lines, four-column tab stops, the exact ASCII-space algorithm,
+  trailing and empty-line behavior, source-boundary projection, literal emphasis
+  markers, and offset-preserving Unicode uppercase.
+- Separated shared soft-wrap behavior from editor offset/caret mechanics,
+  non-printing preprocessing, and every page-level pagination rule.
+- Linked the contract from `SPEC.md` §5.1. No implementation was changed; the
+  known divergences remain the work of Phase 6B and enforcement remains Phase 6C.
+
+#### Commands run
+
+```text
+git diff --check                                           # clean
+cargo fmt --all --check                                    # clean
+cargo clippy --workspace --all-targets -- -D warnings      # clean
+cargo test --workspace                                     # 377 passed
+python3 tools/check_layering.py                             # clean
+cd app && flutter analyze                                  # No issues found
+cd app && flutter test                                     # 289 passed
+```
+
+#### Results
+
+Phase 6A has one explicit specification against which both implementations can
+be repaired and differentially tested. In particular, astral-plane text is one
+column, `ß` does not expand for display, tab expansion remains source-mappable,
+and page-level layout cannot be mistaken for a soft-wrap disagreement.
 
 ---
 
@@ -2197,7 +2238,7 @@ Per D-6:
 
 ## Phase 6 exit conditions — Phase 7 gate
 
-- [ ] Shared line-breaking contract is documented.
+- [x] Shared line-breaking contract is documented. — `docs/LINE_BREAKING.md`.
 - [ ] Five known Dart/Rust divergences are resolved.
 - [ ] Corpus-wide differential test passes in CI.
 - [ ] Bridge depends on and invokes `slugline_layout`.
