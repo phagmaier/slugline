@@ -104,6 +104,45 @@ fn rule_4_dialogue_split_leaves_two_lines_on_each_page() {
 }
 
 #[test]
+fn rule_4_short_dialogue_is_pushed_instead_of_illegally_split() {
+    let document = Document::parse(
+        "Before one.\nBefore two.\nBefore three.\n\nMARTHA\nFirst reply line.\nSecond reply line.\n",
+    );
+    let cue = document
+        .blocks()
+        .iter()
+        .find(|block| block.kind() == BlockKind::Character)
+        .expect("cue")
+        .id();
+    let dialogue = document
+        .blocks()
+        .iter()
+        .find(|block| block.kind() == BlockKind::Dialogue)
+        .expect("dialogue")
+        .id();
+    let output = paginate(&document, &tiny(6));
+    let speech_page = output
+        .pages
+        .iter()
+        .find(|page| page.lines.iter().any(|line| line.block == Some(cue)))
+        .expect("speech page");
+
+    assert_eq!(
+        speech_page
+            .lines
+            .iter()
+            .filter(|line| line.block == Some(dialogue) && line.source_line.is_some())
+            .count(),
+        2
+    );
+    assert!(!output.pages.iter().any(|page| {
+        page.lines
+            .iter()
+            .any(|line| matches!(line.kind, LayoutLineKind::More | LayoutLineKind::Continued))
+    }));
+}
+
+#[test]
 fn rule_5_split_dialogue_inserts_more_and_continued() {
     let document = Document::parse(
         "MARTHA\nOne line of dialogue that deliberately wraps across many rows because it keeps going with enough words for a legal split on both sides of the page boundary and then carries onward.\n",
@@ -204,6 +243,47 @@ fn pathological_scene_boundaries_converge_within_the_cap() {
     let output = paginate(&Document::parse(&source), &tiny(6));
     assert!(output.stats.break_rule_iterations <= 8);
     assert!(!output.stats.fell_back_to_naive);
+}
+
+#[test]
+fn content_fragments_preserve_block_and_wrapped_line_identity() {
+    let document = Document::parse(
+        "An action paragraph deliberately long enough to wrap onto several visual rows while retaining one source block identity.\n\nMARTHA\nA dialogue paragraph deliberately long enough to wrap across a page boundary while retaining its source identity throughout every fragment.\n",
+    );
+    let output = paginate(&document, &tiny(6));
+
+    for block in document.blocks() {
+        let source_lines: Vec<_> = output
+            .pages
+            .iter()
+            .flat_map(|page| page.lines.iter())
+            .filter(|line| line.block == Some(block.id()) && line.kind == LayoutLineKind::Content)
+            .map(|line| line.source_line.expect("content has a wrapped-line index"))
+            .collect();
+        assert!(
+            !source_lines.is_empty(),
+            "visible block has output fragments"
+        );
+        assert_eq!(
+            source_lines,
+            (0..source_lines.len() as u16).collect::<Vec<_>>(),
+            "wrapped-line identity remains ordered for block {:?}",
+            block.id()
+        );
+    }
+}
+
+#[test]
+fn fresh_engines_produce_identical_page_and_fragment_ordering() {
+    let document = Document::parse(
+        "INT. ROOM - DAY #4#\n\nAction one.\nAction two.\n\nMARTHA\nA reply long enough to cross a deliberately tiny page boundary and exercise generated continuation furniture deterministically.\n",
+    );
+    let config = tiny(6).with_scene_numbers(SceneNumberGutters::Both);
+    let expected = paginate(&document, &config);
+
+    for _ in 0..20 {
+        assert_eq!(paginate(&document, &config), expected);
+    }
 }
 
 #[test]

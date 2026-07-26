@@ -60,3 +60,20 @@ fn a4_line_count_has_a_golden_layout() {
     let source = workspace_root().join("testdata/corpus/01-minimal.fountain");
     assert_golden(&source, &PageConfig::a4(), ".a4");
 }
+
+#[test]
+fn a4_derived_capacity_changes_a_real_page_boundary() {
+    let source = (1..=56)
+        .map(|line| format!("Action line {line}."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let document = Document::parse(&(source + "\n"));
+
+    let letter = paginate(&document, &PageConfig::us_letter());
+    let a4 = paginate(&document, &PageConfig::a4());
+
+    assert_eq!(PageConfig::us_letter().lines_per_page(), 54);
+    assert_eq!(PageConfig::a4().lines_per_page(), 58);
+    assert_eq!(letter.pages.len(), 2);
+    assert_eq!(a4.pages.len(), 1);
+}

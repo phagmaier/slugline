@@ -2745,9 +2745,9 @@ cd app && flutter test integration_test/persistence_test.dart -d linux
 
 Per D-6:
 
-- [ ] Perform a focused code review of the back half of `crates/layout/src/engine.rs`.
-- [ ] Trace every page-break rule against the spec.
-- [ ] Verify:
+- [x] Perform a focused code review of the back half of `crates/layout/src/engine.rs`.
+- [x] Trace every page-break rule against the spec.
+- [x] Verify:
   - orphan prevention;
   - dialogue splitting;
   - continued dialogue;
@@ -2757,9 +2757,69 @@ Per D-6:
   - A4 derivation;
   - deterministic ordering;
   - source identity preservation.
-- [ ] Review golden tests for coverage rather than only pass status.
-- [ ] Add any missing rule-level tests discovered.
-- [ ] Do not rewrite the paginator absent concrete defects.
+- [x] Review golden tests for coverage rather than only pass status.
+- [x] Add any missing rule-level tests discovered.
+- [x] Do not rewrite the paginator absent concrete defects.
+
+### Implementation log — Phase 6G
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Ending commit:** working tree
+
+#### Review findings
+
+- §5.3 rules 1–7 map directly to `explicit_break`,
+  `place_scene_heading`, `place_speech`/`legal_dialogue_split`, and
+  `place_action`. Scene headings reserve their own rows plus two following
+  scene-content rows. A speech is moved whole when a legal 2/2 dialogue split
+  is unavailable; legal splits add `(MORE)` and a cue-owned `(CONT'D)` row.
+  Split candidates require dialogue on both sides, which keeps a parenthetical
+  intact and prevents a break immediately after it. Action splitting adjusts
+  either side away from a one-line orphan.
+- The rule transform is canonical and idempotent: a full layout compares the
+  naive fill with the rule-aware result, then observes the same rule-aware
+  result on the next iteration. The loop is bounded by
+  `BREAK_RULE_ITERATION_CAP` and retains its specified naive fallback. The
+  pathological-scene test exercises the cap assertion. No non-convergence or
+  concrete rule defect was found, so the paginator was not rewritten.
+- A4 capacity is derived by `lines_for_height` from ISO dimensions and the
+  shared margins/grid. The old A4 golden used a one-page fixture and therefore
+  did not prove a changed boundary; a new test proves 56 action rows occupy two
+  Letter pages and one A4 page.
+- Ordering is produced only by ordered slices/vectors; hash collections are
+  used for cache membership, never output traversal. A new fresh-engine test
+  pins page, fragment, gutter, and continuation ordering.
+- Every printable source fragment retains its `BlockId` and monotonically
+  ordered wrapped-line index. Generated `(MORE)`, `(CONT'D)`, and scene-number
+  furniture retains the owning block identity with no source-line claim. A new
+  multi-page identity test pins that contract. Byte offsets are intentionally
+  not retained in Phase 6: `source_line` is enough for pagination identity,
+  while Phase 7 preview hit-testing must deliberately add span offsets rather
+  than infer them in Dart.
+
+#### Golden coverage review
+
+The corpus goldens cover stable full-page output for every Fountain fixture,
+including dual dialogue, nonprinting material, Unicode, whitespace, title-page
+separation, and the 120-page reference. They are regression snapshots, not the
+proof of §5.3. `break_rules.rs` remains the rule-level proof. This review added
+the missing negative case for rule 4 (an illegal short split pushes the whole
+speech), direct source-identity and fresh-engine ordering assertions, and a
+boundary-sensitive A4 test. Existing focused tests already cover explicit
+breaks, scene-heading carry, lone cues, legal 2/2 dialogue splits,
+`(MORE)`/`(CONT'D)`, parenthetical carry, action orphans, and the iteration cap.
+
+#### Verification
+
+```text
+cargo fmt --all --check                               # clean
+cargo test -p slugline_layout --test break_rules      # 13 passed
+cargo test -p slugline_layout --test golden           # 3 passed
+cargo clippy --workspace --all-targets -- -D warnings # clean
+cargo test --workspace                                # clean
+python3 tools/check_layering.py                       # clean
+```
 
 ## Phase 6 exit conditions — Phase 7 gate
 
@@ -2772,7 +2832,8 @@ Per D-6:
 - [ ] Page count updates after successful saves.
 - [x] Debug pagination output is reachable through the app or integration harness. — 6F,
       debug-build editor action backed by `docPaginate`.
-- [ ] Focused paginator review is recorded.
+- [x] Focused paginator review is recorded. — 6G; no engine rewrite, four
+      coverage gaps pinned with focused tests.
 - [ ] No editor per-keystroke bridge round trip was introduced.
 - [ ] No preview or PDF feature work has started prematurely.
 
