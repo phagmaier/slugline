@@ -1,10 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/autosave.dart';
+import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_page.dart';
 
 import '../support/fake_core.dart';
 
@@ -142,6 +144,61 @@ void main() {
     it.driver.release('composing');
     await tester.pumpAndSettle();
     expect(it.core.saves.length, 1);
+  });
+
+  testWidgets('an external-change check holds every save until the decision', (
+    tester,
+  ) async {
+    final it = setUpDriver();
+    type(it.core, it.changes, 'Mine. ');
+    it.core.onDisk = 'Somebody else wrote this.\n';
+    final hold = Completer<void>();
+    it.core.holdExternalChanges = hold;
+    final controller = EditorController(it.core);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EditorPage(controller: controller, autosave: it.driver),
+      ),
+    );
+
+    final page = tester.state<EditorPageState>(find.byType(EditorPage));
+    final checking = page.handleExternalChange();
+    final explicitSave = page.save();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(
+      it.core.saves,
+      isEmpty,
+      reason: 'neither autosave nor Ctrl+S may pass the pending comparison',
+    );
+    expect(it.driver.suppressed, isTrue);
+
+    hold.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Keep mine'), findsOneWidget);
+    expect(it.core.saves, isEmpty, reason: 'the conflict is still unresolved');
+
+    await tester.tap(find.text('Save as…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save script as'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Keep mine'), findsOneWidget);
+    expect(
+      it.core.saves,
+      isEmpty,
+      reason: 'cancelling Save As must not release saves onto the old path',
+    );
+
+    await tester.tap(find.text('Keep mine'));
+    await tester.pumpAndSettle();
+    await checking;
+    await explicitSave;
+    expect(
+      it.core.saves,
+      isNotEmpty,
+      reason: 'owed saves run after the choice',
+    );
   });
 
   testWidgets('a clean document never starts a timer', (tester) async {

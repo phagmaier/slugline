@@ -708,6 +708,7 @@ fn step(
         // Undo ends the run of typing it is undoing, so the next keystroke
         // starts a transaction of its own rather than reopening the old one.
         let result = take(session.interrupt())?;
+        session.document_changed();
         // An undo is an edit. A crash after one must not bring back the text it
         // took away, so it goes in the journal like everything else.
         journal(session, &result);
@@ -1219,6 +1220,7 @@ fn outcome(
 ) -> EditOutcome {
     match result {
         Ok(result) => {
+            session.document_changed();
             journal(session, &result);
             refresh_entities(session, &result);
             EditOutcome::Applied {
@@ -1291,6 +1293,7 @@ fn inferring(
     match result {
         Ok(mut result) => {
             session.document_mut().reinfer(&mut result, before);
+            session.document_changed();
             journal(session, &result);
             refresh_entities(session, &result);
             EditOutcome::Applied {

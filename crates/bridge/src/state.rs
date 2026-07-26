@@ -197,6 +197,12 @@ pub struct Session {
     /// [`Session::finish_save`], so a session that is not saving buffers
     /// nothing at all: the cost falls on the one file write, not on typing.
     saving: Option<Vec<Patch>>,
+    /// Changes whenever the in-memory document changes or is replaced.
+    ///
+    /// Unlike `Document::revision`, this never moves backwards on undo and does
+    /// not restart when a reload installs a new document. Async snapshot jobs
+    /// use it to reject answers about state that is no longer current.
+    document_generation: u64,
 }
 
 impl Session {
@@ -214,6 +220,7 @@ impl Session {
             scroll_row: 0,
             save_lock: Arc::new(Mutex::new(())),
             saving: None,
+            document_generation: 0,
         }
     }
 
@@ -229,6 +236,23 @@ impl Session {
     /// mutate without being an edit — recovery replay, a reload from disk.
     pub fn document_mut(&mut self) -> &mut Document {
         &mut self.document
+    }
+
+    pub fn document_generation(&self) -> u64 {
+        self.document_generation
+    }
+
+    /// Records a successful mutation performed through [`Session::document_mut`],
+    /// [`Session::editing`], or [`Session::interrupt`].
+    pub fn document_changed(&mut self) {
+        self.document_generation = self.document_generation.wrapping_add(1);
+    }
+
+    /// Installs a document loaded from disk and invalidates async snapshots of
+    /// the document it replaces.
+    pub fn replace_document(&mut self, document: Document) {
+        self.document = document;
+        self.document_changed();
     }
 
     pub fn entities(&self) -> &EntityIndex {

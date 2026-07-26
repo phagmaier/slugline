@@ -885,8 +885,10 @@ Implement precisely this sequence, in `crates/storage`:
       external write detectable a millisecond after our own. Audit finding F4;
       ADR 0028 records the mechanism; `our_own_save_is_not_reported` and the
       integration test *our own save is not reported as somebody else writing the
-      file* hold it. The check that follows the event still reads the disk on the
-      actor thread, which §2.3 forbids (F8, remediation Phase 4C).
+      file* hold it. The check that follows the event snapshots immutable
+      serialisation inputs on the actor, reads and compares on a worker, and
+      validates a monotonic session generation before returning; the stalled-read
+      regression in `bridge::api::files` closes F8 (remediation Phase 4C).
 
 ### Library
 

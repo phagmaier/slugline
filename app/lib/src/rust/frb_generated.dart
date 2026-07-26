@@ -133,7 +133,7 @@ abstract class RustLibApi extends BaseApi {
     required DocSelection at,
   });
 
-  (bool, bool)? crateApiFilesDocExternalChange({
+  Future<(bool, bool)?> crateApiFilesDocExternalChange({
     required DocumentHandle handle,
   });
 
@@ -165,7 +165,10 @@ abstract class RustLibApi extends BaseApi {
 
   EditResult? crateApiDocDocRedo({required DocumentHandle handle});
 
-  Future<bool> crateApiFilesDocReload({required DocumentHandle handle});
+  Future<bool> crateApiFilesDocReload({
+    required DocumentHandle handle,
+    required bool onlyIfClean,
+  });
 
   EditOutcome crateApiDocDocReplaceAll({
     required DocumentHandle handle,
@@ -645,15 +648,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "doc_enter", argNames: ["handle", "at"]);
 
   @override
-  (bool, bool)? crateApiFilesDocExternalChange({
+  Future<(bool, bool)?> crateApiFilesDocExternalChange({
     required DocumentHandle handle,
   }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_record_bool_bool,
@@ -878,12 +886,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "doc_redo", argNames: ["handle"]);
 
   @override
-  Future<bool> crateApiFilesDocReload({required DocumentHandle handle}) {
+  Future<bool> crateApiFilesDocReload({
+    required DocumentHandle handle,
+    required bool onlyIfClean,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_bool(onlyIfClean, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -896,14 +908,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiFilesDocReloadConstMeta,
-        argValues: [handle],
+        argValues: [handle, onlyIfClean],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiFilesDocReloadConstMeta =>
-      const TaskConstMeta(debugName: "doc_reload", argNames: ["handle"]);
+  TaskConstMeta get kCrateApiFilesDocReloadConstMeta => const TaskConstMeta(
+    debugName: "doc_reload",
+    argNames: ["handle", "onlyIfClean"],
+  );
 
   @override
   EditOutcome crateApiDocDocReplaceAll({

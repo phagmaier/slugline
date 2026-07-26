@@ -142,11 +142,12 @@ abstract class DocumentCore {
   /// `(the document has unsaved edits, the file on disk differs)` — the two
   /// facts §Phase 4's external-modification rule turns on. Null when there is no
   /// file to compare against.
-  (bool, bool)? externalChange();
+  Future<(bool, bool)?> externalChange();
 
   /// "Take Theirs": drops what is in memory, including the undo history, and
-  /// reads the file again.
-  Future<bool> reload();
+  /// reads the file again. [onlyIfClean] makes an automatic reload refuse an
+  /// edit that landed after its external-change check.
+  Future<bool> reload({bool onlyIfClean = false});
 
   /// Every rolling backup of this script, newest first.
   Future<List<files.BackupView>> backups();
@@ -277,10 +278,12 @@ class RustDocumentCore implements DocumentCore {
   Future<files.SaveOutcome> autosave() => files.docAutosave(handle: _handle);
 
   @override
-  (bool, bool)? externalChange() => files.docExternalChange(handle: _handle);
+  Future<(bool, bool)?> externalChange() =>
+      files.docExternalChange(handle: _handle);
 
   @override
-  Future<bool> reload() => files.docReload(handle: _handle);
+  Future<bool> reload({bool onlyIfClean = false}) =>
+      files.docReload(handle: _handle, onlyIfClean: onlyIfClean);
 
   @override
   Future<List<files.BackupView>> backups() =>

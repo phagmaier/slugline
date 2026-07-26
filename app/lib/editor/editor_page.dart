@@ -71,6 +71,10 @@ class EditorPageState extends State<EditorPage> {
   /// tests in `test/editor/` assert the outcome rather than the mechanism.
   final FocusNode _editorFocus = FocusNode(debugLabel: 'editor surface');
 
+  int _externalChangeSerial = 0;
+  int _externalChangesActive = 0;
+  Completer<void>? _externalChangesSettled;
+
   DocumentCore get _core => widget.controller.core;
 
   @override
@@ -110,11 +114,22 @@ class EditorPageState extends State<EditorPage> {
 
   /// Ctrl+S, and the command palette's Save.
   Future<void> save({bool forcePath = false}) async {
+    await _saveWithOutcome(forcePath: forcePath);
+  }
+
+  Future<SaveOutcome> _saveWithOutcome({
+    bool forcePath = false,
+    bool waitForExternalChange = true,
+  }) async {
+    if (waitForExternalChange) {
+      await _externalChangesSettled?.future;
+    }
     widget.saveStatus?.savingStarted();
     final outcome = await withModal(
       () => saveWithDialogs(context, _core, forcePath: forcePath),
     );
     widget.saveStatus?.record(outcome);
+    return outcome;
   }
 
   Future<void> _showBackups() =>
@@ -127,32 +142,61 @@ class EditorPageState extends State<EditorPage> {
   /// changed nothing has nothing to lose and nothing to decide, and a dialog
   /// there would only teach them to dismiss dialogs.
   Future<void> handleExternalChange() async {
-    final state = _core.externalChange();
+    final suppression = 'external-change-${_externalChangeSerial++}';
+    _externalChangesActive += 1;
+    _externalChangesSettled ??= Completer<void>();
+    widget.autosave?.suppress(suppression);
+    try {
+      await _handleExternalChange();
+    } finally {
+      widget.autosave?.release(suppression);
+      _externalChangesActive -= 1;
+      if (_externalChangesActive == 0) {
+        final settled = _externalChangesSettled;
+        _externalChangesSettled = null;
+        settled?.complete();
+      }
+    }
+  }
+
+  Future<void> _handleExternalChange() async {
+    final state = await _core.externalChange();
     if (state == null) return;
     final (dirty, differs) = state;
     if (!differs) return;
     if (!dirty) {
-      await _core.reload();
+      if (!await _core.reload(onlyIfClean: true)) return;
       widget.controller.reloadFromCore();
       widget.saveStatus?.refresh();
       return;
     }
     if (!mounted) return;
-    final choice = await withModal(
-      () => showExternalChange(context, _core.path ?? ''),
-    );
-    switch (choice) {
-      case ExternalChangeChoice.takeTheirs:
-        await _core.reload();
-        widget.controller.reloadFromCore();
-      case ExternalChangeChoice.saveAs:
-        await save(forcePath: true);
-      case ExternalChangeChoice.keepMine:
-      case null:
-        // Nothing. The file keeps what it has until the next save.
-        break;
+    while (mounted) {
+      final choice = await withModal(
+        () => showExternalChange(context, _core.path ?? ''),
+      );
+      switch (choice) {
+        case ExternalChangeChoice.takeTheirs:
+          await _core.reload();
+          widget.controller.reloadFromCore();
+          widget.saveStatus?.refresh();
+          return;
+        case ExternalChangeChoice.saveAs:
+          final outcome = await _saveWithOutcome(
+            forcePath: true,
+            waitForExternalChange: false,
+          );
+          if (outcome is SaveOutcome_Saved) return;
+          // The chooser was cancelled or the write failed. The original file
+          // is still conflicted, so no queued save may target it yet.
+          continue;
+        case ExternalChangeChoice.keepMine:
+          widget.saveStatus?.refresh();
+          return;
+        case null:
+          return;
+      }
     }
-    widget.saveStatus?.refresh();
   }
 
   /// Leaving this script. §10: never silently discard unsaved changes.

@@ -840,6 +840,46 @@ mod stall {
     }
 }
 
+/// A seam that holds an external-change check after its actor snapshot and
+/// before its disk read. Like [`stall`], this exists only to make a cross-thread
+/// ordering observable in tests.
+#[cfg(test)]
+mod external_change_stall {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex, PoisonError};
+
+    type Hold = Arc<dyn Fn() + Send + Sync>;
+
+    static HOLDS: Mutex<Option<HashMap<PathBuf, Hold>>> = Mutex::new(None);
+
+    fn holds() -> impl std::ops::DerefMut<Target = Option<HashMap<PathBuf, Hold>>> {
+        HOLDS.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn before_reading(path: &Path, hold: impl Fn() + Send + Sync + 'static) {
+        holds()
+            .get_or_insert_with(HashMap::new)
+            .insert(path.to_path_buf(), Arc::new(hold));
+    }
+
+    pub fn forget(path: &Path) {
+        if let Some(holds) = holds().as_mut() {
+            holds.remove(path);
+        }
+    }
+
+    pub fn reached(path: &Path) {
+        let hold = holds()
+            .as_ref()
+            .and_then(|holds| holds.get(path))
+            .map(Arc::clone);
+        if let Some(hold) = hold {
+            hold();
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // External modification
 // ---------------------------------------------------------------------------
@@ -849,17 +889,57 @@ mod stall {
 /// Dart calls this when a [`CoreEvent::FileChangedOnDisk`] names a path it has
 /// open. §Phase 4: reload silently when the document is unmodified, prompt when
 /// it is not — and the two facts that decision needs are exactly the two here.
-#[frb(sync)]
-pub fn doc_external_change(handle: DocumentHandle) -> Option<(bool, bool)> {
-    actor().run(move |state| {
-        let session = state.session(handle.id)?;
-        let path = session.path()?;
-        let on_disk = std::fs::read_to_string(path).ok()?;
-        Some((
-            session.document().is_dirty(),
-            on_disk != session.document().serialise(),
-        ))
-    })
+pub async fn doc_external_change(handle: DocumentHandle) -> Option<(bool, bool)> {
+    let save_lock =
+        actor().run(move |state| state.session(handle.id).map(|session| session.save_lock()))?;
+    // Keep every save behind the comparison. Dart suppresses its autosave
+    // timer too, but this is the authoritative boundary and also covers an
+    // explicit save arriving from another bridge worker.
+    let _claim = save_lock.lock().unwrap_or_else(PoisonError::into_inner);
+
+    loop {
+        let plan = actor().run(move |state| {
+            let session = state.session(handle.id)?;
+            Some(ExternalChangePlan {
+                path: session.path()?.to_path_buf(),
+                dirty: session.document().is_dirty(),
+                generation: session.document_generation(),
+                snapshot: session.document().serialisation_snapshot(),
+            })
+        })?;
+
+        #[cfg(test)]
+        external_change_stall::reached(&plan.path);
+        let on_disk = std::fs::read_to_string(&plan.path).ok()?;
+        let differs = on_disk != plan.snapshot.serialise();
+
+        let validation = actor().run(move |state| {
+            let session = state.session(handle.id)?;
+            if session.path() != Some(plan.path.as_path()) {
+                return None;
+            }
+            Some(
+                (session.document_generation() == plan.generation
+                    && session.document().is_dirty() == plan.dirty)
+                    .then_some((plan.dirty, differs)),
+            )
+        });
+        match validation {
+            Some(Some(result)) => return Some(result),
+            // An edit invalidated the snapshot. Keep saves held and compare the
+            // new revision rather than returning a refusal that lets autosave
+            // overwrite the external version without a decision.
+            Some(None) => continue,
+            None => return None,
+        }
+    }
+}
+
+struct ExternalChangePlan {
+    path: PathBuf,
+    dirty: bool,
+    generation: u64,
+    snapshot: model::SerialisationSnapshot,
 }
 
 /// "Take Theirs": throws away what is in memory and reads the file again.
@@ -867,14 +947,27 @@ pub fn doc_external_change(handle: DocumentHandle) -> Option<(bool, bool)> {
 /// The undo history goes with it. It has to: the transactions in it invert edits
 /// against a document that no longer exists, and applying one would produce text
 /// that was never anywhere.
-pub async fn doc_reload(handle: DocumentHandle) -> bool {
-    let path = actor().run(move |state| {
-        state
-            .session(handle.id)
-            .and_then(|session| session.path())
-            .map(Path::to_path_buf)
+pub async fn doc_reload(handle: DocumentHandle, only_if_clean: bool) -> bool {
+    let save_lock =
+        actor().run(move |state| state.session(handle.id).map(|session| session.save_lock()));
+    let Some(save_lock) = save_lock else {
+        return false;
+    };
+    // A reload and a save both replace the meaning of "what is on disk". The
+    // same per-session claim keeps an older save from landing after the reload
+    // and then marking the replacement document clean against different bytes.
+    let _claim = save_lock.lock().unwrap_or_else(PoisonError::into_inner);
+
+    let plan = actor().run(move |state| {
+        let session = state.session(handle.id)?;
+        if only_if_clean && session.document().is_dirty() {
+            return None;
+        }
+        Some((session.path()?.to_path_buf(), session.document_generation()))
     });
-    let Some(path) = path else { return false };
+    let Some((path, generation)) = plan else {
+        return false;
+    };
     let Ok(source) = std::fs::read_to_string(&path) else {
         return false;
     };
@@ -883,12 +976,18 @@ pub async fn doc_reload(handle: DocumentHandle) -> bool {
         let Some(session) = state.session_mut(handle.id) else {
             return false;
         };
+        if session.path() != Some(path.as_path())
+            || session.document_generation() != generation
+            || (only_if_clean && session.document().is_dirty())
+        {
+            return false;
+        }
         let document = model::Document::parse(&source);
-        *session.document_mut() = if document.blocks().is_empty() {
+        session.replace_document(if document.blocks().is_empty() {
             model::Document::blank()
         } else {
             document
-        };
+        });
         session.rebuild_entities();
         restart_journal(state, handle.id, &source);
         true
@@ -1016,11 +1115,11 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
                 return;
             };
             let document = model::Document::parse(&contents);
-            *session.document_mut() = if document.blocks().is_empty() {
+            session.replace_document(if document.blocks().is_empty() {
                 model::Document::blank()
             } else {
                 document
-            };
+            });
             session.rebuild_entities();
             restart_journal(state, handle.id, &contents);
         }
@@ -1707,6 +1806,7 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             stall::forget(&self.script);
+            external_change_stall::forget(&self.script);
             let handle = self.handle;
             actor().run(move |state| state.close(handle.id));
             let _ = fs::remove_dir_all(&self.root);
@@ -1786,6 +1886,30 @@ mod tests {
                     .unwrap_or_else(PoisonError::into_inner)
                     .recv()
                     .expect("the test releases this save");
+            });
+            Gate {
+                arrived: waiting,
+                release,
+            }
+        }
+
+        fn hold_external_change_read(path: &Path) -> Gate {
+            let (arrived, waiting) = mpsc::channel();
+            let (release, released) = mpsc::channel::<()>();
+            let released = Mutex::new(released);
+            let first = AtomicBool::new(true);
+            external_change_stall::before_reading(path, move || {
+                if !first.swap(false, Ordering::SeqCst) {
+                    return;
+                }
+                arrived
+                    .send(())
+                    .expect("the test is waiting for this check");
+                released
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .recv()
+                    .expect("the test releases this check");
             });
             Gate {
                 arrived: waiting,
@@ -2132,7 +2256,7 @@ mod tests {
         // And the backstop still says what it always said — dirty here,
         // different there — which is exactly why suppression had to happen
         // before it rather than inside it.
-        assert_eq!(doc_external_change(it.handle), Some((true, true)));
+        assert_eq!(block_on(doc_external_change(it.handle)), Some((true, true)));
         assert_eq!(it.in_memory(), typed, "nothing typed was disturbed");
     }
 
@@ -2158,7 +2282,160 @@ mod tests {
             it.own_writes().is_empty(),
             "and the record it contradicted was dropped rather than asked again"
         );
-        assert_eq!(doc_external_change(it.handle), Some((false, true)));
+        assert_eq!(
+            block_on(doc_external_change(it.handle)),
+            Some((false, true))
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4C — external-change disk work never occupies the actor
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_slow_external_change_read_does_not_block_an_edit_and_revalidates() {
+        let it = Fixture::open("external-slow");
+        let gate = Gate::hold_external_change_read(&it.script);
+        let handle = it.handle;
+        let checking = thread::spawn(move || block_on(doc_external_change(handle)));
+        gate.wait();
+
+        let block = doc_blocks(it.handle, 0, 1)[0].id;
+        let handle = it.handle;
+        let (done, finished) = mpsc::channel();
+        let editing = thread::spawn(move || {
+            let outcome = doc_apply(
+                handle,
+                EditCommand::ReplaceText {
+                    block,
+                    start_utf16: 0,
+                    end_utf16: 0,
+                    with: "Still typing. ".to_owned(),
+                },
+                None,
+            );
+            done.send(()).expect("the test is waiting for the edit");
+            outcome
+        });
+
+        let edited_while_reading = finished.recv_timeout(PATIENCE).is_ok();
+        gate.release();
+        let result = checking.join().expect("the check thread finished");
+        let _ = editing.join().expect("the edit thread finished");
+
+        assert!(
+            edited_while_reading,
+            "the disk read held the actor and blocked a queued edit"
+        );
+        assert_eq!(
+            result,
+            Some((true, true)),
+            "the pre-edit answer must be discarded and recomputed"
+        );
+    }
+
+    #[test]
+    fn external_change_keeps_clean_dirty_and_matching_content_semantics() {
+        let it = Fixture::open("external-semantics");
+        assert_eq!(
+            block_on(doc_external_change(it.handle)),
+            Some((false, false))
+        );
+
+        it.types("Mine. ");
+        assert_eq!(block_on(doc_external_change(it.handle)), Some((true, true)));
+
+        fs::write(&it.script, it.in_memory()).expect("the external write lands");
+        assert_eq!(
+            block_on(doc_external_change(it.handle)),
+            Some((true, false)),
+            "comparison remains against the current in-memory serialization"
+        );
+    }
+
+    #[test]
+    fn external_change_auto_reload_refuses_an_edit_after_the_check() {
+        let it = Fixture::open("external-reload-race");
+        fs::write(&it.script, "Somebody else wrote this.\n").expect("the external write lands");
+        assert_eq!(
+            block_on(doc_external_change(it.handle)),
+            Some((false, true))
+        );
+
+        it.types("Newly typed. ");
+        let current = it.in_memory();
+        assert!(
+            !block_on(doc_reload(it.handle, true)),
+            "automatic reload must refuse a document that became dirty"
+        );
+        assert_eq!(it.in_memory(), current, "the new edit must survive");
+    }
+
+    #[test]
+    fn external_change_check_holds_a_save_until_comparison_finishes() {
+        let it = Fixture::open("external-check-save");
+        it.types("Unsaved. ");
+        let gate = Gate::hold_external_change_read(&it.script);
+        let handle = it.handle;
+        let checking = thread::spawn(move || block_on(doc_external_change(handle)));
+        gate.wait();
+
+        let saving = Saving::explicit(it.handle);
+        let overtook = saving.overtook();
+        gate.release();
+
+        assert!(
+            !overtook,
+            "save wrote while external comparison was pending"
+        );
+        assert_eq!(
+            checking.join().expect("the check thread finished"),
+            Some((true, true))
+        );
+        assert!(matches!(saving.outcome(), SaveOutcome::Saved { .. }));
+    }
+
+    #[test]
+    fn external_change_reload_waits_for_an_in_flight_save() {
+        let it = Fixture::open("external-reload-save");
+        let gate = Gate::hold_the_first_write(&it.script);
+        it.types("Saving. ");
+        let saving = Saving::explicit(it.handle);
+        gate.wait();
+
+        let handle = it.handle;
+        let (done, finished) = mpsc::channel();
+        let reloading = thread::spawn(move || {
+            let outcome = block_on(doc_reload(handle, false));
+            done.send(()).expect("the test is waiting for the reload");
+            outcome
+        });
+        let overtook = finished.recv_timeout(LONG_ENOUGH_TO_OVERTAKE).is_ok();
+
+        gate.release();
+        assert!(matches!(saving.outcome(), SaveOutcome::Saved { .. }));
+        assert!(reloading.join().expect("the reload thread finished"));
+        assert!(!overtook, "reload overtook the save already at the disk");
+        assert_eq!(it.in_memory(), it.on_disk());
+        assert!(!it.dirty());
+    }
+
+    #[test]
+    fn missing_and_non_utf8_files_refuse_external_change_comparison() {
+        let missing = Fixture::open("external-missing");
+        fs::remove_file(&missing.script).expect("the script is removed");
+        assert_eq!(block_on(doc_external_change(missing.handle)), None);
+        drop(missing);
+
+        let invalid = Fixture::open("external-non-utf8");
+        fs::write(&invalid.script, [0xff, 0xfe]).expect("invalid UTF-8 is written");
+        assert_eq!(block_on(doc_external_change(invalid.handle)), None);
+        drop(invalid);
+
+        let unreadable = Fixture::open("external-unreadable");
+        fs::remove_file(&unreadable.script).expect("the script is removed");
+        fs::create_dir(&unreadable.script).expect("a directory replaces the file");
+        assert_eq!(block_on(doc_external_change(unreadable.handle)), None);
     }
 
     /// The window ADR 0024's sequence left open, and the reason the bracket is

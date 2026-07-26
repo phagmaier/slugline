@@ -417,6 +417,9 @@ class FakeCore implements DocumentCore {
   /// What the file on disk says, for the external-change tests.
   String onDisk = '';
 
+  /// Set to hold one external-change comparison while an autosave timer fires.
+  Completer<void>? holdExternalChanges;
+
   bool _dirty = false;
   int _journalled = 0;
 
@@ -506,12 +509,17 @@ class FakeCore implements DocumentCore {
   }
 
   @override
-  (bool, bool)? externalChange() =>
-      filePath == null ? null : (_dirty, onDisk != source());
+  Future<(bool, bool)?> externalChange() async {
+    if (holdExternalChanges case final hold?) {
+      holdExternalChanges = null;
+      await hold.future;
+    }
+    return filePath == null ? null : (_dirty, onDisk != source());
+  }
 
   @override
-  Future<bool> reload() async {
-    if (filePath == null) return false;
+  Future<bool> reload({bool onlyIfClean = false}) async {
+    if (filePath == null || (onlyIfClean && _dirty)) return false;
     _dirty = false;
     _journalled = 0;
     return true;

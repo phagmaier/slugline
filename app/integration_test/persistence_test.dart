@@ -261,18 +261,18 @@ void main() {
       addTearDown(core.close);
       await openEditor(tester, core);
 
-      expect(core.externalChange(), (false, false), reason: 'in step');
+      expect(await core.externalChange(), (false, false), reason: 'in step');
 
       File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
       expect(
-        core.externalChange(),
+        await core.externalChange(),
         (false, true),
         reason: 'unmodified here and different there — reload silently',
       );
 
       await core.reload();
       expect(core.source(), 'EXT. STREET - NIGHT\n');
-      expect(core.externalChange(), (false, false));
+      expect(await core.externalChange(), (false, false));
     },
   );
 
@@ -334,7 +334,11 @@ void main() {
       isNotEmpty,
       reason: 'suppression swallowed a real external change',
     );
-    expect(core.externalChange(), (true, true), reason: 'and it is a real one');
+    expect(
+      await core.externalChange(),
+      (true, true),
+      reason: 'and it is a real one',
+    );
   });
 
   testWidgets(

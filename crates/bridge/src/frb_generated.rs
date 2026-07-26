@@ -491,15 +491,16 @@ fn wire__crate__api__doc__doc_enter_impl(
     )
 }
 fn wire__crate__api__files__doc_external_change_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "doc_external_change",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -513,11 +514,17 @@ fn wire__crate__api__files__doc_external_change_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok =
-                    Result::<_, ()>::Ok(crate::api::files::doc_external_change(api_handle))?;
-                Ok(output_ok)
-            })())
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::doc_external_change(api_handle).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -795,12 +802,14 @@ fn wire__crate__api__files__doc_reload_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_only_if_clean = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, ()>(
                     (move || async move {
-                        let output_ok =
-                            Result::<_, ()>::Ok(crate::api::files::doc_reload(api_handle).await)?;
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::doc_reload(api_handle, api_only_if_clean).await,
+                        )?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2832,6 +2841,7 @@ fn pde_ffi_dispatcher_primary_impl(
         2 => wire__crate__api__files__backups_list_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__events__core_events_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__files__doc_autosave_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__files__doc_external_change_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
         25 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
         26 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
@@ -2872,7 +2882,6 @@ fn pde_ffi_dispatcher_sync_impl(
         11 => wire__crate__api__doc__doc_complete_impl(ptr, rust_vec_len, data_len),
         12 => wire__crate__api__files__doc_dirty_impl(ptr, rust_vec_len, data_len),
         13 => wire__crate__api__doc__doc_enter_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__files__doc_external_change_impl(ptr, rust_vec_len, data_len),
         15 => wire__crate__api__doc__doc_extract_impl(ptr, rust_vec_len, data_len),
         16 => wire__crate__api__doc__doc_find_impl(ptr, rust_vec_len, data_len),
         17 => wire__crate__api__files__doc_journal_state_impl(ptr, rust_vec_len, data_len),

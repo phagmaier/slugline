@@ -161,7 +161,7 @@ void main() {
         ..filePath = '/scripts/heat.fountain'
         ..onDisk = 'Somebody else wrote this.\n';
       // Not dirty: nothing has been typed.
-      final (dirty, differs) = core.externalChange()!;
+      final (dirty, differs) = (await core.externalChange())!;
       expect(dirty, isFalse);
       expect(differs, isTrue);
       // The page's rule: not dirty and different → reload, no dialog. The dialog

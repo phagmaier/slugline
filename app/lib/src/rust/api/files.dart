@@ -9,8 +9,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `degraded`, `failed`, `failure_of`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Plan`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `save_library`, `script_view`, `unused_path`, `watch`, `write_document`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
@@ -49,6 +49,11 @@ Future<List<ScriptView>> libraryList() =>
 /// Opening a file that is already open returns the handle it is already open
 /// under. Two documents over one file would be two undo histories racing to
 /// overwrite each other.
+///
+/// The check below is an optimisation, not the guarantee: the read between it
+/// and the open is off the actor, so two concurrent opens of one path can both
+/// miss it. [`open_source`] makes the same check again where it is atomic with
+/// the insert, and that is the one that holds.
 Future<DocumentHandle?> libraryOpen({required String path}) =>
     RustLib.instance.api.crateApiFilesLibraryOpen(path: path);
 
@@ -135,7 +140,7 @@ Future<SaveOutcome> docAutosave({required DocumentHandle handle}) =>
 /// Dart calls this when a [`CoreEvent::FileChangedOnDisk`] names a path it has
 /// open. §Phase 4: reload silently when the document is unmodified, prompt when
 /// it is not — and the two facts that decision needs are exactly the two here.
-(bool, bool)? docExternalChange({required DocumentHandle handle}) =>
+Future<(bool, bool)?> docExternalChange({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiFilesDocExternalChange(handle: handle);
 
 /// "Take Theirs": throws away what is in memory and reads the file again.
@@ -143,8 +148,13 @@ Future<SaveOutcome> docAutosave({required DocumentHandle handle}) =>
 /// The undo history goes with it. It has to: the transactions in it invert edits
 /// against a document that no longer exists, and applying one would produce text
 /// that was never anywhere.
-Future<bool> docReload({required DocumentHandle handle}) =>
-    RustLib.instance.api.crateApiFilesDocReload(handle: handle);
+Future<bool> docReload({
+  required DocumentHandle handle,
+  required bool onlyIfClean,
+}) => RustLib.instance.api.crateApiFilesDocReload(
+  handle: handle,
+  onlyIfClean: onlyIfClean,
+);
 
 /// Every rolling backup of this document, newest first.
 Future<List<BackupView>> backupsList({required DocumentHandle handle}) =>
@@ -428,7 +438,9 @@ class ScriptView {
   final int modifiedMillis;
   final int bytes;
 
-  /// Zero until Phase 6's `layout` crate can count pages.
+  /// Always zero today. `crates/layout` can count pages and the bridge does
+  /// not yet depend on it; ADR 0020 has this written after a successful save,
+  /// from a background pagination of the saved snapshot.
   final int pageCount;
 
   /// The file was not there when the library was last refreshed. Shown as

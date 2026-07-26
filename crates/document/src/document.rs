@@ -77,6 +77,31 @@ pub struct Document {
     next_revision: u64,
 }
 
+/// The immutable parts needed to serialise one document revision.
+///
+/// Long-running bridge jobs may own this without moving a [`Document`] off its
+/// actor thread. History and revision bookkeeping are deliberately absent.
+#[derive(Debug, Clone)]
+pub struct SerialisationSnapshot {
+    title_page: TitlePage,
+    blocks: Vec<Block>,
+    original_source: Option<Arc<str>>,
+    bom: bool,
+    line_ending: LineEnding,
+}
+
+impl SerialisationSnapshot {
+    pub fn serialise(&self) -> String {
+        serialise_parts(
+            &self.title_page,
+            &self.blocks,
+            self.original_source.as_deref(),
+            self.bom,
+            self.line_ending,
+        )
+    }
+}
+
 impl Document {
     /// An empty document, as a new script starts.
     pub fn empty() -> Document {
@@ -143,25 +168,25 @@ impl Document {
     /// the original bytes, so a document nobody edited serialises to exactly
     /// what it was opened from.
     pub fn serialise(&self) -> String {
-        let elements: Vec<ElementRef<'_>> = self
-            .blocks
-            .iter()
-            .map(|block| ElementRef {
-                kind: block.kind,
-                text: &block.text,
-                forced: block.forced,
-                dual: block.dual,
-                provenance: block.provenance.clone(),
-            })
-            .collect();
+        serialise_parts(
+            &self.title_page,
+            &self.blocks,
+            self.original_source.as_deref(),
+            self.bom,
+            self.line_ending,
+        )
+    }
 
-        serialise(&Output {
-            title_page: &self.title_page,
-            elements: &elements,
-            source: self.original_source.as_deref(),
+    /// Captures one revision's serialisation inputs for work off the owner
+    /// thread. The original source is shared; only current block data is copied.
+    pub fn serialisation_snapshot(&self) -> SerialisationSnapshot {
+        SerialisationSnapshot {
+            title_page: self.title_page.clone(),
+            blocks: self.blocks.clone(),
+            original_source: self.original_source.clone(),
             bom: self.bom,
             line_ending: self.line_ending,
-        })
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1312,6 +1337,33 @@ impl Document {
     }
 }
 
+fn serialise_parts(
+    title_page: &TitlePage,
+    blocks: &[Block],
+    source: Option<&str>,
+    bom: bool,
+    line_ending: LineEnding,
+) -> String {
+    let elements: Vec<ElementRef<'_>> = blocks
+        .iter()
+        .map(|block| ElementRef {
+            kind: block.kind,
+            text: &block.text,
+            forced: block.forced,
+            dual: block.dual,
+            provenance: block.provenance.clone(),
+        })
+        .collect();
+
+    serialise(&Output {
+        title_page,
+        elements: &elements,
+        source,
+        bom,
+        line_ending,
+    })
+}
+
 /// Reads Fountain source as blocks that have not been inserted anywhere yet —
 /// what a paste needs (§Phase 2, "Copy, cut, paste (as Fountain-aware blocks)").
 ///
@@ -1497,6 +1549,23 @@ mod tests {
         assert!(!doc.is_dirty());
         let ids: Vec<u64> = doc.blocks.iter().map(|block| block.id.0).collect();
         assert_eq!(ids, [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn a_serialisation_snapshot_keeps_the_revision_it_captured() {
+        let mut document = doc();
+        let snapshot = document.serialisation_snapshot();
+        let id = document.blocks[1].id;
+        document
+            .apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..4,
+                with: "Mary".into(),
+            })
+            .unwrap();
+
+        assert_eq!(snapshot.serialise(), SCRIPT);
+        assert_ne!(snapshot.serialise(), document.serialise());
     }
 
     #[test]

@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–3, 4A, 4A′ and 4B complete, Phase 4C next
+**Status:** in progress — Phases 0–4 complete; later remediation phases not started
 
 ---
 
@@ -44,7 +44,7 @@ The remediation effort is complete only when all of the following are true:
 - [ ] The library page count is updated from a saved pagination snapshot.
 - [x] The application does not treat its own save as an external file modification.
 - [x] Overlapping saves for the same session cannot write out of order.
-- [ ] External-change checks perform disk I/O off the actor thread.
+- [x] External-change checks perform disk I/O off the actor thread.
 - [ ] Persisted scroll position is applied when reopening a script.
 - [ ] Fountain “Export Copy” semantics are separate from “Save As.”
 - [x] CI runs all intended integration tests and a real ENOSPC/full-disk test.
@@ -1764,49 +1764,112 @@ never fires at all.
 
 ### Tasks
 
-- [ ] Convert `doc_external_change` from synchronous actor-blocking behavior to an asynchronous split operation.
-- [ ] On actor:
+- [x] Convert `doc_external_change` from synchronous actor-blocking behavior to an asynchronous split operation.
+- [x] On actor:
   - snapshot path;
   - snapshot dirty state;
   - snapshot current serialised/revision information needed for comparison.
-- [ ] Off actor:
+- [x] Off actor:
   - read disk;
   - compare contents/checksum;
   - perform any potentially slow work.
-- [ ] Back on actor:
+- [x] Back on actor:
   - validate the result is not stale;
   - return the appropriate action/refusal.
-- [ ] Avoid a full serialisation on the actor when a revision hash or prepared snapshot can serve.
-- [ ] Handle file missing, unreadable, replaced, or encoding-error cases.
-- [ ] Ensure a stale async result cannot overwrite newer state.
+- [x] Avoid a full serialisation on the actor when a revision hash or prepared snapshot can serve.
+  - `Document::serialisation_snapshot` copies only immutable serialisation inputs; Fountain
+    serialisation itself runs on the FRB worker. The original source remains shared by `Arc`.
+- [x] Handle file missing, unreadable, replaced, or encoding-error cases.
+  - All remain refusals (`None`), including a path replaced by a directory and non-UTF-8 bytes.
+- [x] Ensure a stale async result cannot overwrite newer state.
+  - `Session::document_generation` advances on edits, undo/redo, reload and backup restore.
+    The final actor pass validates generation, path and dirty state. Automatic reload is also
+    guarded by `only_if_clean`, so typing between the check and reload cannot be discarded.
 
 ### Tests
 
-- [ ] Slow disk-read simulation does not block edits queued to the actor.
-- [ ] Result is discarded or revalidated if the document changes during the async check.
-- [ ] Missing file behavior remains correct.
-- [ ] Dirty and clean document paths remain correct.
-- [ ] Own-save suppression and external comparison work together.
+- [x] Slow disk-read simulation does not block edits queued to the actor.
+- [x] Result is discarded or revalidated if the document changes during the async check.
+- [x] Missing file behavior remains correct.
+- [x] Dirty and clean document paths remain correct.
+- [x] Own-save suppression and external comparison work together.
 
 ### Exit conditions
 
-- [ ] No disk read occurs inside the actor closure for external-change checks.
-- [ ] No large serialisation blocks the actor in this path.
-- [ ] External-change behavior remains correct under races.
+- [x] No disk read occurs inside the actor closure for external-change checks.
+- [x] No large serialisation blocks the actor in this path.
+- [x] External-change behavior remains correct under races.
 
 ## Phase 4 overall exit conditions
 
-- [ ] Save concurrency regression test passes.
-- [ ] Own-save echo regression test passes.
-- [ ] Actor-thread responsiveness test passes.
-- [ ] All existing persistence and save tests pass.
-- [ ] No autosave safety behavior was weakened.
+- [x] Save concurrency regression test passes.
+- [x] Own-save echo regression test passes.
+- [x] Actor-thread responsiveness test passes.
+- [x] All existing persistence and save tests pass.
+- [x] No autosave safety behavior was weakened.
 
 ## Suggested commit boundaries
 
 - [x] `fix(storage): serialize saves per document session`
 - [x] `fix(storage): suppress watcher events from own saves`
-- [ ] `refactor(storage): move external-change IO off actor`
+- [x] `refactor(storage): move external-change IO off actor`
+
+### Implementation log — Phase 4C
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** OpenAI GPT-5.6 Sol (OpenCode)
+**Starting commit:** `8defd10` (`fix(storage): suppress watcher events from own saves`)
+**Ending commit:** working tree
+
+#### Changes made
+
+- `doc_external_change` is now an asynchronous three-step operation: actor snapshot, worker
+  serialisation/read/compare, actor validation. Its Dart surface is consequently a `Future`.
+- `document` exposes `SerialisationSnapshot`, which carries no history or live `Document` and
+  serialises through the same `serialise_parts` implementation as `Document::serialise`.
+- `Session::document_generation` is monotonic across edits, undo/redo and document replacement,
+  so a worker answer cannot mistake a reloaded document or an undone revision for its snapshot.
+- The comparison holds the per-session save claim and `EditorPage` suppresses autosave through
+  the complete check and decision. Explicit saves await the same decision barrier, so neither a
+  timer nor Ctrl+S can overwrite the external version before the writer chooses.
+- Automatic clean-document reload now uses `only_if_clean` and validates generation and path
+  after its own disk read. Reload also takes the session's save claim, so an older save cannot
+  land afterward. Explicit “Take theirs” retains its deliberate discard semantics.
+- Regenerated the Rust and Dart FRB bindings with `flutter_rust_bridge_codegen generate`.
+
+#### Tests added or changed
+
+- `a_slow_external_change_read_does_not_block_an_edit_and_revalidates` holds the worker read,
+  proves a real edit still completes on the actor, then proves the old answer is recomputed.
+- Added clean, dirty, matching-content, missing, unreadable, non-UTF-8 and guarded-reload cases.
+- Added a save-versus-reload interleaving test proving reload waits for a save already at disk.
+- Added core and widget regressions proving no save passes a pending comparison and an autosave
+  or Ctrl+S due during the check remains owed until the writer resolves the conflict.
+- Added a document test proving a serialisation snapshot remains the revision it captured.
+- Updated the fake core, widget test and real persistence integration test for the async API.
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                # clean
+cargo clippy --workspace --all-targets -- -D warnings  # clean
+cargo test --workspace                                 # 377 passed
+python3 tools/check_layering.py                         # clean
+cd app && flutter analyze                              # No issues found
+cd app && flutter test                                 # 285 passed
+cd app && flutter build linux --release                # succeeds
+cd app && flutter test integration_test/persistence_test.dart -d linux
+                                                        # 13 passed
+```
+
+#### Results
+
+F8 is closed: neither the disk read nor Fountain serialisation runs in an actor closure, edits
+remain responsive during a stalled read, and every state-changing race returns a refusal rather
+than applying or acting on stale state. Phase 4's save ordering, journal and own-write suppression
+tests remain green. No dependency or ADR was added; this implements the existing §2.3 rule rather
+than changing an architectural decision.
 
 ---
 

@@ -33,7 +33,7 @@ mod history;
 mod recovery;
 mod workflow;
 
-pub use document::{parse_blocks, Block, Document, Grouped};
+pub use document::{parse_blocks, Block, Document, Grouped, SerialisationSnapshot};
 pub use edit::{
     DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
 };
