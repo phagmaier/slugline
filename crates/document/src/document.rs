@@ -215,10 +215,15 @@ impl Document {
         self.saved_revision = revision.min(self.revision);
     }
 
-    /// Clears the dirty flag. Re-anchoring provenance to the newly written
-    /// bytes belongs to `storage`, in Phase 4; until then a saved document goes
-    /// on serialising from the source it was opened with, which is correct but
-    /// keeps the old bytes alive.
+    /// Clears the dirty flag.
+    ///
+    /// Re-anchoring provenance to the newly written bytes is **deliberately not
+    /// done**, and Phase 4 shipped without it. A saved document goes on
+    /// serialising from the source it was opened with: correct — the bytes it
+    /// would write are the bytes it just wrote — at the cost of keeping the
+    /// original source alive for the life of the session. Re-anchoring would
+    /// buy back that memory and nothing else, so it is deferred until something
+    /// measures it as a problem rather than scheduled to a phase.
     pub fn mark_saved(&mut self) {
         self.mark_saved_at(self.revision);
     }

@@ -20,6 +20,14 @@ This spec is organised into **phases**. Each phase has:
 Do not start a phase until the previous phase's exit criteria are all ticked. The phases
 are ordered so that each one is independently demoable and each one de-risks the next.
 
+**Where the project is, as of 2026-07-25.** Phases 0–6 are written. Between Phase 6 and
+Phase 7 sits a **stabilization gate**: a mid-project audit (`REVIEW.md`) found defects
+this document's checkboxes did not reflect, and `REMEDIATION_PLAN.md` works through them
+phase by phase. Phase 7 begins only when that plan's Phase 10 authorization gate passes.
+A box ticked here means the behaviour is implemented *and* tested; where the remediation
+found one that was not, the box has been unticked and says why, with the finding number.
+That plan, not this section, is the live tracker.
+
 **If you are handing work to AI agents:** give an agent exactly one phase section, plus
 §2 (Architecture) and §3 (Data Model). Do not let an agent work across phase boundaries.
 Every phase specifies its tests first — require the agent to write the failing test before
@@ -174,9 +182,12 @@ slugline/
 └── tools/                      # build scripts, benchmark runner
 ```
 
-**Layering rule (enforced by `cargo-deny`/CI):** `fountain` depends on nothing in the
-workspace. `layout` depends only on `document`. `render_pdf` depends only on `layout`.
-`bridge` depends on everything. No cycles, no upward dependencies.
+**Layering rule (enforced by `python3 tools/check_layering.py` in CI, not by `cargo-deny` —
+ADR 0004):** `fountain` depends on nothing in the workspace. `layout` depends only on
+`document`. `render_pdf` depends only on `layout`. `storage` depends only on `document`.
+`spell` depends on nothing. `bridge` *may* depend on everything — today it depends on
+`document` and `storage` only; the missing `layout` edge is audit finding F3, added by
+remediation Phase 6D. No cycles, no upward dependencies.
 
 ### 2.6 Dependency shortlist
 
@@ -803,6 +814,12 @@ Implement precisely this sequence, in `crates/storage`:
       composition. A suppression **holds** the save rather than cancelling it, so
       the save happens when the dialog closes — §10 does not allow a save to be
       dropped because the timing was awkward.
+- [ ] **Two saves of one script cannot interleave.** They can today: the save is
+      plan-on-actor → write-off-actor → record-on-actor, and nothing serialises
+      an explicit Ctrl+S against an autosave already past its due point, so with
+      an edit between the two plans the writes can land in reverse order and the
+      file transiently holds older bytes than the save that already reported
+      "Saved". Audit finding F5; remediation Phase 4A.
 - [x] An append-only **edit journal** in
       `$XDG_STATE_HOME/slugline/journal/<script-id>.log` records committed edits
       between saves. It records the **outcome** of each edit rather than the
@@ -845,6 +862,14 @@ Implement precisely this sequence, in `crates/storage`:
 - [x] If it changes while there are unsaved edits → prompt (Keep Mine / Take
       Theirs / Save As). "Take theirs" says that it discards the undo history
       too, because it does.
+- [ ] **The prompt never fires for our own save.** It can today: the watcher
+      reports the app's own atomic rename, nothing correlates that event with the
+      save that caused it, and the 30-second interval autosave fires mid-typing
+      by design — so a keystroke landing in the window produces the full
+      external-change modal about the app's own write. Audit finding F4;
+      ADR 0024 records the fix, and remediation Phase 4B implements it. The check
+      itself also reads the disk on the actor thread, which §2.3 forbids (F8,
+      remediation Phase 4C).
 
 ### Library
 
@@ -852,17 +877,22 @@ Implement precisely this sequence, in `crates/storage`:
       and delete are two commands in two places in the menu, and only one of them
       asks twice.
 - [x] Recent scripts list with path, last-modified, page count. The page count is
-      zero until Phase 6's `layout` crate can compute one, and the library shows
-      nothing rather than guessing.
+      still zero for every entry, and the library shows nothing rather than
+      guessing. `layout` can compute one, but nothing calls it (F3); ADR 0020
+      writes it after a successful save, in remediation Phase 6E.
 - [x] Library index is a plain JSON file in `$XDG_DATA_HOME` — it is a *cache*,
       and the app works correctly if it is deleted. `Library::load` cannot fail:
       a missing, truncated or hand-mangled index is an empty one, and an
       integration test deletes it mid-session and opens a script anyway.
 - [x] Missing files shown as missing, not silently dropped. A drive that is not
       mounted this morning is not a script the writer threw away.
-- [x] Session restore: reopen the scripts that were open last time, with scroll
-      positions. The scroll row is parked in the index on every scroll, so a
-      crash restores it too rather than only a clean exit.
+- [ ] Session restore: reopen the scripts that were open last time, with scroll
+      positions. **Half done, and the half that shows is the missing one.** The
+      scroll row is parked in the index on every scroll, so a crash preserves it
+      as well as a clean exit does, and `integration_test/persistence_test.dart`
+      round-trips it — but nothing outside the generated bindings ever *reads*
+      `ScriptView::scroll_row`, so a reopened script starts at the top. Audit
+      finding F6; remediation Phase 5 applies it.
 
 ### Tests — these are the important ones
 
@@ -999,10 +1029,23 @@ Requirement §12. No UI work in this phase beyond a debug dump view.
 ### Exit criteria
 
 - [x] Page count and every line position are reproducible and covered by golden files
+- [ ] **Reachable from the application.** The crate paginates and nothing calls it: the
+      bridge has no dependency on `slugline_layout`, `ScriptView::page_count` is always
+      zero, the debug dump exists as a method with no view, and `repaginate` has never run
+      outside `crates/layout/tests/`. Audit finding F3. Remediation Phase 6 wires it as an
+      async snapshot job (ADR 0020), writes the page count after a successful save, and
+      pins the Dart editor's own line breaking to `layout::break_lines` with a
+      corpus-wide differential test (ADR 0018).
 
 ---
 
 ## Phase 7 — PDF Export, Title Page, and Preview
+
+> **Gate.** Phase 7 does not begin until `REMEDIATION_PLAN.md`'s Phase 10 authorization
+> gate passes — in particular until pagination is already integrated through the bridge,
+> so that preview and PDF start by consuming an engine rather than integrating one under
+> feature pressure, and until the back half of `crates/layout/src/engine.rs` has had the
+> focused review ADR 0025 requires.
 
 **Goal:** You can send the output to a production company without embarrassment.
 
@@ -1184,22 +1227,61 @@ Every requirement from `features.md` maps to a phase. Use this to check nothing 
 These are the requirements phrased as "must never". Each gets its own test file so a
 failure is unambiguous.
 
-- [ ] `never_loses_unsaved_changes` — no code path discards edits without user confirmation
+- [ ] `never_loses_unsaved_changes` — no code path discards edits without user
+      confirmation. **Held today, but in pieces, so the box stays empty.** The
+      close paths are covered by `app/test/editor/persistence_test.dart` (every
+      close prompts; an abandoned save is not consent), the crash paths by
+      `crates/bridge/tests/persistence.rs` — `sigkill_mid_typing_loses_nothing`,
+      `every_way_a_kill_can_cut_the_journal_loses_only_the_tail`, and the
+      double-crash pair ADR 0016 lists — and journal damage by
+      `crates/storage/src/journal.rs`. What does not exist is the one file this
+      section asks for, whose failure would name the invariant rather than a
+      symptom of it.
 - [x] `element_change_preserves_text` — changing element type never alters characters
       (`crates/document/tests/element_change_preserves_text.rs`, and through the
       whole chain in `app/integration_test/writing_test.dart`)
-- [ ] `autocomplete_requires_explicit_action` — no insertion without a keypress
-- [ ] `spellcheck_never_modifies` — no automatic correction
-- [ ] `appearance_prefs_dont_affect_pagination` — zoom/theme leave golden layout identical
-- [ ] `roundtrip_is_byte_exact` — unedited files resave identically
-- [ ] `pdf_output_is_deterministic` — same input, same bytes
-- [ ] `parser_never_panics` — fuzz-backed
-- [ ] `no_network_syscalls` — release build runs under `unshare -rn`
+- [x] `autocomplete_requires_explicit_action` — no insertion without a keypress
+      (`app/test/editor/autocomplete_test.dart`, "a completion never inserts
+      without an explicit acceptance key", with the Tab/Enter rule of ADR 0017 in
+      the tests beside it; against the real core in
+      `app/integration_test/writing_test.dart`, "an existing cue is suggested but
+      never applied")
+- [ ] `spellcheck_never_modifies` — no automatic correction (Phase 9; `spell` is a
+      placeholder)
+- [ ] `appearance_prefs_dont_affect_pagination` — zoom/theme leave golden layout
+      identical (Phase 10; nothing edits preferences yet)
+- [x] `roundtrip_is_byte_exact` — unedited files resave identically
+      (`crates/fountain/tests/roundtrip_is_byte_exact.rs` over every corpus file
+      and the 120-page reference, plus the `roundtrip` fuzz target)
+- [ ] `pdf_output_is_deterministic` — same input, same bytes (Phase 7;
+      `render_pdf` is a placeholder. The pagination underneath it *is* pinned:
+      `crates/layout/tests/golden.rs` and its determinism test)
+- [x] `parser_never_panics` — fuzz-backed
+      (`crates/fountain/tests/parser_never_panics.rs`, plus the `parse` fuzz
+      target, which CI runs on every commit)
+- [ ] `no_network_syscalls` — release build runs under `unshare -rn`. Not written.
+      §1.2 calls this a build-time assertion and there is no such assertion in
+      `.github/workflows/ci.yml`; it belongs with Phase 11 packaging. Until it
+      exists, "zero network requests" rests on `docs/DEPENDENCIES.md` review and
+      ADR 0015, not on a test.
 
 ### CI gates
 
 A pull request cannot merge unless: all tests pass, `clippy -D warnings` is clean, the
 release build succeeds, and every performance budget in §1.3 is met on the reference script.
+
+What `.github/workflows/ci.yml` actually runs, as of the remediation:
+
+| Job | Steps |
+| --- | --- |
+| `rust` | `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace` — with a 4 MB tmpfs mounted and named in `SLUGLINE_FULL_DISK_DIR`, so the full-disk test is the real thing — `tools/check_layering.py`, `tools/make_reference.py --check` |
+| `fuzz` | `parse` and `roundtrip`, 200k iterations each, as a smoke run rather than the 1M-iteration gate |
+| `flutter` | `flutter analyze`, `flutter test`, the release build, the bundled-`.so` and 60 MB bundle assertions, then **all six** integration tests under `xvfb-run`: `bridge_test`, `editor_test`, `writing_test`, `ime_test`, `persistence_test`, `keystroke_benchmark_test` |
+
+Three of those six integration tests did not run in CI until remediation Phase 3, and
+`SLUGLINE_FULL_DISK_DIR` was never set — the audit's F7 and test-gap #4. Both are closed.
+CI still triggers on `main` and on pull requests only, so work on a long-lived branch is
+not gated until it is proposed.
 
 ---
 
@@ -1251,15 +1333,16 @@ Resolve these and record them in `docs/DECISIONS.md`.
 - [x] Application name, binary name, and reverse-DNS app ID — **Slugline**, `slugline`,
       `com.phagmaier.slugline` (ADR 0006)
 - [ ] Licence for the project itself
-- [ ] Whether the editor view shows any page indication at all, or is purely fluid
-      (the requirements permit fluid; fluid is faster and simpler — recommended)
-- [ ] Whether emphasis markup (`*italic*`) is displayed literally in the editor or rendered
-      with the markers hidden (literal is simpler and more honest to Fountain — recommended
-      for 1.0)
-- [ ] Scene number gutter style (left, right, or both)
-- [ ] Where pinned autocomplete entities are stored (recommended: library index, not the
-      script file, to keep `.fountain` output clean) — Phase 4 built the library
-      index, so the place now exists; the decision is still Phase 5's to make.
+- [x] Whether the editor view shows any page indication at all, or is purely fluid —
+      **purely fluid through 1.0**; page awareness lives only in the Phase 7 preview and
+      the PDF (ADR 0018)
+- [x] Whether emphasis markup (`*italic*`) is displayed literally in the editor or rendered
+      with the markers hidden — **literally**, markers counting as columns in both the
+      editor and the paginator (ADR 0019)
+- [ ] Scene number gutter style (left, right, or both). `layout` implements all three and
+      defaults to none; which the application offers is Phase 7's to settle, with §5.5.
+- [x] Where pinned autocomplete entities are stored — **the library index**, keyed by
+      script id, never written into the `.fountain` file (ADR 0021)
 
 ---
 

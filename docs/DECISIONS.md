@@ -1167,3 +1167,615 @@ rule accidental and leaves the useless self-suggestion in the popup.
   Escape after another panel had focus, even when editor completions are non-empty.
 * `app/integration_test/editor_test.dart` and `writing_test.dart` exercise the
   complete real-core paths that originally exposed the failures.
+
+---
+
+## ADR 0018 — The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 (decided during the
+mid-project remediation) · **Narrows:** ADR 0005 for 1.0; does not reverse it
+
+### Context
+
+Two questions were answered by the code without ever being written down, and the
+audit (`REVIEW.md`, F3 and F10) found them by finding their consequences.
+
+The first is §16's open item: does the editor view show page indication at all?
+The editor has been a continuous scrolling surface since Phase 2 and nothing in
+it knows what a page is.
+
+The second is sharper. ADR 0005 accepted the custom surface partly on the promise
+that "the editor renders the lines the `layout` crate computes rather than
+duplicating it", and `metrics.dart` has carried a comment since Phase 2 saying
+its numbers were on loan until that crate arrived. The crate arrived in Phase 6.
+The editor still wraps its own text — and the two implementations disagree in
+five observable ways:
+
+| | `line_layout.dart` | `layout::break_lines` |
+| --- | --- | --- |
+| counting unit | UTF-16 code units | `char`s (an emoji is 1, not 2) |
+| spaces at a wrap point | consumes one | consumes the whole run |
+| trailing space at the width boundary | emits a phantom empty row | emits one row |
+| tabs | one column | 4-column tab stops |
+| hard newlines | none until remediation Phase 2 | splits first, always |
+
+Nothing was testing for agreement, so the drift was free.
+
+### Decision
+
+**The editor view stays fluid and unpaginated through 1.0**, and **the Dart
+wrapper stays**, as one implementation of a contract the Rust engine also
+implements.
+
+* No page breaks, page numbers, or page gutters in the editing surface. Page
+  awareness lives in Phase 7's preview and the PDF, both rendered from the same
+  `PaginatedScript`.
+* `line_layout.dart` remains the wrap implementation on the keystroke path.
+* The behaviour the two must share is written down as a contract (remediation
+  Phase 6A) and enforced by a corpus-wide differential test comparing *wrap
+  boundaries*, not rendered strings, for every block of every corpus file
+  (Phase 6C). Where they must agree, drift fails CI.
+* The five divergences are resolved by changing **Dart to match Rust**. The
+  paginator is authoritative because it is what the PDF prints, and a writer who
+  sees a line break in the editor that the page does not have has been lied to by
+  the cheaper of the two.
+* This narrows ADR 0005 rather than reversing it: that record's concern is that
+  there be **one specification** of screenplay geometry, and the differential
+  test is what supplies it. Should the editor ever grow page indication, this
+  record is the one to supersede.
+
+### Alternatives considered
+
+**The editor asks Rust for wrap points per keystroke.** The literal reading of
+ADR 0005. Rejected: it puts a bridge round trip and a cache-invalidation protocol
+on the path with the 16 ms p99 budget (§1.3), and it solves by architecture what
+one test pins for free. The bridge would also have to answer for a block that is
+mid-composition, which is exactly when the answer is least stable.
+
+**Rust computes every block's wraps on open, and patches them per edit.** No
+per-keystroke round trip, but it is a second layout cache living in the bridge,
+invalidated by every edit and every width change — strictly more machinery than
+the differential test, and a new thing to be wrong.
+
+**Paginate the editor itself.** Rejected by §16's own recommendation: fluid is
+faster and simpler, and this would put page-break rules — the part of the
+paginator that iterates to a fixed point — on the typing path.
+
+### Consequences
+
+* Two implementations exist on purpose. That is only safe while the differential
+  test exists; until remediation Phase 6C lands, agreement is asserted for hard
+  newlines alone and assumed everywhere else. Phase 6 is not complete without it.
+* `metrics.dart`'s "on loan" framing is wrong and has been corrected in place:
+  the numbers stay.
+* F10's uppercase divergence must be settled *in the contract*, not left to
+  whichever side is read first: the editor refuses length-changing uppercase (ß)
+  to keep caret columns honest, and `layout::display_text` uppercases
+  unconditionally.
+* Emphasis markers count as columns on both sides — see ADR 0019, which is what
+  keeps this contract from needing a notion of hidden text.
+* If the differential test ever becomes impractical to maintain, the fallback is
+  to consume Rust's wraps, not to let the test rot.
+
+### Tests and invariants
+
+This record is a decision; its enforcement is remediation Phase 6B/6C, and the
+honest statement today is that most of it is not enforced yet.
+
+* Exists: the hard-newline half, in `app/test/editor/line_layout_test.dart` and
+  the reference-fixture case in `app/integration_test/editor_test.dart`.
+* Required before Phase 6 closes: a corpus-wide differential test over every
+  block of `testdata/`, comparing wrap boundaries, printing source block, width
+  and both boundary lists on failure; plus a regression case for each of the five
+  divergences above.
+
+---
+
+## ADR 0019 — Emphasis markup is displayed literally in the editor through 1.0
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2 (recorded during the
+mid-project remediation)
+
+### Context
+
+§16 left open whether `*italic*`, `**bold**`, `***bold italic***` and
+`_underline_` appear in the editor as typed or are styled with their markers
+hidden. The editor has shown them literally since Phase 2, because nothing in it
+interprets them; no record said whether that was the decision or the default.
+
+### Decision
+
+**Literal, for 1.0.** Markers are ordinary characters: they are shown, they are
+selectable, they are counted as columns for line breaking in the editor *and* in
+the paginator. The PDF renderer (Phase 7) is the only thing that interprets them.
+
+### Alternatives considered
+
+**Style the text and hide the markers.** What most editors do, and prettier.
+Rejected for 1.0 because it reintroduces exactly the divergence
+`metrics.dart::displayText` refuses: display length stops matching model length,
+and every caret column, click mapping and selection rectangle needs a second
+coordinate space. That is the bug class remediation Phase 2 just spent a phase
+removing for hard newlines.
+
+**Style the text and keep the markers visible.** Cheaper — no second coordinate
+space — but it is a half-measure that still needs a Fountain emphasis parser in
+Dart, which is a screenplay-semantics question and therefore Rust's (§2.1).
+
+### Consequences
+
+* The editor never transforms text except by the length-preserving uppercase in
+  `displayText`. Model offsets and display offsets stay equal.
+* ADR 0018's differential test stays simple: both sides count the same
+  characters, because neither side hides any.
+* Fountain stays honest on screen — what is in the file is what is displayed.
+* Upgrading later costs nothing that is not already owed: the emphasis parser
+  Phase 7's PDF needs is the same one a styled editor would consume.
+
+### Tests and invariants
+
+* `app/test/editor/line_layout_test.dart` measures columns from model text, so a
+  marker that stopped counting would move a wrap boundary and fail there.
+* `crates/document/tests/element_change_preserves_text.rs` and
+  `app/integration_test/writing_test.dart` hold the editor to changing no
+  characters it was not asked to change.
+* There is no styling code to test the absence of; this record is what says that
+  absence is deliberate.
+
+---
+
+## ADR 0020 — Pagination crosses the bridge as an async snapshot job, and the page count is written after a save
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 (decided during the
+mid-project remediation) · **Implemented by:** remediation Phase 6D/6E
+
+### Context
+
+`crates/layout` is complete, deterministic and golden-tested, and no code outside
+its own tests calls it. `crates/bridge/Cargo.toml` has no edge to it,
+`ScriptView::page_count` has been a hard zero since Phase 4, the debug dump is a
+method with no view, and `repaginate` — the incremental path, with its
+checkpoints and its cache (ADR 0022) — has never run in the application at all.
+Phase 7 is the phase that consumes pagination, and it was going to have to
+integrate it under feature pressure (audit finding F3).
+
+The remaining question was what should *ask* for a pagination, given §2.3: the
+actor thread owns the document and must never block, and anything over 2 ms is
+async.
+
+### Decision
+
+**Pagination is an asynchronous job over an owned snapshot, and a successful save
+is what triggers it.**
+
+* `bridge` depends on `slugline_layout`. It defines its own DTOs for the result;
+  internal layout types do not cross the boundary unexamined.
+* The actor is visited twice, in the shape `write_document` already uses: take
+  `ScriptSnapshot` plus the revision on the actor, let go, paginate on a worker,
+  come back to record the result. `ScriptSnapshot` exists precisely to be the
+  owned value that can leave (`crates/layout/src/lib.rs`).
+* A result is committed only if it still describes the revision it was computed
+  from. A stale result is dropped, never merged, and never overwrites a newer
+  page count.
+* **`page_count` is written after every successful save** — explicit and
+  autosave alike — from the snapshot that was saved. It is not recomputed per
+  keystroke, and library scan does not paginate unopened scripts: a scan that
+  parsed and paginated every script would blow the cold-start budget (§1.3).
+* Pagination failure never fails a save. The page count keeps its previous value,
+  or stays absent.
+* A page count is a **cache**, like everything else in the library index (§the
+  storage crate's own rule): an entry never saved by a layout-capable build shows
+  nothing, which is what the Phase 4 note already promised.
+
+### Alternatives considered
+
+**Paginate on every edit, or on a debounce.** Rejected: it burns CPU for a number
+nobody is reading while typing, and §1.3's idle budget is 0% — a debounce is a
+timer, and timers in the core are forbidden (ADR 0014).
+
+**Paginate at library-scan time so every entry has a count.** Rejected on the
+cold-start budget: the library must open in the time it takes to `stat` a
+directory, not to parse it.
+
+**Paginate on the actor thread and skip the snapshot.** Rejected outright by
+§2.3. Full pagination of 120 pages is budgeted at 50 ms; the actor's budget is
+2 ms.
+
+**Expose `PaginatedScript` verbatim through FRB.** Tempting, and it is the type
+Phase 7 wants. Rejected for now: `Arc<[LayoutLine]>`, checkpoints and cache
+statistics are internal machinery, and freezing them into the generated bindings
+makes every future engine change an API change.
+
+### Consequences
+
+* Phase 7 starts by consuming an integrated engine. That is the whole point of
+  doing this before it rather than during it.
+* The library gains a real page count, which is also the first end-to-end proof
+  that the paginator runs correctly outside its own tests.
+* The incremental path finally runs in the application, which is where its
+  checkpoint reuse will actually be exercised (ADR 0022).
+* One more worker job exists whose results can arrive out of order; the revision
+  guard is what makes that safe, and it is the same discipline the save path
+  already uses with `mark_saved_at`.
+* A debug pagination surface (remediation Phase 6F) consumes this result rather
+  than reimplementing anything in Dart — §Phase 6 permits exactly one UI artifact
+  and this is it.
+
+### Tests and invariants
+
+None yet; this is a decision recorded ahead of its implementation. Required
+before remediation Phase 6 closes:
+
+* Bridge tests for normal, empty, very long and tolerated-malformed documents.
+* A save updates the page count; an autosave does too.
+* A pagination that fails leaves the save successful and the count untouched.
+* An older pagination result cannot replace a newer one.
+* A library scan paginates nothing.
+* The page count survives a restart.
+* At least one integration test proving the application — not a crate test —
+  invokes pagination.
+
+---
+
+## ADR 0021 — Pinned autocomplete entities live in the library index
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 5 (recorded during the
+mid-project remediation)
+
+### Context
+
+§16 asked where pinned entities are stored and recommended the library index.
+Phase 5 implemented that and recorded nothing, so a §16 open item was closed
+silently — one of the drifts the audit's F7 names. The choice is not obvious:
+a pin is per-script data, and the obvious per-script place is the script.
+
+### Decision
+
+**Pins live in the library index, keyed by script id, and are never written into
+the `.fountain` file.**
+
+* `EntityIndex` holds pins in memory (`pinned: BTreeMap<(EntityKind, String),
+  String>`), separately from the frequency aggregates, so a pinned entity
+  survives dropping to zero occurrences.
+* `doc_set_entity_pinned` writes the session's whole pin set into the script's
+  library entry (`ScriptEntry::pinned_entities`) and saves the index; opening a
+  script loads them back with `load_pins`.
+* An **unsaved script has no entry to write to**, so its pins live in the
+  session and become persistent the moment it gains one. Nothing is invented to
+  hold them in the meantime: a hidden store for a file the writer has not named
+  is what §1.2 forbids.
+* Ranking is unchanged by pinning: **exact prefix > frequency > recency >
+  alphabetical**, with `pinned` a flag on the candidate rather than a rank. A pin
+  guarantees a candidate is *offered*; it does not push it to the top. The
+  standard scene components (`DAY`, `NIGHT`, `INT.`, …) are seeded the same way —
+  offered when they match, ranked with everything else.
+
+### Alternatives considered
+
+**Store pins in the `.fountain` file**, as a note or a boneyard comment.
+Rejected: §1.2 makes the file the user's, and a screenwriting tool that leaves
+its own bookkeeping in a plain-text screenplay breaks interchange with every
+other Fountain tool. It would also make a pin an *edit* — dirtying the document,
+entering the journal, and colliding with round-trip byte-exactness (ADR 0007).
+
+**Store pins in preferences.** Wrong scope: pins are about one script's cast and
+locations, and would leak between scripts.
+
+**Rank pins above everything.** Rejected: the writer's own most-frequent
+character is the better suggestion nine times in ten, and a pin is a request to
+be *remembered*, not to be first. Making it a flag keeps the ranking rule the one
+sentence §Phase 5 specifies and unit-tests against a fixed corpus.
+
+### Consequences
+
+* Deleting the library index loses pins and nothing else — consistent with the
+  index being a cache the storage crate can rebuild.
+* Pins for a script are available the moment it opens, before anything is typed.
+* A pin taken on an untitled script is kept for the session and written out with
+  the rest once the script is saved.
+* The `.fountain` output stays exactly what the writer wrote.
+
+### Tests and invariants
+
+* `crates/storage/src/library.rs::the_index_round_trips` writes a pin through
+  `set_pinned` and reads it back out of a reloaded index file.
+* `crates/document/src/entities.rs::ranking_is_exact_then_frequency_then_recency_and_deterministic`
+  holds the ranking rule this record leaves unchanged, and
+  `removing_the_last_occurrence_removes_the_entity_incrementally` holds the
+  unpinned half of the drop-out behaviour.
+* **Gap, recorded rather than papered over:** nothing tests that a *pinned*
+  entity survives losing its last occurrence, which is the one behaviour the pin
+  exists for. `EntityIndex::complete` merges the pinned map in unconditionally,
+  so it holds by construction — but by construction is not by test. Worth one
+  unit test in `entities.rs` next time that file is opened.
+
+---
+
+## ADR 0022 — Repagination is incremental by checkpoint, and validated rather than trusted
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 (recorded during the
+mid-project remediation)
+
+### Context
+
+§5.4 requires incremental repagination inside 5 ms after a keystroke, against a
+full pagination budget of 50 ms for 120 pages. Phase 6 built the machinery —
+`PaginationCheckpoint`, a per-block layout cache, `CacheStats` — and, per §15
+rule 6, owed a record of how it works. The audit found none (F7).
+
+The danger with any incremental layout is not speed, it is *divergence*: an
+incremental result that differs from what a full pagination would have produced
+is a bug the golden tests cannot see, because they only ever run the full path.
+
+### Decision
+
+**Reuse is always proved, never assumed.**
+
+* Every block carries a **fingerprint** — FNV-1a over its text, kind, dual flag
+  and wrap width. A cached wrap is reused only when the fingerprint and the
+  element layout both match; anything else is re-wrapped. FNV-1a is chosen for
+  being stable across Rust versions, which a `DefaultHasher` is not, so a cache
+  cannot behave differently on a different toolchain.
+* Pagination retains **checkpoints**: page index, page number, the block that
+  starts the page, its start line, and any continued character. `repaginate`
+  restarts from the nearest checkpoint *before* the changed block, and only from
+  one that starts cleanly on a block boundary with no dialogue continuation in
+  flight — the two conditions that make a page's layout independent of what
+  precedes it.
+* A caller's hint about which block changed is **advisory**. Wrapped layout is
+  validated for every block regardless, and a prefix of pages is retained only
+  after the newly computed output proves it byte-for-byte equal. A wrong hint
+  therefore costs time and cannot cost correctness.
+* The break-rule loop is a **capped fixed point**; on failing to converge it
+  falls back to the naive fill and records `fell_back_to_naive`. A page count is
+  never allowed to depend on how many iterations ran.
+* `CacheStats` reports hits, misses, reused pages and iterations, so a test can
+  assert that the incremental path *was* incremental rather than merely correct.
+
+### Alternatives considered
+
+**Trust the changed-block hint and splice.** Faster, and the standard way to get
+this wrong: any caller bug, any missed reinference, any dual-dialogue pairing
+change turns into a page that silently differs from what a fresh pagination
+would produce.
+
+**Cache nothing and paginate fully every time.** 50 ms per keystroke against a
+5 ms budget. Rejected by §1.3.
+
+**Hash whole pages instead of blocks.** Coarser invalidation for no benefit: an
+edit invalidates its page anyway, and per-block wraps are what is expensive to
+recompute.
+
+### Consequences
+
+* The incremental path is bounded by the full path's correctness. Incremental
+  output that differs from full output is a test failure, not a subtle artefact.
+* The cache is dropped for blocks that no longer exist on every pagination, so it
+  cannot grow past the document.
+* Until remediation Phase 6D wires the bridge (ADR 0020), all of this runs only
+  in `crates/layout/tests/`. That is the gap the audit named, not a fault in this
+  design.
+
+### Tests and invariants
+
+* `crates/layout/tests/incremental.rs::one_edit_invalidates_one_block_and_reuses_a_checkpoint_prefix`
+  — one edit misses exactly one block in the cache, at least eight pages are
+  reused, and the reused prefix is equal to the previous output page for page.
+  `CacheStats` is what proves the run was incremental rather than merely correct.
+* `crates/layout/tests/incremental.rs::reference_pagination_is_identical_one_hundred_times`
+  — the determinism requirement, over the 120-page reference.
+* `crates/layout/tests/golden.rs::every_corpus_file_has_a_stable_letter_layout`
+  — committed dumps, one per corpus file.
+* `crates/layout/tests/break_rules.rs`: eleven tests, one minimal script per §5.3
+  rule, including the pathological convergence case.
+* `crates/layout/tests/pagination_is_fast_enough.rs`: the §1.3 budgets.
+* **Gap, recorded rather than papered over:** no test compares `repaginate` of an
+  edited snapshot against `paginate_snapshot` of that same edited snapshot — the
+  one assertion that would catch incremental output diverging from full output.
+  The engine validates the reused prefix internally, so the property holds by
+  construction; ADR 0025's focused review should turn it into a test.
+
+---
+
+## ADR 0023 — One crash recovery is offered per launch
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (recorded during the
+mid-project remediation)
+
+### Context
+
+Startup scans for journals and offers recovery. It opens the first offer the
+writer accepts and returns, leaving any other journals on disk. A code comment
+called this deliberate; nothing said whether it was acceptable, and the Phase 10
+backlog carried "revisit multi-recovery UX" as scheduled work.
+
+### Decision
+
+**One offer per launch stands for 1.0.** Remaining journals are left untouched
+and offered again at the next launch. Nothing is discarded, and no journal is
+resolved without the writer seeing it.
+
+### Alternatives considered
+
+**Queue the offers and walk the writer through them.** More complete, and mostly
+unreachable: the application holds **one open script at a time** (§1.4 rules out
+multi-window and tabs for 1.0), so more than one crashed session requires a
+crash, a relaunch, a second crash without resolving the first, and a third
+launch. The failure mode of the simple design in that case is one extra dialog
+on the next launch, which loses nothing.
+
+**Resolve the others automatically.** Never: a journal is unsaved user text, and
+discarding it without asking is the P0 §1.2 forbids.
+
+### Consequences
+
+* Recovery UX stays a single yes/no at startup, which is what it should be at the
+  moment a writer wants their text back rather than a workflow.
+* An unlucky sequence can leave a journal offered a launch later than ideal. It
+  is still offered.
+* This becomes wrong the day the app gains multi-window or tabbed editing — not
+  on the 1.0 roadmap. Supersede this record then, do not stretch it.
+
+### Tests and invariants
+
+* What holds the *safety* half — a journal nobody resolved is never lost — is
+  tested: `crates/bridge/tests/persistence.rs::recovery_will_not_replay_onto_a_file_that_moved_on`
+  and `::a_journal_that_cannot_replay_is_left_on_disk_rather_than_emptied`, plus
+  `app/test/editor/persistence_test.dart`'s "Recover and Discard are both offered,
+  and nothing is automatic" and "closing the dialog decides nothing". Only
+  `Journal::discard` removes a journal, and only on an accept or an explicit
+  discard.
+* ADR 0016's tests hold the accept path to losing nothing across a second crash.
+* The *one offer* half is accepted by inspection, not by test: it is a `return`
+  after the first opened offer in `app/lib/app.dart`, including on the `Degraded`
+  path. Reaching a second simultaneous offer needs two crashed sessions, which
+  needs two scripts open at once, which the application cannot do. A test would
+  have to construct a state the app cannot reach.
+
+---
+
+## ADR 0024 — The interval autosave keeps running while the writer types
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (recorded during the
+mid-project remediation) · **Extends:** ADR 0014
+
+### Context
+
+ADR 0014 gave the autosave two timers: idle (2 s after typing stops) and interval
+(every 30 s regardless). The interval timer is deliberately *not* restarted by
+typing — a writer who never pauses is exactly who it protects.
+
+That is also what makes audit finding F4 reachable. A save renames a file the
+watcher is watching, so the app's own save produces a `FileChangedOnDisk` event
+about itself. Nothing correlates that event with the save that caused it. If a
+keystroke lands between the rename and Dart's handling of the event, the check
+finds the document dirty and different, and the writer gets "Something else has
+written to this file" — mid-sentence, about their own autosave. "Take theirs"
+would then genuinely discard their typing.
+
+The tempting fix is to stop the interval timer during typing. That would remove
+the symptom by removing the protection.
+
+### Decision
+
+**The interval save keeps firing during continuous typing. F4 is fixed on the
+watcher side, by correlating the app's own writes.**
+
+* The core records each path it has itself written, with a save generation
+  counter, in the step of `write_document` that already runs on the actor after a
+  successful write.
+* The first matching `FileChangedOnDisk` for that generation is swallowed.
+* `doc_external_change` remains the backstop: suppression is an optimisation
+  against a spurious prompt, never the thing that decides whether the file really
+  changed.
+* Suppression records are cleared when they go stale, so a genuine external write
+  that arrives later is never eaten by an old one.
+* Explicitly **not** acceptable as fixes: "do not save while typing", lengthening
+  the interval, or making the external-change dialog less alarming. The dialog is
+  right for a real external change; it must simply never fire for our own.
+
+### Alternatives considered
+
+**Restart the interval timer on each keystroke.** Turns it into a second idle
+timer, and the writer who never pauses — the one case ADR 0014 wrote the second
+timer for — goes unsaved indefinitely.
+
+**Compare content instead of correlating writes.** `doc_external_change` already
+does, and it is not enough: between our rename and the event, the writer typed,
+so the content legitimately differs. Content comparison cannot distinguish "the
+file changed because we wrote it, and then more was typed" from "someone else
+wrote it".
+
+**Stop watching the file during a save.** The watch is on the directory (a
+rename replaces the inode), so the window is not cleanly closable, and closing it
+would also miss a genuine external write landing in the same instant.
+
+### Consequences
+
+* The two-timer design of ADR 0014 is unchanged, and this record is why it must
+  stay unchanged.
+* The core keeps a small amount of per-path state whose lifecycle has to be
+  documented where it lives — it is a suppression record, not a lock, and losing
+  it costs one spurious prompt rather than any correctness.
+* A genuine external write in the same millisecond as our own save could be
+  swallowed. `doc_external_change` catches it on the next event or the next save.
+
+### Tests and invariants
+
+Required by remediation Phase 4B, which implements this:
+
+* Save, immediately type, deliver the watcher event caused by that save, assert
+  no modal and no lost typing.
+* Deliver a genuine later external modification, assert the real path still runs.
+* Multiple watcher events from one atomic rename sequence.
+* Generation cleanup.
+
+Existing today: `crates/storage/src/watch.rs`'s tests — in particular
+`a_save_by_rename_is_reported_too`, which is the very event this record has to
+suppress, and `a_change_to_a_neighbour_is_not_reported` — and the external-change
+dialog tests in `app/test/editor/persistence_test.dart` ("an unmodified document
+reloads without asking", "a modified document prompts with three answers"). None
+of them can see F4 today, because nothing yet distinguishes our own write.
+
+---
+
+## ADR 0025 — The paginator's break rules get a focused review before Phase 7
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 → 7 (scheduled during
+the mid-project remediation)
+
+### Context
+
+The mid-project audit read the whole of `crates/` except the back half of
+`crates/layout/src/engine.rs` — the `Paginator` break-rule implementation — and
+said so (`REVIEW.md` §10.6, decision D-6). Everything else it left unread is
+accepted on the strength of its tests. This one is not, for a specific reason:
+its output has never been seen by a human. Golden files prove it is
+*deterministic* and that it matches what it produced when the goldens were
+written; they do not prove those pages are what §5.3 describes.
+
+Phase 7 is where the output becomes user-visible, and §5.5 calibration is where
+the break rules are interrogated against real printed pages.
+
+### Decision
+
+**A focused review of the back half of `engine.rs` is a gate on Phase 7, not a
+task inside it.** It traces every page-break rule against §5.3 — orphan
+prevention, dialogue splitting with `(MORE)`/`(CONT'D)`, scene-heading handling,
+action splitting, the fixed-point cap, A4 derivation, deterministic ordering, and
+source identity preservation — and reviews the golden tests for *coverage*
+rather than pass status, adding rule-level tests where a rule is asserted only
+incidentally.
+
+The paginator is **not** to be rewritten absent concrete defects found by that
+review.
+
+### Alternatives considered
+
+**Fold it into Phase 7 as it goes.** What D-6 originally suggested, and the
+reason it is being made a gate instead: a rule defect found while building the
+preview is found under pressure to ship the preview, and the cheapest resolution
+at that moment is to change the golden file.
+
+**Accept it on its tests, like the other unread modules.** Reasonable for
+`find.rs` or `backup.rs`, whose behaviour is fully described by their assertions.
+Not reasonable here: "this dump is stable" is a much weaker claim than "these
+pages are correct", and no human has checked the second.
+
+### Consequences
+
+* Phase 7 begins with the engine either confirmed or corrected, and with any
+  golden file that changes doing so as a reviewed decision rather than a fix.
+* The review costs no extra calendar — it rides along with the Phase 7 kickoff —
+  but it is a checkbox that can block, which is the point.
+* Any defect found becomes a rule-level test first, in the style
+  `crates/layout/tests/break_rules.rs` already uses.
+
+### Tests and invariants
+
+* Existing: `break_rules.rs` (one minimal script per rule), `golden.rs`
+  (committed dumps, determinism over 100 runs), `incremental.rs`.
+* Required by the review: a named test for any rule found to be covered only by a
+  golden dump, and for any defect it finds.
+* Recorded in `REMEDIATION_PLAN.md` Phase 6G; the review is not complete until
+  its findings are written there.

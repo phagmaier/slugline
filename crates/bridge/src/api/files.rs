@@ -105,7 +105,9 @@ pub struct ScriptView {
     /// question and the core has no locale.
     pub modified_millis: u64,
     pub bytes: u64,
-    /// Zero until Phase 6's `layout` crate can count pages.
+    /// Always zero today. `crates/layout` can count pages and the bridge does
+    /// not yet depend on it; ADR 0020 has this written after a successful save,
+    /// from a background pagination of the saved snapshot.
     pub page_count: u32,
     /// The file was not there when the library was last refreshed. Shown as
     /// missing, never dropped (§Phase 4).

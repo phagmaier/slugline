@@ -1,8 +1,11 @@
 // Line breaking and the element grid.
 //
-// These are the numbers §5.2 specifies, asserted where they are used. When the
-// `layout` crate lands in Phase 6 and the editor starts rendering the rows Rust
-// computes (ADR 0005), this file is what says whether the two agree.
+// These are the numbers §5.2 specifies, asserted where they are used. The
+// editor keeps its own wrapping for 1.0 rather than rendering rows computed in
+// Rust (ADR 0018), so this file is one half of a contract: the other half is
+// `layout::break_lines`, and the corpus-wide differential test that pins the two
+// together is remediation Phase 6C. A case added here that the Rust engine would
+// answer differently is a divergence, not a preference.
 
 import 'package:flutter_test/flutter_test.dart';
 

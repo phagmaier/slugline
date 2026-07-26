@@ -2,12 +2,14 @@ import 'package:slugline/core/document_core.dart';
 
 /// Where each element sits on the screenplay grid, in characters.
 ///
-/// **These numbers are on loan.** §5.2 puts them in a Rust `layout::metrics`
-/// module, and ADR 0005 is explicit that the editor must render the lines the
-/// `layout` crate computes rather than compute its own — that crate arrives in
-/// Phase 6. Until then the editor needs *some* geometry to paint, and this is
-/// it: the same values §5.2 lists, in one file, so that replacing them with the
-/// core's answer is a deletion rather than a search.
+/// **These numbers are a copy, and the copy stays.** §5.2 puts them in the Rust
+/// `layout::metrics` module, which now exists; ADR 0005 expected the editor to
+/// render the lines that crate computes, and ADR 0018 revisits that for 1.0. The
+/// editor is fluid and unpaginated, its wrapping sits on the keystroke path, and
+/// a bridge round trip per keystroke is not a price worth paying to avoid two
+/// copies of nine constants. So these are the same values §5.2 lists, held in
+/// one file, and the corpus-wide differential test against `layout::break_lines`
+/// (remediation Phase 6C) is what keeps them from drifting.
 ///
 /// Screenplay typography is a fixed monospace grid (§5.1) — 10 characters per
 /// inch — so an inch is ten columns and every measurement below is exact.
