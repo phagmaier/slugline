@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1006321552;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2095761750;
 
 // Section: executor
 
@@ -651,6 +651,45 @@ fn wire__crate__api__doc__doc_new_impl(
                 let output_ok = Result::<_, ()>::Ok(crate::api::doc::doc_new())?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__layout__doc_paginate_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "doc_paginate",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_setup = <crate::api::layout::PageSetup>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::layout::doc_paginate(api_handle, api_setup).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -2309,6 +2348,44 @@ impl SseDecode for crate::api::doc::InsertedBlock {
     }
 }
 
+impl SseDecode for crate::api::layout::LayoutLineKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::layout::LayoutLineKind::Content,
+            1 => crate::api::layout::LayoutLineKind::Blank,
+            2 => crate::api::layout::LayoutLineKind::PageNumber,
+            3 => crate::api::layout::LayoutLineKind::SceneNumberLeft,
+            4 => crate::api::layout::LayoutLineKind::SceneNumberRight,
+            5 => crate::api::layout::LayoutLineKind::More,
+            6 => crate::api::layout::LayoutLineKind::Continued,
+            7 => crate::api::layout::LayoutLineKind::Title,
+            _ => unreachable!("Invalid variant for LayoutLineKind: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::layout::LayoutLineView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_row = <i32>::sse_decode(deserializer);
+        let mut var_column = <i32>::sse_decode(deserializer);
+        let mut var_content = <String>::sse_decode(deserializer);
+        let mut var_block = <Option<u64>>::sse_decode(deserializer);
+        let mut var_sourceLine = <Option<u32>>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::layout::LayoutLineKind>::sse_decode(deserializer);
+        return crate::api::layout::LayoutLineView {
+            row: var_row,
+            column: var_column,
+            content: var_content,
+            block: var_block,
+            source_line: var_sourceLine,
+            kind: var_kind,
+        };
+    }
+}
+
 impl SseDecode for Vec<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2417,6 +2494,20 @@ impl SseDecode for Vec<crate::api::doc::InsertedBlock> {
     }
 }
 
+impl SseDecode for Vec<crate::api::layout::LayoutLineView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::layout::LayoutLineView>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::doc::NewBlock> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2424,6 +2515,18 @@ impl SseDecode for Vec<crate::api::doc::NewBlock> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::doc::NewBlock>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::layout::PageView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::layout::PageView>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2571,6 +2674,17 @@ impl SseDecode for Option<crate::api::doc::EditResult> {
     }
 }
 
+impl SseDecode for Option<crate::api::layout::PageView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::layout::PageView>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<(bool, bool)> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2590,6 +2704,126 @@ impl SseDecode for Option<crate::api::files::ScriptView> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for crate::api::layout::PageSetup {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_paper = <crate::api::layout::PaperSize>::sse_decode(deserializer);
+        let mut var_sceneNumbers = <crate::api::layout::SceneNumbers>::sse_decode(deserializer);
+        let mut var_debugLinesPerPage = <Option<u32>>::sse_decode(deserializer);
+        return crate::api::layout::PageSetup {
+            paper: var_paper,
+            scene_numbers: var_sceneNumbers,
+            debug_lines_per_page: var_debugLinesPerPage,
+        };
+    }
+}
+
+impl SseDecode for crate::api::layout::PageView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_number = <Option<u32>>::sse_decode(deserializer);
+        let mut var_lines = <Vec<crate::api::layout::LayoutLineView>>::sse_decode(deserializer);
+        return crate::api::layout::PageView {
+            number: var_number,
+            lines: var_lines,
+        };
+    }
+}
+
+impl SseDecode for crate::api::layout::PaginationOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_pagination =
+                    <crate::api::layout::PaginationView>::sse_decode(deserializer);
+                return crate::api::layout::PaginationOutcome::Current {
+                    pagination: var_pagination,
+                };
+            }
+            1 => {
+                let mut var_pagination =
+                    <crate::api::layout::PaginationView>::sse_decode(deserializer);
+                return crate::api::layout::PaginationOutcome::Stale {
+                    pagination: var_pagination,
+                };
+            }
+            2 => {
+                return crate::api::layout::PaginationOutcome::NoSuchDocument;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::layout::PaginationStats {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_blockHits = <u32>::sse_decode(deserializer);
+        let mut var_blockMisses = <u32>::sse_decode(deserializer);
+        let mut var_reusedPages = <u32>::sse_decode(deserializer);
+        let mut var_reusedTailPages = <u32>::sse_decode(deserializer);
+        let mut var_breakRuleIterations = <u32>::sse_decode(deserializer);
+        let mut var_fellBackToNaive = <bool>::sse_decode(deserializer);
+        let mut var_hintedBlock = <Option<u64>>::sse_decode(deserializer);
+        return crate::api::layout::PaginationStats {
+            block_hits: var_blockHits,
+            block_misses: var_blockMisses,
+            reused_pages: var_reusedPages,
+            reused_tail_pages: var_reusedTailPages,
+            break_rule_iterations: var_breakRuleIterations,
+            fell_back_to_naive: var_fellBackToNaive,
+            hinted_block: var_hintedBlock,
+        };
+    }
+}
+
+impl SseDecode for crate::api::layout::PaginationView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_revision = <u64>::sse_decode(deserializer);
+        let mut var_generation = <u64>::sse_decode(deserializer);
+        let mut var_pageCount = <u32>::sse_decode(deserializer);
+        let mut var_titlePage = <Option<crate::api::layout::PageView>>::sse_decode(deserializer);
+        let mut var_pages = <Vec<crate::api::layout::PageView>>::sse_decode(deserializer);
+        let mut var_stats = <crate::api::layout::PaginationStats>::sse_decode(deserializer);
+        return crate::api::layout::PaginationView {
+            revision: var_revision,
+            generation: var_generation,
+            page_count: var_pageCount,
+            title_page: var_titlePage,
+            pages: var_pages,
+            stats: var_stats,
+        };
+    }
+}
+
+impl SseDecode for crate::api::layout::PaperSize {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::layout::PaperSize::UsLetter,
+            1 => crate::api::layout::PaperSize::A4,
+            _ => unreachable!("Invalid variant for PaperSize: {}", inner),
+        };
     }
 }
 
@@ -2762,6 +2996,20 @@ impl SseDecode for crate::api::files::SaveOutcome {
     }
 }
 
+impl SseDecode for crate::api::layout::SceneNumbers {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::layout::SceneNumbers::Off,
+            1 => crate::api::layout::SceneNumbers::Left,
+            2 => crate::api::layout::SceneNumbers::Right,
+            3 => crate::api::layout::SceneNumbers::Both,
+            _ => unreachable!("Invalid variant for SceneNumbers: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::files::ScriptView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2842,25 +3090,26 @@ fn pde_ffi_dispatcher_primary_impl(
         3 => wire__crate__api__events__core_events_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__files__doc_autosave_impl(port, ptr, rust_vec_len, data_len),
         14 => wire__crate__api__files__doc_external_change_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__handshake__init_app_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__handshake__proof_events_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__layout__doc_paginate_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__handshake__init_app_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__handshake__proof_events_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2886,22 +3135,22 @@ fn pde_ffi_dispatcher_sync_impl(
         16 => wire__crate__api__doc__doc_find_impl(ptr, rust_vec_len, data_len),
         17 => wire__crate__api__files__doc_journal_state_impl(ptr, rust_vec_len, data_len),
         18 => wire__crate__api__doc__doc_new_impl(ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__doc__doc_parse_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__doc__doc_paste_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__files__doc_path_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__doc__doc_redo_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__doc__doc_replace_all_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__handshake__echo_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__handshake__ping_impl(ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__handshake__slice_utf16_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__handshake__text_metrics_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__doc__doc_parse_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__doc__doc_paste_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__files__doc_path_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__doc__doc_redo_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__doc__doc_replace_all_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__handshake__echo_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__handshake__ping_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__handshake__slice_utf16_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__handshake__text_metrics_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3371,6 +3620,58 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::InsertedBlock>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::LayoutLineKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Content => 0.into_dart(),
+            Self::Blank => 1.into_dart(),
+            Self::PageNumber => 2.into_dart(),
+            Self::SceneNumberLeft => 3.into_dart(),
+            Self::SceneNumberRight => 4.into_dart(),
+            Self::More => 5.into_dart(),
+            Self::Continued => 6.into_dart(),
+            Self::Title => 7.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::LayoutLineKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::LayoutLineKind>
+    for crate::api::layout::LayoutLineKind
+{
+    fn into_into_dart(self) -> crate::api::layout::LayoutLineKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::LayoutLineView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.row.into_into_dart().into_dart(),
+            self.column.into_into_dart().into_dart(),
+            self.content.into_into_dart().into_dart(),
+            self.block.into_into_dart().into_dart(),
+            self.source_line.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::LayoutLineView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::LayoutLineView>
+    for crate::api::layout::LayoutLineView
+{
+    fn into_into_dart(self) -> crate::api::layout::LayoutLineView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::doc::NewBlock {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3386,6 +3687,140 @@ impl flutter_rust_bridge::IntoDart for crate::api::doc::NewBlock {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::doc::NewBlock {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::NewBlock> for crate::api::doc::NewBlock {
     fn into_into_dart(self) -> crate::api::doc::NewBlock {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::PageSetup {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.paper.into_into_dart().into_dart(),
+            self.scene_numbers.into_into_dart().into_dart(),
+            self.debug_lines_per_page.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::layout::PageSetup {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::PageSetup>
+    for crate::api::layout::PageSetup
+{
+    fn into_into_dart(self) -> crate::api::layout::PageSetup {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::PageView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.number.into_into_dart().into_dart(),
+            self.lines.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::layout::PageView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::PageView>
+    for crate::api::layout::PageView
+{
+    fn into_into_dart(self) -> crate::api::layout::PageView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::PaginationOutcome {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::layout::PaginationOutcome::Current { pagination } => {
+                [0.into_dart(), pagination.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::layout::PaginationOutcome::Stale { pagination } => {
+                [1.into_dart(), pagination.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::layout::PaginationOutcome::NoSuchDocument => [2.into_dart()].into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::PaginationOutcome
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::PaginationOutcome>
+    for crate::api::layout::PaginationOutcome
+{
+    fn into_into_dart(self) -> crate::api::layout::PaginationOutcome {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::PaginationStats {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.block_hits.into_into_dart().into_dart(),
+            self.block_misses.into_into_dart().into_dart(),
+            self.reused_pages.into_into_dart().into_dart(),
+            self.reused_tail_pages.into_into_dart().into_dart(),
+            self.break_rule_iterations.into_into_dart().into_dart(),
+            self.fell_back_to_naive.into_into_dart().into_dart(),
+            self.hinted_block.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::PaginationStats
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::PaginationStats>
+    for crate::api::layout::PaginationStats
+{
+    fn into_into_dart(self) -> crate::api::layout::PaginationStats {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::PaginationView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.revision.into_into_dart().into_dart(),
+            self.generation.into_into_dart().into_dart(),
+            self.page_count.into_into_dart().into_dart(),
+            self.title_page.into_into_dart().into_dart(),
+            self.pages.into_into_dart().into_dart(),
+            self.stats.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::PaginationView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::PaginationView>
+    for crate::api::layout::PaginationView
+{
+    fn into_into_dart(self) -> crate::api::layout::PaginationView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::PaperSize {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::UsLetter => 0.into_dart(),
+            Self::A4 => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::layout::PaperSize {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::PaperSize>
+    for crate::api::layout::PaperSize
+{
+    fn into_into_dart(self) -> crate::api::layout::PaperSize {
         self
     }
 }
@@ -3570,6 +4005,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::files::SaveOutcome>
     for crate::api::files::SaveOutcome
 {
     fn into_into_dart(self) -> crate::api::files::SaveOutcome {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::SceneNumbers {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Off => 0.into_dart(),
+            Self::Left => 1.into_dart(),
+            Self::Right => 2.into_dart(),
+            Self::Both => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::SceneNumbers
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::SceneNumbers>
+    for crate::api::layout::SceneNumbers
+{
+    fn into_into_dart(self) -> crate::api::layout::SceneNumbers {
         self
     }
 }
@@ -3970,6 +4428,40 @@ impl SseEncode for crate::api::doc::InsertedBlock {
     }
 }
 
+impl SseEncode for crate::api::layout::LayoutLineKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::layout::LayoutLineKind::Content => 0,
+                crate::api::layout::LayoutLineKind::Blank => 1,
+                crate::api::layout::LayoutLineKind::PageNumber => 2,
+                crate::api::layout::LayoutLineKind::SceneNumberLeft => 3,
+                crate::api::layout::LayoutLineKind::SceneNumberRight => 4,
+                crate::api::layout::LayoutLineKind::More => 5,
+                crate::api::layout::LayoutLineKind::Continued => 6,
+                crate::api::layout::LayoutLineKind::Title => 7,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::layout::LayoutLineView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.row, serializer);
+        <i32>::sse_encode(self.column, serializer);
+        <String>::sse_encode(self.content, serializer);
+        <Option<u64>>::sse_encode(self.block, serializer);
+        <Option<u32>>::sse_encode(self.source_line, serializer);
+        <crate::api::layout::LayoutLineKind>::sse_encode(self.kind, serializer);
+    }
+}
+
 impl SseEncode for Vec<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4060,12 +4552,32 @@ impl SseEncode for Vec<crate::api::doc::InsertedBlock> {
     }
 }
 
+impl SseEncode for Vec<crate::api::layout::LayoutLineView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::layout::LayoutLineView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::doc::NewBlock> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::doc::NewBlock>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::layout::PageView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::layout::PageView>::sse_encode(item, serializer);
         }
     }
 }
@@ -4191,6 +4703,16 @@ impl SseEncode for Option<crate::api::doc::EditResult> {
     }
 }
 
+impl SseEncode for Option<crate::api::layout::PageView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::layout::PageView>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<(bool, bool)> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4208,6 +4730,96 @@ impl SseEncode for Option<crate::api::files::ScriptView> {
         if let Some(value) = self {
             <crate::api::files::ScriptView>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::layout::PageSetup {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::layout::PaperSize>::sse_encode(self.paper, serializer);
+        <crate::api::layout::SceneNumbers>::sse_encode(self.scene_numbers, serializer);
+        <Option<u32>>::sse_encode(self.debug_lines_per_page, serializer);
+    }
+}
+
+impl SseEncode for crate::api::layout::PageView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<u32>>::sse_encode(self.number, serializer);
+        <Vec<crate::api::layout::LayoutLineView>>::sse_encode(self.lines, serializer);
+    }
+}
+
+impl SseEncode for crate::api::layout::PaginationOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::layout::PaginationOutcome::Current { pagination } => {
+                <i32>::sse_encode(0, serializer);
+                <crate::api::layout::PaginationView>::sse_encode(pagination, serializer);
+            }
+            crate::api::layout::PaginationOutcome::Stale { pagination } => {
+                <i32>::sse_encode(1, serializer);
+                <crate::api::layout::PaginationView>::sse_encode(pagination, serializer);
+            }
+            crate::api::layout::PaginationOutcome::NoSuchDocument => {
+                <i32>::sse_encode(2, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::layout::PaginationStats {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.block_hits, serializer);
+        <u32>::sse_encode(self.block_misses, serializer);
+        <u32>::sse_encode(self.reused_pages, serializer);
+        <u32>::sse_encode(self.reused_tail_pages, serializer);
+        <u32>::sse_encode(self.break_rule_iterations, serializer);
+        <bool>::sse_encode(self.fell_back_to_naive, serializer);
+        <Option<u64>>::sse_encode(self.hinted_block, serializer);
+    }
+}
+
+impl SseEncode for crate::api::layout::PaginationView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.revision, serializer);
+        <u64>::sse_encode(self.generation, serializer);
+        <u32>::sse_encode(self.page_count, serializer);
+        <Option<crate::api::layout::PageView>>::sse_encode(self.title_page, serializer);
+        <Vec<crate::api::layout::PageView>>::sse_encode(self.pages, serializer);
+        <crate::api::layout::PaginationStats>::sse_encode(self.stats, serializer);
+    }
+}
+
+impl SseEncode for crate::api::layout::PaperSize {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::layout::PaperSize::UsLetter => 0,
+                crate::api::layout::PaperSize::A4 => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -4348,6 +4960,24 @@ impl SseEncode for crate::api::files::SaveOutcome {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::layout::SceneNumbers {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::layout::SceneNumbers::Off => 0,
+                crate::api::layout::SceneNumbers::Left => 1,
+                crate::api::layout::SceneNumbers::Right => 2,
+                crate::api::layout::SceneNumbers::Both => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

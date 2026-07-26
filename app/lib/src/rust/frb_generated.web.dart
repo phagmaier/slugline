@@ -10,6 +10,7 @@ import 'api/doc.dart';
 import 'api/events.dart';
 import 'api/files.dart';
 import 'api/handshake.dart';
+import 'api/layout.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -81,6 +82,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FindQuery dco_decode_box_autoadd_find_query(dynamic raw);
 
   @protected
+  PageSetup dco_decode_box_autoadd_page_setup(dynamic raw);
+
+  @protected
+  PageView dco_decode_box_autoadd_page_view(dynamic raw);
+
+  @protected
+  PaginationView dco_decode_box_autoadd_pagination_view(dynamic raw);
+
+  @protected
   PreferencesView dco_decode_box_autoadd_preferences_view(dynamic raw);
 
   @protected
@@ -88,6 +98,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScriptView dco_decode_box_autoadd_script_view(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
   Completion dco_decode_completion(dynamic raw);
@@ -138,6 +151,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InsertedBlock dco_decode_inserted_block(dynamic raw);
 
   @protected
+  LayoutLineKind dco_decode_layout_line_kind(dynamic raw);
+
+  @protected
+  LayoutLineView dco_decode_layout_line_view(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_CastedPrimitive_u_64(dynamic raw);
 
   @protected
@@ -165,7 +184,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<InsertedBlock> dco_decode_list_inserted_block(dynamic raw);
 
   @protected
+  List<LayoutLineView> dco_decode_list_layout_line_view(dynamic raw);
+
+  @protected
   List<NewBlock> dco_decode_list_new_block(dynamic raw);
+
+  @protected
+  List<PageView> dco_decode_list_page_view(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -204,10 +229,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditResult? dco_decode_opt_box_autoadd_edit_result(dynamic raw);
 
   @protected
+  PageView? dco_decode_opt_box_autoadd_page_view(dynamic raw);
+
+  @protected
   (bool, bool)? dco_decode_opt_box_autoadd_record_bool_bool(dynamic raw);
 
   @protected
   ScriptView? dco_decode_opt_box_autoadd_script_view(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
+
+  @protected
+  PageSetup dco_decode_page_setup(dynamic raw);
+
+  @protected
+  PageView dco_decode_page_view(dynamic raw);
+
+  @protected
+  PaginationOutcome dco_decode_pagination_outcome(dynamic raw);
+
+  @protected
+  PaginationStats dco_decode_pagination_stats(dynamic raw);
+
+  @protected
+  PaginationView dco_decode_pagination_view(dynamic raw);
+
+  @protected
+  PaperSize dco_decode_paper_size(dynamic raw);
 
   @protected
   PreferencesView dco_decode_preferences_view(dynamic raw);
@@ -232,6 +281,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SaveOutcome dco_decode_save_outcome(dynamic raw);
+
+  @protected
+  SceneNumbers dco_decode_scene_numbers(dynamic raw);
 
   @protected
   ScriptView dco_decode_script_view(dynamic raw);
@@ -317,6 +369,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FindQuery sse_decode_box_autoadd_find_query(SseDeserializer deserializer);
 
   @protected
+  PageSetup sse_decode_box_autoadd_page_setup(SseDeserializer deserializer);
+
+  @protected
+  PageView sse_decode_box_autoadd_page_view(SseDeserializer deserializer);
+
+  @protected
+  PaginationView sse_decode_box_autoadd_pagination_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PreferencesView sse_decode_box_autoadd_preferences_view(
     SseDeserializer deserializer,
   );
@@ -328,6 +391,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScriptView sse_decode_box_autoadd_script_view(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   Completion sse_decode_completion(SseDeserializer deserializer);
@@ -378,6 +444,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InsertedBlock sse_decode_inserted_block(SseDeserializer deserializer);
 
   @protected
+  LayoutLineKind sse_decode_layout_line_kind(SseDeserializer deserializer);
+
+  @protected
+  LayoutLineView sse_decode_layout_line_view(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_CastedPrimitive_u_64(SseDeserializer deserializer);
 
   @protected
@@ -407,7 +479,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<LayoutLineView> sse_decode_list_layout_line_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NewBlock> sse_decode_list_new_block(SseDeserializer deserializer);
+
+  @protected
+  List<PageView> sse_decode_list_page_view(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
@@ -460,6 +540,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PageView? sse_decode_opt_box_autoadd_page_view(SseDeserializer deserializer);
+
+  @protected
   (bool, bool)? sse_decode_opt_box_autoadd_record_bool_bool(
     SseDeserializer deserializer,
   );
@@ -468,6 +551,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ScriptView? sse_decode_opt_box_autoadd_script_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
+  PageSetup sse_decode_page_setup(SseDeserializer deserializer);
+
+  @protected
+  PageView sse_decode_page_view(SseDeserializer deserializer);
+
+  @protected
+  PaginationOutcome sse_decode_pagination_outcome(SseDeserializer deserializer);
+
+  @protected
+  PaginationStats sse_decode_pagination_stats(SseDeserializer deserializer);
+
+  @protected
+  PaginationView sse_decode_pagination_view(SseDeserializer deserializer);
+
+  @protected
+  PaperSize sse_decode_paper_size(SseDeserializer deserializer);
 
   @protected
   PreferencesView sse_decode_preferences_view(SseDeserializer deserializer);
@@ -492,6 +596,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SaveOutcome sse_decode_save_outcome(SseDeserializer deserializer);
+
+  @protected
+  SceneNumbers sse_decode_scene_numbers(SseDeserializer deserializer);
 
   @protected
   ScriptView sse_decode_script_view(SseDeserializer deserializer);
@@ -608,6 +715,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_page_setup(
+    PageSetup self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_page_view(
+    PageView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_pagination_view(
+    PaginationView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_preferences_view(
     PreferencesView self,
     SseSerializer serializer,
@@ -624,6 +749,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ScriptView self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_completion(Completion self, SseSerializer serializer);
@@ -680,6 +808,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_inserted_block(InsertedBlock self, SseSerializer serializer);
 
   @protected
+  void sse_encode_layout_line_kind(
+    LayoutLineKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_layout_line_view(
+    LayoutLineView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_CastedPrimitive_u_64(
     List<int> self,
     SseSerializer serializer,
@@ -731,7 +871,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_layout_line_view(
+    List<LayoutLineView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_new_block(List<NewBlock> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_page_view(List<PageView> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_strict(
@@ -797,6 +946,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_page_view(
+    PageView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_record_bool_bool(
     (bool, bool)? self,
     SseSerializer serializer,
@@ -807,6 +962,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ScriptView? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_page_setup(PageSetup self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_page_view(PageView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pagination_outcome(
+    PaginationOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pagination_stats(
+    PaginationStats self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pagination_view(
+    PaginationView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_paper_size(PaperSize self, SseSerializer serializer);
 
   @protected
   void sse_encode_preferences_view(
@@ -837,6 +1022,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_save_outcome(SaveOutcome self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_scene_numbers(SceneNumbers self, SseSerializer serializer);
 
   @protected
   void sse_encode_script_view(ScriptView self, SseSerializer serializer);

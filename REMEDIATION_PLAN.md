@@ -2392,32 +2392,220 @@ fixture the editor does not agree with.
 
 ### Rust dependency and API
 
-- [ ] Add the `slugline_layout` dependency to `crates/bridge`.
-- [ ] Define bridge DTOs for the minimum required pagination result.
-- [ ] Avoid leaking unstable internal layout types unnecessarily.
-- [ ] Include:
+- [x] Add the `slugline_layout` dependency to `crates/bridge`.
+- [x] Define bridge DTOs for the minimum required pagination result.
+- [x] Avoid leaking unstable internal layout types unnecessarily.
+- [x] Include:
   - page count;
   - pages;
   - placed visual elements/lines needed by future preview;
   - source/block identity;
   - debug representation or diagnostic data as appropriate.
-- [ ] Ensure offsets and identities remain unambiguous.
+- [x] Ensure offsets and identities remain unambiguous.
 
 ### Async snapshot job
 
-- [ ] Snapshot the document/revision on the actor.
-- [ ] Run pagination off the actor on a worker thread.
-- [ ] Return or commit results only if they correspond to the intended revision.
-- [ ] Define cancellation or stale-result behavior.
-- [ ] Ensure rapid saves do not create unbounded pagination work.
-- [ ] Exercise the incremental pagination path outside crate-local tests if that path is intended for application use.
-- [ ] Add bridge tests for normal, empty, long, and malformed-tolerated documents.
+- [x] Snapshot the document/revision on the actor.
+- [x] Run pagination off the actor on a worker thread.
+- [x] Return or commit results only if they correspond to the intended revision.
+- [x] Define cancellation or stale-result behavior.
+- [x] Ensure rapid saves do not create unbounded pagination work.
+- [x] Exercise the incremental pagination path outside crate-local tests if that path is intended for application use.
+- [x] Add bridge tests for normal, empty, long, and malformed-tolerated documents.
 
 ### Generated bindings
 
-- [ ] Regenerate Flutter Rust Bridge bindings through the normal command.
-- [ ] Do not manually edit generated files.
-- [ ] Verify generated code is included only where expected.
+- [x] Regenerate Flutter Rust Bridge bindings through the normal command.
+- [x] Do not manually edit generated files.
+- [x] Verify generated code is included only where expected.
+
+### Implementation log — Phase 6D
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `ea994bb`
+**Ending commit:** working tree
+
+#### Changes made
+
+- Added the `slugline_layout` edge to `crates/bridge/Cargo.toml`, and the same
+  edge to `EXPECTED_DIRECT["bridge"]` in `tools/check_layering.py`. The rule
+  already allowed it; the expected-edge table is what would have gone quiet
+  about it.
+- Added `crates/bridge/src/api/layout.rs`, the §6 pagination surface. One
+  function, `doc_paginate`, async, in the shape `write_document` already uses:
+  take a `ScriptSnapshot` and the generation on the actor, let go, paginate on
+  the FRB worker, come back to record it (ADR 0020).
+- Gave the surface its own DTOs rather than exporting `PaginatedScript`:
+  `PageSetup`, `PageView`, `LayoutLineView`, `PaginationStats`,
+  `PaginationView`, and `PaginationOutcome`. `Arc<[LayoutLine]>`, the
+  checkpoints and the engine's cache stay inside the crate, so the engine can be
+  changed without changing the generated bindings.
+- Added `PaginationState` to `crates/bridge/src/state.rs`: a per-session lock,
+  the `LayoutEngine` with its wrap cache, one fingerprint per block of the
+  snapshot the engine last saw, and the last committed result. The engine is
+  **lent** to the worker for one run and given back with it — it is `&mut` to
+  run, and §2.3 does not let the actor be the thread running it.
+- Made the incremental path of ADR 0022 reachable: the changed-block hint is
+  derived by comparing this snapshot's fingerprints against the previous one's,
+  and is given only when exactly one block changed and the block order did not —
+  the same condition the engine checks before it reuses a checkpoint. Anything
+  else asks for the full pagination the engine would have fallen back to anyway.
+- Regenerated the bindings with `flutter_rust_bridge_codegen generate`. New
+  Dart: `app/lib/src/rust/api/layout.dart` and its `.freezed.dart`, plus the
+  three shared `frb_generated.*` files and `crates/bridge/src/frb_generated.rs`.
+  Nothing generated was hand-edited.
+- Updated `AGENTS.md`'s "implemented but not integrated" bullet and `SPEC.md`
+  §Phase 6's "Reachable from the application" criterion to say what is now wired
+  and what is not: the criterion stays unticked, because the page count is 6E's
+  and no Dart calls `docPaginate` until 6F.
+
+#### Design decisions worth recording
+
+- **Staleness is a label on a real answer, not a refusal.** A result computed
+  over a document that was typed into while the worker ran comes back as
+  `PaginationOutcome::Stale` carrying the pages it computed and the generation
+  they describe. It is never committed, so nothing derived from it — the library
+  page count, next phase — can be replaced by an older one. Returning nothing
+  would have hidden a correct pagination from a debug view that wants it, and
+  would have made "it failed" and "you were typing" the same answer.
+- **Staleness is judged by `Session::document_generation`, not
+  `Document::revision`.** The revision moves backwards on undo; the generation
+  is monotonic and survives a reload replacing the document, which is exactly
+  what an async job needs to compare against.
+- **Rapid saves are bounded by two things**, both borrowed from the save path. A
+  per-session lock taken before the plan, so a second pagination waits rather
+  than starting beside the first with a cold engine; and a committed result
+  keyed by generation *and* page setup, so the one that waited finds the answer
+  already there. Ten saves of an unedited script cost one pagination, and the
+  test asserts that as a count rather than as a timing.
+- **The hint is derived, not tracked.** Threading "which block did the user just
+  edit" through every mutation in `api::doc` would have put a pagination concern
+  on the keystroke path and still missed reload, restore, undo and replay.
+  Fingerprints of the snapshot cost one pass over the blocks, on the worker.
+- `DefaultHasher` for those fingerprints, deliberately unlike the engine's
+  FNV-1a: the engine's key a cache that must behave identically on every
+  toolchain (ADR 0022), and these are compared only against others made moments
+  earlier by the same binary. A collision costs a full pagination, never a wrong
+  page.
+- **No `CoreEvent::PaginationReady`.** §6 lists one, and nothing pushes it yet:
+  `doc_paginate` is asked for and answers. The event belongs to the phase that
+  paginates unasked, which is 6E's save.
+
+#### Tests added or changed
+
+Twelve tests in `crates/bridge/src/api/layout.rs`. They are in-crate rather than
+in `crates/bridge/tests/` because the bridge is `cdylib` + `staticlib` with no
+`rlib`, so an integration test cannot link it — the same reason
+`tests/persistence.rs` exercises the crates and not the API.
+
+- The four documents the plan names: a normal script (page numbered 1, every
+  content line naming a block of this document, the heading on the page), an
+  empty one (one page, its number, and nothing placed), a long one (400 blocks,
+  pages numbered 1..n in order, the break rules converged), and text the editor
+  does not model (a boneyard, an unclosed emphasis run, a lone `!`, a tab and an
+  astral-plane glyph — which paginates, with the glyph still on the page).
+- A title page is a page of its own and page one is still page one.
+- `pagination_does_not_run_on_the_actor_thread` — the §2.3 claim, asserted
+  rather than argued: a test-only hold runs on the paginating thread between the
+  pages existing and being recorded, and its thread id is not the actor's.
+- `paginating_an_unchanged_document_again_does_not_run_it_again` — ten
+  paginations, one run, and the same answer each time.
+- `a_different_page_setup_is_a_different_answer` — the cache is keyed by setup
+  too, and A4 is not US Letter.
+- `an_edit_makes_the_next_pagination_reuse_a_checkpoint_prefix` — the ADR 0022
+  path, in the application: one edit late in a 400-block script, exactly one
+  block re-wrapped, a reused prefix, and the reused pages equal to the pages
+  that were there before.
+- `an_insertion_paginates_fully_rather_than_hinting_at_the_wrong_block` — a
+  split changes the block order, so no hint is given.
+- `a_result_about_a_document_that_moved_on_is_stale_and_is_not_committed` — an
+  edit lands inside the hold; the result is `Stale`, describes the older
+  generation, and is committed under neither generation. The engine still comes
+  back, so the pagination after it is not cold.
+- `a_closed_document_has_no_pagination`.
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                    # clean
+cargo clippy --workspace --all-targets -- -D warnings      # clean
+cargo test --workspace                                     # 407 passed
+python3 tools/check_layering.py                            # clean
+cd app && flutter_rust_bridge_codegen generate             # Done!
+cd app && flutter analyze                                  # No issues found
+cd app && flutter test                                     # 311 passed
+cd app && flutter build linux --release                    # built
+cd app && flutter test integration_test/bridge_test.dart -d linux        # 4 passed
+cd app && flutter test integration_test/editor_test.dart -d linux        # 7 passed
+cd app && flutter test integration_test/writing_test.dart -d linux       # 11 passed
+cd app && flutter test integration_test/ime_test.dart -d linux           # 9 passed
+cd app && flutter test integration_test/persistence_test.dart -d linux   # 14 passed
+cd app && flutter test integration_test/keystroke_benchmark_test.dart -d linux  # 2 passed
+```
+
+All six integration tests were re-run because the generated bindings changed and
+the `.so` is what they load. `writing_test` failed once when the six were run
+back to back in one shell loop, each rebuilding the debug bundle, and passed on
+its own immediately after; nothing it exercises touches pagination. Recorded
+rather than dismissed — if it recurs in CI it is a harness question, not this
+change.
+
+#### Results
+
+`slugline_layout` is reachable from the bridge, and `repaginate` has now run
+outside `crates/layout/tests/`. The two claims the audit made about F3 that this
+phase owned are answered: the bridge depends on the crate and invokes it, and
+the pagination runs asynchronously from a document snapshot. The two it did not
+own remain open and are 6E's and 6F's — the library page count is still a hard
+zero, and no Dart code calls `docPaginate` yet.
+
+#### Deviations from plan
+
+- The plan's DTO list includes "debug representation or diagnostic data as
+  appropriate", and `PaginatedScript::debug_dump` is not exposed. What crosses
+  instead is `PaginationStats` and the placed lines, which is what 6F's debug
+  view needs to render page boundaries, split elements and continuation markers
+  from the bridge result rather than from a string it would have to parse. The
+  dump stays what it is: the golden tests' format.
+- `PageSetup` carries `debug_lines_per_page`, which is not in the plan's list.
+  It is `PageConfig::with_line_capacity`, whose own documentation calls it a
+  knob for rule tests and debug tooling, and 6F is the caller it is there for.
+  A real preview or export leaves it `None`.
+
+#### New risks or follow-up findings
+
+- **The engine is per session and is never dropped while the session lives.** A
+  `LayoutEngine` holds one wrap cache entry per block plus the previous
+  pagination, so an open 120-page script now costs something in the megabytes
+  where it used to cost nothing. That is the price of ADR 0022's reuse and it is
+  bounded by the document, but nothing measures it. Worth a number in Phase 10's
+  memory pass rather than a guess here.
+- **`doc_paginate` converts every placed line into a DTO.** A 120-page script is
+  in the region of six thousand `LayoutLineView`s crossing the boundary, which is
+  fine for an explicit request and would not be fine on a keystroke. Nothing
+  calls it on a keystroke and nothing may; the internal `paginate` exists so 6E
+  can have the page count without paying for the conversion at all.
+- **A `Stale` result is a real outcome Dart has to handle**, and 6F is the first
+  caller that will. A debug view that silently shows stale pages is a debug view
+  that lies; the phase should say what it does with the label.
+- `LayoutLineView` carries `source_line` — which wrapped line of a block a
+  fragment is — and not the source offsets 6C's `line_spans` produces. Mapping a
+  click in a preview back to a caret position needs those, and the engine does
+  not currently retain them. Phase 7's preview is where that bill comes due, and
+  6G's paginator review is the place to decide whether the engine should keep
+  them.
+
+#### Reviewer notes
+
+- The two seams worth reading first are `PaginationState::lend`/`returned` in
+  `state.rs` — why an engine can leave the actor at all — and step three of
+  `api::layout::paginate`, which is the only place a result is committed and the
+  only place staleness is decided.
+- `api::files::stall` and `api::layout::stall` are now two copies of the same
+  test-only hold, keyed differently (path, handle). A third would be worth
+  factoring out; two is not yet.
 
 ---
 
@@ -2487,8 +2675,9 @@ Per D-6:
 - [x] Shared line-breaking contract is documented. — `docs/LINE_BREAKING.md`.
 - [ ] Five known Dart/Rust divergences are resolved.
 - [ ] Corpus-wide differential test passes in CI.
-- [ ] Bridge depends on and invokes `slugline_layout`.
-- [ ] Pagination runs asynchronously from a document snapshot.
+- [x] Bridge depends on and invokes `slugline_layout`. — 6D, `api::layout::doc_paginate`.
+- [x] Pagination runs asynchronously from a document snapshot. — 6D; asserted off
+      the actor thread, not only argued.
 - [ ] Page count updates after successful saves.
 - [ ] Debug pagination output is reachable through the app or integration harness.
 - [ ] Focused paginator review is recorded.

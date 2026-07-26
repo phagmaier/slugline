@@ -47,10 +47,10 @@ EXPECTED_DIRECT: dict[str, set[str]] = {
     "render_pdf": {"layout"},
     "storage": {"document"},
     "spell": set(),
-    # Phase 2 wired the document in and Phase 4 the storage. `fountain` is
-    # reached through `document`'s re-exports rather than directly, so the bridge
-    # does not name it here.
-    "bridge": {"document", "storage"},
+    # Phase 2 wired the document in, Phase 4 the storage, and remediation Phase
+    # 6D the layout (ADR 0020). `fountain` is reached through `document`'s
+    # re-exports rather than directly, so the bridge does not name it here.
+    "bridge": {"document", "layout", "storage"},
 }
 
 

@@ -6,3 +6,6 @@ pub mod events;
 /// backups, preferences (§Phase 4).
 pub mod files;
 pub mod handshake;
+/// Pagination: the §6 surface over `crates/layout`, as an async snapshot job
+/// (ADR 0020).
+pub mod layout;

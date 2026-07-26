@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slugline_document::{BlockId, Document, EntityIndex, EntityKind, Patch};
+use slugline_layout::{LayoutEngine, PageConfig, PaginatedScript};
 use slugline_storage::journal::Journal;
 use slugline_storage::library::Library;
 use slugline_storage::watch::{FileWatcher, OwnWrites};
@@ -203,6 +204,9 @@ pub struct Session {
     /// not restart when a reload installs a new document. Async snapshot jobs
     /// use it to reject answers about state that is no longer current.
     document_generation: u64,
+    /// This session's pagination: the engine, its cache, and the last result
+    /// (ADR 0020). Nothing in here is touched by an edit.
+    pagination: PaginationState,
 }
 
 impl Session {
@@ -221,6 +225,7 @@ impl Session {
             save_lock: Arc::new(Mutex::new(())),
             saving: None,
             document_generation: 0,
+            pagination: PaginationState::default(),
         }
     }
 
@@ -240,6 +245,14 @@ impl Session {
 
     pub fn document_generation(&self) -> u64 {
         self.document_generation
+    }
+
+    pub fn pagination(&self) -> &PaginationState {
+        &self.pagination
+    }
+
+    pub fn pagination_mut(&mut self) -> &mut PaginationState {
+        &mut self.pagination
     }
 
     /// Records a successful mutation performed through [`Session::document_mut`],
@@ -413,6 +426,106 @@ impl Session {
     pub fn interrupt(&mut self) -> &mut Document {
         self.last_edit = None;
         &mut self.document
+    }
+}
+
+/// One pagination, and the state of the document it describes (ADR 0020).
+///
+/// Cloning one is cheap: the pages behind [`PaginatedScript`] are an `Arc`, so
+/// what a clone copies is the checkpoint list and a handful of words.
+#[derive(Clone)]
+pub struct Pagination {
+    /// [`Session::document_generation`] at the instant the snapshot was taken.
+    /// A result whose generation is no longer the session's is stale: it is
+    /// still a correct pagination of a document that existed, and it is not a
+    /// pagination of *this* one, so nothing may be derived from it.
+    pub generation: u64,
+    /// The page setup it was computed for. A pagination of the same generation
+    /// under a different paper size is a different answer.
+    pub config: PageConfig,
+    pub script: PaginatedScript,
+    /// The block the engine was told had changed, if it was told. Advisory
+    /// (ADR 0022): a wrong hint costs time and cannot cost correctness.
+    pub hinted_block: Option<BlockId>,
+}
+
+/// Everything one session knows about paginating itself.
+///
+/// The engine and its cache live here rather than in a static, because the
+/// checkpoints and per-block wraps of ADR 0022 are only reusable against the
+/// document they were computed from. They are **lent** to a worker thread for
+/// the length of one pagination and given back with it: a `LayoutEngine` is
+/// `&mut` to run, and the actor thread must not be the one running it (§2.3).
+///
+/// [`PaginationState::lock`] is what makes lending safe. It is the same shape
+/// as [`Session::save_lock`] and is taken in the same place — off the actor,
+/// before the plan — so a second pagination of one document waits for the first
+/// rather than starting beside it with a fresh engine.
+#[derive(Default)]
+pub struct PaginationState {
+    lock: Arc<Mutex<()>>,
+    /// `None` exactly while a worker holds it.
+    engine: Option<LayoutEngine>,
+    /// One fingerprint per block of the snapshot `engine` last paginated, in
+    /// document order. The changed-block hint is the first disagreement between
+    /// this and the snapshot being paginated now.
+    fingerprints: Vec<(BlockId, u64)>,
+    last: Option<Pagination>,
+    /// How many paginations have actually run for this session. The coalescing
+    /// in `api::layout` is only observable as this number not moving.
+    #[cfg(test)]
+    runs: u64,
+}
+
+impl PaginationState {
+    /// The claim a paginator of this document has to take first. Cloned out
+    /// rather than locked here: the caller holds it across the pagination, and
+    /// the actor must not be inside that.
+    pub fn lock(&self) -> Arc<Mutex<()>> {
+        Arc::clone(&self.lock)
+    }
+
+    /// The committed pagination, if there is one and it still describes
+    /// `generation` under `config`. This is what makes a run of saves with no
+    /// edits between them cost one pagination rather than one each.
+    pub fn ready(&self, generation: u64, config: &PageConfig) -> Option<&Pagination> {
+        self.last
+            .as_ref()
+            .filter(|last| last.generation == generation && &last.config == config)
+    }
+
+    /// Hands the engine and its fingerprints to a worker. A caller that did not
+    /// take [`PaginationState::lock`] first can find the engine already lent,
+    /// and gets a cold one — correct, and slower, which is the right way round.
+    pub fn lend(&mut self) -> (LayoutEngine, Vec<(BlockId, u64)>) {
+        #[cfg(test)]
+        {
+            self.runs += 1;
+        }
+        (
+            self.engine.take().unwrap_or_default(),
+            std::mem::take(&mut self.fingerprints),
+        )
+    }
+
+    /// Takes them back, with the fingerprints of the snapshot just paginated.
+    /// Always called, even for a stale result: the engine's checkpoints describe
+    /// the snapshot it saw, which is what it validates the next one against.
+    pub fn returned(&mut self, engine: LayoutEngine, fingerprints: Vec<(BlockId, u64)>) {
+        self.engine = Some(engine);
+        self.fingerprints = fingerprints;
+    }
+
+    /// Records a pagination that still describes the current document. A stale
+    /// one never reaches here, which is what stops an older result replacing a
+    /// newer one.
+    pub fn commit(&mut self, pagination: Pagination) {
+        self.last = Some(pagination);
+    }
+
+    #[cfg(test)]
+    pub fn runs(&self) -> u64 {
+        self.runs
     }
 }
 
