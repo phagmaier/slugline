@@ -558,12 +558,16 @@ async fn write_document(
                     storage.prefs.retention(),
                 )
             });
-            let session = state.session(handle.id)?;
+            let session = state.session_mut(handle.id)?;
+            // Arms the buffer that keeps the records for anything typed from
+            // here until step three, in the same closure that reads the bytes
+            // — so there is no instant in which an edit is in neither.
+            let revision = session.begin_save();
             let path = save_as.or_else(|| session.path().map(Path::to_path_buf));
             Some(Plan {
                 path,
                 text: session.document().serialise(),
-                revision: session.document().revision(),
+                revision,
                 dirty: session.document().is_dirty(),
                 storage: storage_paths,
             })
@@ -571,13 +575,17 @@ async fn write_document(
     });
 
     let Some(plan) = plan else {
+        // Nothing was armed: there is no session to have armed it.
         return failed(
             SaveFailure::NoSuchDocument,
             Path::new(""),
             "no document with that handle",
         );
     };
+    // Every way out from here has to disarm, or the session goes on buffering
+    // patches for a save that is never going to land.
     let Some(path) = plan.path else {
+        abandon_save(handle.id);
         return SaveOutcome::Failed {
             failure: SaveFailure::NoPath,
             path: String::new(),
@@ -587,6 +595,7 @@ async fn write_document(
     // Save As always writes, even to a document nobody has edited: the user
     // asked for a file at a new path and a clean document is still a file.
     if !plan.dirty && save_as.is_none() {
+        abandon_save(handle.id);
         return SaveOutcome::Unchanged;
     }
 
@@ -594,6 +603,7 @@ async fn write_document(
     #[cfg(test)]
     stall::reached(&path);
     if let Err(error) = atomic::save_atomically(&path, &plan.text) {
+        abandon_save(handle.id);
         return SaveOutcome::Failed {
             failure: failure_of(&error),
             path: path.to_string_lossy().into_owned(),
@@ -643,11 +653,35 @@ async fn write_document(
                 let id = journal::script_id(&path);
                 rebind(state, handle.id, path.clone(), id);
             }
-            // The journal starts again from the bytes now on disk. Everything
-            // before this point is in the file.
+            // The journal starts again from the bytes now on disk — carrying
+            // whatever was typed while they were being written, because those
+            // edits are not in them (F15).
+            //
+            // `checkpoint` alone would say "everything up to here is in the
+            // file", which is true of every record this save covered and false
+            // of the ones after it. Dropping those while `mark_saved_at` above
+            // correctly leaves the document dirty is how a keystroke ends up in
+            // neither the file nor the journal.
             if let Some(session) = state.session_mut(handle.id) {
+                let unsaved = session.finish_save();
                 if let Some(journal) = session.journal_mut() {
-                    let _ = journal.checkpoint(&path, &text);
+                    if unsaved.is_empty() {
+                        let _ = journal.checkpoint(&path, &text);
+                    } else {
+                        // Rebuilt at its own path, not by id: a Save As has
+                        // already changed the id by now and the journal file
+                        // has not moved. Written atomically, so a crash in the
+                        // middle leaves the old journal whole.
+                        let at = journal.path().to_path_buf();
+                        if let Ok(successor) = Journal::rebuild_at(&at, &path, &text, &unsaved) {
+                            *journal = successor;
+                        }
+                        // A failed rebuild leaves the journal exactly as it was:
+                        // its base no longer matches the file, so recovery will
+                        // refuse it rather than replay onto the wrong bytes —
+                        // but nothing has been destroyed, which is the property
+                        // that matters. Same shape as a failed `checkpoint`.
+                    }
                 }
             }
             if let Some(storage) = state.storage_mut() {
@@ -669,6 +703,20 @@ async fn write_document(
         bytes,
         backup,
     }
+}
+
+/// Lets go of a save that planned but is not going to write.
+///
+/// [`Session::begin_save`] arms a buffer inside the plan closure, before it is
+/// known whether there is anywhere to write or anything to write. Every early
+/// return after that point comes through here, so a refused save does not leave
+/// the session holding patches for a checkpoint that never comes.
+fn abandon_save(handle: u64) {
+    actor().run(move |state| {
+        if let Some(session) = state.session_mut(handle) {
+            session.finish_save();
+        }
+    });
 }
 
 struct Plan {
@@ -1507,21 +1555,54 @@ mod tests {
             );
         }
 
-        /// What the crash journal would recover to. `Ok` only if the journal on
-        /// disk still describes the file on disk — which is the property a save
-        /// that checkpointed against bytes it did not write would break.
-        fn journal_agrees_with_the_file(&self) -> bool {
+        fn journal_path(&self) -> PathBuf {
             let directory = actor().run(|state| {
                 state
                     .storage()
                     .map(|storage| storage.paths.journal_dir())
                     .expect("storage is installed")
             });
-            let path = directory.join(format!("{}.log", journal::script_id(&self.script)));
-            let Ok(recovery) = journal::read(&path) else {
+            directory.join(format!("{}.log", journal::script_id(&self.script)))
+        }
+
+        /// What the crash journal would recover to. `Ok` only if the journal on
+        /// disk still describes the file on disk — which is the property a save
+        /// that checkpointed against bytes it did not write would break.
+        fn journal_agrees_with_the_file(&self) -> bool {
+            let Ok(recovery) = journal::read(&self.journal_path()) else {
                 return false;
             };
             journal::verify(&recovery.header).is_ok_and(|base| base == self.on_disk())
+        }
+
+        /// The text this session would come back as if the process were killed
+        /// right now: the file on disk, with the journal replayed onto it.
+        ///
+        /// This is `recovery_accept`'s sequence, at the level a unit test can
+        /// reach — the whole point of a journal is that this equals what the
+        /// writer can see, and F15 is a window in which it did not.
+        fn recovers_to(&self) -> String {
+            let recovery = journal::read(&self.journal_path()).expect("the journal reads");
+            let source =
+                journal::verify(&recovery.header).expect("the journal describes the file on disk");
+            let mut document = model::Document::parse(&source);
+            for patch in &recovery.patches {
+                document.replay(patch).expect("every record replays");
+            }
+            document.serialise()
+        }
+
+        fn journalled(&self) -> u32 {
+            doc_journal_state(self.handle).0
+        }
+
+        fn is_saving(&self) -> bool {
+            let handle = self.handle;
+            actor().run(move |state| {
+                state
+                    .session(handle.id)
+                    .is_some_and(|session| session.is_saving())
+            })
         }
     }
 
@@ -1800,6 +1881,94 @@ mod tests {
 
         gate.release();
         assert!(matches!(stuck.outcome(), SaveOutcome::Saved { .. }));
+    }
+
+    /// F15. A save writes the bytes it planned; anything typed while it is
+    /// writing is not in them, and `checkpoint` used to throw those records away
+    /// along with the ones the save really did cover — leaving the keystroke in
+    /// neither the file nor the journal, and `recovery_pending` discarding an
+    /// empty journal as a clean session.
+    #[test]
+    fn an_edit_typed_during_a_save_is_still_in_the_journal() {
+        let it = Fixture::open("mid-write");
+        let gate = Gate::hold_the_first_write(&it.script);
+
+        it.types("One. ");
+        let written = it.in_memory();
+        let saving = Saving::explicit(it.handle);
+        gate.wait();
+
+        it.types("Two. ");
+        let newest = it.in_memory();
+        gate.release();
+        assert!(matches!(saving.outcome(), SaveOutcome::Saved { .. }));
+
+        // The save wrote what it planned and said so honestly.
+        assert_eq!(it.on_disk(), written);
+        assert!(it.dirty(), "the edit typed during the write is unsaved");
+        assert_eq!(it.journalled(), 1, "and exactly it is journalled");
+
+        // The property: killed here, the writer gets everything back.
+        assert_eq!(
+            it.recovers_to(),
+            newest,
+            "the journal must still carry the edit the file does not have"
+        );
+        assert!(it.journal_agrees_with_the_file());
+    }
+
+    /// The ordinary case, which must not have grown a rebuild: nothing was
+    /// typed during the write, so the journal is emptied as before.
+    #[test]
+    fn a_save_with_nothing_typed_during_it_empties_the_journal() {
+        let it = Fixture::open("plain-checkpoint");
+        it.types("Once. ");
+        assert_eq!(it.journalled(), 1);
+
+        let outcome = block_on(doc_save(it.handle));
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+        assert_eq!(it.journalled(), 0, "everything recorded is in the file");
+        assert!(!it.dirty());
+        assert_eq!(it.recovers_to(), it.on_disk());
+        assert!(!it.is_saving(), "and the save let go of its buffer");
+    }
+
+    /// The two ways a save can plan and then not write. Both arm the buffer
+    /// before they know that, so both have to disarm it.
+    #[test]
+    fn a_save_that_writes_nothing_does_not_leave_the_session_buffering() {
+        let it = Fixture::open("abandoned");
+
+        // Clean: nothing to write.
+        assert_eq!(block_on(doc_save(it.handle)), SaveOutcome::Unchanged);
+        assert!(!it.is_saving());
+
+        // Unwritable: the directory is gone.
+        it.types("Doomed. ");
+        fs::remove_file(&it.script).expect("the script is removed");
+        fs::remove_dir_all(it.script.parent().expect("a parent")).expect("the folder is removed");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Failed { .. }
+        ));
+        assert!(!it.is_saving());
+
+        // And a document with nowhere to go at all.
+        let untitled = crate::api::doc::doc_new();
+        assert!(matches!(
+            block_on(doc_save(untitled)),
+            SaveOutcome::Failed {
+                failure: SaveFailure::NoPath,
+                ..
+            }
+        ));
+        let saving = actor().run(move |state| {
+            state
+                .session(untitled.id)
+                .is_some_and(|session| session.is_saving())
+        });
+        assert!(!saving);
+        actor().run(move |state| state.close(untitled.id));
     }
 
     /// The same check-then-act the audit found beside F5. Both callers of

@@ -169,6 +169,21 @@ pub struct Session {
     /// `api::files`. Nothing that runs inside an actor closure may take it: the
     /// whole point is that the actor stays free while the disk is busy.
     save_lock: Arc<Mutex<()>>,
+    /// The patches recorded while a save is between planning its bytes and
+    /// recording that it wrote them. `None` when no save is in flight.
+    ///
+    /// A save writes the bytes it planned, and `Journal::checkpoint` then
+    /// truncates the journal to a header saying "everything up to here is in
+    /// the file". That is true of every record the save covered and false of
+    /// anything typed while it was writing — and throwing those records away
+    /// while `mark_saved_at` correctly leaves the document dirty is how a
+    /// keystroke ends up in neither the file nor the journal (F15).
+    ///
+    /// So the save keeps them and rebuilds the journal around them instead of
+    /// emptying it. Armed by [`Session::begin_save`] and taken by
+    /// [`Session::finish_save`], so a session that is not saving buffers
+    /// nothing at all: the cost falls on the one file write, not on typing.
+    saving: Option<Vec<Patch>>,
 }
 
 impl Session {
@@ -185,6 +200,7 @@ impl Session {
             journal_broken: false,
             scroll_row: 0,
             save_lock: Arc::new(Mutex::new(())),
+            saving: None,
         }
     }
 
@@ -260,6 +276,11 @@ impl Session {
     pub fn set_journal(&mut self, journal: Option<Journal>) {
         self.journal = journal;
         self.journal_broken = false;
+        // The buffer describes records in the journal being replaced, so it
+        // cannot survive it: a reload or a restore that lands while a save is in
+        // flight would otherwise have those records rebuilt into a journal that
+        // never held them, for a document that no longer exists.
+        self.saving = None;
     }
 
     pub fn journal_mut(&mut self) -> Option<&mut Journal> {
@@ -285,18 +306,52 @@ impl Session {
     /// exactly one notification rather than one per keystroke. A journal failure
     /// never fails the edit: the edit is in the document, and refusing it
     /// afterwards would be losing text to protect against losing text.
-    pub fn record(&mut self, patch: &Patch) -> bool {
+    ///
+    /// Takes the patch by value: the only other thing that wants it is
+    /// [`Session::saving`], and moving it there costs nothing where cloning it
+    /// on every keystroke would.
+    pub fn record(&mut self, patch: Patch) -> bool {
         if self.journal_broken {
             return false;
         }
         let Some(journal) = self.journal.as_mut() else {
             return false;
         };
-        if journal.append(patch).is_err() {
+        if journal.append(&patch).is_err() {
             self.journal_broken = true;
             return true;
         }
+        // Kept only while a save is in flight, and only after the append, so
+        // what is buffered is exactly what is in the journal file and not in
+        // the bytes that save is writing.
+        if let Some(since) = self.saving.as_mut() {
+            since.push(patch);
+        }
         false
+    }
+
+    /// Marks the start of a save, from inside the same actor closure that reads
+    /// the bytes to be written — so no edit can land between the two.
+    ///
+    /// Returns the revision those bytes are, which is what the save later marks
+    /// the document clean up to.
+    pub fn begin_save(&mut self) -> u64 {
+        self.saving = Some(Vec::new());
+        self.document.revision()
+    }
+
+    /// Ends it, and hands back the edits that arrived while the file was being
+    /// written. Empty is the ordinary answer.
+    ///
+    /// Safe to call when no save is in flight, which is what makes it usable as
+    /// the "this save is not going to happen after all" path as well.
+    pub fn finish_save(&mut self) -> Vec<Patch> {
+        self.saving.take().unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub fn is_saving(&self) -> bool {
+        self.saving.is_some()
     }
 
     /// The document, with the undo transaction closed first if the previous

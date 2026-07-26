@@ -1894,3 +1894,114 @@ In `app/test/editor/autosave_test.dart`:
 
 All four Rust save tests and both Dart tests were confirmed to fail with the lock
 and the Dart changes reverted, not assumed to.
+
+---
+
+## ADR 0027 — A save rebuilds its journal around what was typed during it
+
+**Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (mid-project
+remediation, Phase 4A follow-up) · **Extends:** ADR 0013
+
+### Context
+
+`Journal::checkpoint` truncates a journal to a bare header whose `base` is the
+bytes just written, and its comment states the reason: "the records before it
+describe edits that are now in the file, and replaying them onto it would apply
+them twice."
+
+That is true of every record a save covered. It is false of anything typed while
+the save was writing. A save plans its bytes on the actor thread, lets go, and
+writes off it (§2.3, ADR 0012) — so an edit can land in between, and
+`mark_saved_at(plan.revision)` correctly leaves the document dirty for it. But
+the checkpoint then threw its journal record away along with the rest.
+
+The result was a window in which a keystroke was in neither the file nor the
+journal. Worse than merely unrecorded: at the next launch `recovery_pending`
+finds an empty journal, reads it as a session that ended cleanly, and
+`discard_at`s it. Nothing is offered and nothing says anything was lost. §1.2
+calls losing user text a P0, and the journal exists so that "not a keystroke
+beyond the last" is true; this was a gap in exactly that claim. Recorded as F15
+while verifying Phase 4A, which neither caused it nor widened it.
+
+### Decision
+
+**A save that had edits land during it rebuilds its journal around them instead
+of emptying it.**
+
+`Session::begin_save` arms a buffer *inside the same actor closure that reads the
+bytes to be written*, so there is no instant in which an edit is in neither. Each
+subsequent `Session::record` appends to the journal as before and then keeps the
+patch. Step three takes the buffer:
+
+* **Empty** — the ordinary case, and nothing changes: `checkpoint` as before.
+* **Non-empty** — `Journal::rebuild_at` writes a whole successor journal whose
+  `base` is the bytes just written and whose records are exactly those patches,
+  through `atomic::save_atomically`.
+
+`rebuild_at` is `Journal::rebuild` (ADR 0016) addressed by path rather than by
+id, because a Save As has already changed the id by the time step three runs
+while the journal file has not moved. Rebuilding by id there would leave the old
+file behind, and an unowned journal is a recovery offered for a session that did
+not crash.
+
+The buffer is armed only for the length of one write. A session that is not
+saving buffers nothing, so the cost falls on the file write and not on typing —
+and the patch is *moved* into `record` rather than cloned, so the keystroke path
+allocates no more than it did.
+
+### Alternatives considered
+
+**Do not checkpoint at all when the document comes back dirty.** One line. The
+journal keeps every record, but its `base` no longer matches the file, so
+`journal::verify` refuses it and the next launch reports the offer as `blocked`.
+Better than silent loss — the text is in a file a person can read — and much
+worse than recovering it, which the rebuild does for the same window.
+
+**Buffer every patch since the last checkpoint, unconditionally.** Simpler: no
+arming, no disarming, no early-return discipline in `write_document`. Rejected on
+memory: autosave can be turned off entirely (`autosave_enabled: false` is
+supported on purpose), and a long session would then hold every patch of every
+edit in RAM alongside the same data on disk. Arming for the width of one write
+bounds it to what was typed in a few milliseconds.
+
+**Re-append the kept records after `checkpoint` truncates in place.** No new
+journal API needed. Rejected for the reason ADR 0016 gave for `rebuild`: a crash
+between the truncate and the re-append loses exactly the records this exists to
+save. A whole-journal write has to be atomic.
+
+**Keep patch revisions and filter by `plan.revision`.** Considered and dropped as
+redundant: arming happens in the same closure that serialises, so everything
+buffered is by construction after the planned bytes. A revision field would be a
+second source of truth for the same fact.
+
+### Consequences
+
+* Every path out of `write_document` after the plan must disarm — a refused save
+  that left the buffer armed would hold patches for a checkpoint that never
+  comes. There is one `abandon_save` for all three, and a test that covers each.
+* A failed rebuild leaves the journal exactly as it was. Its `base` no longer
+  matches the file, so recovery refuses it rather than replaying onto the wrong
+  bytes; nothing is destroyed, which is the property that matters. Same shape as
+  the failed `checkpoint` this replaces.
+* `Session::record` takes its `Patch` by value. The only caller is
+  `api::doc::journal`, which built it and dropped it.
+* The window is now closed for the save path. It was never open for recovery:
+  ADR 0016 already writes a successor journal rather than emptying one.
+
+### Tests and invariants
+
+In `crates/bridge/src/api/files.rs`, driving the real save path with the same
+`#[cfg(test)]` seam Phase 4A added:
+
+* `an_edit_typed_during_a_save_is_still_in_the_journal` — the defect. A save is
+  held between planning and writing, an edit lands, and after it completes the
+  file holds the older bytes, the document is dirty, and *the journal replayed
+  onto the file gives back what the writer can see*. That last assertion is the
+  invariant; the test states it as `recovers_to() == the document`.
+* `a_save_with_nothing_typed_during_it_empties_the_journal` — the ordinary case
+  still checkpoints to zero records, so the rebuild is not on every save.
+* `a_save_that_writes_nothing_does_not_leave_the_session_buffering` — all three
+  abandon paths: clean, unwritable, and no path at all.
+
+Confirmed to fail with the rebuild reverted: the mid-write test reports zero
+journalled records where one was typed.

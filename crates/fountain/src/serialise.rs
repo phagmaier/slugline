@@ -231,9 +231,10 @@ fn canonical(
     nl: &str,
 ) {
     let text = element.text;
+    let eaten_at_top = |line: &str| swallowed_by_title_page(at_top, title_page, line);
     match element.kind {
         BlockKind::SceneHeading => {
-            let forced = element.forced || !syntax::is_scene_heading(text);
+            let forced = element.forced || !syntax::is_scene_heading(text) || eaten_at_top(text);
             // `..` is Fountain's escape for a line that starts with a dot, not
             // a heading, so a forced heading whose own text starts with one is
             // written with a space after the marker. The parser trims there, so
@@ -259,7 +260,8 @@ fn canonical(
                 || syntax::character_of(&cue).is_none()
                 || syntax::is_scene_heading(&cue)
                 || syntax::marker_of(&cue).is_some()
-                || !next.is_some_and(BlockKind::continues_dialogue);
+                || !next.is_some_and(BlockKind::continues_dialogue)
+                || eaten_at_top(&cue);
             push_line(result, &prefixed("@", forced, &cue), nl);
         }
         BlockKind::Transition => {
@@ -269,7 +271,8 @@ fn canonical(
             let forced = element.forced
                 || !syntax::is_transition(text)
                 || syntax::marker_of(text).is_some()
-                || syntax::is_scene_heading(text);
+                || syntax::is_scene_heading(text)
+                || eaten_at_top(text);
             push_line(result, &prefixed(">", forced, text), nl);
         }
         BlockKind::Action => {
@@ -283,7 +286,7 @@ fn canonical(
                     element.forced
                         || opens_another_element(line, text.contains('\n'))
                         || opens_protected
-                        || (at_top && title_page.is_empty() && looks_like_title_key(line))
+                        || eaten_at_top(line)
                 } else {
                     syntax::marker_of(line.trim_start()).is_some() || opens_protected
                 };
@@ -355,6 +358,27 @@ fn opens_another_element(line: &str, has_more_lines: bool) -> bool {
         || (has_more_lines && syntax::character_of(trimmed).is_some())
 }
 
+/// Whether writing `line` without a marker here would let the title-page parser
+/// eat it.
+///
+/// The title page is read only at the very top of a file, and only when the
+/// first line looks like a key — so this is the one reason a block needs a
+/// marker that has nothing to do with what the block *is*. `parse_title_page`
+/// then goes on consuming until a blank line, so a swallowed block usually takes
+/// its neighbour's first line with it.
+///
+/// Stated once and asked by every kind that can be written bare, rather than
+/// left to each kind's own rules to imply. Three of the four imply it today:
+/// `is_scene_heading` and `character_of` both reject the `Key: value` shape, so
+/// only `Transition` reaches it — `IN: TO:` is a transition by §4.1 and a title
+/// key by `looks_like_title_key`, and the parser resolves it the other way
+/// (F16). Relying on that coincidence would make a future loosening of either
+/// recognition rule reopen the hole silently, and losing a block on reopen is
+/// exactly what ADR 0007's round-trip guarantee exists to prevent.
+fn swallowed_by_title_page(at_top: bool, title_page: &TitlePage, line: &str) -> bool {
+    at_top && title_page.is_empty() && looks_like_title_key(line)
+}
+
 fn prefixed(marker: &str, apply: bool, text: &str) -> String {
     if apply {
         format!("{marker}{text}")
@@ -387,7 +411,7 @@ fn push_lines(result: &mut String, text: &str, nl: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse, Element};
+    use crate::{parse, Element, TitleEntry, TitleField};
 
     /// Serialises a script whose blocks have all lost their provenance, which
     /// is what an edit to every block would leave behind.
@@ -483,6 +507,115 @@ mod tests {
         assert_eq!(canonical_text(".SNOWY EXTERIOR\n"), ".SNOWY EXTERIOR\n");
         // Nothing gained where the text speaks for itself.
         assert_eq!(canonical_text("INT. HOUSE - DAY\n"), "INT. HOUSE - DAY\n");
+    }
+
+    /// Writes elements built by hand, which is what `SetKind` in the editor
+    /// produces: a block whose kind the writer chose and whose text was never
+    /// marked. No Fountain source parses to one of these, so `canonical_text`
+    /// cannot reach them.
+    fn write_built(title: &TitlePage, built: &[(BlockKind, &str)]) -> String {
+        let elements: Vec<Element> = built
+            .iter()
+            .map(|(kind, text)| Element {
+                kind: *kind,
+                text: (*text).to_owned(),
+                forced: false,
+                dual: false,
+                provenance: None,
+            })
+            .collect();
+        let refs: Vec<ElementRef<'_>> = elements.iter().map(Element::as_ref).collect();
+        serialise(&Output {
+            title_page: title,
+            elements: &refs,
+            source: None,
+            bom: false,
+            line_ending: LineEnding::Lf,
+        })
+    }
+
+    fn kinds_and_text(source: &str) -> Vec<(BlockKind, String)> {
+        parse(source)
+            .elements
+            .iter()
+            .map(|element| (element.kind, element.text.clone()))
+            .collect()
+    }
+
+    /// F16. `IN: TO:` is a transition by §4.1 and a title-page key by
+    /// `looks_like_title_key`, and at the top of a file the parser resolves it
+    /// the other way — so written bare the block did not come back at all.
+    #[test]
+    fn a_block_that_would_be_read_as_a_title_key_is_marked_at_the_top() {
+        let empty = TitlePage::default();
+        let written = write_built(&empty, &[(BlockKind::Transition, "IN: TO:")]);
+        assert_eq!(written, ">IN: TO:\n");
+        assert_eq!(
+            kinds_and_text(&written),
+            [(BlockKind::Transition, "IN: TO:".to_owned())]
+        );
+        assert!(parse(&written).title_page.is_empty());
+
+        // The same text below the top needs nothing: the title page has ended.
+        let below = write_built(
+            &empty,
+            &[
+                (BlockKind::Action, "She waits."),
+                (BlockKind::Transition, "IN: TO:"),
+            ],
+        );
+        assert_eq!(below, "She waits.\n\nIN: TO:\n");
+        assert_eq!(kinds_and_text(&below)[1].1, "IN: TO:");
+
+        // Nor when there is a title page, because then the blank line after it
+        // has already closed it.
+        let after_title = write_built(
+            &TitlePage {
+                entries: vec![TitleEntry {
+                    field: TitleField::Title,
+                    value: "Heat".to_owned(),
+                }],
+                provenance: None,
+            },
+            &[(BlockKind::Transition, "IN: TO:")],
+        );
+        assert!(after_title.ends_with("IN: TO:\n"));
+        assert_eq!(kinds_and_text(&after_title)[0].1, "IN: TO:");
+    }
+
+    /// The other three kinds that can be written bare. Their own recognition
+    /// rules already keep them out of the title page, and this says so out
+    /// loud: if `character_of` or `is_scene_heading` is ever loosened to accept
+    /// a `Key: value` line, the shared check in `swallowed_by_title_page` is
+    /// what has to catch it, and this test is where that shows up.
+    #[test]
+    fn no_kind_written_bare_at_the_top_is_eaten_by_the_title_page() {
+        let empty = TitlePage::default();
+        let cases: [&[(BlockKind, &str)]; 4] = [
+            &[(BlockKind::Transition, "IN: TO:")],
+            &[
+                (BlockKind::Character, "MARY: HELLO"),
+                (BlockKind::Dialogue, "Hi."),
+            ],
+            &[(BlockKind::SceneHeading, "INT: HOUSE")],
+            &[(BlockKind::Action, "Note: something")],
+        ];
+        for built in cases {
+            let written = write_built(&empty, built);
+            let back = kinds_and_text(&written);
+            assert!(
+                parse(&written).title_page.is_empty(),
+                "{built:?} became a title page: {written:?}"
+            );
+            assert_eq!(
+                back.len(),
+                built.len(),
+                "{built:?} did not come back whole: {written:?} -> {back:?}"
+            );
+            for (index, (kind, text)) in built.iter().enumerate() {
+                assert_eq!((back[index].0, back[index].1.as_str()), (*kind, *text));
+            }
+        }
     }
 
     #[test]

@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–3 and 4A complete, Phase 4B next
+**Status:** in progress — Phases 0–3, 4A and 4A′ complete, Phase 4B next
 
 ---
 
@@ -1414,6 +1414,160 @@ this plan's protected list, the change is a Fountain semantics change rather tha
 and folding it into a commit about save ordering is exactly what "one focused commit per
 logically independent repair" forbids. It needs its own task; until it has one,
 `cargo test --workspace` fails this one test.
+
+---
+
+## Phase 4A′ — F15 and F16
+
+Both findings above, repaired in one follow-up pass because each is small, each is
+self-contained, and neither belongs in the commit that found it.
+
+### F15 — a save must not checkpoint away what was typed during it
+
+- [x] Keep the records for edits that land between a save's plan and its checkpoint.
+  - `Session::begin_save` arms a buffer *inside the closure that reads the bytes*, so no
+    edit is ever in neither. `Session::record` appends to the journal as before and then
+    keeps the patch. `Session::finish_save` hands them to step three.
+- [x] Rebuild rather than truncate, and do it atomically.
+  - `Journal::rebuild_at`: ADR 0016's `rebuild` addressed by path instead of by id, because
+    a Save As has changed the id by step three while the journal file has not moved.
+    Rebuilding by id would leave the old file behind, and an unowned journal is a recovery
+    offered for a session that did not crash.
+- [x] Leave the ordinary save alone.
+  - Nothing typed during the write means an empty buffer means `checkpoint`, exactly as
+    before. The rebuild is not on the common path.
+- [x] Bound the memory.
+  - Armed only for the length of one write, so a session that is not saving buffers nothing.
+    That matters because `autosave_enabled: false` is supported: buffering everything since
+    the last checkpoint would hold a whole session's patches in RAM.
+- [x] Keep the keystroke path where it was.
+  - `record` takes its `Patch` by value rather than cloning it. Its one caller built it and
+    dropped it, so this allocates nothing new.
+- [x] Disarm on every path that plans and then does not write.
+  - Three: no path, nothing to write, and the write failed. One `abandon_save` for all of
+    them, and one test covering each — a buffer left armed would hold patches for a
+    checkpoint that never comes.
+- [x] Define the failure behaviour.
+  - A failed rebuild leaves the journal untouched. Its base no longer matches the file, so
+    recovery refuses it rather than replaying onto the wrong bytes; nothing is destroyed.
+    The same shape as the failed `checkpoint` it replaces.
+- [x] Tie the buffer's lifetime to the journal it describes.
+  - `Session::set_journal` clears it. `doc_reload` and `backup_restore` replace the journal
+    outright, and a "Take Theirs" landing during a save would otherwise have those records
+    rebuilt into a journal that never held them, for a document that no longer exists.
+- [x] Record the decision. — ADR 0027, which extends ADR 0013.
+
+Tests, in `crates/bridge/src/api/files.rs` against the real save path:
+
+- [x] `an_edit_typed_during_a_save_is_still_in_the_journal` — the file holds the older
+      bytes, the document is dirty, and the journal replayed onto the file gives back what
+      the writer can see. That last one is the invariant.
+- [x] `a_save_with_nothing_typed_during_it_empties_the_journal`.
+- [x] `a_save_that_writes_nothing_does_not_leave_the_session_buffering`.
+- [x] Confirmed to fail first: with the rebuild reverted, the mid-write test reports zero
+      journalled records where one was typed.
+
+### F16 — a block written bare at the top must not be eaten by the title page
+
+- [x] Repair it where the recognition rules live.
+  - `swallowed_by_title_page` in `serialise.rs`, which asks `parse::looks_like_title_key` —
+    the parser's own rule, run backwards, as `AGENTS.md` requires. The Action arm already
+    asked it inline; the check is now stated once and asked by every kind that can be
+    written without a marker.
+- [x] Decide how wide to make it.
+  - All four bare-writable kinds, not just the one that is reachable. `is_scene_heading` and
+    `character_of` both happen to reject the `Key: value` shape today, so only `Transition`
+    reaches it — but relying on that coincidence would let a future loosening of either rule
+    reopen the hole silently, and what it costs is a block vanishing on reopen.
+- [x] Keep the pinned proptest seed.
+  - `canonical_form_is_stable.proptest-regressions` keeps the line proptest wrote. It is the
+    only reason this was found, and it now passes.
+- [x] Do not over-force.
+  - Two of the three cases in the first test are negative: the same text below the top, and
+    the same text under a title page, are both still written bare.
+
+Tests, in `crates/fountain/src/serialise.rs`:
+
+- [x] `a_block_that_would_be_read_as_a_title_key_is_marked_at_the_top`.
+- [x] `no_kind_written_bare_at_the_top_is_eaten_by_the_title_page` — the other three kinds,
+      so that if `character_of` or `is_scene_heading` is ever loosened, this is where it
+      shows up.
+- [x] Both confirmed to fail with the `Transition` guard reverted.
+
+### Implementation log — Phase 4A′
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `934326e` (Phase 4A)
+**Ending commit:** this commit
+
+#### Changes made
+
+- `crates/storage/src/journal.rs`: `rebuild` split into `rebuild_at(path, …)` plus a
+  by-id wrapper. No behaviour change for the recovery caller.
+- `crates/bridge/src/state.rs`: `Session::saving`, `begin_save`, `finish_save`, and
+  `record` taking its patch by value.
+- `crates/bridge/src/api/files.rs`: the plan closure arms the buffer; three early returns
+  disarm through `abandon_save`; step three rebuilds instead of checkpointing when anything
+  was typed during the write.
+- `crates/bridge/src/api/doc.rs`: one call site, `record(patch)` rather than `record(&patch)`.
+- `crates/fountain/src/serialise.rs`: `swallowed_by_title_page`, asked by all four kinds
+  that can be written bare.
+- `SPEC.md` §Phase 4: a new ticked invariant for the checkpoint rule.
+- `docs/DECISIONS.md`: ADR 0027.
+
+#### Tests added or changed
+
+Three in `crates/bridge/src/api/files.rs`, two in `crates/fountain/src/serialise.rs`.
+
+#### Commands run
+
+```text
+cargo fmt --all --check                                       # clean
+cargo clippy --workspace --all-targets -- -D warnings         # clean
+cargo test --workspace                                        # 354 passed, 0 failed
+python3 tools/check_layering.py                               # clean, 7 crates
+cd app && flutter analyze                                     # No issues found
+cd app && flutter test                                        # 284 passed
+cd app && flutter build linux --release                       # succeeds
+
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/persistence_test.dart         -d linux   # 12 passed
+flutter test integration_test/editor_test.dart              -d linux   # 7 passed
+flutter test integration_test/writing_test.dart             -d linux   # 11 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+
+# Negative controls:
+#   step three's rebuild reverted to a plain checkpoint → the mid-write test fails,
+#     reporting 0 journalled records where 1 was typed
+#   the Transition guard reverted                       → both fountain tests fail
+```
+
+#### Results
+
+Rust 349 passed / 1 failed → **354 passed / 0 failed**. The workspace suite is green again:
+F16 was the failure, and the fountain and bridge crates gained two and three tests. Flutter
+unchanged at 284 — neither finding is Dart's.
+
+#### Deviations from plan
+
+**F16's guard was applied to four kinds where one is reachable.** Argued above rather than
+assumed: the narrow fix would have left the invariant true by coincidence of two unrelated
+predicates, and the cost of that coincidence breaking is a block disappearing from the
+writer's script on reopen.
+
+**F15 has no kill test.** `crates/bridge/tests/persistence.rs` cannot link the bridge, so a
+real `SIGKILL` test of this window would have to hand-mirror the save sequence — a second
+mirror to keep in step, next to the recovery one already there. The unit test drives the
+real `write_document` instead, and asserts the same thing the kill test would: the journal
+replayed onto the file equals the document.
+
+#### New risks or follow-up findings
+
+None new. The two carried forward from Phase 4A are now closed, and the `Degraded` recovery
+note from Phase 1 is still open for Phase 4B's dialogs work.
 
 ---
 

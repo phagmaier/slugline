@@ -269,7 +269,26 @@ impl Journal {
         patches: &[Patch],
     ) -> io::Result<Journal> {
         fs::create_dir_all(dir)?;
-        let path = dir.join(format!("{id}.log"));
+        Journal::rebuild_at(&dir.join(format!("{id}.log")), script, base, patches)
+    }
+
+    /// [`Journal::rebuild`], at a journal file that already exists.
+    ///
+    /// The second caller is the save path, and it needs the *path* rather than
+    /// an id because a Save As changes the id while the journal file stays where
+    /// it is. Rebuilding by id there would leave the old file behind, and a
+    /// journal nobody owns is a recovery offered for a session that did not
+    /// crash.
+    pub fn rebuild_at(
+        path: &Path,
+        script: &Path,
+        base: &str,
+        patches: &[Patch],
+    ) -> io::Result<Journal> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let path = path.to_path_buf();
 
         let mut contents = Vec::new();
         write_line(

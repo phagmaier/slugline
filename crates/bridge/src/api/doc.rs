@@ -1254,7 +1254,7 @@ fn journal(session: &mut Session, result: &model::EditResult) {
             .collect(),
         inserted,
     };
-    if session.record(&patch) {
+    if session.record(patch) {
         // Said once, not once per keystroke.
         emit(CoreEvent::JournalBroken {
             handle: session.handle(),

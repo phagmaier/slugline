@@ -831,6 +831,15 @@ Implement precisely this sequence, in `crates/storage`:
       beyond the last" reachable. Measured cost on the keystroke path: p50
       0.81 ms against 0.78 ms without it, p99 1.14 ms against a 16 ms budget
       (`keystroke_benchmark_test.dart`).
+- [x] **A save empties the journal only of what it actually wrote.** A save plans
+      its bytes on the actor thread and writes off it, so an edit can land in
+      between — and `Journal::checkpoint`'s "everything before this is in the
+      file" is false for that one. It used to be thrown away anyway, leaving the
+      keystroke in neither the file nor the journal, and the next launch reading
+      an empty journal as a clean session (F15). A save that had edits land
+      during it now rebuilds its journal around them through
+      `Journal::rebuild_at` instead. ADR 0027;
+      `an_edit_typed_during_a_save_is_still_in_the_journal`.
 - [x] On startup, an un-truncated journal means the previous session crashed →
       offer recovery. The journal's *absence* is what says a session ended
       cleanly: `Journal::discard` removes it and nothing else does.
