@@ -2696,16 +2696,48 @@ cd app && flutter test integration_test/persistence_test.dart -d linux
 
 ## Phase 6F — Add a debug pagination surface
 
-- [ ] Add a development-only or feature-flagged way to request/view pagination debug output.
-- [ ] Ensure it consumes the bridge pagination result rather than reimplementing layout in Dart.
-- [ ] Include enough information to inspect:
+- [x] Add a development-only or feature-flagged way to request/view pagination debug output.
+- [x] Ensure it consumes the bridge pagination result rather than reimplementing layout in Dart.
+- [x] Include enough information to inspect:
   - page boundaries;
   - block placement;
   - split elements;
   - continuation markers;
   - fixed-point iterations if relevant.
-- [ ] Keep it clearly separate from the Phase 7 polished preview.
-- [ ] Add at least one integration test proving application-level pagination invocation works.
+- [x] Keep it clearly separate from the Phase 7 polished preview.
+- [x] Add at least one integration test proving application-level pagination invocation works.
+
+### Implementation log — Phase 6F
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Ending commit:** working tree
+
+#### Changes made
+
+- Added a `kDebugMode`-only editor app-bar action. It opens a deliberately
+  diagnostic text report and is absent from release builds.
+- Added `PaginationDebugCore` as a capability separate from `DocumentCore`.
+  `RustDocumentCore` implements it by calling the generated `docPaginate`
+  binding with the engine's debug line-capacity knob. Editor widget doubles do
+  not implement pagination, and no pagination call was added to the keystroke
+  path.
+- The report renders the returned DTOs rather than deriving page geometry in
+  Dart. It labels current and stale outcomes, marks page boundaries and blocks
+  spanning pages, prints every positioned line and its line kind (including
+  `(MORE)` and `(CONT'D)` furniture), and exposes cache and fixed-point stats.
+- The dialog says explicitly that it is diagnostic-only and not the Phase 7
+  preview.
+
+#### Tests
+
+- Added a Linux integration test to `editor_test.dart` that opens the real
+  editor, presses the debug action, crosses the generated bridge into Rust, and
+  asserts on page, block, continuation, and fixed-point data in the report.
+- `flutter analyze` — clean.
+- `flutter test` — 311 passed.
+- `flutter build linux --release` — built.
+- Focused Linux integration test — passed.
 
 ---
 
@@ -2738,7 +2770,8 @@ Per D-6:
 - [x] Pagination runs asynchronously from a document snapshot. — 6D; asserted off
       the actor thread, not only argued.
 - [ ] Page count updates after successful saves.
-- [ ] Debug pagination output is reachable through the app or integration harness.
+- [x] Debug pagination output is reachable through the app or integration harness. — 6F,
+      debug-build editor action backed by `docPaginate`.
 - [ ] Focused paginator review is recorded.
 - [ ] No editor per-keystroke bridge round trip was introduced.
 - [ ] No preview or PDF feature work has started prematurely.

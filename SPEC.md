@@ -1052,15 +1052,16 @@ Requirement §12. No UI work in this phase beyond a debug dump view.
 ### Exit criteria
 
 - [x] Page count and every line position are reproducible and covered by golden files
-- [ ] **Reachable from the application.** Audit finding F3: the crate paginated and
+- [x] **Reachable from the application.** Audit finding F3: the crate paginated and
       nothing called it. Remediation Phase 6 wires it as an async snapshot job (ADR 0020),
       writes the page count after a successful save, and pins the Dart editor's own line
       breaking to `layout::break_lines` with a corpus-wide differential test (ADR 0018).
       Phase 6C did the differential test, Phase 6D the bridge, and Phase 6E the
       saved-snapshot page count: `slugline_bridge` now depends on `slugline_layout`,
       `doc_paginate` is §6's `paginate`, and `repaginate` runs in the application
-      rather than only in `crates/layout/tests/`. Still open — the debug dump is
-      still a method with no Dart view (Phase 6F).
+      rather than only in `crates/layout/tests/`. Phase 6F added a debug-build
+      editor action that calls `doc_paginate` and renders page, block, split,
+      continuation, and fixed-point diagnostics directly from its bridge DTOs.
 
 ---
 

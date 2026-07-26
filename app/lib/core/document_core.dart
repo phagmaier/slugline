@@ -1,5 +1,6 @@
 import 'package:slugline/src/rust/api/doc.dart' as rust;
 import 'package:slugline/src/rust/api/files.dart' as files;
+import 'package:slugline/src/rust/api/layout.dart' as layout;
 
 export 'package:slugline/src/rust/api/files.dart'
     show
@@ -36,6 +37,16 @@ export 'package:slugline/src/rust/api/doc.dart'
         FindQuery,
         InsertedBlock,
         NewBlock;
+
+/// The explicit, diagnostic pagination seam used by Phase 6F.
+///
+/// This is deliberately separate from [DocumentCore]: pagination is not part
+/// of editing and must never become a per-keystroke dependency. The real core
+/// implements it; ordinary widget-test doubles do not need to pretend to lay
+/// out a screenplay.
+abstract interface class PaginationDebugCore {
+  Future<layout.PaginationOutcome> paginateForDebug({int? linesPerPage});
+}
 
 /// One open script, as the editor sees it.
 ///
@@ -163,7 +174,7 @@ abstract class DocumentCore {
 }
 
 /// The real thing: a handle into the Rust core.
-class RustDocumentCore implements DocumentCore {
+class RustDocumentCore implements DocumentCore, PaginationDebugCore {
   RustDocumentCore._(this._handle);
 
   /// A new, empty script.
@@ -179,6 +190,17 @@ class RustDocumentCore implements DocumentCore {
       RustDocumentCore._(handle);
 
   final rust.DocumentHandle _handle;
+
+  @override
+  Future<layout.PaginationOutcome> paginateForDebug({int? linesPerPage}) =>
+      layout.docPaginate(
+        handle: _handle,
+        setup: layout.PageSetup(
+          paper: layout.PaperSize.usLetter,
+          sceneNumbers: layout.SceneNumbers.both,
+          debugLinesPerPage: linesPerPage,
+        ),
+      );
 
   @override
   int get blockCount => rust.docBlockCount(handle: _handle);

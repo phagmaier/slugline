@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +12,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/element_bar.dart';
 import 'package:slugline/editor/find_bar.dart';
+import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/library/save_dialogs.dart';
@@ -260,6 +262,19 @@ class EditorPageState extends State<EditorPage> {
                 ),
                 title: Text(widget.title ?? 'Untitled'),
                 actions: [
+                  if (kDebugMode && _core is PaginationDebugCore)
+                    IconButton(
+                      icon: const Icon(Icons.view_agenda_outlined),
+                      tooltip: 'Pagination debug',
+                      onPressed: () => unawaited(
+                        withModal(
+                          () => PaginationDebugDialog.show(
+                            context,
+                            _core as PaginationDebugCore,
+                          ),
+                        ),
+                      ),
+                    ),
                   IconButton(
                     icon: const Icon(Icons.history),
                     tooltip: 'Previous versions',
