@@ -2356,15 +2356,22 @@ fixture the editor does not agree with.
 - **The two runtimes' Unicode tables disagree about four scalars.** The casing
   sweep found that Rust capitalises `ƛ` (U+019B), `ȿ` (U+023F), `ɀ` (U+0240) and
   `ϳ` (U+03F3) and Dart 3.12.2's `String.toUpperCase` leaves them as typed, so a
-  page prints a capital the editor does not show. Every one is one BMP scalar
-  either way, so no column and no boundary moves and the wrap contract is
-  unaffected; the set is pinned in the Dart test and recorded in
-  `docs/LINE_BREAKING.md`. This is exactly the drift 6B's follow-up note asked
-  6C to look for, and it is bounded rather than fixed: matching Dart would mean
+  page prints a capital the editor does not show. Every one is one scalar of the
+  same UTF-16 width either way, so no column and no boundary moves and the wrap
+  contract is unaffected. This is exactly the drift 6B's follow-up note asked 6C
+  to look for, and it is scoped rather than fixed: matching Dart would mean
   regressing Rust to an older Unicode table for four letters no screenplay is
-  written in. A fifth scalar joining the set fails the test; a Dart SDK that
-  catches up makes the difference vanish silently, which is the intended
-  direction.
+  written in.
+
+  Rather than enumerate the four, the test draws the line where the product
+  does. Capitals are guaranteed identical through **U+017F** — ASCII, Latin-1
+  and Latin Extended-A, the alphabet an English screenplay uses plus every
+  accented name and loan word — and a disagreement inside that range fails.
+  Above it the glyph may differ but its width may not: a divergence that would
+  move an editor offset fails at any code point. That keeps the guarantee where
+  writers actually are, and stops a future Dart SDK bump from failing CI over a
+  character the project never promised. Parker confirmed the scope on
+  2026-07-26: standard characters are the product, the rest is nice to have.
 - ADR 0018's "Tests and invariants" section still says the corpus-wide
   differential test is required before Phase 6 closes and that most of the
   record is unenforced. It is now enforced, but an accepted ADR is not edited

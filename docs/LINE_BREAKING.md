@@ -48,14 +48,20 @@ Latin-1, and Latin Extended-A and B — the only letters this rule leaves in low
 case are `ß`, `ŉ`, and `ǰ`, the three whose capital is more than one scalar. A
 test on each side pins that set, so nothing else can quietly join it.
 
-Four more scalars are shown differently by the two implementations, and they are
-not a decision: `ƛ` (U+019B), `ȿ` (U+023F), `ɀ` (U+0240) and `ϳ` (U+03F3) have a
-single-scalar capital that Rust's `char::to_uppercase` knows and the Dart SDK's
-`String.toUpperCase` does not, so a page prints them in capitals and the editor
-shows them as typed. Each is one BMP scalar either way, so no column and no
-boundary moves and nothing else about this contract is affected. The
-differential test carries the set explicitly: a fifth scalar joining it fails,
-and a Dart SDK that catches up makes the difference vanish rather than fail. Showing
+**The capital itself is guaranteed through U+017F** — ASCII, Latin-1 and Latin
+Extended-A, which is the alphabet an English screenplay is written in plus every
+accented name, loan word and European spelling one plausibly carries. Inside
+that range the editor and the paginator must show the same letter, and the
+differential test fails if they do not.
+
+Past it this document promises the wrap, not the glyph. Dart's
+`String.toUpperCase` and Rust's `char::to_uppercase` are the same rule over
+different vintages of the same Unicode tables, and today they part company on
+`ƛ` (U+019B), `ȿ` (U+023F), `ɀ` (U+0240) and `ϳ` (U+03F3): Rust capitalises
+them, the Dart SDK shows them as typed. Each is one scalar of the same UTF-16
+width either way, so no column and no boundary moves, and the wrap is still
+compared. A divergence out there that *would* change a width still fails, at any
+code point — that is the offset guarantee this whole document exists for. Showing
 those three as `SS`, `ʼN`, and `J̌` would mean a display string longer than the
 model, which this document exists to prevent; it is possible — a column already
 need not be a model offset, which is how tabs work — but it would also cost the

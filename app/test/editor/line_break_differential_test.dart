@@ -145,24 +145,28 @@ void _compare(Iterable<_Case> cases) {
   }
 }
 
-/// Scalars the two runtimes' Unicode tables disagree about the capital of.
+/// The last scalar whose capital both implementations must agree on.
 ///
-/// Dart's `String.toUpperCase` and Rust's `char::to_uppercase` are the same
-/// rule over different vintages of the same tables, and these four are where
-/// the Dart SDK is behind: Rust capitalises `ƛ ȿ ɀ ϳ` and Dart leaves them as
-/// typed. Every one is one BMP scalar either way, so no column and no boundary
-/// moves — the wrap below is still compared, and it is the wrap the contract is
-/// about. They are listed rather than ignored so that a fifth one cannot appear
-/// without this test saying so, and the set is permissive rather than required:
-/// a Dart SDK that catches up makes the difference vanish, not fail.
+/// ASCII, Latin-1 and Latin Extended-A: the alphabet an English screenplay is
+/// written in, plus every accented name, loan word and European spelling one
+/// plausibly carries. Inside this range a casing disagreement is a bug, because
+/// it is text a writer will actually type.
 ///
-/// `docs/LINE_BREAKING.md` records them; `ß`, `ŉ` and `ǰ` are a different thing
-/// entirely — both languages decline those on purpose, because their capital is
-/// more than one scalar.
-const Set<int> _casingTablesDisagree = {0x019B, 0x023F, 0x0240, 0x03F3};
+/// Past it, Slugline promises the wrap, not the glyph. Dart's
+/// `String.toUpperCase` and Rust's `char::to_uppercase` are the same rule over
+/// different vintages of the same tables, and today they part company on `ƛ`
+/// (U+019B), `ȿ` (U+023F), `ɀ` (U+0240) and `ϳ` (U+03F3): Rust capitalises them
+/// and the Dart SDK leaves them as typed. Each is one scalar either way, so no
+/// column and no boundary moves, and the wrap is still compared below — which
+/// is the part this contract is about. Failing CI over a fifth such character
+/// on some future SDK bump would cost maintenance for a guarantee nobody made.
+///
+/// `ß`, `ŉ` and `ǰ` are a different thing entirely: both languages decline those
+/// on purpose, because their capital is more than one scalar.
+const int _casingGuaranteedThrough = 0x017F;
 
 /// How the editor's display casing differs from the paginator's, or null when
-/// the only differences are the pinned table lag above.
+/// it differs only where no promise was made.
 String? _casingDifference(String source, String rust, String dart) {
   if (rust == dart) return null;
   final typed = source.runes.toList();
@@ -170,20 +174,29 @@ String? _casingDifference(String source, String rust, String dart) {
   final right = dart.runes.toList();
   if (left.length != right.length || left.length != typed.length) {
     // One side changed the number of scalars, which moves every boundary after
-    // it. That is the divergence the per-scalar rule exists to prevent.
+    // it. That is the divergence the per-scalar rule exists to prevent, and it
+    // is a failure at any code point.
     return 'display casing changes the scalar count '
         '(source ${typed.length}, rust ${left.length}, dart ${right.length})';
   }
   for (var scalar = 0; scalar < left.length; scalar++) {
-    if (left[scalar] != right[scalar] &&
-        !_casingTablesDisagree.contains(typed[scalar])) {
-      return 'display casing differs at scalar $scalar '
-          '(${_codePoint(typed[scalar])}: rust ${_codePoint(left[scalar])}, '
-          'dart ${_codePoint(right[scalar])})';
+    if (left[scalar] == right[scalar]) continue;
+    final where = 'at scalar $scalar (${_codePoint(typed[scalar])}: '
+        'rust ${_codePoint(left[scalar])}, dart ${_codePoint(right[scalar])})';
+    if (typed[scalar] <= _casingGuaranteedThrough) {
+      return 'display casing differs $where';
+    }
+    if (_utf16Length(left[scalar]) != _utf16Length(right[scalar])) {
+      // Outside the guaranteed range the glyph may differ, but not its width:
+      // one side is two code units and the other one, so every editor offset
+      // after it moves.
+      return 'display casing changes an offset $where';
     }
   }
   return null;
 }
+
+int _utf16Length(int scalar) => scalar > 0xFFFF ? 2 : 1;
 
 String _codePoint(int scalar) =>
     'U+${scalar.toRadixString(16).toUpperCase().padLeft(4, '0')}';
