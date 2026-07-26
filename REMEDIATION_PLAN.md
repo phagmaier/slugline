@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–2B complete, Phase 3 next
+**Status:** in progress — Phases 0–3 complete, Phase 4 next
 
 ---
 
@@ -47,8 +47,8 @@ The remediation effort is complete only when all of the following are true:
 - [ ] External-change checks perform disk I/O off the actor thread.
 - [ ] Persisted scroll position is applied when reopening a script.
 - [ ] Fountain “Export Copy” semantics are separate from “Save As.”
-- [ ] CI runs all intended integration tests and a real ENOSPC/full-disk test.
-- [ ] README, AGENTS, SPEC, ADRs, and implementation status agree.
+- [x] CI runs all intended integration tests and a real ENOSPC/full-disk test.
+- [x] README, AGENTS, SPEC, ADRs, and implementation status agree.
 - [ ] The real Linux `ibus` + CJK IME gate has been performed and recorded.
 - [ ] All repository verification commands pass.
 - [ ] No Phase 7 preview or PDF feature work began before the Phase 7 gate was satisfied.
@@ -879,97 +879,308 @@ Restore documentation and CI as trustworthy descriptions of the project’s actu
 
 ### 3.1 Update project status documents
 
-- [ ] Update `README.md` from Phase 1 status to the actual completed phase.
-- [ ] Update `AGENTS.md` to reflect:
+- [x] Update `README.md` from Phase 1 status to the actual completed phase.
+  - "Phases 0–6 written, in a stabilization gate", naming what each crate now is and
+    saying outright that page counts are blank because `layout` is unwired.
+- [x] Update `AGENTS.md` to reflect:
   - Phases 0–6 completed subject to this remediation;
   - `layout` is implemented but not yet fully integrated;
   - `render_pdf` and `spell` remain placeholders;
   - the actual integration tests run in CI.
-- [ ] Update the project’s current-phase/progress section.
-- [ ] Mark the remediation period as a stabilization gate before Phase 7.
-- [ ] Remove or update stale comments pointing to already-completed phases.
-- [ ] Correct the `document.rs` provenance re-anchoring comment or explicitly defer it.
+  - The `layout` point is its own bullet, because "Phase 6 is complete" was exactly the
+    sentence that misled: the crate is done and the feature does not exist.
+- [x] Update the project’s current-phase/progress section.
+  - Three of them, since the project has three: `README.md`'s status and remediation
+    sections, `AGENTS.md`'s first three bullets, and a new "where the project is" note in
+    `SPEC.md` §0 that names this plan as the live tracker.
+- [x] Mark the remediation period as a stabilization gate before Phase 7.
+  - In all three, plus a blockquoted gate directly above `SPEC.md`'s Phase 7 heading.
+- [x] Remove or update stale comments pointing to already-completed phases.
+  - `files.rs`'s `page_count` ("Zero until Phase 6's `layout` crate can count pages" —
+    Phase 6 came and went), `line_layout_test.dart`'s header (which promised the editor
+    would render Rust's rows), and `metrics.dart`'s "these numbers are on loan" (they are
+    not on loan; ADR 0018 keeps them). `spell`, `render_pdf` and `file_chooser.dart` point
+    at Phases 9, 7 and 10, which have not happened, and were left alone.
+- [x] Correct the `document.rs` provenance re-anchoring comment or explicitly defer it.
+  - Deferred explicitly: it now says Phase 4 shipped without it, that serialising from the
+    original source is correct, that the only cost is holding those bytes for the session,
+    and that it waits on a measurement rather than on a phase.
 
 ### 3.2 Update SPEC invariant checklist
 
-- [ ] Mark existing verified invariants accurately.
-- [ ] Link or name the actual tests for:
+- [x] Mark existing verified invariants accurately.
+  - `roundtrip_is_byte_exact`, `parser_never_panics` and
+    `autocomplete_requires_explicit_action` ticked; the last of those was settled by
+    Phase 2B and ADR 0017.
+- [x] Link or name the actual tests for:
   - byte-exact round trip;
   - parser never panics;
   - element change preserves text;
   - unsaved-change/recovery guarantees where applicable.
-- [ ] Leave later-phase invariants unchecked.
-- [ ] Add explicit remediation gates if the spec has a phase checklist section.
-- [ ] Ensure no item is checked when only half implemented, such as scroll persistence without restoration.
+- [x] Leave later-phase invariants unchecked.
+  - `spellcheck_never_modifies` (9), `appearance_prefs_dont_affect_pagination` (10),
+    `pdf_output_is_deterministic` (7), each now saying which phase owns it.
+- [x] Add explicit remediation gates if the spec has a phase checklist section.
+  - A new unticked Phase 6 exit criterion ("reachable from the application"), the Phase 7
+    gate blockquote, and the §0 note that a tick means implemented *and* tested.
+- [x] Ensure no item is checked when only half implemented, such as scroll persistence
+      without restoration.
+  - Session restore unticked with F6 named. Two more were found while checking the rest:
+    the external-modification prompt has no own-save suppression (F4/F8) and nothing
+    serialises two saves of one script (F5). Both are now unticked lines that say so.
+    `no_network_syscalls` was already unticked; it now says why, since §1.2 calls it a
+    build-time assertion and there is no such assertion.
 
 ### 3.3 Record decisions as ADRs
 
 Create or update ADRs for:
 
-- [ ] Fluid, unpaginated editor through 1.0.
-- [ ] Dart editor wrapper retained but differentially pinned to Rust line breaking.
-- [ ] Rust pagination exposed through the bridge as an asynchronous snapshot job.
-- [ ] `page_count` updated after successful saves from a background pagination snapshot.
-- [ ] Literal emphasis markers in the editor for 1.0.
-- [ ] Pinned entity storage and ranking decision from Phase 5.
-- [ ] Phase 6 checkpoint/fingerprint pagination design if not already documented.
-- [ ] One recovery offer per launch remains acceptable for 1.0.
-- [ ] Interval autosave remains active during continuous typing.
-- [ ] The focused Phase 7 review requirement for the back half of `layout/engine.rs`.
+- [x] Fluid, unpaginated editor through 1.0. — ADR 0018.
+- [x] Dart editor wrapper retained but differentially pinned to Rust line breaking.
+  - ADR 0018, same record: D-1 is one decision and splitting it would have produced two
+    halves neither of which stands alone.
+- [x] Rust pagination exposed through the bridge as an asynchronous snapshot job. — ADR 0020.
+- [x] `page_count` updated after successful saves from a background pagination snapshot.
+  - ADR 0020, same record: the page count is the first consumer that forces the wiring,
+    which is the argument for doing them together.
+- [x] Literal emphasis markers in the editor for 1.0. — ADR 0019.
+- [x] Pinned entity storage and ranking decision from Phase 5. — ADR 0021.
+- [x] Phase 6 checkpoint/fingerprint pagination design if not already documented. — ADR 0022.
+- [x] One recovery offer per launch remains acceptable for 1.0. — ADR 0023.
+- [x] Interval autosave remains active during continuous typing. — ADR 0024, which extends
+      ADR 0014 rather than editing it, per this repository's rule.
+- [x] The focused Phase 7 review requirement for the back half of `layout/engine.rs`.
+  - ADR 0025, which makes it a gate *on* Phase 7 rather than a task inside it.
 
 Each ADR must include:
 
-- [ ] Context.
-- [ ] Decision.
-- [ ] Alternatives considered.
-- [ ] Consequences.
-- [ ] Tests or invariants enforcing the decision.
-- [ ] Status and date.
+- [x] Context.
+- [x] Decision.
+- [x] Alternatives considered.
+- [x] Consequences.
+- [x] Tests or invariants enforcing the decision.
+  - Every record names them. Where the decision precedes its implementation (0018, 0020,
+    0024) the section says so and lists what must exist before the owning remediation phase
+    closes; where a claimed test turned out not to exist, the record says that instead —
+    see "New risks or follow-up findings".
+- [x] Status and date.
 
 ### 3.4 Close CI integration-test gaps
 
-- [ ] Inspect current CI commands.
-- [ ] Add `.so` build/setup before all bridge-dependent Flutter integration tests.
-- [ ] Run:
+- [x] Inspect current CI commands.
+  - Three jobs: `rust`, `fuzz`, `flutter`. The `flutter` job already built the release
+    bundle, asserted the `.so` was bundled and the 60 MB budget, installed `xvfb`, and ran
+    three of the six integration tests.
+- [x] Add `.so` build/setup before all bridge-dependent Flutter integration tests.
+  - Already correct and unchanged: `flutter build linux --release` precedes every one of
+    them, and every test step is in the same job, so they all run against that bundle.
+- [x] Run:
   - `bridge_test`
   - `editor_test`
   - `keystroke_benchmark_test`
   - `writing_test`
   - `ime_test`
   - `persistence_test`
-- [ ] Confirm `xvfb` or equivalent display setup is applied consistently.
-- [ ] Ensure CI fails when any intended integration test fails.
-- [ ] Update `AGENTS.md` to list exactly what CI runs.
+  - Six steps, one per file, so a failure names itself. The benchmark is last so nothing
+    else is competing for the runner while it measures.
+- [x] Confirm `xvfb` or equivalent display setup is applied consistently.
+  - Every one of the six is `xvfb-run -a`.
+- [x] Ensure CI fails when any intended integration test fails.
+  - No `continue-on-error` anywhere in the workflow, and every test step is a plain `run`.
+- [x] Update `AGENTS.md` to list exactly what CI runs.
+  - Named individually, with the instruction to add a step in the same change as a seventh
+    integration file. `SPEC.md` §13 gained a per-job table saying the same thing.
 
 ### 3.5 Add real full-disk/ENOSPC CI coverage
 
-- [ ] Identify the test using `SLUGLINE_FULL_DISK_DIR`.
-- [ ] Mount or provision a deliberately small tmpfs in CI.
-- [ ] Set `SLUGLINE_FULL_DISK_DIR` to that location.
-- [ ] Confirm the test reaches a real full-disk condition rather than only fallback classification.
-- [ ] Verify cleanup runs even after test failure.
-- [ ] Document any CI-platform limitation.
+- [x] Identify the test using `SLUGLINE_FULL_DISK_DIR`.
+  - `crates/bridge/tests/persistence.rs::a_full_filesystem_is_a_clear_error_and_no_truncated_file`,
+    via `full_disk_directory()`.
+- [x] Mount or provision a deliberately small tmpfs in CI.
+  - 4 MB at `/mnt/slugline-full-disk`, `mode=1777` because the test runs as the
+    unprivileged runner user.
+- [x] Set `SLUGLINE_FULL_DISK_DIR` to that location.
+  - On the `cargo test --workspace` step only, so nothing else inherits it.
+- [x] Confirm the test reaches a real full-disk condition rather than only fallback
+      classification.
+  - Confirmed locally, not assumed: the same mount was reproduced without root in a user
+    namespace (`unshare -Umr`, `mount -t tmpfs -o size=4m,mode=1777`) and the test passed
+    with the variable set. Passing *requires* the real path — with the directory present the
+    fallback branch is unreachable, and the assertions are `expect_err` plus
+    `matches!(SaveError::NoSpace)`, which only hold if the write genuinely returned ENOSPC.
+- [x] Verify cleanup runs even after test failure.
+  - An `if: always()` unmount step, so a failure that leaves the ballast behind cannot hand
+    a full filesystem to a later run on a cached runner. The test also removes its own
+    ballast and script on the success path.
+- [x] Document any CI-platform limitation.
+  - In `AGENTS.md`: CI has root and mounts the tmpfs, a local run has neither and falls back
+    to the classification half — with the `unshare` recipe for running the real thing
+    locally anyway.
 
 ### 3.6 Documentation verification
 
-- [ ] Search for stale phase references.
-- [ ] Search for “placeholder” claims about `layout`.
-- [ ] Search for incorrect integration-test counts.
-- [ ] Search for unresolved §16 decisions now settled by D-1 through D-5.
-- [ ] Confirm docs do not claim F1/F2/F3 are fixed until their phases actually pass.
+- [x] Search for stale phase references.
+  - `Phase 1 complete`, `Phases 0–4 are complete` and the `page_count`/`metrics.dart`
+    comments were the whole set; all corrected. The three surviving forward references
+    (Phases 7, 9, 10) name phases that genuinely have not happened.
+- [x] Search for “placeholder” claims about `layout`.
+  - One remained, in `crates/layout/src/lib.rs`, and it is accurate: it describes a
+    constant kept for callers of the *Phase 0* placeholder, not the crate.
+- [x] Search for incorrect integration-test counts.
+  - `AGENTS.md`'s "CI runs them after the release build" was the false one. Now named
+    individually in `AGENTS.md` and tabulated in `SPEC.md` §13.
+- [x] Search for unresolved §16 decisions now settled by D-1 through D-5.
+  - Three ticked with their ADR: fluid editor (0018), literal emphasis (0019), pinned
+    entity storage (0021). Licence and scene-number gutter style remain genuinely open; the
+    gutter line now says `layout` implements all three styles and Phase 7 picks.
+- [x] Confirm docs do not claim F1/F2/F3 are fixed until their phases actually pass.
+  - F1 and F2 are fixed and their phases passed. F3 is *not*, and four documents now say
+    so unprompted: the new Phase 6 exit criterion, `SPEC.md` §2.5's layering note, the
+    library page-count line, and `AGENTS.md`'s dedicated bullet.
 
 ## Exit conditions
 
-- [ ] README, AGENTS, SPEC, ADRs, and CI agree.
-- [ ] Six intended integration tests gate CI.
-- [ ] Real ENOSPC behavior is exercised in CI.
-- [ ] No known checked specification item overstates implementation.
-- [ ] Future coding agents receive accurate project context.
+- [x] README, AGENTS, SPEC, ADRs, and CI agree.
+- [x] Six intended integration tests gate CI.
+- [x] Real ENOSPC behavior is exercised in CI.
+- [x] No known checked specification item overstates implementation.
+  - Four boxes were unticked in this phase; three of them were found by reading the spec
+    against the audit rather than by the plan naming them.
+- [x] Future coding agents receive accurate project context.
 
 ## Suggested commit boundaries
 
-- [ ] `docs: synchronize phase status and architecture decisions`
-- [ ] `ci: run full integration suite and real ENOSPC test`
+- [x] `docs: synchronize phase status and architecture decisions`
+- [x] `ci: run full integration suite and real ENOSPC test`
+
+## Implementation log — Phase 3
+
+**Started:** 2026-07-25
+**Completed:** 2026-07-25
+**Primary implementer/agent:** Claude Opus 5 (Claude Code)
+**Starting commit:** `cdf3f3d` (Phase 2B)
+**Ending commit:** the two commits named above
+
+### Changes made
+
+Documentation:
+
+- `README.md`: status rewritten from "Phase 1 complete… there is still no editor" to what
+  the tree actually contains, including the fact that `layout` is unwired. The remediation
+  section now lists which phases are done instead of apologising for a stale line.
+- `AGENTS.md`: phases corrected; two new bullets — one for `layout` being implemented and
+  unintegrated, one for the stabilization gate and this plan being the live tracker; the
+  `metrics.dart` bullet rewritten around ADR 0018; the CI claim made exact; the full-disk
+  paragraph updated with what CI does and how to run the real thing locally.
+- `SPEC.md`: a "where the project is" note in §0; a Phase 7 gate blockquote; §13's invariant
+  checklist ticked, named and explained; §13 gained a table of what CI actually runs; §16's
+  three settled decisions ticked with their ADRs; §2.5's layering rule corrected to name
+  `check_layering.py` (ADR 0004) and the missing `bridge → layout` edge; four Phase 4/6
+  boxes unticked with their finding numbers.
+- `docs/DECISIONS.md`: ADRs 0018 through 0025.
+
+Code comments only — no behaviour changed in this phase:
+
+- `crates/document/src/document.rs`: the provenance re-anchoring comment now defers
+  explicitly instead of pointing at a phase that has passed.
+- `crates/bridge/src/api/files.rs`: `page_count`'s comment names ADR 0020 instead of
+  Phase 6.
+- `app/lib/editor/metrics.dart`, `app/test/editor/line_layout_test.dart`: both said the Rust
+  crate would replace the Dart geometry; ADR 0018 decided otherwise, and they now describe
+  the contract and the differential test that will hold it.
+
+CI:
+
+- `.github/workflows/ci.yml`: the `flutter` job runs all six integration tests, one step
+  each, under `xvfb-run`, benchmark last. The `rust` job mounts a 4 MB tmpfs, names it in
+  `SLUGLINE_FULL_DISK_DIR` for `cargo test --workspace`, and unmounts it with `if: always()`.
+
+### Tests added or changed
+
+None, and that is the point of this phase: it changes what CI *runs* and what the documents
+*claim*, not what the code does. The three integration files added to CI already existed and
+already passed; they simply gated nothing.
+
+### Commands run
+
+```text
+cargo fmt --all --check                                       # clean
+cargo clippy --workspace --all-targets -- -D warnings         # clean
+cargo test --workspace                                        # 344 passed, 0 failed
+python3 tools/check_layering.py                               # clean, 7 crates
+python3 tools/make_reference.py --check                       # fixture current
+cd app && flutter analyze                                     # No issues found
+cd app && flutter test                                        # 282 passed
+
+flutter test integration_test/bridge_test.dart              -d linux   # 4 passed
+flutter test integration_test/editor_test.dart              -d linux   # 7 passed
+flutter test integration_test/writing_test.dart             -d linux   # 11 passed
+flutter test integration_test/ime_test.dart                 -d linux   # 9 passed
+flutter test integration_test/persistence_test.dart         -d linux   # 12 passed
+flutter test integration_test/keystroke_benchmark_test.dart -d linux   # 2 passed
+
+# The ENOSPC path, proved before writing the CI step:
+unshare -Umr sh -c 'mount -t tmpfs -o size=4m,mode=1777 tmpfs $D &&
+  SLUGLINE_FULL_DISK_DIR=$D cargo test -p slugline_bridge --test persistence a_full_filesystem'
+                                                              # 1 passed, real path
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"   # valid
+```
+
+### Results
+
+Rust 344 and Flutter 282, both unchanged from Phase 2B — a documentation phase that moved a
+test count would be a documentation phase that did something else. All 45 integration tests
+pass locally, which matters more than usual this time: three of them now gate CI and never
+have before.
+
+### Deviations from plan
+
+**Ten ADR bullets became eight records.** D-1 (fluid editor + pinned Dart wrapper) is one
+decision with one rationale, and D-3 (bridge pagination + page count after save) is one
+decision whose second half is the argument for its first. Splitting either would have left
+four records that only make sense read in pairs. Every bullet is accounted for above with
+the record that carries it.
+
+**Three ADRs record decisions that are not implemented yet** — 0018's differential test,
+0020's bridge wiring, 0024's own-save suppression. Their "Tests and invariants" sections say
+so and list what must exist before remediation Phases 6 and 4 close, rather than describing
+tests as though they were there.
+
+### New risks or follow-up findings
+
+Writing the ADRs meant checking every test each one claimed, and two claims did not survive.
+Both are recorded inside the ADR that wanted them rather than quietly dropped:
+
+- **Nothing tests that a pinned entity survives losing its last occurrence** (ADR 0021).
+  That is the single behaviour a pin exists for. It holds by construction —
+  `EntityIndex::complete` merges the pinned map in unconditionally — and by construction is
+  not by test. One unit test in `entities.rs`, whenever that file is next open.
+- **Nothing compares `repaginate` against `paginate_snapshot` for the same edited
+  snapshot** (ADR 0022). `incremental.rs` proves the reused *prefix* matches the previous
+  output and that the cache was used; it never checks that the incremental result equals a
+  full pagination of the edited document, which is the assertion that would catch
+  incremental drift. Assigned to the ADR 0025 review in Phase 6G.
+
+Also worth carrying forward: the `Degraded` recovery risk logged in Phase 1 was checked
+against this phase's documentation pass. It is honest behaviour and loses nothing, but no
+user-facing document describes it; Phase 4's dialogs work is the natural place, since that
+is where the stale-journal prompt would be seen.
+
+### Reviewer notes
+
+- The tmpfs step was verified before it was written, in a user namespace, because a CI-only
+  step that has never run is exactly the kind of thing this phase exists to stop the project
+  from claiming.
+- Four SPEC boxes were unticked. Three of them (F4, F5, F8) the plan did not ask for; they
+  were found by reading the checklist against the audit, which 3.2's last task requires in
+  spirit. Their phases have not run yet, so ticking them would have been the same defect
+  this phase is repairing.
+- No ADR was edited. ADR 0024 extends ADR 0014 and says so in its header, per the rule in
+  `AGENTS.md`.
+- Phase 10's audit finding closure table still shows F2, F13 and F14 unticked although
+  Phases 1 and 2B closed them, while F1 is ticked. That table is Phase 10's to sign off
+  under a full verification run, so it was left alone rather than ticked from here; this
+  note is so the inconsistency is not read later as three open findings.
 
 ---
 
@@ -1643,7 +1854,7 @@ Prove the repaired codebase is stable, documented, and ready to begin Phase 7.
 - [ ] F4 — own-save watcher events suppressed.
 - [ ] F5 — saves serialized/coalesced safely.
 - [ ] F6 — scroll restored.
-- [ ] F7 — docs, ADRs, SPEC, and CI synchronized.
+- [x] F7 — docs, ADRs, SPEC, and CI synchronized.
 - [ ] F8 — external-change I/O moved off actor.
 - [ ] F9 — export copy separated from Save As.
 - [ ] F10 — uppercase rule resolved and tested.
@@ -1698,8 +1909,8 @@ Phase 7 may begin only when:
 1. [x] Phase 0 — Baseline and branch
 2. [x] Phase 1 — Recovery durability
 3. [x] Phase 2 — Multi-line editor correctness
-3b. [ ] Phase 2B — Keys swallowed by editor panels (F13, F14)
-4. [ ] Phase 3 — Documentation, ADRs, and CI
+3b. [x] Phase 2B — Keys swallowed by editor panels (F13, F14)
+4. [x] Phase 3 — Documentation, ADRs, and CI
 5. [ ] Phase 4 — Save serialization, watcher suppression, async external checks
 6. [ ] Phase 5 — Scroll restoration
 7. [ ] Phase 6 — Layout convergence and pagination bridge integration

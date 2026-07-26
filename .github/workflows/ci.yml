@@ -34,8 +34,27 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # §Phase 4's full-disk test is only the real thing when it has a small
+      # filesystem to fill; without one it falls back to proving the ENOSPC
+      # classification alone. A runner has root, so give it one. 4 MB is enough
+      # to fill in a fraction of a second and small enough to cost nothing.
+      # mode=1777 because the test runs as the unprivileged runner user.
+      - name: Mount a small filesystem for the full-disk test
+        run: |
+          sudo mkdir -p /mnt/slugline-full-disk
+          sudo mount -t tmpfs -o size=4m,mode=1777 tmpfs /mnt/slugline-full-disk
+          df -h /mnt/slugline-full-disk
+
       - name: Test
+        env:
+          SLUGLINE_FULL_DISK_DIR: /mnt/slugline-full-disk
         run: cargo test --workspace
+
+      # Even when the test above failed and left its ballast behind: a cached
+      # runner must never inherit a filesystem that is already full.
+      - name: Unmount the small filesystem
+        if: always()
+        run: sudo umount /mnt/slugline-full-disk || true
 
       - name: Layering (§2.5 — no upward crate dependencies)
         run: python3 tools/check_layering.py
@@ -135,7 +154,9 @@ jobs:
 
       # The bridge proofs need the real .so, so they run against the bundle
       # rather than in the unit-test job. xvfb supplies the X display the GTK
-      # embedder needs on a headless runner.
+      # embedder needs on a headless runner. Every integration test in
+      # app/integration_test/ runs here — all six, each its own step so a
+      # failure names itself, and none of them tolerated (no continue-on-error).
       - name: Install xvfb
         run: sudo apt-get install --no-install-recommends -y xvfb
 
@@ -149,8 +170,27 @@ jobs:
         working-directory: app
         run: xvfb-run -a flutter test integration_test/editor_test.dart -d linux
 
+      # Phase 3: a whole scene typed on the keyboard alone, against the real
+      # core. This is the suite that caught the completion popup stealing Enter.
+      - name: Writing workflow integration tests
+        working-directory: app
+        run: xvfb-run -a flutter test integration_test/writing_test.dart -d linux
+
+      # ADR 0005's exit gate as far as automation reaches it: the values a real
+      # input method sends, handed to the surface. Not a substitute for the
+      # manual ibus + CJK session, which is still owed.
+      - name: IME integration tests
+        working-directory: app
+        run: xvfb-run -a flutter test integration_test/ime_test.dart -d linux
+
+      # Phase 4 end to end: save, reopen, recover, back up, restore.
+      - name: Persistence integration tests
+        working-directory: app
+        run: xvfb-run -a flutter test integration_test/persistence_test.dart -d linux
+
       # §1.3: keystroke → glyph, p99 under 16 ms on the 120-page reference
       # script. Prints the table it asserts on, so a regression says by how much.
+      # Last, so nothing else is competing for the runner while it measures.
       - name: Keystroke budget
         working-directory: app
         run: xvfb-run -a flutter test integration_test/keystroke_benchmark_test.dart -d linux
