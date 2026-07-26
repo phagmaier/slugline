@@ -3,7 +3,7 @@
 **Source audit:** `REVIEW.md`  
 **Audit baseline:** commit `16b6cff` (`phase 6`), branch `dev`  
 **Purpose:** repair and stabilize the existing implementation before beginning Phase 7  
-**Status:** in progress — Phases 0–4 complete; later remediation phases not started
+**Status:** in progress — Phases 0–5 complete; later remediation phases not started
 
 ---
 
@@ -45,7 +45,7 @@ The remediation effort is complete only when all of the following are true:
 - [x] The application does not treat its own save as an external file modification.
 - [x] Overlapping saves for the same session cannot write out of order.
 - [x] External-change checks perform disk I/O off the actor thread.
-- [ ] Persisted scroll position is applied when reopening a script.
+- [x] Persisted scroll position is applied when reopening a script.
 - [ ] Fountain “Export Copy” semantics are separate from “Save As.”
 - [x] CI runs all intended integration tests and a real ENOSPC/full-disk test.
 - [x] README, AGENTS, SPEC, ADRs, and implementation status agree.
@@ -1884,41 +1884,106 @@ When reopening a script, apply the persisted `scrollRow` to the editor viewport 
 
 ## Tasks
 
-- [ ] Trace `ScriptView.scrollRow` from bridge response to `_openPath`.
-- [ ] Add an initial scroll row parameter to the editor/controller/surface boundary.
-- [ ] Apply the initial position only after the first valid layout extent exists.
-- [ ] Convert row to offset using the correct line height and viewport model.
-- [ ] Clamp to the current maximum scroll extent.
-- [ ] Handle files that changed and now contain fewer rows.
-- [ ] Avoid overwriting the restored position with an automatic focus/caret scroll.
-- [ ] Ensure a new untitled document starts at row 0.
-- [ ] Ensure subsequent user scrolling continues to persist as before.
-- [ ] Avoid repeated jump-to-initial-row during rebuilds.
+- [x] Trace `ScriptView.scrollRow` from bridge response to `_openPath`.
+- [x] Add an initial scroll row parameter to the editor/controller/surface boundary.
+- [x] Apply the initial position only after the first valid layout extent exists.
+- [x] Convert row to offset using the correct line height and viewport model.
+- [x] Clamp to the current maximum scroll extent.
+- [x] Handle files that changed and now contain fewer rows.
+- [x] Avoid overwriting the restored position with an automatic focus/caret scroll.
+- [x] Ensure a new untitled document starts at row 0.
+- [x] Ensure subsequent user scrolling continues to persist as before.
+- [x] Avoid repeated jump-to-initial-row during rebuilds.
 
 ## Tests
 
-- [ ] Persist a nonzero row.
-- [ ] Reopen the script.
-- [ ] Assert the viewport begins at the restored row.
-- [ ] Test row beyond new document extent clamps safely.
-- [ ] Test row 0.
-- [ ] Test initial focus does not immediately reset the restored position.
-- [ ] Test restoration occurs once.
+- [x] Persist a nonzero row.
+- [x] Reopen the script.
+- [x] Assert the viewport begins at the restored row.
+- [x] Test row beyond new document extent clamps safely.
+- [x] Test row 0.
+- [x] Test initial focus does not immediately reset the restored position.
+- [x] Test restoration occurs once.
 
 ## Documentation
 
-- [ ] Mark the Phase 4 scroll-position requirement complete only after the application test passes.
-- [ ] Update any comment that currently implies persistence alone is restoration.
+- [x] Mark the Phase 4 scroll-position requirement complete only after the application test passes.
+- [x] Update any comment that currently implies persistence alone is restoration.
 
 ## Exit conditions
 
-- [ ] Restored scripts visibly reopen near the saved row.
-- [ ] Widget/integration regression test passes.
-- [ ] Existing scrolling performance and persistence tests pass.
+- [x] Restored scripts visibly reopen near the saved row.
+- [x] Widget/integration regression test passes.
+- [x] Existing scrolling performance and persistence tests pass.
 
 ## Suggested commit boundary
 
 - [ ] `fix(editor): apply persisted scroll position on reopen`
+
+## Implementation log — Phase 5
+
+**Started:** 2026-07-26
+
+**Completed:** 2026-07-26
+
+**Primary implementer/agent:** OpenAI GPT-5.6 Sol (OpenCode)
+
+**Starting commit:** `0ba2095`
+
+**Ending commit:** working tree
+
+### Changes made
+
+- `app.dart` now carries the restored `ScriptView.scrollRow` through document
+  adoption instead of discarding it after reading the path. Recovery, library
+  opens and newly created documents keep the row-zero default.
+- `EditorPage` passes the initial row to `EditorSurface`. The surface waits until
+  its `ScrollPosition` has content dimensions, converts the visual row through
+  the existing padding and line-height model, clamps it to the current extent,
+  and applies it once.
+- Caret visibility is held until restoration completes, and the clamped row is
+  reported through the existing persistence callback. No bridge API, generated
+  binding, dependency or editor layout contract changed.
+- `SPEC.md` now marks the Phase 4 session-scroll requirement complete and names
+  the tests that prove both persistence and restoration.
+
+### Tests added or changed
+
+- Added `scroll_restore_test.dart`: nonzero row, row zero, initial focus,
+  shortened-document clamping, clamped-row reporting, one-shot restoration and
+  subsequent user scrolling.
+- Extended `integration_test/persistence_test.dart` to persist row 42 through the
+  real bridge, start `SluglineApp`, reopen the session and inspect the actual
+  editor viewport.
+
+### Commands run
+
+```text
+cd app && flutter analyze                                      # clean
+cd app && flutter test                                         # 289 passed
+cd app && flutter test test/editor/scroll_restore_test.dart    # 4 passed
+cd app && flutter test integration_test/persistence_test.dart -d linux
+                                                               # 14 passed
+cd app && flutter test integration_test/keystroke_benchmark_test.dart -d linux
+                                                               # 2 passed
+cargo fmt --all --check                                        # clean
+cargo clippy --workspace --all-targets -- -D warnings          # clean
+cargo test --workspace                                         # 377 passed
+python3 tools/check_layering.py                                 # clean
+```
+
+### Results
+
+F6 is closed: the value persisted by `doc_set_scroll` is now consumed by the
+application and applied only after the viewport can clamp it correctly. The
+120-page benchmark remained inside every budget: 1.42 ms keystroke-to-patch p99,
+6.33 ms frame-build p99, 1.66 ms journalled-keystroke p99, and no frame over
+16 ms.
+
+### Deviations from plan
+
+None. No ADR was added because this completes behavior already specified by
+Phase 4 rather than changing an architectural decision.
 
 ---
 
@@ -2459,8 +2524,8 @@ Phase 7 may begin only when:
 3. [x] Phase 2 — Multi-line editor correctness
 3b. [x] Phase 2B — Keys swallowed by editor panels (F13, F14)
 4. [x] Phase 3 — Documentation, ADRs, and CI
-5. [ ] Phase 4 — Save serialization, watcher suppression, async external checks
-6. [ ] Phase 5 — Scroll restoration
+5. [x] Phase 4 — Save serialization, watcher suppression, async external checks
+6. [x] Phase 5 — Scroll restoration
 7. [ ] Phase 6 — Layout convergence and pagination bridge integration
 8. [ ] Phase 7 — Export Copy vs Save As
 9. [ ] Phase 8 — Defensive cleanup

@@ -28,6 +28,7 @@ import 'package:slugline/editor/surface_semantics.dart';
 class EditorSurface extends StatefulWidget {
   const EditorSurface({
     required this.controller,
+    this.initialScrollRow = 0,
     this.focusNode,
     this.onOpenPalette,
     this.onOpenFind,
@@ -38,6 +39,11 @@ class EditorSurface extends StatefulWidget {
   });
 
   final EditorController controller;
+
+  /// The visual row to put at the top once the scroll extent is known.
+  /// Applied once, rather than through [ScrollController.initialScrollOffset],
+  /// because a stale row must be clamped against the newly laid-out document.
+  final int initialScrollRow;
 
   /// Supplied when something above the surface has to be able to give it the
   /// keyboard back — which the editor page does when it closes a panel. The
@@ -86,6 +92,11 @@ class EditorSurfaceState extends State<EditorSurface>
 
   final ScrollController _scroll = ScrollController();
 
+  /// Caret notifications must not pull the viewport back to row zero while the
+  /// first layout is still waiting to apply the parked position.
+  bool _initialScrollPending = true;
+  bool _initialScrollScheduled = false;
+
   TextInputConnection? _connection;
 
   /// Width of one character in the monospace font, measured once.
@@ -118,6 +129,18 @@ class EditorSurfaceState extends State<EditorSurface>
     _focusNode.addListener(_onFocusChanged);
     _scroll.addListener(_refreshSemantics);
     _scroll.addListener(_reportScroll);
+    _scheduleInitialScroll();
+  }
+
+  @override
+  void didUpdateWidget(EditorSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    oldWidget.controller.removeListener(_onDocumentChanged);
+    widget.controller.addListener(_onDocumentChanged);
+    _reportedRow = -1;
+    _initialScrollPending = true;
+    _scheduleInitialScroll();
   }
 
   @override
@@ -144,6 +167,29 @@ class EditorSurfaceState extends State<EditorSurface>
     _syncEditingState();
     _ensureCaretVisible();
     _refreshSemantics();
+  }
+
+  void _scheduleInitialScroll() {
+    if (_initialScrollScheduled) return;
+    _initialScrollScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initialScrollScheduled = false;
+      if (!mounted || !_initialScrollPending) return;
+      if (!_scroll.hasClients || !_scroll.position.hasContentDimensions) {
+        _scheduleInitialScroll();
+        return;
+      }
+
+      final row = math.max(0, widget.initialScrollRow);
+      final target = row == 0 ? 0.0 : _padding + row * _lineHeight;
+      _initialScrollPending = false;
+      _scroll.jumpTo(
+        target.clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent)),
+      );
+      // `jumpTo(0)` sends no notification. Report explicitly so a stale row
+      // from a file that became shorter is replaced by its clamped value.
+      _reportScroll();
+    });
   }
 
   /// Whether a rebuild is already queued for the semantics band.
@@ -574,7 +620,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   /// Keeps the caret on screen with a few rows of air around it.
   void _ensureCaretVisible() {
-    if (!_scroll.hasClients) return;
+    if (_initialScrollPending || !_scroll.hasClients) return;
     const margin = 3 * _lineHeight;
     final caretTop = _padding + _controller.caretRow * _lineHeight;
     final caretBottom = caretTop + _lineHeight;

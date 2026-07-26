@@ -905,13 +905,13 @@ Implement precisely this sequence, in `crates/storage`:
       integration test deletes it mid-session and opens a script anyway.
 - [x] Missing files shown as missing, not silently dropped. A drive that is not
       mounted this morning is not a script the writer threw away.
-- [ ] Session restore: reopen the scripts that were open last time, with scroll
-      positions. **Half done, and the half that shows is the missing one.** The
-      scroll row is parked in the index on every scroll, so a crash preserves it
-      as well as a clean exit does, and `integration_test/persistence_test.dart`
-      round-trips it — but nothing outside the generated bindings ever *reads*
-      `ScriptView::scroll_row`, so a reopened script starts at the top. Audit
-      finding F6; remediation Phase 5 applies it.
+- [x] Session restore: reopen the scripts that were open last time, with scroll
+      positions. The scroll row is parked in the index on every scroll, carried
+      from `ScriptView` through application adoption, and applied once the new
+      editor has a valid scroll extent. A stale row clamps safely if the file
+      became shorter. `scroll_restore_test.dart` covers the surface lifecycle and
+      `integration_test/persistence_test.dart` proves the real bridge-to-viewport
+      path. Audit finding F6; remediation Phase 5.
 
 ### Tests — these are the important ones
 

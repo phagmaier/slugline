@@ -135,12 +135,13 @@ class _SluglineAppState extends State<SluglineApp> {
     if (_open != null) return;
     final session = await widget.core.sessionToRestore();
     if (session.isEmpty) return;
-    await _openPath(session.first.path);
+    final restored = session.first;
+    await _openPath(restored.path, initialScrollRow: restored.scrollRow);
   }
 
   // --- opening and closing ---------------------------------------------------
 
-  Future<void> _openPath(String path) async {
+  Future<void> _openPath(String path, {int initialScrollRow = 0}) async {
     final handle = await files.libraryOpen(path: path);
     if (handle == null) {
       final created = await files.libraryCreate(path: path);
@@ -148,10 +149,13 @@ class _SluglineAppState extends State<SluglineApp> {
       await _adopt(RustDocumentCore.of(created));
       return;
     }
-    await _adopt(RustDocumentCore.of(handle));
+    await _adopt(
+      RustDocumentCore.of(handle),
+      initialScrollRow: initialScrollRow,
+    );
   }
 
-  Future<void> _adopt(DocumentCore core) async {
+  Future<void> _adopt(DocumentCore core, {int initialScrollRow = 0}) async {
     _open?.dispose();
     final preferences = widget.core.preferences();
     final controller = EditorController(core);
@@ -178,6 +182,7 @@ class _SluglineAppState extends State<SluglineApp> {
         controller: controller,
         autosave: autosave,
         status: status,
+        initialScrollRow: initialScrollRow,
       );
     });
   }
@@ -245,6 +250,7 @@ class _SluglineAppState extends State<SluglineApp> {
               controller: open.controller,
               autosave: open.autosave,
               saveStatus: open.status,
+              initialScrollRow: open.initialScrollRow,
               onClosed: _closeScript,
               title: _titleOf(open.core),
             ),
@@ -267,12 +273,14 @@ class _OpenScript {
     required this.controller,
     required this.autosave,
     required this.status,
+    required this.initialScrollRow,
   });
 
   final DocumentCore core;
   final EditorController controller;
   final AutosaveDriver autosave;
   final SaveStatus status;
+  final int initialScrollRow;
 
   void dispose() {
     autosave.dispose();

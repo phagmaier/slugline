@@ -34,6 +34,7 @@ class EditorPage extends StatefulWidget {
     required this.controller,
     this.autosave,
     this.saveStatus,
+    this.initialScrollRow = 0,
     this.onClosed,
     this.title,
     super.key,
@@ -46,6 +47,9 @@ class EditorPage extends StatefulWidget {
   final AutosaveDriver? autosave;
 
   final SaveStatus? saveStatus;
+
+  /// The visual row parked for this script in the previous session.
+  final int initialScrollRow;
 
   /// Back to the library. Null when the editor is the whole application, which
   /// is what a test pumping this page directly gets.
@@ -277,6 +281,7 @@ class EditorPageState extends State<EditorPage> {
                   Positioned.fill(
                     child: EditorSurface(
                       controller: widget.controller,
+                      initialScrollRow: widget.initialScrollRow,
                       focusNode: _editorFocus,
                       // The surface has the focus, so it sees these keys first and
                       // hands the ones that are not editing back up here.

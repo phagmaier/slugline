@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:slugline/app.dart';
 import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
@@ -363,6 +364,29 @@ void main() {
       core.close();
     },
   );
+
+  testWidgets('session restore applies the parked row to the editor viewport', (
+    tester,
+  ) async {
+    final file = path('scroll-restore.fountain');
+    File(file).writeAsStringSync(
+      [for (var i = 1; i <= 100; i++) 'Action line $i.\n\n'].join(),
+    );
+    final handle = await files.libraryOpen(path: file);
+    expect(handle, isNotNull);
+    files.docSetScroll(handle: handle!, row: 42);
+
+    await tester.pumpWidget(SluglineApp(core: Core.instance));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(EditorSurface), findsOneWidget);
+    final position = tester
+        .state<ScrollableState>(find.byType(Scrollable))
+        .position;
+    expect(position.pixels, 28 + 42 * 21);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('a script whose file has gone is shown as missing, not dropped', (
     tester,
