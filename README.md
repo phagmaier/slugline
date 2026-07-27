@@ -3,28 +3,32 @@
 A fast, keyboard-driven screenplay editor that reads and writes plain Fountain
 files and produces submission-quality PDFs. Linux only.
 
-**Status: Phases 0–6 written, in a stabilization gate.** `crates/fountain` and
-`crates/document` read and write Fountain losslessly and hold the model, the edit
-commands and undo. `crates/bridge` is the actor thread and the §6 surface, `app/`
-is the editor, the keyboard workflow, autocomplete and the library, and
-`crates/storage` is the atomic save, the crash journal, backups and the library
-index. `crates/layout` paginates — but nothing in the application calls it yet,
-so page counts are still blank; wiring it through the bridge is remediation
-Phase 6. `render_pdf` and `spell` are still one-constant placeholders for
-Phases 7 and 9. See `docs/DECISIONS.md`.
+**Status: Phases 0–6 written, stabilized, and ready for Phase 7.**
+`crates/fountain` and `crates/document` read and write Fountain losslessly and hold
+the model, the edit commands and undo. `crates/bridge` is the actor thread and the
+§6 surface, `app/` is the editor, the keyboard workflow, autocomplete and the
+library, and `crates/storage` is the atomic save, the crash journal, backups and
+the library index. `crates/layout` paginates, and since remediation Phase 6 the
+application calls it: every successful save paginates the exact snapshot it wrote
+and caches the page count in the library. What Phase 7 adds is the polished
+preview and the PDF, from that same pagination. `render_pdf` and `spell` are still
+one-constant placeholders for Phases 7 and 9. See `docs/DECISIONS.md`.
 
 ## Remediation status
 
-The project is in a **stabilization gate**, not new feature work. A mid-project
-audit is recorded in `REVIEW.md`; the repairs it calls for are tracked phase by
-phase in `REMEDIATION_PLAN.md`, on branch `fix/mid-project-remediation`. Phase 7
-(PDF export and preview) does not begin until that plan's Phase 10 authorization
-gate passes.
+The **stabilization gate is passed**, as of 2026-07-26. A mid-project audit is
+recorded in `REVIEW.md`; the repairs it called for are tracked phase by phase in
+`REMEDIATION_PLAN.md`, on branch `fix/mid-project-remediation`. All fourteen
+findings are closed, the Phase 10 verification is green — Rust 435 tests, Dart 320
+unit and 49 integration, the real ENOSPC path, and the keystroke benchmark inside
+its §1.3 budget — and Phase 7 (PDF export and preview) is open for work.
 
-Done so far: Phase 0 (baseline), Phase 1 (recovery durability), Phase 2
-(multi-line blocks), Phase 2B (keys swallowed by panels), Phase 3 (this
-document, `AGENTS.md`, `SPEC.md`, the ADRs and CI). What remains is listed in
-that plan; the phases still open are the ones its checkboxes leave unticked.
+The phases were: 0 baseline, 1 recovery durability, 2 multi-line blocks, 2B keys
+swallowed by panels, 3 documentation and CI, 4 save serialization and the watcher,
+5 scroll restoration, 6 layout convergence and the pagination bridge, 7 export
+copy versus Save As, 8 defensive cleanup, 9 the manual IME, accessibility and
+end-to-end gates, and 10 final verification. What was knowingly left undone is the
+deferred backlog at the end of that plan; none of it blocks Phase 7.
 
 ## Requirements
 

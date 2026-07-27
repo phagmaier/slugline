@@ -20,13 +20,14 @@ This spec is organised into **phases**. Each phase has:
 Do not start a phase until the previous phase's exit criteria are all ticked. The phases
 are ordered so that each one is independently demoable and each one de-risks the next.
 
-**Where the project is, as of 2026-07-25.** Phases 0–6 are written. Between Phase 6 and
-Phase 7 sits a **stabilization gate**: a mid-project audit (`REVIEW.md`) found defects
-this document's checkboxes did not reflect, and `REMEDIATION_PLAN.md` works through them
-phase by phase. Phase 7 begins only when that plan's Phase 10 authorization gate passes.
-A box ticked here means the behaviour is implemented *and* tested; where the remediation
-found one that was not, the box has been unticked and says why, with the finding number.
-That plan, not this section, is the live tracker.
+**Where the project is, as of 2026-07-26.** Phases 0–6 are written, and the project is
+**ready for Phase 7**. Between Phase 6 and Phase 7 sat a **stabilization gate**: a
+mid-project audit (`REVIEW.md`) found defects this document's checkboxes did not reflect,
+and `REMEDIATION_PLAN.md` worked through them phase by phase. That plan is now complete —
+all fourteen findings closed, its Phase 10 verification passed, and its Phase 7
+authorization gate is open. A box ticked here means the behaviour is implemented *and*
+tested; where the remediation found one that was not, the box was unticked and says why,
+with the finding number. For what was repaired and how, that plan remains the record.
 
 **If you are handing work to AI agents:** give an agent exactly one phase section, plus
 §2 (Architecture) and §3 (Data Model). Do not let an agent work across phase boundaries.
@@ -1080,11 +1081,11 @@ Requirement §12. No UI work in this phase beyond a debug dump view.
 
 ## Phase 7 — PDF Export, Title Page, and Preview
 
-> **Gate.** Phase 7 does not begin until `REMEDIATION_PLAN.md`'s Phase 10 authorization
-> gate passes — in particular until pagination is already integrated through the bridge,
-> so that preview and PDF start by consuming an engine rather than integrating one under
-> feature pressure, and until the back half of `crates/layout/src/engine.rs` has had the
-> focused review ADR 0025 requires.
+> **Gate — passed 2026-07-26.** Phase 7 did not begin until `REMEDIATION_PLAN.md`'s
+> Phase 10 authorization gate passed: pagination is integrated through the bridge, so
+> preview and PDF start by consuming an engine rather than integrating one under feature
+> pressure, and the back half of `crates/layout/src/engine.rs` has had the focused review
+> ADR 0025 requires (Phase 6G). This phase is now open for work.
 
 **Goal:** You can send the output to a production company without embarrassment.
 
