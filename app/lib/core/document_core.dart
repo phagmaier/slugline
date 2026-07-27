@@ -1,6 +1,7 @@
 import 'package:slugline/src/rust/api/doc.dart' as rust;
 import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/src/rust/api/layout.dart' as layout;
+import 'package:slugline/src/rust/api/spell.dart' as spell;
 
 export 'package:slugline/src/rust/api/files.dart'
     show
@@ -56,6 +57,18 @@ export 'package:slugline/src/rust/api/doc.dart'
         NavigatorScene,
         NavigatorView,
         TitleEntryView;
+
+export 'package:slugline/src/rust/api/spell.dart'
+    show
+        Misspelling,
+        SpellActionResult,
+        SpellActionResult_Applied,
+        SpellActionResult_Failed,
+        SpellActionResult_NoScriptPath,
+        SpellActionResult_NoSuchDocument,
+        SpellCheckResult,
+        SpellLanguage,
+        SpellStatus;
 
 /// Everything that turns a script into pages: the preview and the PDF.
 ///
@@ -158,6 +171,27 @@ abstract class DocumentCore {
   );
 
   bool setEntityPinned(rust.CompletionKind kind, String value, bool pinned);
+
+  // --- spelling (§Phase 9) -------------------------------------------------
+
+  spell.SpellStatus spellStatus();
+
+  Future<spell.SpellActionResult> configureSpelling({
+    required bool enabled,
+    String? language,
+  });
+
+  Future<spell.SpellCheckResult> spellCheckBlock(int block);
+
+  Future<List<String>> spellSuggest(String word);
+
+  spell.SpellActionResult spellIgnoreOnce(spell.Misspelling misspelling);
+
+  spell.SpellActionResult spellIgnoreAll(String word);
+
+  Future<spell.SpellActionResult> spellAddPersonal(String word);
+
+  Future<spell.SpellActionResult> spellAddProject(String word);
 
   /// Every match of [query], in document order.
   List<rust.FindMatch> find(rust.FindQuery query);
@@ -340,6 +374,45 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
         value: value,
         pinned: pinned,
       );
+
+  @override
+  spell.SpellStatus spellStatus() => spell.spellStatus();
+
+  @override
+  Future<spell.SpellActionResult> configureSpelling({
+    required bool enabled,
+    String? language,
+  }) => spell.spellConfigure(enabled: enabled, language: language);
+
+  @override
+  Future<spell.SpellCheckResult> spellCheckBlock(int block) =>
+      spell.spellCheckBlock(handle: _handle, block: block);
+
+  @override
+  Future<List<String>> spellSuggest(String word) =>
+      spell.spellSuggest(word: word);
+
+  @override
+  spell.SpellActionResult spellIgnoreOnce(spell.Misspelling misspelling) =>
+      spell.spellIgnoreOnce(
+        handle: _handle,
+        block: misspelling.block,
+        startUtf16: misspelling.startUtf16,
+        endUtf16: misspelling.endUtf16,
+        word: misspelling.word,
+      );
+
+  @override
+  spell.SpellActionResult spellIgnoreAll(String word) =>
+      spell.spellIgnoreAll(handle: _handle, word: word);
+
+  @override
+  Future<spell.SpellActionResult> spellAddPersonal(String word) =>
+      spell.spellAddPersonal(word: word);
+
+  @override
+  Future<spell.SpellActionResult> spellAddProject(String word) =>
+      spell.spellAddProject(handle: _handle, word: word);
 
   @override
   List<rust.FindMatch> find(rust.FindQuery query) =>

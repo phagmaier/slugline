@@ -8,6 +8,7 @@ import 'api/events.dart';
 import 'api/files.dart';
 import 'api/handshake.dart';
 import 'api/layout.dart';
+import 'api/spell.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -185,6 +186,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<LayoutLineView> dco_decode_list_layout_line_view(dynamic raw);
 
   @protected
+  List<Misspelling> dco_decode_list_misspelling(dynamic raw);
+
+  @protected
   List<NavigatorCharacter> dco_decode_list_navigator_character(dynamic raw);
 
   @protected
@@ -206,7 +210,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ScriptView> dco_decode_list_script_view(dynamic raw);
 
   @protected
+  List<SpellLanguage> dco_decode_list_spell_language(dynamic raw);
+
+  @protected
   List<TitleEntryView> dco_decode_list_title_entry_view(dynamic raw);
+
+  @protected
+  Misspelling dco_decode_misspelling(dynamic raw);
 
   @protected
   NavigatorCharacter dco_decode_navigator_character(dynamic raw);
@@ -303,6 +313,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScriptView dco_decode_script_view(dynamic raw);
+
+  @protected
+  SpellActionResult dco_decode_spell_action_result(dynamic raw);
+
+  @protected
+  SpellCheckResult dco_decode_spell_check_result(dynamic raw);
+
+  @protected
+  SpellLanguage dco_decode_spell_language(dynamic raw);
+
+  @protected
+  SpellStatus dco_decode_spell_status(dynamic raw);
 
   @protected
   TextMetrics dco_decode_text_metrics(dynamic raw);
@@ -503,6 +525,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<Misspelling> sse_decode_list_misspelling(SseDeserializer deserializer);
+
+  @protected
   List<NavigatorCharacter> sse_decode_list_navigator_character(
     SseDeserializer deserializer,
   );
@@ -530,9 +555,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ScriptView> sse_decode_list_script_view(SseDeserializer deserializer);
 
   @protected
+  List<SpellLanguage> sse_decode_list_spell_language(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<TitleEntryView> sse_decode_list_title_entry_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  Misspelling sse_decode_misspelling(SseDeserializer deserializer);
 
   @protected
   NavigatorCharacter sse_decode_navigator_character(
@@ -647,6 +680,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScriptView sse_decode_script_view(SseDeserializer deserializer);
+
+  @protected
+  SpellActionResult sse_decode_spell_action_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SpellCheckResult sse_decode_spell_check_result(SseDeserializer deserializer);
+
+  @protected
+  SpellLanguage sse_decode_spell_language(SseDeserializer deserializer);
+
+  @protected
+  SpellStatus sse_decode_spell_status(SseDeserializer deserializer);
 
   @protected
   TextMetrics sse_decode_text_metrics(SseDeserializer deserializer);
@@ -925,6 +972,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_misspelling(
+    List<Misspelling> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_navigator_character(
     List<NavigatorCharacter> self,
     SseSerializer serializer,
@@ -961,10 +1014,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_spell_language(
+    List<SpellLanguage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_title_entry_view(
     List<TitleEntryView> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_misspelling(Misspelling self, SseSerializer serializer);
 
   @protected
   void sse_encode_navigator_character(
@@ -1109,6 +1171,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_script_view(ScriptView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_spell_action_result(
+    SpellActionResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_spell_check_result(
+    SpellCheckResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_spell_language(SpellLanguage self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_spell_status(SpellStatus self, SseSerializer serializer);
 
   @protected
   void sse_encode_text_metrics(TextMetrics self, SseSerializer serializer);

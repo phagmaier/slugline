@@ -54,8 +54,82 @@ class FakeCore implements DocumentCore {
   /// from blocks: scene parsing and entity indexing belong to Rust.
   NavigatorView navigatorData = const NavigatorView(scenes: [], characters: []);
 
+  SpellStatus spellStatusData = const SpellStatus(
+    enabled: false,
+    language: null,
+    languages: [],
+    message: 'Spell checking is off.',
+  );
+
+  final Map<int, List<Misspelling>> spellings = {};
+  int spellChecks = 0;
+  Duration spellCheckDelay = Duration.zero;
+  final List<(String, String)> spellActions = [];
+
   @override
   NavigatorView navigator() => navigatorData;
+
+  @override
+  SpellStatus spellStatus() => spellStatusData;
+
+  @override
+  Future<SpellActionResult> configureSpelling({
+    required bool enabled,
+    String? language,
+  }) async {
+    spellStatusData = SpellStatus(
+      enabled: enabled,
+      language: language ?? spellStatusData.language,
+      languages: spellStatusData.languages,
+      message: enabled ? 'Checking.' : 'Spell checking is off.',
+    );
+    return const SpellActionResult.applied();
+  }
+
+  @override
+  Future<SpellCheckResult> spellCheckBlock(int block) async {
+    spellChecks++;
+    if (spellCheckDelay != Duration.zero) {
+      await Future<void>.delayed(spellCheckDelay);
+    }
+    return SpellCheckResult(
+      block: block,
+      current: true,
+      cached: false,
+      misspellings: List.of(spellings[block] ?? const []),
+    );
+  }
+
+  @override
+  Future<List<String>> spellSuggest(String word) async => ['$word-suggestion'];
+
+  @override
+  SpellActionResult spellIgnoreOnce(Misspelling misspelling) {
+    spellActions.add(('once', misspelling.word));
+    spellings[misspelling.block]?.remove(misspelling);
+    return const SpellActionResult.applied();
+  }
+
+  @override
+  SpellActionResult spellIgnoreAll(String word) {
+    spellActions.add(('all', word));
+    for (final words in spellings.values) {
+      words.removeWhere((misspelling) => misspelling.word == word);
+    }
+    return const SpellActionResult.applied();
+  }
+
+  @override
+  Future<SpellActionResult> spellAddPersonal(String word) async {
+    spellActions.add(('personal', word));
+    return const SpellActionResult.applied();
+  }
+
+  @override
+  Future<SpellActionResult> spellAddProject(String word) async {
+    spellActions.add(('project', word));
+    return const SpellActionResult.applied();
+  }
 
   @override
   List<Completion> complete(

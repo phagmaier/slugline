@@ -49,7 +49,7 @@ use slugline_storage::{atomic, paths::Paths, prefs, Preferences as CorePreferenc
 use crate::actor::actor;
 use crate::api::doc::DocumentHandle;
 use crate::api::events::{emit, CoreEvent};
-use crate::api::layout;
+use crate::api::{layout, spell};
 use crate::state::{AppState, Session, Storage};
 
 // ---------------------------------------------------------------------------
@@ -220,9 +220,13 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
         Paths::at(config_dir, data_dir, state_dir)
     };
 
-    let prefs = CorePreferences::load(&paths.preferences());
+    let mut prefs = CorePreferences::load(&paths.preferences());
     let mut library = Library::load(&paths.library_index());
     library.refresh();
+    // Discovery, dictionary parsing and personal-dictionary I/O all happen on
+    // this async worker before the actor sees the resulting immutable state.
+    let spelling = spell::initialise(&paths, &prefs);
+    prefs.spell_language = spelling.language.clone();
 
     // The watcher's callback runs on `notify`'s thread and does one thing: push
     // an event at Dart. It must not touch `AppState` — that would be a second
@@ -241,6 +245,7 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
     .ok();
 
     actor().run(move |state| {
+        *state.spelling_mut() = spelling;
         state.set_storage(Storage {
             paths,
             prefs,
@@ -1712,6 +1717,10 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
             autosave_enabled: preferences.autosave_enabled,
             autocomplete_enabled: preferences.autocomplete_enabled,
             navigator_visible: preferences.navigator_visible,
+            // This older general-preferences surface does not edit Phase 9's
+            // spell controls. Preserve the values owned by `spell_configure`.
+            spell_enabled: storage.prefs.spell_enabled,
+            spell_language: storage.prefs.spell_language.clone(),
             autosave_idle_ms: preferences.autosave_idle_ms,
             autosave_interval_ms: preferences.autosave_interval_ms,
             backup_dir: preferences.backup_dir.map(PathBuf::from),

@@ -99,6 +99,12 @@ impl Paths {
     pub fn preferences(&self) -> PathBuf {
         self.config.join("preferences.json")
     }
+
+    /// `$XDG_CONFIG_HOME/slugline/personal.dic` — §Phase 9's words accepted in
+    /// every project.
+    pub fn personal_dictionary(&self) -> PathBuf {
+        self.config.join("personal.dic")
+    }
 }
 
 #[cfg(test)]
@@ -112,6 +118,9 @@ mod tests {
         assert!(paths.backup_dir().starts_with("/tmp/slugline-test/state"));
         assert!(paths.library_index().starts_with("/tmp/slugline-test/data"));
         assert!(paths.preferences().starts_with("/tmp/slugline-test/config"));
+        assert!(paths
+            .personal_dictionary()
+            .starts_with("/tmp/slugline-test/config"));
     }
 
     #[test]

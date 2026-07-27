@@ -9,3 +9,6 @@ pub mod handshake;
 /// Pagination: the §6 surface over `crates/layout`, as an async snapshot job
 /// (ADR 0020).
 pub mod layout;
+/// Dictionary discovery, background block checks and explicit dictionary
+/// actions (§Phase 9).
+pub mod spell;

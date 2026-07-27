@@ -1,7 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart' show kPrimaryButton;
+import 'package:flutter/gestures.dart' show kPrimaryButton, kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -548,6 +548,11 @@ class EditorSurfaceState extends State<EditorSurface>
   static const double _multiClickSlop = 8;
 
   void _onPointerDown(PointerDownEvent event) {
+    if (event.buttons & kSecondaryButton != 0) {
+      unawaited(_showSpellingMenu(event));
+      return;
+    }
+    if (event.buttons & kPrimaryButton == 0) return;
     _focusNode.requestFocus();
     final (row, column) = _gridAt(event.localPosition);
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -571,6 +576,123 @@ class EditorSurfaceState extends State<EditorSurface>
         _controller.selectWordAt(row, column);
       default:
         _controller.selectBlockAt(row, column);
+    }
+  }
+
+  Future<void> _showSpellingMenu(PointerDownEvent event) async {
+    if (event.localPosition.dx < _pageLeft ||
+        event.localPosition.dx > _pageLeft + _pageColumns * _advance) {
+      return;
+    }
+    final (row, column) = _gridAt(event.localPosition);
+    final misspelling = _controller.misspellingAt(
+      _controller.positionAt(row, column),
+    );
+    if (misspelling == null) return;
+    final suggestions = await _controller.suggestionsFor(misspelling);
+    if (!mounted) return;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final action = await showMenu<_SpellMenuAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(event.position, event.position),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        for (final suggestion in suggestions)
+          PopupMenuItem(
+            value: _SpellReplacement(suggestion),
+            child: Text(suggestion),
+          ),
+        if (suggestions.isNotEmpty) const PopupMenuDivider(),
+        const PopupMenuItem(value: _SpellReplace(), child: Text('Replace…')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _SpellIgnoreOnce(),
+          child: Text('Ignore Once'),
+        ),
+        const PopupMenuItem(
+          value: _SpellIgnoreAll(),
+          child: Text('Ignore All'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _SpellAddPersonal(),
+          child: Text('Add to Personal Dictionary'),
+        ),
+        const PopupMenuItem(
+          value: _SpellAddProject(),
+          child: Text('Add to Project Dictionary'),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _SpellReplacement(:final word):
+        _controller.replaceMisspelling(misspelling, word);
+      case _SpellReplace():
+        final replacement = await _replacementFor(misspelling.word);
+        if (replacement != null && replacement != misspelling.word) {
+          _controller.replaceMisspelling(misspelling, replacement);
+        }
+      case _SpellIgnoreOnce():
+        _reportSpellAction(_controller.ignoreMisspellingOnce(misspelling));
+      case _SpellIgnoreAll():
+        _reportSpellAction(_controller.ignoreMisspellingAll(misspelling));
+      case _SpellAddPersonal():
+        _reportSpellAction(
+          await _controller.addToPersonalDictionary(misspelling),
+        );
+      case _SpellAddProject():
+        _reportSpellAction(
+          await _controller.addToProjectDictionary(misspelling),
+        );
+    }
+  }
+
+  Future<String?> _replacementFor(String word) async {
+    final input = TextEditingController(text: word);
+    final replacement = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Replace misspelling'),
+        content: TextField(
+          key: const ValueKey('spell replacement'),
+          controller: input,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Replacement'),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(input.text),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    );
+    input.dispose();
+    return replacement;
+  }
+
+  void _reportSpellAction(SpellActionResult result) {
+    if (!mounted) return;
+    final message = switch (result) {
+      SpellActionResult_Applied() => null,
+      SpellActionResult_NoScriptPath() =>
+        'Save the script before adding a project word.',
+      SpellActionResult_NoSuchDocument() => 'The script is no longer open.',
+      SpellActionResult_Failed(:final message) => message,
+    };
+    if (message != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -790,6 +912,7 @@ class EditorSurfaceState extends State<EditorSurface>
                     children: [
                       Positioned.fill(
                         child: RepaintBoundary(
+                          key: const ValueKey('editor paint'),
                           child: CustomPaint(
                             painter: _SurfacePainter(
                               controller: _controller,
@@ -928,6 +1051,7 @@ class _EditorColours {
     required this.selection,
     required this.caret,
     required this.rule,
+    required this.spelling,
   });
 
   factory _EditorColours.of(BuildContext context) {
@@ -938,6 +1062,7 @@ class _EditorColours {
       selection: scheme.primary.withValues(alpha: 0.30),
       caret: scheme.primary,
       rule: scheme.onSurface.withValues(alpha: 0.25),
+      spelling: scheme.error,
     );
   }
 
@@ -946,6 +1071,7 @@ class _EditorColours {
   final Color selection;
   final Color caret;
   final Color rule;
+  final Color spelling;
 }
 
 /// Paints the rows that are on screen, and nothing else.
@@ -1062,6 +1188,8 @@ class _SurfacePainter extends CustomPainter {
             ..paint(canvas, Offset(x, y + (_lineHeight - _fontSize) / 2));
         }
 
+        _paintSpellingUnderlines(canvas, block.id, line, x, y);
+
         if (composing.isValid && block.id == controller.selection.focus.block) {
           _paintComposingUnderline(canvas, line, column, y);
         }
@@ -1069,6 +1197,38 @@ class _SurfacePainter extends CustomPainter {
     }
 
     if (showCaret) _paintCaret(canvas);
+  }
+
+  void _paintSpellingUnderlines(
+    Canvas canvas,
+    int block,
+    VisualLine line,
+    double x,
+    double y,
+  ) {
+    for (final misspelling in controller.misspellingsFor(block)) {
+      final start = math.max(misspelling.startUtf16, line.start);
+      final end = math.min(misspelling.endUtf16, line.end);
+      if (end <= start) continue;
+      final from = x + line.columnAtOffset(start) * advance;
+      final to = x + line.columnAtOffset(end) * advance;
+      final baseline = y + _lineHeight - 1.5;
+      final path = Path()..moveTo(from, baseline);
+      var cursor = from;
+      var up = true;
+      while (cursor < to) {
+        cursor = math.min(to, cursor + 2.0);
+        path.lineTo(cursor, baseline + (up ? -1.5 : 1.5));
+        up = !up;
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = colours.spelling
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
   }
 
   /// Sections, synopses, notes and boneyard never reach the page (§5.2). Showing
@@ -1189,4 +1349,33 @@ class _SurfacePainter extends CustomPainter {
       old.pageLeft != pageLeft ||
       old.showCaret != showCaret ||
       old.composing != composing;
+}
+
+sealed class _SpellMenuAction {
+  const _SpellMenuAction();
+}
+
+class _SpellReplacement extends _SpellMenuAction {
+  const _SpellReplacement(this.word);
+  final String word;
+}
+
+class _SpellReplace extends _SpellMenuAction {
+  const _SpellReplace();
+}
+
+class _SpellIgnoreOnce extends _SpellMenuAction {
+  const _SpellIgnoreOnce();
+}
+
+class _SpellIgnoreAll extends _SpellMenuAction {
+  const _SpellIgnoreAll();
+}
+
+class _SpellAddPersonal extends _SpellMenuAction {
+  const _SpellAddPersonal();
+}
+
+class _SpellAddProject extends _SpellMenuAction {
+  const _SpellAddProject();
 }

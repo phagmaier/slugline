@@ -3,13 +3,14 @@
 //! One instance of this lives on the actor thread (see [`crate::actor`]) and is
 //! reachable from nowhere else, so no field here needs a lock.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slugline_document::{BlockId, Document, EntityIndex, EntityKind, Patch};
 use slugline_layout::{LayoutEngine, PageConfig, PaginatedScript};
+use slugline_spell::{Dictionary as SpellDictionary, DictionaryInfo, Misspelling};
 use slugline_storage::journal::Journal;
 use slugline_storage::library::Library;
 use slugline_storage::watch::{FileWatcher, OwnWrites};
@@ -37,6 +38,9 @@ pub struct AppState {
     /// every Phase 1–3 test runs in exactly that state, and so does the first
     /// instant of a real session.
     storage: Option<Storage>,
+    /// Phase 9's installed/selected dictionary and personal overlay. This is
+    /// global because the language preference and personal dictionary are.
+    spelling: SpellingState,
 }
 
 /// The disk-facing half of the core.
@@ -123,6 +127,14 @@ impl AppState {
 
     pub fn set_storage(&mut self, storage: Storage) {
         self.storage = Some(storage);
+    }
+
+    pub fn spelling(&self) -> &SpellingState {
+        &self.spelling
+    }
+
+    pub fn spelling_mut(&mut self) -> &mut SpellingState {
+        &mut self.spelling
     }
 
     /// The handles of every open document, for the shutdown sweep.
@@ -226,6 +238,8 @@ pub struct Session {
     /// This session's pagination: the engine, its cache, and the last result
     /// (ADR 0020). Nothing in here is touched by an edit.
     pagination: PaginationState,
+    /// Per-script spell cache and overlays. Never contains document text.
+    spelling: SessionSpelling,
 }
 
 impl Session {
@@ -245,6 +259,7 @@ impl Session {
             saving: None,
             document_generation: 0,
             pagination: PaginationState::default(),
+            spelling: SessionSpelling::default(),
         }
     }
 
@@ -285,6 +300,7 @@ impl Session {
     pub fn replace_document(&mut self, document: Document) {
         self.document = document;
         self.document_changed();
+        self.spelling.cache.clear();
     }
 
     pub fn entities(&self) -> &EntityIndex {
@@ -338,8 +354,21 @@ impl Session {
 
     /// Attaches this session to a file. Called by open, create, and Save As.
     pub fn set_file(&mut self, path: PathBuf, id: String) {
+        if self.path.as_ref() != Some(&path) {
+            self.spelling.project_loaded_for = None;
+            self.spelling.project_words.clear();
+            self.spelling.bump();
+        }
         self.path = Some(path);
         self.id = Some(id);
+    }
+
+    pub fn spelling(&self) -> &SessionSpelling {
+        &self.spelling
+    }
+
+    pub fn spelling_mut(&mut self) -> &mut SessionSpelling {
+        &mut self.spelling
     }
 
     pub fn set_journal(&mut self, journal: Option<Journal>) {
@@ -445,6 +474,90 @@ impl Session {
     pub fn interrupt(&mut self) -> &mut Document {
         self.last_edit = None;
         &mut self.document
+    }
+}
+
+/// The process-wide half of spell checking.
+pub struct SpellingState {
+    pub dictionaries: Vec<DictionaryInfo>,
+    pub dictionary: Option<Arc<SpellDictionary>>,
+    pub enabled: bool,
+    pub language: Option<String>,
+    pub personal_words: BTreeSet<String>,
+    pub personal_path: Option<PathBuf>,
+    /// Serialises personal-dictionary read/modify/write sequences while the
+    /// actor remains free during the disk write.
+    pub personal_lock: Arc<Mutex<()>>,
+    /// Cache key component. Changes when the selected dictionary or personal
+    /// overlay changes.
+    pub revision: u64,
+    pub message: String,
+}
+
+impl Default for SpellingState {
+    fn default() -> SpellingState {
+        SpellingState {
+            dictionaries: Vec::new(),
+            dictionary: None,
+            enabled: true,
+            language: None,
+            personal_words: BTreeSet::new(),
+            personal_path: None,
+            personal_lock: Arc::new(Mutex::new(())),
+            revision: 0,
+            message: "No Hunspell dictionaries were found.".to_owned(),
+        }
+    }
+}
+
+impl SpellingState {
+    pub fn replace_dictionary(
+        &mut self,
+        language: Option<String>,
+        dictionary: Option<Arc<SpellDictionary>>,
+        message: String,
+    ) {
+        self.language = language;
+        self.dictionary = dictionary;
+        self.message = message;
+        self.revision = self.revision.wrapping_add(1);
+    }
+}
+
+/// One ignored occurrence. The text fingerprint makes "Ignore Once" expire as
+/// soon as its block changes, without a timer or a scan.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IgnoredOccurrence {
+    pub block: BlockId,
+    pub text_fingerprint: u64,
+    pub start_utf8: usize,
+    pub end_utf8: usize,
+    pub word: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedSpellBlock {
+    pub key: u64,
+    pub misspellings: Vec<Misspelling>,
+}
+
+/// The session-owned half of spell checking.
+#[derive(Default)]
+pub struct SessionSpelling {
+    pub cache: HashMap<BlockId, CachedSpellBlock>,
+    pub ignored_once: HashSet<IgnoredOccurrence>,
+    pub ignored_all: BTreeSet<String>,
+    pub project_words: BTreeSet<String>,
+    pub project_loaded_for: Option<PathBuf>,
+    /// The project sidecar's equivalent of [`SpellingState::personal_lock`].
+    pub project_lock: Arc<Mutex<()>>,
+    /// Cache key component for project/ignore-all changes.
+    pub revision: u64,
+}
+
+impl SessionSpelling {
+    pub fn bump(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 

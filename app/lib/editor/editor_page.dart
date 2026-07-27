@@ -15,6 +15,7 @@ import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/editor/navigator_sidebar.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/save_status.dart';
+import 'package:slugline/editor/spell_dialog.dart';
 import 'package:slugline/editor/title_page_dialog.dart';
 import 'package:slugline/preview/export_dialog.dart';
 import 'package:slugline/library/backups_dialog.dart';
@@ -282,6 +283,9 @@ class EditorPageState extends State<EditorPage> {
   Future<void> _showTitlePage() =>
       withModal(() => TitlePageDialog.show(context, _core));
 
+  Future<void> _showSpelling() =>
+      withModal(() => SpellDialog.show(context, widget.controller));
+
   /// §Phase 7's preview-before-export. Null when the core cannot paginate,
   /// which is every widget test driving the editor through the double: a
   /// command that would open a window with nothing in it is not offered.
@@ -442,6 +446,12 @@ class EditorPageState extends State<EditorPage> {
                     icon: const Icon(Icons.article_outlined),
                     tooltip: 'Title page',
                     onPressed: () => unawaited(_showTitlePage()),
+                  ),
+                  IconButton(
+                    key: const ValueKey('spell settings'),
+                    icon: const Icon(Icons.spellcheck),
+                    tooltip: 'Spell checking',
+                    onPressed: () => unawaited(_showSpelling()),
                   ),
                   if (_output != null)
                     IconButton(

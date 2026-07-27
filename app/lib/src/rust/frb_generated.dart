@@ -8,6 +8,7 @@ import 'api/events.dart';
 import 'api/files.dart';
 import 'api/handshake.dart';
 import 'api/layout.dart';
+import 'api/spell.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -70,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -157513556;
+  int get rustContentHash => -2133643309;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -297,6 +298,42 @@ abstract class RustLibApi extends BaseApi {
     required int startUtf16,
     required int endUtf16,
   });
+
+  Future<SpellActionResult> crateApiSpellSpellAddPersonal({
+    required String word,
+  });
+
+  Future<SpellActionResult> crateApiSpellSpellAddProject({
+    required DocumentHandle handle,
+    required String word,
+  });
+
+  Future<SpellCheckResult> crateApiSpellSpellCheckBlock({
+    required DocumentHandle handle,
+    required int block,
+  });
+
+  Future<SpellActionResult> crateApiSpellSpellConfigure({
+    required bool enabled,
+    String? language,
+  });
+
+  SpellActionResult crateApiSpellSpellIgnoreAll({
+    required DocumentHandle handle,
+    required String word,
+  });
+
+  SpellActionResult crateApiSpellSpellIgnoreOnce({
+    required DocumentHandle handle,
+    required int block,
+    required int startUtf16,
+    required int endUtf16,
+    required String word,
+  });
+
+  SpellStatus crateApiSpellSpellStatus();
+
+  Future<List<String>> crateApiSpellSpellSuggest({required String word});
 
   TextMetrics crateApiHandshakeTextMetrics({required String text});
 }
@@ -1979,13 +2016,264 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<SpellActionResult> crateApiSpellSpellAddPersonal({
+    required String word,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(word, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 59,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_action_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellAddPersonalConstMeta,
+        argValues: [word],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellAddPersonalConstMeta =>
+      const TaskConstMeta(debugName: "spell_add_personal", argNames: ["word"]);
+
+  @override
+  Future<SpellActionResult> crateApiSpellSpellAddProject({
+    required DocumentHandle handle,
+    required String word,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_String(word, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 60,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_action_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellAddProjectConstMeta,
+        argValues: [handle, word],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellAddProjectConstMeta =>
+      const TaskConstMeta(
+        debugName: "spell_add_project",
+        argNames: ["handle", "word"],
+      );
+
+  @override
+  Future<SpellCheckResult> crateApiSpellSpellCheckBlock({
+    required DocumentHandle handle,
+    required int block,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_CastedPrimitive_u_64(block, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 61,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_check_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellCheckBlockConstMeta,
+        argValues: [handle, block],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellCheckBlockConstMeta =>
+      const TaskConstMeta(
+        debugName: "spell_check_block",
+        argNames: ["handle", "block"],
+      );
+
+  @override
+  Future<SpellActionResult> crateApiSpellSpellConfigure({
+    required bool enabled,
+    String? language,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          sse_encode_opt_String(language, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 62,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_action_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellConfigureConstMeta,
+        argValues: [enabled, language],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellConfigureConstMeta =>
+      const TaskConstMeta(
+        debugName: "spell_configure",
+        argNames: ["enabled", "language"],
+      );
+
+  @override
+  SpellActionResult crateApiSpellSpellIgnoreAll({
+    required DocumentHandle handle,
+    required String word,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_String(word, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_action_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellIgnoreAllConstMeta,
+        argValues: [handle, word],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellIgnoreAllConstMeta =>
+      const TaskConstMeta(
+        debugName: "spell_ignore_all",
+        argNames: ["handle", "word"],
+      );
+
+  @override
+  SpellActionResult crateApiSpellSpellIgnoreOnce({
+    required DocumentHandle handle,
+    required int block,
+    required int startUtf16,
+    required int endUtf16,
+    required String word,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_document_handle(handle, serializer);
+          sse_encode_CastedPrimitive_u_64(block, serializer);
+          sse_encode_u_32(startUtf16, serializer);
+          sse_encode_u_32(endUtf16, serializer);
+          sse_encode_String(word, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_action_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellIgnoreOnceConstMeta,
+        argValues: [handle, block, startUtf16, endUtf16, word],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellIgnoreOnceConstMeta =>
+      const TaskConstMeta(
+        debugName: "spell_ignore_once",
+        argNames: ["handle", "block", "startUtf16", "endUtf16", "word"],
+      );
+
+  @override
+  SpellStatus crateApiSpellSpellStatus() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_spell_status,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellStatusConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellStatusConstMeta =>
+      const TaskConstMeta(debugName: "spell_status", argNames: []);
+
+  @override
+  Future<List<String>> crateApiSpellSpellSuggest({required String word}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(word, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 66,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSpellSpellSuggestConstMeta,
+        argValues: [word],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSpellSpellSuggestConstMeta =>
+      const TaskConstMeta(debugName: "spell_suggest", argNames: ["word"]);
+
+  @override
   TextMetrics crateApiHandshakeTextMetrics({required String text}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_text_metrics,
@@ -2509,6 +2797,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<Misspelling> dco_decode_list_misspelling(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_misspelling).toList();
+  }
+
+  @protected
   List<NavigatorCharacter> dco_decode_list_navigator_character(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_navigator_character).toList();
@@ -2551,9 +2845,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<SpellLanguage> dco_decode_list_spell_language(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_spell_language).toList();
+  }
+
+  @protected
   List<TitleEntryView> dco_decode_list_title_entry_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_title_entry_view).toList();
+  }
+
+  @protected
+  Misspelling dco_decode_misspelling(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return Misspelling(
+      block: dco_decode_CastedPrimitive_u_64(arr[0]),
+      startUtf16: dco_decode_u_32(arr[1]),
+      endUtf16: dco_decode_u_32(arr[2]),
+      word: dco_decode_String(arr[3]),
+    );
   }
 
   @protected
@@ -2907,6 +3221,63 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       missing: dco_decode_bool(arr[6]),
       open: dco_decode_bool(arr[7]),
       scrollRow: dco_decode_u_32(arr[8]),
+    );
+  }
+
+  @protected
+  SpellActionResult dco_decode_spell_action_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return SpellActionResult_Applied();
+      case 1:
+        return SpellActionResult_NoSuchDocument();
+      case 2:
+        return SpellActionResult_NoScriptPath();
+      case 3:
+        return SpellActionResult_Failed(message: dco_decode_String(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  SpellCheckResult dco_decode_spell_check_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return SpellCheckResult(
+      block: dco_decode_CastedPrimitive_u_64(arr[0]),
+      current: dco_decode_bool(arr[1]),
+      cached: dco_decode_bool(arr[2]),
+      misspellings: dco_decode_list_misspelling(arr[3]),
+    );
+  }
+
+  @protected
+  SpellLanguage dco_decode_spell_language(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SpellLanguage(
+      code: dco_decode_String(arr[0]),
+      label: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  SpellStatus dco_decode_spell_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return SpellStatus(
+      enabled: dco_decode_bool(arr[0]),
+      language: dco_decode_opt_String(arr[1]),
+      languages: dco_decode_list_spell_language(arr[2]),
+      message: dco_decode_String(arr[3]),
     );
   }
 
@@ -3556,6 +3927,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<Misspelling> sse_decode_list_misspelling(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <Misspelling>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_misspelling(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<NavigatorCharacter> sse_decode_list_navigator_character(
     SseDeserializer deserializer,
   ) {
@@ -3641,6 +4024,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<SpellLanguage> sse_decode_list_spell_language(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SpellLanguage>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_spell_language(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<TitleEntryView> sse_decode_list_title_entry_view(
     SseDeserializer deserializer,
   ) {
@@ -3652,6 +4049,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ans_.add(sse_decode_title_entry_view(deserializer));
     }
     return ans_;
+  }
+
+  @protected
+  Misspelling sse_decode_misspelling(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_startUtf16 = sse_decode_u_32(deserializer);
+    var var_endUtf16 = sse_decode_u_32(deserializer);
+    var var_word = sse_decode_String(deserializer);
+    return Misspelling(
+      block: var_block,
+      startUtf16: var_startUtf16,
+      endUtf16: var_endUtf16,
+      word: var_word,
+    );
   }
 
   @protected
@@ -4119,6 +4531,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       missing: var_missing,
       open: var_open,
       scrollRow: var_scrollRow,
+    );
+  }
+
+  @protected
+  SpellActionResult sse_decode_spell_action_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return SpellActionResult_Applied();
+      case 1:
+        return SpellActionResult_NoSuchDocument();
+      case 2:
+        return SpellActionResult_NoScriptPath();
+      case 3:
+        var var_message = sse_decode_String(deserializer);
+        return SpellActionResult_Failed(message: var_message);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  SpellCheckResult sse_decode_spell_check_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_current = sse_decode_bool(deserializer);
+    var var_cached = sse_decode_bool(deserializer);
+    var var_misspellings = sse_decode_list_misspelling(deserializer);
+    return SpellCheckResult(
+      block: var_block,
+      current: var_current,
+      cached: var_cached,
+      misspellings: var_misspellings,
+    );
+  }
+
+  @protected
+  SpellLanguage sse_decode_spell_language(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_code = sse_decode_String(deserializer);
+    var var_label = sse_decode_String(deserializer);
+    return SpellLanguage(code: var_code, label: var_label);
+  }
+
+  @protected
+  SpellStatus sse_decode_spell_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_enabled = sse_decode_bool(deserializer);
+    var var_language = sse_decode_opt_String(deserializer);
+    var var_languages = sse_decode_list_spell_language(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    return SpellStatus(
+      enabled: var_enabled,
+      language: var_language,
+      languages: var_languages,
+      message: var_message,
     );
   }
 
@@ -4744,6 +5216,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_misspelling(
+    List<Misspelling> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_misspelling(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_navigator_character(
     List<NavigatorCharacter> self,
     SseSerializer serializer,
@@ -4826,6 +5310,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_spell_language(
+    List<SpellLanguage> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_spell_language(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_title_entry_view(
     List<TitleEntryView> self,
     SseSerializer serializer,
@@ -4835,6 +5331,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     for (final item in self) {
       sse_encode_title_entry_view(item, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_misspelling(Misspelling self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.block, serializer);
+    sse_encode_u_32(self.startUtf16, serializer);
+    sse_encode_u_32(self.endUtf16, serializer);
+    sse_encode_String(self.word, serializer);
   }
 
   @protected
@@ -5228,6 +5733,53 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.missing, serializer);
     sse_encode_bool(self.open, serializer);
     sse_encode_u_32(self.scrollRow, serializer);
+  }
+
+  @protected
+  void sse_encode_spell_action_result(
+    SpellActionResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case SpellActionResult_Applied():
+        sse_encode_i_32(0, serializer);
+      case SpellActionResult_NoSuchDocument():
+        sse_encode_i_32(1, serializer);
+      case SpellActionResult_NoScriptPath():
+        sse_encode_i_32(2, serializer);
+      case SpellActionResult_Failed(message: final message):
+        sse_encode_i_32(3, serializer);
+        sse_encode_String(message, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_spell_check_result(
+    SpellCheckResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.block, serializer);
+    sse_encode_bool(self.current, serializer);
+    sse_encode_bool(self.cached, serializer);
+    sse_encode_list_misspelling(self.misspellings, serializer);
+  }
+
+  @protected
+  void sse_encode_spell_language(SpellLanguage self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.code, serializer);
+    sse_encode_String(self.label, serializer);
+  }
+
+  @protected
+  void sse_encode_spell_status(SpellStatus self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.enabled, serializer);
+    sse_encode_opt_String(self.language, serializer);
+    sse_encode_list_spell_language(self.languages, serializer);
+    sse_encode_String(self.message, serializer);
   }
 
   @protected

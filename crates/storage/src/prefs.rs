@@ -1,8 +1,10 @@
-//! Preferences used through Phase 8.
+//! Preferences used through Phase 9.
 //!
 //! §Phase 4 asks for autosave and backup controls, §7 adds autocomplete, and
-//! §Phase 8 persists the navigator's expanded state. §6's `prefs_get` and
-//! `prefs_set` carry them. This file has no preference without a consumer:
+//! §Phase 8 persists the navigator's expanded state, and §Phase 9 adds spell
+//! checking enablement and language. §6's `prefs_get` and `prefs_set` carry the
+//! existing editor fields while the spell surface updates its two fields. This
+//! file has no preference without a consumer:
 //! scaffolding is a §1.4 non-goal.
 //!
 //! Reading is total. A preferences file that has been hand-edited into nonsense
@@ -41,6 +43,11 @@ pub struct Preferences {
     /// §Phase 8: whether the navigator sidebar is expanded. The collapsed rail
     /// remains available, so this never makes the feature unreachable.
     pub navigator_visible: bool,
+    /// §Phase 9: the checker can be disabled without unloading the script.
+    pub spell_enabled: bool,
+    /// An installed Hunspell locale such as `en_US`. `None` asks discovery for
+    /// US English, then its first deterministic result.
+    pub spell_language: Option<String>,
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
@@ -57,6 +64,8 @@ impl Default for Preferences {
             autosave_enabled: true,
             autocomplete_enabled: true,
             navigator_visible: true,
+            spell_enabled: true,
+            spell_language: None,
             backup_dir: None,
             backup_keep_versions: retention.keep_versions,
             backup_keep_days: retention.keep_days,
@@ -115,6 +124,8 @@ mod tests {
         assert_eq!(prefs.autosave_idle_ms, 2_000);
         assert_eq!(prefs.autosave_interval_ms, 30_000);
         assert!(prefs.navigator_visible);
+        assert!(prefs.spell_enabled);
+        assert!(prefs.spell_language.is_none());
         assert_eq!(prefs.backup_keep_versions, 10);
         assert_eq!(prefs.backup_keep_days, 7);
     }

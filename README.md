@@ -3,14 +3,16 @@
 A fast, keyboard-driven screenplay editor that reads and writes plain Fountain
 files and produces submission-quality PDFs. Linux only.
 
-**Status: Phases 0–8 written; Phase 9 (spell checking) is next.**
+**Status: Phases 0–9 written; Phase 10 (preferences and polish) is next.**
 `crates/fountain` and `crates/document` read and write Fountain losslessly and hold
 the model, the edit commands and undo. `crates/bridge` is the actor thread and the
 §6 surface, `app/` is the editor, keyboard workflow, autocomplete, library,
-preview, export and navigator, and `crates/storage` is the atomic save, crash
+preview, export, navigator and spell-check UI, and `crates/storage` is the atomic save, crash
 journal, backups, preferences and library index. `crates/layout` paginates and
-`crates/render_pdf` writes deterministic PDFs from that layout. `spell` remains
-the one-constant placeholder for Phase 9. See `docs/DECISIONS.md`.
+`crates/render_pdf` writes deterministic PDFs from that layout. `crates/spell`
+loads system Hunspell dictionaries through `spellbook`; the bridge checks
+immutable block snapshots and the editor paints its results. See
+`docs/DECISIONS.md`.
 
 ## Remediation status
 

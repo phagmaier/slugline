@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
@@ -32,6 +33,10 @@ class EditorController extends ChangeNotifier {
       focus: DocPosition(block: first.id, offsetUtf16: 0),
     );
     _refreshCompletions();
+    _spellStatus = core.spellStatus();
+    if (_canCheckSpelling) {
+      scheduleMicrotask(_checkWholeDocument);
+    }
   }
 
   final DocumentCore core;
@@ -56,6 +61,15 @@ class EditorController extends ChangeNotifier {
 
   late final UnmodifiableListView<BlockView> _blocksView;
   int _documentRevision = 0;
+  late SpellStatus _spellStatus;
+  final Map<int, List<Misspelling>> _misspellings = {};
+  final Set<int> _pendingSpellBlocks = {};
+  Timer? _spellDebounce;
+  Timer? _spellYield;
+  Completer<void>? _spellYieldDone;
+  bool _spellChecking = false;
+  int _spellRun = 0;
+  bool _disposed = false;
 
   /// The blocks, in document order. The layout below shares this list rather
   /// than copying it, so a patch mutates both at once.
@@ -64,6 +78,13 @@ class EditorController extends ChangeNotifier {
   int get documentRevision => _documentRevision;
   DocSelection get selection => _selection;
   bool get hasSelection => _selection.anchor != _selection.focus;
+  SpellStatus get spellStatus => _spellStatus;
+  bool get _canCheckSpelling =>
+      _spellStatus.enabled &&
+      _spellStatus.language != null &&
+      _spellStatus.languages.isNotEmpty;
+  List<Misspelling> misspellingsFor(int block) =>
+      _misspellings[block] ?? const [];
 
   List<Completion> _completions = const [];
   final Set<String> _suppressedCompletions = {};
@@ -100,6 +121,11 @@ class EditorController extends ChangeNotifier {
   /// acquire some.
   @override
   void dispose() {
+    _disposed = true;
+    _spellDebounce?.cancel();
+    _spellYield?.cancel();
+    _spellYieldDone?.complete();
+    _spellRun++;
     core.close();
     super.dispose();
   }
@@ -188,7 +214,184 @@ class EditorController extends ChangeNotifier {
       focus: DocPosition(block: first.id, offsetUtf16: 0),
     );
     lastRejection = null;
+    _misspellings.clear();
+    _scheduleSpellCheck(_blocks.map((block) => block.id), immediate: true);
     notifyListeners();
+  }
+
+  // --- spelling ------------------------------------------------------------
+
+  /// The document position under a grid cell, for the context menu.
+  DocPosition positionAt(int row, int column) {
+    final block = _layout.blockAtRow(row);
+    final lines = _layout.linesOf(block);
+    final line = (row - _layout.firstRowOf(block)).clamp(0, lines.length - 1);
+    return _positionAt(block, line, column);
+  }
+
+  Misspelling? misspellingAt(DocPosition position) {
+    for (final misspelling in misspellingsFor(position.block)) {
+      if (position.offsetUtf16 >= misspelling.startUtf16 &&
+          position.offsetUtf16 < misspelling.endUtf16) {
+        return misspelling;
+      }
+    }
+    return null;
+  }
+
+  Future<List<String>> suggestionsFor(Misspelling misspelling) =>
+      core.spellSuggest(misspelling.word);
+
+  void replaceMisspelling(Misspelling misspelling, String replacement) {
+    final text = _textOf(misspelling.block);
+    if (text == null ||
+        misspelling.startUtf16 > misspelling.endUtf16 ||
+        misspelling.endUtf16 > text.length ||
+        text.substring(misspelling.startUtf16, misspelling.endUtf16) !=
+            misspelling.word) {
+      return;
+    }
+    _apply(
+      EditCommand.replaceText(
+        block: misspelling.block,
+        startUtf16: misspelling.startUtf16,
+        endUtf16: misspelling.endUtf16,
+        with_: replacement,
+      ),
+    );
+  }
+
+  SpellActionResult ignoreMisspellingOnce(Misspelling misspelling) {
+    final result = core.spellIgnoreOnce(misspelling);
+    if (result is SpellActionResult_Applied) {
+      _misspellings[misspelling.block]?.remove(misspelling);
+      notifyListeners();
+    }
+    return result;
+  }
+
+  SpellActionResult ignoreMisspellingAll(Misspelling misspelling) {
+    final result = core.spellIgnoreAll(misspelling.word);
+    if (result is SpellActionResult_Applied) {
+      final ignored = misspelling.word.toLowerCase();
+      for (final words in _misspellings.values) {
+        words.removeWhere((word) => word.word.toLowerCase() == ignored);
+      }
+      notifyListeners();
+    }
+    return result;
+  }
+
+  Future<SpellActionResult> addToPersonalDictionary(
+    Misspelling misspelling,
+  ) async {
+    final result = await core.spellAddPersonal(misspelling.word);
+    if (result is SpellActionResult_Applied) _recheckAll();
+    return result;
+  }
+
+  Future<SpellActionResult> addToProjectDictionary(
+    Misspelling misspelling,
+  ) async {
+    final result = await core.spellAddProject(misspelling.word);
+    if (result is SpellActionResult_Applied) _recheckAll();
+    return result;
+  }
+
+  Future<SpellActionResult> configureSpelling({
+    required bool enabled,
+    String? language,
+  }) async {
+    final result = await core.configureSpelling(
+      enabled: enabled,
+      language: language,
+    );
+    if (result is SpellActionResult_Applied) {
+      _spellStatus = core.spellStatus();
+      if (_canCheckSpelling) {
+        _recheckAll();
+      } else {
+        _misspellings.clear();
+        _spellRun++;
+        if (!_disposed) notifyListeners();
+      }
+    }
+    return result;
+  }
+
+  void _recheckAll() {
+    _spellRun++;
+    _misspellings.clear();
+    _scheduleSpellCheck(_blocks.map((block) => block.id), immediate: true);
+  }
+
+  void _scheduleSpellCheck(Iterable<int> blocks, {bool immediate = false}) {
+    if (!_canCheckSpelling || _disposed) return;
+    _pendingSpellBlocks.addAll(blocks);
+    _spellDebounce?.cancel();
+    if (immediate) {
+      scheduleMicrotask(_checkPendingBlocks);
+    } else {
+      _spellDebounce = Timer(
+        const Duration(milliseconds: 300),
+        _checkPendingBlocks,
+      );
+    }
+  }
+
+  Future<void> _checkWholeDocument() async {
+    _pendingSpellBlocks.add(_selection.focus.block);
+    _pendingSpellBlocks.addAll(_blocks.map((block) => block.id));
+    await _checkPendingBlocks();
+  }
+
+  Future<void> _checkPendingBlocks() async {
+    _spellDebounce = null;
+    if (_spellChecking ||
+        !_canCheckSpelling ||
+        _disposed ||
+        _pendingSpellBlocks.isEmpty) {
+      return;
+    }
+    _spellChecking = true;
+    try {
+      final run = ++_spellRun;
+      final blocks = _pendingSpellBlocks.toList(growable: false);
+      _pendingSpellBlocks.clear();
+      var painted = 0;
+      for (final block in blocks) {
+        final result = await core.spellCheckBlock(block);
+        if (_disposed || run != _spellRun) return;
+        if (!result.current || _indexOf(block) == null) continue;
+        _misspellings[block] = List.of(result.misspellings);
+        painted++;
+        // Yield and repaint in bounded batches. A feature-length sweep never
+        // monopolises a frame, while the focused block appears promptly.
+        if (painted == 1 || painted % 24 == 0) {
+          notifyListeners();
+          await _yieldSpellSweep();
+        }
+      }
+      if (!_disposed && run == _spellRun && painted % 24 != 0) {
+        notifyListeners();
+      }
+    } finally {
+      _spellChecking = false;
+      if (!_disposed && _pendingSpellBlocks.isNotEmpty) {
+        scheduleMicrotask(_checkPendingBlocks);
+      }
+    }
+  }
+
+  Future<void> _yieldSpellSweep() {
+    final done = Completer<void>();
+    _spellYieldDone = done;
+    _spellYield = Timer(Duration.zero, () {
+      _spellYield = null;
+      _spellYieldDone = null;
+      done.complete();
+    });
+    return done.future;
   }
 
   /// Document order for two positions.
@@ -919,6 +1122,10 @@ class EditorController extends ChangeNotifier {
 
     if (result.removed.isNotEmpty) {
       final gone = result.removed.toSet();
+      for (final id in gone) {
+        _misspellings.remove(id);
+        _pendingSpellBlocks.remove(id);
+      }
       // Descending, so an index stays valid while the ones below it go.
       for (var i = _blocks.length - 1; i >= 0; i--) {
         if (gone.contains(_blocks[i].id)) {
@@ -947,6 +1154,10 @@ class EditorController extends ChangeNotifier {
 
     if (structural) _reindexIds();
     _layout.reindex();
+    _scheduleSpellCheck([
+      ...result.changed.map((block) => block.id),
+      ...result.inserted.map((inserted) => inserted.block.id),
+    ]);
 
     assert(
       _blocks.length == result.blockCount,

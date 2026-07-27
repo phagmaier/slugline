@@ -2695,3 +2695,93 @@ Drag-and-drop scene reordering remains out of scope exactly as Phase 8 says.
   `app/test/editor/navigator_test.dart` covers the Phase 8 gestures and
   highlighting. `app/integration_test/writing_test.dart` proves the real Rust
   snapshot drives the Flutter navigator.
+
+---
+
+## ADR 0036 — Spell checking is an immutable Rust snapshot and a Dart overlay
+
+**Status:** Accepted
+**Date:** 2026-07-27
+**Phase:** 9
+
+### Context
+
+Spell checking has two very different costs. Loading a Hunspell dictionary and
+checking thousands of words must not enter the actor or the keystroke path;
+deciding which stable document block and which screenplay entities a result
+belongs to must not be reimplemented in Dart. The editor also needs a 300 ms
+pause after typing, paint-only underlines and context-menu interaction, none of
+which belongs in a timer-free Rust core.
+
+Personal and project words are user data. They need the same atomic-write
+guarantee as every other Slugline file, while a missing or damaged sidecar must
+never make its Fountain file unusable. Most importantly, a spelling result is
+advice: it must not become an edit unless the writer chooses a replacement.
+
+### Decision
+
+`crates/spell` is a pure string-checking layer around `spellbook`. It discovers
+paired `.aff` and `.dic` files in conventional Linux Hunspell directories,
+loads an immutable dictionary, tokenises Unicode words, and returns UTF-8 byte
+ranges. It knows nothing about documents or the bridge.
+
+The bridge owns the selected dictionary behind an `Arc`, the personal words,
+and per-session project words and ignores. A block request briefly asks the
+actor for immutable text and entity-index data, runs the checker off the actor,
+then commits the result only if the exact cache key still matches. That key
+covers block text, accepted words, and global/session spelling revisions, so an
+edit, language change, dictionary addition or ignore cannot reuse stale work.
+Only `offsets.rs` converts the returned byte ranges to UTF-16.
+
+Dart owns the 300 ms edit debounce. Startup and full-document rechecks are
+asynchronous per-block sweeps whose repaint notifications are batched and yield
+between batches. The editor paints red waves and opens the menu; Rust supplies
+suggestions and records ignores/dictionary additions. Only Replace constructs
+an `EditCommand::ReplaceText`.
+
+The personal word list is
+`$XDG_CONFIG_HOME/slugline/personal.dic`. A script at `name.fountain` uses
+`name.fountain.dic` beside it. Both are sorted, readable word lists written
+through `storage::atomic::save_atomically`; missing, unreadable or malformed
+lines are treated as an empty or partial overlay. Character names and scene
+locations are accepted from the session's existing `EntityIndex`.
+
+No dictionary is bundled and no network fallback exists. If no installed pair
+can be loaded, the language selector says which system paths were searched and
+the editor remains fully usable. The enabled flag and selected installed
+language live in the existing preferences JSON.
+
+### Alternatives considered
+
+**Check in Dart.** This would either add a second native dictionary stack or
+move screenplay/entity semantics across the ownership boundary.
+
+**Check the whole document after each edit.** Even on a worker this creates
+avoidable work and late results. Stable block ids and a cache already give the
+smaller unit.
+
+**Put the debounce in Rust.** The core has no timers by construction; scheduling
+repaints and reacting to keystrokes are Flutter responsibilities.
+
+**Teach Hunspell each accepted word.** Personal, project, ignore and entity
+overlays change independently. Keeping them in the cache key avoids cloning or
+mutating the multi-megabyte dictionary.
+
+**Correct from the best suggestion automatically.** A spell checker cannot
+know a writer's invented name or deliberate word. This would violate Phase 9's
+central invariant.
+
+### Consequences
+
+* Startup pays dictionary parsing once. Block requests share that immutable
+  value and cached answers, and stale worker results are discarded.
+* Ignore Once is tied to the exact block, text fingerprint and UTF-8 range;
+  Ignore All lasts for the session. Personal and project additions persist.
+* The project sidecar does not participate in opening, saving or serialising
+  the screenplay, so deleting it loses convenience and no script text.
+* `crates/bridge/src/api/spellcheck_never_modifies.rs` exercises every
+  non-replacement surface and proves source and dirty state are unchanged.
+  `app/test/editor/spell_check_test.dart` proves paint-only underlines, the
+  debounce, every menu action and an asynchronous 120-page/3,000-block sweep.
+  `crates/spell/src/lib.rs` proves discovery, checking, token ranges and tolerant
+  word-list persistence.

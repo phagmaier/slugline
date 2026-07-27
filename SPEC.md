@@ -1220,19 +1220,19 @@ back.
 
 Requirement §9.
 
-- [ ] `spellbook` integrated; dictionaries loaded from system Hunspell paths
-- [ ] Language selection listing installed dictionaries; clear message when none are found
-- [ ] Checking runs on a background thread, per block, debounced, cached by block hash
-- [ ] Misspelling underlines rendered in the editor
-- [ ] Context menu: suggestions, Replace, Ignore Once, Ignore All, Add to Personal
+- [x] `spellbook` integrated; dictionaries loaded from system Hunspell paths
+- [x] Language selection listing installed dictionaries; clear message when none are found
+- [x] Checking runs on a background thread, per block, debounced, cached by block hash
+- [x] Misspelling underlines rendered in the editor
+- [x] Context menu: suggestions, Replace, Ignore Once, Ignore All, Add to Personal
       Dictionary, Add to Project Dictionary
-- [ ] Personal dictionary in `$XDG_CONFIG_HOME/slugline/personal.dic`
-- [ ] Project dictionary as a sidecar file beside the script; the script remains fully
+- [x] Personal dictionary in `$XDG_CONFIG_HOME/slugline/personal.dic`
+- [x] Project dictionary as a sidecar file beside the script; the script remains fully
       usable if it is missing or deleted
-- [ ] Character names and scene locations from the entity index are automatically accepted
-- [ ] Spell checking can be disabled entirely
-- [ ] **No code path modifies text without an explicit user action** — dedicated test
-- [ ] Checking a 120-page script does not drop a single frame in the editor
+- [x] Character names and scene locations from the entity index are automatically accepted
+- [x] Spell checking can be disabled entirely
+- [x] **No code path modifies text without an explicit user action** — dedicated test
+- [x] Checking a 120-page script does not drop a single frame in the editor
 
 ---
 
@@ -1373,8 +1373,8 @@ failure is unambiguous.
       the tests beside it; against the real core in
       `app/integration_test/writing_test.dart`, "an existing cue is suggested but
       never applied")
-- [ ] `spellcheck_never_modifies` — no automatic correction (Phase 9; `spell` is a
-      placeholder)
+- [x] `spellcheck_never_modifies` — no automatic correction
+      (`crates/bridge/src/api/spellcheck_never_modifies.rs`)
 - [ ] `appearance_prefs_dont_affect_pagination` — zoom/theme leave golden layout
       identical (Phase 10; nothing edits preferences yet)
 - [x] `roundtrip_is_byte_exact` — unedited files resave identically

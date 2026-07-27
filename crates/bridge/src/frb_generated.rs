@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -157513556;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2133643309;
 
 // Section: executor
 
@@ -2073,6 +2073,299 @@ fn wire__crate__api__handshake__slice_utf16_impl(
         },
     )
 }
+fn wire__crate__api__spell__spell_add_personal_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_add_personal",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_word = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::spell::spell_add_personal(api_word).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__spell__spell_add_project_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_add_project",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_word = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::spell::spell_add_project(api_handle, api_word).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__spell__spell_check_block_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_check_block",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_block = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::spell::spell_check_block(api_handle, api_block).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__spell__spell_configure_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_configure",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            let api_language = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::spell::spell_configure(api_enabled, api_language).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__spell__spell_ignore_all_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_ignore_all",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_word = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::spell::spell_ignore_all(api_handle, api_word))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__spell__spell_ignore_once_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_ignore_once",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_block = <u64>::sse_decode(&mut deserializer);
+            let api_start_utf16 = <u32>::sse_decode(&mut deserializer);
+            let api_end_utf16 = <u32>::sse_decode(&mut deserializer);
+            let api_word = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::spell::spell_ignore_once(
+                    api_handle,
+                    api_block,
+                    api_start_utf16,
+                    api_end_utf16,
+                    api_word,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__spell__spell_status_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_status",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::spell::spell_status())?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__spell__spell_suggest_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "spell_suggest",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_word = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok =
+                            Result::<_, ()>::Ok(crate::api::spell::spell_suggest(api_word).await)?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__handshake__text_metrics_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2694,6 +2987,18 @@ impl SseDecode for Vec<crate::api::layout::LayoutLineView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::spell::Misspelling> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::spell::Misspelling>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::doc::NavigatorCharacter> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2780,6 +3085,18 @@ impl SseDecode for Vec<crate::api::files::ScriptView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::spell::SpellLanguage> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::spell::SpellLanguage>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::doc::TitleEntryView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2789,6 +3106,22 @@ impl SseDecode for Vec<crate::api::doc::TitleEntryView> {
             ans_.push(<crate::api::doc::TitleEntryView>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::spell::Misspelling {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_block = <u64>::sse_decode(deserializer);
+        let mut var_startUtf16 = <u32>::sse_decode(deserializer);
+        let mut var_endUtf16 = <u32>::sse_decode(deserializer);
+        let mut var_word = <String>::sse_decode(deserializer);
+        return crate::api::spell::Misspelling {
+            block: var_block,
+            start_utf16: var_startUtf16,
+            end_utf16: var_endUtf16,
+            word: var_word,
+        };
     }
 }
 
@@ -3309,6 +3642,77 @@ impl SseDecode for crate::api::files::ScriptView {
     }
 }
 
+impl SseDecode for crate::api::spell::SpellActionResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::spell::SpellActionResult::Applied;
+            }
+            1 => {
+                return crate::api::spell::SpellActionResult::NoSuchDocument;
+            }
+            2 => {
+                return crate::api::spell::SpellActionResult::NoScriptPath;
+            }
+            3 => {
+                let mut var_message = <String>::sse_decode(deserializer);
+                return crate::api::spell::SpellActionResult::Failed {
+                    message: var_message,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::spell::SpellCheckResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_block = <u64>::sse_decode(deserializer);
+        let mut var_current = <bool>::sse_decode(deserializer);
+        let mut var_cached = <bool>::sse_decode(deserializer);
+        let mut var_misspellings = <Vec<crate::api::spell::Misspelling>>::sse_decode(deserializer);
+        return crate::api::spell::SpellCheckResult {
+            block: var_block,
+            current: var_current,
+            cached: var_cached,
+            misspellings: var_misspellings,
+        };
+    }
+}
+
+impl SseDecode for crate::api::spell::SpellLanguage {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_code = <String>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        return crate::api::spell::SpellLanguage {
+            code: var_code,
+            label: var_label,
+        };
+    }
+}
+
+impl SseDecode for crate::api::spell::SpellStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_enabled = <bool>::sse_decode(deserializer);
+        let mut var_language = <Option<String>>::sse_decode(deserializer);
+        let mut var_languages = <Vec<crate::api::spell::SpellLanguage>>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        return crate::api::spell::SpellStatus {
+            enabled: var_enabled,
+            language: var_language,
+            languages: var_languages,
+            message: var_message,
+        };
+    }
+}
+
 impl SseDecode for crate::api::handshake::TextMetrics {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3397,6 +3801,11 @@ fn pde_ffi_dispatcher_primary_impl(
         55 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
         56 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
         57 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__spell__spell_add_personal_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__spell__spell_add_project_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__spell__spell_check_block_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__spell__spell_configure_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__spell__spell_suggest_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3440,7 +3849,10 @@ fn pde_ffi_dispatcher_sync_impl(
         49 => wire__crate__api__handshake__ping_impl(ptr, rust_vec_len, data_len),
         50 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
         58 => wire__crate__api__handshake__slice_utf16_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__handshake__text_metrics_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__spell__spell_ignore_all_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__spell__spell_ignore_once_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__spell__spell_status_impl(ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__handshake__text_metrics_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3962,6 +4374,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::LayoutLineView>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::spell::Misspelling {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.block.into_into_dart().into_dart(),
+            self.start_utf16.into_into_dart().into_dart(),
+            self.end_utf16.into_into_dart().into_dart(),
+            self.word.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::spell::Misspelling
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::spell::Misspelling>
+    for crate::api::spell::Misspelling
+{
+    fn into_into_dart(self) -> crate::api::spell::Misspelling {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorCharacter {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -4413,6 +4848,100 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::files::ScriptView>
     for crate::api::files::ScriptView
 {
     fn into_into_dart(self) -> crate::api::files::ScriptView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::spell::SpellActionResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::spell::SpellActionResult::Applied => [0.into_dart()].into_dart(),
+            crate::api::spell::SpellActionResult::NoSuchDocument => [1.into_dart()].into_dart(),
+            crate::api::spell::SpellActionResult::NoScriptPath => [2.into_dart()].into_dart(),
+            crate::api::spell::SpellActionResult::Failed { message } => {
+                [3.into_dart(), message.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::spell::SpellActionResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::spell::SpellActionResult>
+    for crate::api::spell::SpellActionResult
+{
+    fn into_into_dart(self) -> crate::api::spell::SpellActionResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::spell::SpellCheckResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.block.into_into_dart().into_dart(),
+            self.current.into_into_dart().into_dart(),
+            self.cached.into_into_dart().into_dart(),
+            self.misspellings.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::spell::SpellCheckResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::spell::SpellCheckResult>
+    for crate::api::spell::SpellCheckResult
+{
+    fn into_into_dart(self) -> crate::api::spell::SpellCheckResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::spell::SpellLanguage {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.code.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::spell::SpellLanguage
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::spell::SpellLanguage>
+    for crate::api::spell::SpellLanguage
+{
+    fn into_into_dart(self) -> crate::api::spell::SpellLanguage {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::spell::SpellStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.enabled.into_into_dart().into_dart(),
+            self.language.into_into_dart().into_dart(),
+            self.languages.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::spell::SpellStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::spell::SpellStatus>
+    for crate::api::spell::SpellStatus
+{
+    fn into_into_dart(self) -> crate::api::spell::SpellStatus {
         self
     }
 }
@@ -4943,6 +5472,16 @@ impl SseEncode for Vec<crate::api::layout::LayoutLineView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::spell::Misspelling> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::spell::Misspelling>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::doc::NavigatorCharacter> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5013,6 +5552,16 @@ impl SseEncode for Vec<crate::api::files::ScriptView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::spell::SpellLanguage> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::spell::SpellLanguage>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::doc::TitleEntryView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5020,6 +5569,16 @@ impl SseEncode for Vec<crate::api::doc::TitleEntryView> {
         for item in self {
             <crate::api::doc::TitleEntryView>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::spell::Misspelling {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.block, serializer);
+        <u32>::sse_encode(self.start_utf16, serializer);
+        <u32>::sse_encode(self.end_utf16, serializer);
+        <String>::sse_encode(self.word, serializer);
     }
 }
 
@@ -5435,6 +5994,58 @@ impl SseEncode for crate::api::files::ScriptView {
         <bool>::sse_encode(self.missing, serializer);
         <bool>::sse_encode(self.open, serializer);
         <u32>::sse_encode(self.scroll_row, serializer);
+    }
+}
+
+impl SseEncode for crate::api::spell::SpellActionResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::spell::SpellActionResult::Applied => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::spell::SpellActionResult::NoSuchDocument => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::spell::SpellActionResult::NoScriptPath => {
+                <i32>::sse_encode(2, serializer);
+            }
+            crate::api::spell::SpellActionResult::Failed { message } => {
+                <i32>::sse_encode(3, serializer);
+                <String>::sse_encode(message, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::spell::SpellCheckResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.block, serializer);
+        <bool>::sse_encode(self.current, serializer);
+        <bool>::sse_encode(self.cached, serializer);
+        <Vec<crate::api::spell::Misspelling>>::sse_encode(self.misspellings, serializer);
+    }
+}
+
+impl SseEncode for crate::api::spell::SpellLanguage {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.code, serializer);
+        <String>::sse_encode(self.label, serializer);
+    }
+}
+
+impl SseEncode for crate::api::spell::SpellStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.enabled, serializer);
+        <Option<String>>::sse_encode(self.language, serializer);
+        <Vec<crate::api::spell::SpellLanguage>>::sse_encode(self.languages, serializer);
+        <String>::sse_encode(self.message, serializer);
     }
 }
 

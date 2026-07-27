@@ -18,10 +18,10 @@ Format: `name` — what it does — why we cannot reasonably do without it.
 | `serde_json` | 1.0.151 | `storage` | The format itself, for the journal, the library index and the preferences. §2.6: "human-readable on disk, by design". |
 | `directories` | 6.0.0 | `storage` | ADR 0006 settled `$XDG_*_HOME/slugline`; this is the one crate that knows the XDG rules and the fallbacks. Two transitive crates (`dirs-sys`, `option-ext`) plus `libc`. Hand-rolling it means hand-rolling the fallbacks, and getting one wrong puts a user's journal somewhere they will never find it. |
 | `notify` | 8.2.0 | `storage` | §2.6's choice, and §Phase 4's "`notify` watcher on open files". Taken with `default-features = false`, which drops the polling backend: a poller is a wakeup several times a second in a process §1.3 budgets at 0% idle CPU. The cost is that a script on NFS reports no external changes, which is a convenience, not a safety property. |
+| `spellbook` | 0.4.2 | `spell` | §2.6's pure-Rust Hunspell-compatible checker; it lets Slugline use the dictionaries Linux already ships without linking `libhunspell`, and carries only its hash-table implementation. |
 
-Nothing else yet. `spellbook`, the remaining crate from the §2.6 shortlist, is
-added in the phase that first needs it (Phase 9), not before. `printpdf` was
-turned down when Phase 7 reached it — see below.
+`printpdf`, the other original output shortlist candidate, was turned down when
+Phase 7 reached it — see below.
 
 ## Vendored assets
 
