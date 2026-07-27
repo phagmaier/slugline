@@ -876,6 +876,78 @@ fn a_journal_that_cannot_replay_is_left_on_disk_rather_than_emptied() {
     );
 }
 
+/// Deciding nothing costs nothing.
+///
+/// The recovery dialog's Escape key and its "Decide later" button both return no
+/// choice at all, and the promise attached to that is that the offer comes back
+/// next launch. Startup used to break the promise one step later: with nothing
+/// decided it fell through to the session restore, reopened the script the offer
+/// named, and a new session wanted a journal at exactly that name — which
+/// `Journal::create` supplied by truncating the offer to a header. The dialog
+/// that says "nothing has been written to any of your files" had just destroyed
+/// the only copy of the edits it was describing.
+///
+/// Both halves of the fix are here: the reopen no longer *may* happen (startup
+/// skips a script with an undecided offer, proved in `app/test/editor/`), and it
+/// no longer *can* take the journal if it did.
+#[test]
+fn deciding_later_leaves_the_journal_byte_for_byte_and_it_is_offered_again() {
+    let dir = TempDir::new("decide-later");
+    let journals = dir.path().join("journal");
+    let script = dir.path().join("heat.fountain");
+    fs::write(&script, BASE).unwrap();
+
+    // A session with dirty text, and then a crash: the journal is never
+    // discarded, which is what says the session did not end cleanly.
+    let mut document = Document::parse(BASE);
+    let mut journal =
+        Journal::create(&journals, &journal::script_id(&script), &script, BASE).unwrap();
+    let id = document.blocks()[1].id();
+    for letter in TYPED.chars() {
+        keystroke(&mut document, &mut journal, id, letter);
+    }
+    let offered = journal.path().to_path_buf();
+    drop(journal);
+    let before = fs::read(&offered).unwrap();
+
+    // The next launch offers it, and the writer decides nothing.
+    assert_eq!(journal::pending(&journals), vec![offered.clone()]);
+
+    // Startup carries on into the session restore. If it reopened this script
+    // anyway — the defect — this is the call it would make, and this is what it
+    // now gets back.
+    let refused = match Journal::create(&journals, &journal::script_id(&script), &script, BASE) {
+        Err(error) => error,
+        Ok(_) => panic!("opening the script took the offer's journal"),
+    };
+    assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists);
+    assert_eq!(
+        fs::read(&offered).unwrap(),
+        before,
+        "the journal is byte-for-byte what the crash left"
+    );
+
+    // The launch after that offers exactly the same thing, and it still replays.
+    assert_eq!(journal::pending(&journals), vec![offered.clone()]);
+    let recovery = journal::read(&offered).expect("the offer still reads");
+    assert!(
+        !recovery.is_empty(),
+        "an empty journal is silently discarded"
+    );
+    assert!(journal::verify(&recovery.header).is_ok(), "and not blocked");
+    let (recovered, _) = recover(&offered);
+    assert_eq!(
+        recovered.serialise(),
+        format!("INT. HOUSE - DAY\n\nJohn enters.{TYPED}\n"),
+        "every keystroke from before the crash is still there to be offered"
+    );
+    assert_eq!(
+        fs::read_to_string(&script).unwrap(),
+        BASE,
+        "and nothing was written to the writer's file, exactly as promised"
+    );
+}
+
 /// An untitled recovery has no file to be durable against, so the successor is
 /// the only copy — and it still has to be one.
 #[test]

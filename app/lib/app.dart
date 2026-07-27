@@ -16,6 +16,37 @@ import 'package:slugline/settings/shortcuts_dialog.dart';
 import 'package:slugline/settings/window_mode.dart';
 import 'package:slugline/src/rust/api/files.dart' as files;
 
+/// Which of the scripts that were open last time the session restore may
+/// reopen, given the crash offers and what the writer did about them.
+///
+/// A script named by an offer that is still on disk is skipped, and this is the
+/// half of a P0 the rest of startup cannot fix. An undecided journal is the only
+/// copy of the edits in it; opening its script starts a session over the top of
+/// it, and a session wants a journal at exactly that name. The core now refuses
+/// to take one over — so the worst case is a session that is not being recorded
+/// rather than an offer that has been erased — but refusing is not the same as
+/// being right to ask. Nothing about pressing Escape says "reopen that script",
+/// so nothing here does.
+///
+/// `resolved` is the journals the writer discarded. Those are gone and their
+/// scripts are ordinary again. An accepted offer never reaches here: it opens
+/// its own script and startup stops there.
+@visibleForTesting
+files.ScriptView? scriptToRestore({
+  required List<files.ScriptView> session,
+  required List<files.RecoveryOffer> offers,
+  required Set<String> resolved,
+}) {
+  final undecided = {
+    for (final offer in offers)
+      if (!resolved.contains(offer.journal)) offer.script,
+  };
+  for (final restored in session) {
+    if (!undecided.contains(restored.path)) return restored;
+  }
+  return null;
+}
+
 /// The application: the library, one open script at a time, and the startup
 /// sequence that decides which of them you see first.
 ///
@@ -26,7 +57,9 @@ import 'package:slugline/src/rust/api/files.dart' as files;
 ///    the journal was recorded against would put a second document over it.
 ///    §Phase 4 requires the offer and forbids applying it automatically.
 /// 2. **Session restore.** The scripts that were open last time, reopened with
-///    their scroll positions.
+///    their scroll positions — except any the writer has not decided about,
+///    because an undecided offer's journal is still the only copy of the edits
+///    in it and opening its script would start a session over the top.
 /// 3. **The library**, if neither of those produced a script.
 class SluglineApp extends StatefulWidget {
   const SluglineApp({required this.core, super.key});
@@ -106,6 +139,10 @@ class _SluglineAppState extends State<SluglineApp> {
     if (context == null || !context.mounted) return;
 
     final offers = await widget.core.pendingRecoveries();
+    // The offers that stop being offers: discarding one deletes its journal, so
+    // its script is an ordinary script again. Everything else the dialog can
+    // produce leaves the journal where it is.
+    final resolved = <String>{};
     if (offers.isNotEmpty && context.mounted) {
       final choices = await RecoveryDialog.show(context, offers);
       for (final entry in choices.entries) {
@@ -137,15 +174,22 @@ class _SluglineAppState extends State<SluglineApp> {
                 }
             }
           case RecoveryChoice.discard:
-            await widget.core.discardRecovery(entry.key);
+            // Only a delete that reported success frees the script: a journal
+            // that could not be removed is still a journal on disk.
+            if (await widget.core.discardRecovery(entry.key)) {
+              resolved.add(entry.key);
+            }
         }
       }
     }
 
     if (_open != null) return;
-    final session = await widget.core.sessionToRestore();
-    if (session.isEmpty) return;
-    final restored = session.first;
+    final restored = scriptToRestore(
+      session: await widget.core.sessionToRestore(),
+      offers: offers,
+      resolved: resolved,
+    );
+    if (restored == null) return;
     await _openPath(restored.path, initialScrollRow: restored.scrollRow);
   }
 

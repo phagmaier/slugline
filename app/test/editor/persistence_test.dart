@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:slugline/core/core.dart' show RecoveryOffer;
+import 'package:slugline/app.dart' show scriptToRestore;
+import 'package:slugline/core/core.dart' show RecoveryOffer, ScriptView;
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/library/backups_dialog.dart' show formatBytes, formatTimestamp;
@@ -297,6 +298,63 @@ void main() {
         find.widgetWithText(FilledButton, 'Recover'),
       );
       expect(recover.onPressed, isNull, reason: 'and it cannot be pressed');
+    });
+
+    // The other half of "closing the dialog decides nothing", and the one that
+    // used to be false. Startup fell through to the session restore, which
+    // reopened the very script the offer named — and a new session wants a
+    // journal at exactly that name, which is where the offer's records went.
+    group('the session restore and an undecided offer', () {
+      ScriptView script(String path) => ScriptView(
+            id: path,
+            path: path,
+            title: path,
+            modifiedMillis: 0,
+            bytes: 0,
+            pageCount: 0,
+            missing: false,
+            open: true,
+            scrollRow: 0,
+          );
+
+      test('a script with a pending offer is not reopened', () {
+        expect(
+          scriptToRestore(
+            session: [script('/scripts/heat.fountain')],
+            offers: [offer()],
+            resolved: const {},
+          ),
+          isNull,
+          reason: 'the library is a better answer than an erased journal',
+        );
+      });
+
+      test('a discarded offer frees its script again', () {
+        final restored = scriptToRestore(
+          session: [script('/scripts/heat.fountain')],
+          offers: [offer()],
+          resolved: const {'/state/journal/abc.log'},
+        );
+        expect(restored?.path, '/scripts/heat.fountain');
+      });
+
+      test('the next script in the session is restored instead', () {
+        final restored = scriptToRestore(
+          session: [script('/scripts/heat.fountain'), script('/scripts/b.fountain')],
+          offers: [offer()],
+          resolved: const {},
+        );
+        expect(restored?.path, '/scripts/b.fountain');
+      });
+
+      test('an untitled offer blocks nothing: it names no file', () {
+        final restored = scriptToRestore(
+          session: [script('/scripts/heat.fountain')],
+          offers: [offer(script: '')],
+          resolved: const {},
+        );
+        expect(restored?.path, '/scripts/heat.fountain');
+      });
     });
   });
 

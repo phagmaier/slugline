@@ -31,6 +31,7 @@
 //! construction: the actor thread blocks on its channel and wakes only when
 //! something happens.
 
+use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
@@ -1400,7 +1401,7 @@ pub async fn doc_reload(handle: DocumentHandle, only_if_clean: bool) -> bool {
             document
         });
         session.rebuild_entities();
-        restart_journal(state, handle.id, &source);
+        restart_journal(state, handle.id, &source, Restart::Rebased);
         true
     })
 }
@@ -1532,7 +1533,7 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
                 document
             });
             session.rebuild_entities();
-            restart_journal(state, handle.id, &contents);
+            restart_journal(state, handle.id, &contents, Restart::Rebased);
         }
     });
     emit(CoreEvent::SaveStateChanged {
@@ -1851,7 +1852,7 @@ fn open_source(path: PathBuf, source: String, blank_if_empty: bool) -> DocumentH
             }
             hydrate_pins(state, handle, &id);
             watch(state, &path);
-            restart_journal(state, handle, &source);
+            restart_journal(state, handle, &source, Restart::Fresh);
             save_library(state);
             handle
         }),
@@ -1913,7 +1914,7 @@ fn hydrate_pins(state: &mut AppState, handle: u64, id: &str) {
 ///
 /// A session with no file still gets one, keyed by its handle: the script a
 /// crash costs most is the one that has never been saved anywhere.
-fn restart_journal(state: &mut AppState, handle: u64, base: &str) {
+fn restart_journal(state: &mut AppState, handle: u64, base: &str, restart: Restart) {
     let Some(storage) = state.storage() else {
         return;
     };
@@ -1928,10 +1929,40 @@ fn restart_journal(state: &mut AppState, handle: u64, base: &str) {
             PathBuf::new(),
         ),
     };
-    let journal = Journal::create(&directory, &id, &script, base).ok();
+    let started = match restart {
+        Restart::Fresh => Journal::create(&directory, &id, &script, base),
+        Restart::Rebased => Journal::replace(&directory, &id, &script, base),
+    };
+    let taken = matches!(&started, Err(error) if error.kind() == io::ErrorKind::AlreadyExists);
     if let Some(session) = state.session_mut(handle) {
-        session.set_journal(journal);
+        if taken {
+            // Not a normal failure and not silent. The journal name belongs to a
+            // crashed session whose records nobody has decided about yet, so this
+            // session gets none rather than erasing them — and the writer is told
+            // the same way a journal that breaks mid-session tells them, because
+            // the consequence is the same one: from here, nothing is being
+            // recorded.
+            session.set_journal_unavailable();
+            emit(CoreEvent::JournalBroken { handle });
+        } else {
+            session.set_journal(started.ok());
+        }
     }
+}
+
+/// Whether a restart may take over a journal file that already exists.
+///
+/// The distinction is [`Journal::create`]'s, and it is here because both answers
+/// have a caller: a session that is *starting* has no claim on a journal already
+/// on disk, and a session that is *rebasing* one it already holds does.
+enum Restart {
+    /// An open, a create, or a recovery declined into an ordinary session. The
+    /// name must be free; a file there is a pending recovery.
+    Fresh,
+    /// A reload or a restore from backup. The document has just been replaced by
+    /// bytes that are on disk, so the records this session's journal holds
+    /// describe something that no longer exists.
+    Rebased,
 }
 
 fn watch(state: &mut AppState, path: &Path) {

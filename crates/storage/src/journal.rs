@@ -229,17 +229,53 @@ impl Journal {
     /// replays it onto [`Document::blank`] rather than onto a file. `id` is what
     /// names the file, so the caller can keep two untitled sessions apart.
     ///
-    /// Replaces any journal already at that name. There is only ever one live
-    /// session per script, and a leftover journal has either been recovered from
-    /// or been declined — [`pending`] is what finds one *before* this is called.
+    /// **Refuses if a journal already exists at that name**, with
+    /// [`io::ErrorKind::AlreadyExists`]. A journal on disk is a session that did
+    /// not end cleanly ([`Journal::discard`] is the only thing that removes one),
+    /// and its records are the only copy of the edits it holds. Opening a script
+    /// is not a decision about them: [`pending`] offers them, and only recovery
+    /// or an explicit discard may take that file away.
+    ///
+    /// That refusal is not theoretical. A session restore that reopened the
+    /// script a pending offer names used to land here and truncate the offer to a
+    /// header, so declining to decide — Escape, or "Decide later" — destroyed the
+    /// edits the dialog had just promised to keep.
     pub fn create(dir: &Path, id: &str, script: &Path, base: &str) -> io::Result<Journal> {
+        Journal::start(dir, id, script, base, true)
+    }
+
+    /// [`Journal::create`], for a session that already owns the journal at that
+    /// name and is redefining what its records mean.
+    ///
+    /// A reload and a restore-from-backup both replace the open document with
+    /// bytes that are on disk *now*. The records the journal holds describe a
+    /// document that no longer exists, and replaying them onto the new base would
+    /// produce text that was never anywhere — so this one really does start the
+    /// file again. Nothing recoverable is lost, because what those records
+    /// described was already discarded in memory by the caller.
+    ///
+    /// Never call this for a journal this session did not already hold.
+    pub fn replace(dir: &Path, id: &str, script: &Path, base: &str) -> io::Result<Journal> {
+        Journal::start(dir, id, script, base, false)
+    }
+
+    fn start(
+        dir: &Path,
+        id: &str,
+        script: &Path,
+        base: &str,
+        exclusive: bool,
+    ) -> io::Result<Journal> {
         fs::create_dir_all(dir)?;
         let path = dir.join(format!("{id}.log"));
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&path)?;
+        let mut options = OpenOptions::new();
+        options.write(true);
+        if exclusive {
+            options.create_new(true);
+        } else {
+            options.create(true).truncate(true);
+        }
+        let mut file = options.open(&path)?;
         write_header(
             &mut file,
             &Header {
@@ -981,6 +1017,50 @@ mod tests {
         journal.append(&change(1, "a")).unwrap();
         drop(journal);
         assert_eq!(pending(dir.path()).len(), 1);
+    }
+
+    /// Starting a session must not be able to erase one that crashed.
+    ///
+    /// The journal on disk is the only copy of the edits it holds, and opening
+    /// the script again is not a decision about them.
+    #[test]
+    fn creating_a_journal_refuses_to_take_over_one_already_there() {
+        let dir = TempDir::new("journal-occupied");
+        let script = dir.path().join("x.fountain");
+        let id = script_id(&script);
+        let mut crashed = Journal::create(dir.path(), &id, &script, "base").unwrap();
+        crashed.append(&change(1, "unsaved")).unwrap();
+        let path = crashed.path().to_path_buf();
+        drop(crashed);
+        let before = fs::read(&path).unwrap();
+
+        let refused = match Journal::create(dir.path(), &id, &script, "base") {
+            Err(error) => error,
+            Ok(_) => panic!("a pending journal was taken over"),
+        };
+        assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).unwrap(), before, "not one byte of it");
+        assert_eq!(read(&path).unwrap().patches.len(), 1, "still recoverable");
+    }
+
+    /// The other door, for the caller entitled to it: a session that already
+    /// holds this journal and has just replaced its document with the file.
+    #[test]
+    fn replacing_a_journal_starts_it_again() {
+        let dir = TempDir::new("journal-replaced");
+        let script = dir.path().join("x.fountain");
+        let id = script_id(&script);
+        let mut journal = Journal::create(dir.path(), &id, &script, "before").unwrap();
+        journal.append(&change(1, "a")).unwrap();
+        drop(journal);
+
+        let journal = Journal::replace(dir.path(), &id, &script, "after").unwrap();
+        let path = journal.path().to_path_buf();
+        assert_eq!(journal.records(), 0);
+        drop(journal);
+        let recovery = read(&path).unwrap();
+        assert!(recovery.patches.is_empty());
+        assert_eq!(recovery.header.base, checksum("after"));
     }
 
     #[test]

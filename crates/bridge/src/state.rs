@@ -381,6 +381,20 @@ impl Session {
         self.saving = None;
     }
 
+    /// Starts a session that will not be journalled, and says so.
+    ///
+    /// The one caller is a journal name already held by a crashed session whose
+    /// records nobody has decided about yet. Those records are the only copy of
+    /// their edits, so this session does not take the name — and it reports the
+    /// consequence rather than looking like an ordinary session, because the
+    /// consequence is the one [`Session::journal_broken`] already describes:
+    /// nothing typed here is being recorded.
+    pub fn set_journal_unavailable(&mut self) {
+        self.journal = None;
+        self.journal_broken = true;
+        self.saving = None;
+    }
+
     pub fn journal_mut(&mut self) -> Option<&mut Journal> {
         self.journal.as_mut()
     }
