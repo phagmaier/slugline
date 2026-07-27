@@ -186,12 +186,31 @@ void main() {
     final onto = await core.exportFountain(file, overwrite: true);
     expect((onto as SaveOutcome_Failed).failure, SaveFailure.scriptIsOpen);
 
-    // Save As, by contrast, moves the session onto the file it writes.
+    // Save As answers the same two refusals, and for the same reasons: it
+    // reaches the same atomic replacement through the same chooser.
+    final occupied = path('export-occupied.fountain');
+    File(occupied).writeAsStringSync('Somebody else.\n');
+    final wouldReplace = await core.saveAs(occupied);
+    expect((wouldReplace as SaveOutcome_Failed).failure,
+        SaveFailure.alreadyExists);
+    expect(
+      File(occupied).readAsStringSync(),
+      'Somebody else.\n',
+      reason: 'a refused Save As writes nothing',
+    );
+    expect(core.path, file, reason: 'and moves nothing either');
+
+    // Save As, by contrast to an export, moves the session onto the file it
+    // writes — and an unoccupied destination needs no confirmation at all.
     final moved = path('export-moved.fountain');
     expect(await core.saveAs(moved), isA<SaveOutcome_Saved>());
     expect(core.path, moved);
     expect(core.dirty, isFalse);
     expect(File(moved).readAsStringSync(), typed);
+
+    // Saving again onto the file this session now *is* is a save, not a
+    // replacement, so it is not asked about.
+    expect(await core.saveAs(moved), isA<SaveOutcome_Saved>());
   });
 
   testWidgets('what was typed comes back when the file is opened again', (

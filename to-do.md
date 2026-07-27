@@ -13,7 +13,7 @@
    - Make normal journal creation refuse to truncate an existing journal; only explicit recovery/discard logic should replace it.
    - Add a regression test: crash with dirty text → choose “Decide later” → journal remains byte-identical → next launch offers it again.
 
-- [ ] See Below
+- [x] See Below
 2. **High — Save As silently overwrites existing files.**
 
    `_askAndSave` calls `core.saveAs(path)` without an overwrite confirmation in [save_dialogs.dart](/home/phagmaier/Code/slugline/app/lib/library/save_dialogs.dart:228). `doc_save_as` passes the destination directly to the atomic replacement path in [files.rs](/home/phagmaier/Code/slugline/crates/bridge/src/api/files.rs:542).

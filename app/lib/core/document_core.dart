@@ -230,7 +230,12 @@ abstract class DocumentCore {
 
   /// Writes the file somewhere else, and **follows it there**: path, journal,
   /// backups, watch and library entry all move.
-  Future<files.SaveOutcome> saveAs(String path);
+  ///
+  /// Refuses a destination that already exists — unless it is this script's own
+  /// file, or [overwrite] says otherwise — and refuses one that is a *different*
+  /// script open here at all. Both refusals are the core's, so the confirmation
+  /// below is a question the dialog asks rather than a check it performs.
+  Future<files.SaveOutcome> saveAs(String path, {bool overwrite = false});
 
   /// Writes a copy somewhere else and **stays where it is** (§6's
   /// `doc_export_fountain`). The session, its path, its journal and its dirty
@@ -445,8 +450,8 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   Future<files.SaveOutcome> save() => files.docSave(handle: _handle);
 
   @override
-  Future<files.SaveOutcome> saveAs(String path) =>
-      files.docSaveAs(handle: _handle, path: path);
+  Future<files.SaveOutcome> saveAs(String path, {bool overwrite = false}) =>
+      files.docSaveAs(handle: _handle, path: path, overwrite: overwrite);
 
   @override
   Future<files.SaveOutcome> exportFountain(

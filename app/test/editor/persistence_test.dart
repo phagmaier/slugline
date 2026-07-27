@@ -116,6 +116,142 @@ void main() {
     });
   });
 
+  group('Save As never replaces a file without asking', () {
+    /// Starts a real [saveWithDialogs] with the chooser replaced by `answers` —
+    /// one destination per time the writer is put in front of it, `null` for a
+    /// chooser they closed — and hands back what it eventually said.
+    ///
+    /// The save is still running when this returns: it is waiting on whatever
+    /// dialog the core's refusal put up, which is the thing under test.
+    Future<ValueGetter<SaveOutcome?>> saveAsking(
+      WidgetTester tester,
+      FakeCore core,
+      List<String?> answers,
+    ) async {
+      SaveOutcome? outcome;
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () async {
+            outcome = await saveWithDialogs(
+              context,
+              core,
+              forcePath: true,
+              chooseFile:
+                  (context, {required directory, required suggestedName}) async =>
+                      answers.removeAt(0),
+            );
+          },
+          child: const Text('save as'),
+        ),
+      );
+      await tester.tap(find.text('save as'));
+      await tester.pumpAndSettle();
+      return () => outcome;
+    }
+
+    testWidgets('an occupied destination is confirmed before it is replaced',
+        (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..existingFiles.add('/scripts/other.fountain');
+
+      final saved = await saveAsking(tester, core, ['/scripts/other.fountain']);
+
+      // The first attempt was refused by the core, and the writer is being
+      // asked rather than told.
+      expect(core.saveAsCalls, [('/scripts/other.fountain', false)]);
+      expect(find.text('There is already a file there'), findsOneWidget);
+      expect(find.textContaining('cannot be undone'), findsOneWidget);
+
+      await tester.tap(find.text('Replace'));
+      await tester.pumpAndSettle();
+
+      expect(core.saveAsCalls, [
+        ('/scripts/other.fountain', false),
+        ('/scripts/other.fountain', true),
+      ], reason: 'replacing is the same call said again, explicitly');
+      expect(saved(), isA<SaveOutcome_Saved>());
+      expect(core.filePath, '/scripts/other.fountain');
+    });
+
+    testWidgets('declining goes back to the chooser and writes nothing',
+        (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..onDisk = 'John enters.\n'
+        ..existingFiles.add('/scripts/other.fountain');
+
+      final saved = await saveAsking(
+        tester,
+        core,
+        ['/scripts/other.fountain', '/scripts/new.fountain'],
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      // No `overwrite: true` was ever sent, so the occupied file was never
+      // written — and the writer ended up somewhere else rather than out of
+      // Save As altogether.
+      expect(core.saveAsCalls, [
+        ('/scripts/other.fountain', false),
+        ('/scripts/new.fountain', false),
+      ]);
+      expect(core.saves.map((save) => save.$1), ['/scripts/new.fountain']);
+      expect(saved(), isA<SaveOutcome_Saved>());
+      expect(core.filePath, '/scripts/new.fountain');
+    });
+
+    testWidgets('closing the chooser at the replace question saves nothing',
+        (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..existingFiles.add('/scripts/other.fountain');
+
+      final saved = await saveAsking(
+        tester,
+        core,
+        ['/scripts/other.fountain', null],
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(core.saves, isEmpty);
+      expect(core.filePath, '/scripts/heat.fountain');
+      expect(
+        (saved() as SaveOutcome_Failed).failure,
+        SaveFailure.noPath,
+        reason: 'a closed chooser is not a failure to report',
+      );
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('a script open here is refused, and not by asking',
+        (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..existingFiles.add('/scripts/open.fountain')
+        ..openScripts.add('/scripts/open.fountain');
+
+      final saved = await saveAsking(tester, core, ['/scripts/open.fountain']);
+
+      // Not the replace question: this one has no yes.
+      expect(find.text('There is already a file there'), findsNothing);
+      expect(find.text('That script is open here'), findsOneWidget);
+      expect(
+        find.textContaining('Save that script rather than writing this one'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(core.saves, isEmpty);
+      expect(core.filePath, '/scripts/heat.fountain');
+      expect((saved() as SaveOutcome_Failed).failure, SaveFailure.scriptIsOpen);
+    });
+  });
+
   group('unsaved changes', () {
     testWidgets('closing with unsaved work asks, and Cancel means cancel',
         (tester) async {

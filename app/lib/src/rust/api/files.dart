@@ -10,8 +10,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `SavedPagination`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `load_preferences`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `Restart`, `SavedPagination`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
@@ -58,7 +58,7 @@ Future<List<ScriptView>> libraryList() =>
 Future<DocumentHandle?> libraryOpen({required String path}) =>
     RustLib.instance.api.crateApiFilesLibraryOpen(path: path);
 
-/// §6's `library_create`. A new, empty script at `path`.
+/// §6's `library_create`, with Phase 10's useful first-run template.
 ///
 /// The file is written immediately, and the handle only comes back if it was:
 /// "create" that leaves nothing on disk is a promise the library index would
@@ -124,10 +124,36 @@ Future<SaveOutcome> docSave({required DocumentHandle handle}) =>
 /// the journal, the backups, the watch and the library entry all move with it.
 /// That is the difference from [`doc_export_fountain`], which writes a copy and
 /// changes nothing (ADR 0029).
+///
+/// ## The two refusals
+///
+/// Save As is a file chooser away from replacing a script the writer spent a
+/// month on, exactly as an export is, so it answers the same two refusals for
+/// the same two reasons — and answers them **here**, not in the dialog, so that
+/// no chooser can be written that skips them:
+///
+/// * A destination that is already there comes back as
+///   [`SaveFailure::AlreadyExists`] unless `overwrite` says otherwise. The one
+///   exception is the session's own file: Save As onto where this script already
+///   lives is a save, and asking the writer to confirm replacing themselves
+///   would be a question with only one answer.
+/// * A destination that is a **different** open script comes back as
+///   [`SaveFailure::ScriptIsOpen`], and `overwrite` does not lift it. That
+///   session's journal has the bytes now being replaced as its base; after such
+///   a write a crash would recover onto a file that no longer matches.
+///
+/// Like the export's, the checks are a moment before the write rather than
+/// atomic with it. That is the same race any file chooser has; what matters is
+/// that the ordinary case cannot overwrite without having been asked.
 Future<SaveOutcome> docSaveAs({
   required DocumentHandle handle,
   required String path,
-}) => RustLib.instance.api.crateApiFilesDocSaveAs(handle: handle, path: path);
+  required bool overwrite,
+}) => RustLib.instance.api.crateApiFilesDocSaveAs(
+  handle: handle,
+  path: path,
+  overwrite: overwrite,
+);
 
 /// §6's `doc_export_fountain`: write a copy of the script somewhere else, and
 /// carry on editing this one.

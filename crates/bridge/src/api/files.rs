@@ -540,8 +540,79 @@ pub async fn doc_save(handle: DocumentHandle) -> SaveOutcome {
 /// the journal, the backups, the watch and the library entry all move with it.
 /// That is the difference from [`doc_export_fountain`], which writes a copy and
 /// changes nothing (ADR 0029).
-pub async fn doc_save_as(handle: DocumentHandle, path: String) -> SaveOutcome {
-    write_document(handle, Some(PathBuf::from(path)), true).await
+///
+/// ## The two refusals
+///
+/// Save As is a file chooser away from replacing a script the writer spent a
+/// month on, exactly as an export is, so it answers the same two refusals for
+/// the same two reasons — and answers them **here**, not in the dialog, so that
+/// no chooser can be written that skips them:
+///
+/// * A destination that is already there comes back as
+///   [`SaveFailure::AlreadyExists`] unless `overwrite` says otherwise. The one
+///   exception is the session's own file: Save As onto where this script already
+///   lives is a save, and asking the writer to confirm replacing themselves
+///   would be a question with only one answer.
+/// * A destination that is a **different** open script comes back as
+///   [`SaveFailure::ScriptIsOpen`], and `overwrite` does not lift it. That
+///   session's journal has the bytes now being replaced as its base; after such
+///   a write a crash would recover onto a file that no longer matches.
+///
+/// Like the export's, the checks are a moment before the write rather than
+/// atomic with it. That is the same race any file chooser has; what matters is
+/// that the ordinary case cannot overwrite without having been asked.
+pub async fn doc_save_as(handle: DocumentHandle, path: String, overwrite: bool) -> SaveOutcome {
+    let path = PathBuf::from(path);
+    if path.as_os_str().is_empty() {
+        return failed(SaveFailure::NoPath, &path, "no file was chosen");
+    }
+
+    // One trip to the actor, and it arms nothing: where this session lives, and
+    // whether any *other* session lives at the destination.
+    let Some((current, open_elsewhere)) = actor().run({
+        let handle = handle.id;
+        let path = path.clone();
+        move |state| {
+            let current = state.session(handle)?.path().map(Path::to_path_buf);
+            let open_elsewhere = state
+                .handles()
+                .into_iter()
+                .filter(|open| *open != handle)
+                .filter_map(|open| state.session(open))
+                .filter_map(Session::path)
+                .any(|open| same_file(open, &path));
+            Some((current, open_elsewhere))
+        }
+    }) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            &path,
+            "no document with that handle",
+        );
+    };
+
+    if open_elsewhere {
+        return failed(
+            SaveFailure::ScriptIsOpen,
+            &path,
+            &format!(
+                "{} is open here; save that script rather than writing this one over it",
+                path.display()
+            ),
+        );
+    }
+    let onto_itself = current
+        .as_deref()
+        .is_some_and(|current| same_file(current, &path));
+    if !overwrite && !onto_itself && path.exists() {
+        return failed(
+            SaveFailure::AlreadyExists,
+            &path,
+            &format!("{} is already there", path.display()),
+        );
+    }
+
+    write_document(handle, Some(path), true).await
 }
 
 /// §6's `doc_export_fountain`: write a copy of the script somewhere else, and
@@ -3180,6 +3251,7 @@ mod tests {
         let outcome = block_on(doc_save_as(
             it.handle,
             elsewhere.to_string_lossy().into_owned(),
+            false,
         ));
         assert!(matches!(outcome, SaveOutcome::Saved { .. }));
 
@@ -3247,6 +3319,7 @@ mod tests {
         let outcome = block_on(doc_save_as(
             it.handle,
             elsewhere.to_string_lossy().into_owned(),
+            false,
         ));
 
         assert_eq!(exported(&outcome), elsewhere.to_string_lossy());
@@ -3267,6 +3340,7 @@ mod tests {
         block_on(doc_save_as(
             it.handle,
             elsewhere.to_string_lossy().into_owned(),
+            false,
         ));
 
         assert_eq!(
@@ -3370,6 +3444,106 @@ mod tests {
         ));
         assert!(matches!(confirmed, SaveOutcome::Saved { .. }));
         assert_eq!(fs::read_to_string(&occupied).unwrap(), it.in_memory());
+    }
+
+    /// The pair of the test above, and the reason it exists: Save As reaches
+    /// the same `save_atomically` through the same chooser, so it has to refuse
+    /// an occupied destination for the same reason. The file the writer picked
+    /// by mistake stays byte-identical until they say Replace.
+    #[test]
+    fn save_as_refuses_to_overwrite_until_it_is_told_to() {
+        let it = Fixture::open("save-as-overwrite");
+        it.types("New words. ");
+        let occupied = it.root.join("occupied.fountain");
+        const THEIRS: &str = "Somebody else's script.\n";
+        fs::write(&occupied, THEIRS).expect("the file is written");
+
+        let refused = block_on(doc_save_as(
+            it.handle,
+            occupied.to_string_lossy().into_owned(),
+            false,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::AlreadyExists);
+        assert_eq!(
+            fs::read_to_string(&occupied).unwrap(),
+            THEIRS,
+            "a refused Save As writes nothing"
+        );
+        // And it moved nothing either: a refusal is not half a Save As.
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
+        assert!(it.dirty(), "the document was not saved anywhere");
+        assert_eq!(
+            it.journal_describes().as_deref(),
+            Some(it.script.as_path()),
+            "the journal still covers the file the session is bound to"
+        );
+        assert!(!it.is_saving(), "a refused Save As arms nothing");
+
+        let confirmed = block_on(doc_save_as(
+            it.handle,
+            occupied.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert!(matches!(confirmed, SaveOutcome::Saved { .. }));
+        assert_eq!(fs::read_to_string(&occupied).unwrap(), it.in_memory());
+        assert_eq!(doc_path(it.handle).as_deref(), occupied.to_str());
+    }
+
+    /// Save As onto the file the session already lives in is a save, and asking
+    /// "replace it?" about the writer's own script would be a question with one
+    /// answer. The exception is exactly that one file — nothing else.
+    #[test]
+    fn save_as_onto_its_own_file_needs_no_confirmation() {
+        let it = Fixture::open("save-as-itself");
+        it.types("Onto itself. ");
+
+        let outcome = block_on(doc_save_as(
+            it.handle,
+            it.script.to_string_lossy().into_owned(),
+            false,
+        ));
+
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+        assert_eq!(it.on_disk(), it.in_memory());
+        assert!(!it.dirty());
+    }
+
+    /// The other refusal's pair. `overwrite` does not lift this one either: the
+    /// other session's journal is based on the bytes this write would replace,
+    /// so a crash after it would recover onto a file that no longer matches.
+    #[test]
+    fn save_as_never_writes_another_open_script() {
+        let it = Fixture::open("save-as-open");
+        let other = it.beside("save-as-also-open");
+        it.types("Mine. ");
+
+        let refused = block_on(doc_save_as(
+            it.handle,
+            other.script.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
+        assert_eq!(other.on_disk(), SCRIPT);
+        assert_eq!(other.in_memory(), SCRIPT);
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
+
+        // And spelled through a symlinked directory, which a comparison of the
+        // paths as written would let through.
+        let linked = it.root.join("link");
+        std::os::unix::fs::symlink(&it.root, &linked).expect("the symlink is made");
+        let sideways = linked.join(
+            other
+                .script
+                .file_name()
+                .expect("the sibling has a file name"),
+        );
+        let refused = block_on(doc_save_as(
+            it.handle,
+            sideways.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
+        assert_eq!(other.on_disk(), SCRIPT);
     }
 
     /// A script this application has open is never a destination, however the

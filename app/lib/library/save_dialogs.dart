@@ -102,14 +102,14 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
       SaveFailure.noSuchDocument =>
         'The editor and the core disagree about what is open. Reopening the '
             'script will fix it.',
-      // The two an export can answer with. Neither reaches [showSaveFailure] —
-      // an export is not a save and has its own answer to give — but the enum
-      // is shared, so the sentences live beside the others rather than in a
-      // second table that could drift from this one.
+      // The two refusals an export and a Save As share. The first is a question
+      // rather than a fault and is normally answered by [confirmReplace] before
+      // it ever gets here; this sentence is what a writer sees if they declined
+      // and the failure came back up.
       SaveFailure.alreadyExists =>
         '$path is already there, and Slugline did not replace it.',
       SaveFailure.scriptIsOpen =>
-        '$path is open here. Save that script rather than writing a copy over it.',
+        '$path is open here. Save that script rather than writing this one over it.',
       SaveFailure.io => 'The operating system refused to write $path.',
     };
 
@@ -196,6 +196,19 @@ Future<UnsavedChoice> showUnsavedChanges(BuildContext context, String title) asy
   return choice ?? UnsavedChoice.cancel;
 }
 
+/// Asks the writer where the script should go. Null if they closed the chooser.
+///
+/// The application's own chooser, and a seam a test replaces — the same one the
+/// export dialog has, for the same reason: what §Phase 4 specifies about Save As
+/// is what happens to the *answer*, and a widget test should not need a real
+/// directory to exercise it.
+typedef SavePathChooser =
+    Future<String?> Function(
+      BuildContext context, {
+      required String? directory,
+      required String suggestedName,
+    });
+
 /// Saves, and deals with whatever comes back — including asking for a new path
 /// and trying again.
 ///
@@ -205,9 +218,10 @@ Future<SaveOutcome> saveWithDialogs(
   BuildContext context,
   DocumentCore core, {
   bool forcePath = false,
+  SavePathChooser chooseFile = _chooseWithFileChooser,
 }) async {
   var outcome = forcePath || core.path == null
-      ? await _askAndSave(context, core)
+      ? await _askAndSave(context, core, chooseFile)
       : await core.save();
 
   while (outcome is SaveOutcome_Failed) {
@@ -219,29 +233,105 @@ Future<SaveOutcome> saveWithDialogs(
     final choice = await showSaveFailure(context, outcome);
     if (choice == SaveFailureChoice.cancel) return outcome;
     if (!context.mounted) return outcome;
-    outcome = await _askAndSave(context, core);
+    outcome = await _askAndSave(context, core, chooseFile);
   }
   return outcome;
 }
 
-Future<SaveOutcome> _askAndSave(BuildContext context, DocumentCore core) async {
-  final existing = core.path;
-  final path = await FileChooser.show(
-    context,
-    title: 'Save script as',
-    action: 'Save',
-    directory: existing == null ? null : _parent(existing),
-    suggestedName: existing == null ? 'untitled.fountain' : _basename(existing),
+/// "There is already a file there." Answered by calling again with
+/// `overwrite: true`, and by nothing else.
+///
+/// Shared by Save As and by the export dialog, so that replacing a file is one
+/// question with one wording however the writer arrived at it. It is a
+/// confirmation, not a check: the core has already refused the write, and
+/// declining here simply leaves that refusal standing.
+Future<bool> confirmReplace(BuildContext context, String path) async {
+  final replace = await showDialog<bool>(
+    context: context,
+    builder: (context) => EscapeDismissible(child: AlertDialog(
+      icon: const Icon(Icons.help_outline),
+      title: const Text('There is already a file there'),
+      content: Text('$path exists. Replacing it cannot be undone.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Replace'),
+        ),
+      ],
+    )),
   );
-  if (path == null) {
-    return const SaveOutcome.failed(
-      failure: SaveFailure.noPath,
-      path: '',
-      message: 'no file was chosen',
-    );
-  }
-  return core.saveAs(path);
+  return replace ?? false;
 }
+
+/// Asks where the script should go, and writes it there.
+///
+/// The loop is the replace confirmation: the core refuses an occupied
+/// destination, and a writer who declines to replace it is back at the chooser
+/// picking another name rather than out of Save As altogether — which is what
+/// every other Save As on the desktop does, and the only reading of "Cancel"
+/// that does not throw away the intent to save.
+///
+/// Only two things leave it: a chosen path that was written (or refused for some
+/// other reason, which [saveWithDialogs] reports), and a closed chooser.
+Future<SaveOutcome> _askAndSave(
+  BuildContext context,
+  DocumentCore core,
+  SavePathChooser chooseFile,
+) async {
+  final existing = core.path;
+  // Where the chooser opens, and what it opens with. They follow the last
+  // attempt round the loop: a writer who declined to replace a file was in the
+  // right folder and typing a name near the one they wanted.
+  var directory = existing == null ? null : _parent(existing);
+  var suggested = existing == null ? 'untitled.fountain' : _basename(existing);
+
+  while (true) {
+    final path = await chooseFile(
+      context,
+      directory: directory,
+      suggestedName: suggested,
+    );
+    if (path == null || !context.mounted) return _noPath;
+    final outcome = await core.saveAs(path);
+    if (outcome is! SaveOutcome_Failed ||
+        outcome.failure != SaveFailure.alreadyExists) {
+      return outcome;
+    }
+    if (!context.mounted) return outcome;
+    if (await confirmReplace(context, path)) {
+      if (!context.mounted) return outcome;
+      return core.saveAs(path, overwrite: true);
+    }
+    if (!context.mounted) return outcome;
+    directory = _parent(path);
+    suggested = _basename(path);
+  }
+}
+
+Future<String?> _chooseWithFileChooser(
+  BuildContext context, {
+  required String? directory,
+  required String suggestedName,
+}) => FileChooser.show(
+  context,
+  title: 'Save script as',
+  action: 'Save',
+  directory: directory,
+  suggestedName: suggestedName,
+);
+
+/// What a closed chooser answers with. `noPath` rather than a cancellation
+/// because nothing was written and [saveWithDialogs] must not ask again — see
+/// the comment on its loop.
+const SaveOutcome _noPath = SaveOutcome.failed(
+  failure: SaveFailure.noPath,
+  path: '',
+  message: 'no file was chosen',
+);
 
 String _parent(String path) {
   final slash = path.lastIndexOf('/');

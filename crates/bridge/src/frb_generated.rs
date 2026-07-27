@@ -1074,12 +1074,14 @@ fn wire__crate__api__files__doc_save_as_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
             let api_path = <String>::sse_decode(&mut deserializer);
+            let api_overwrite = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, ()>(
                     (move || async move {
                         let output_ok = Result::<_, ()>::Ok(
-                            crate::api::files::doc_save_as(api_handle, api_path).await,
+                            crate::api::files::doc_save_as(api_handle, api_path, api_overwrite)
+                                .await,
                         )?;
                         Ok(output_ok)
                     })()

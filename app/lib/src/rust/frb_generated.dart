@@ -203,6 +203,7 @@ abstract class RustLibApi extends BaseApi {
   Future<SaveOutcome> crateApiFilesDocSaveAs({
     required DocumentHandle handle,
     required String path,
+    required bool overwrite,
   });
 
   bool crateApiDocDocSetEntityPinned({
@@ -1182,6 +1183,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<SaveOutcome> crateApiFilesDocSaveAs({
     required DocumentHandle handle,
     required String path,
+    required bool overwrite,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1189,6 +1191,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_document_handle(handle, serializer);
           sse_encode_String(path, serializer);
+          sse_encode_bool(overwrite, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1201,7 +1204,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiFilesDocSaveAsConstMeta,
-        argValues: [handle, path],
+        argValues: [handle, path, overwrite],
         apiImpl: this,
       ),
     );
@@ -1209,7 +1212,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiFilesDocSaveAsConstMeta => const TaskConstMeta(
     debugName: "doc_save_as",
-    argNames: ["handle", "path"],
+    argNames: ["handle", "path", "overwrite"],
   );
 
   @override

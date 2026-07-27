@@ -584,10 +584,36 @@ class FakeCore implements DocumentCore {
   @override
   Future<SaveOutcome> save() async => _write(filePath, autosave: false);
 
+  /// Every Save As the editor asked for, in order, as `(path, overwrite)`.
+  ///
+  /// Kept beside [exports] on purpose: the two look alike from here and are not
+  /// the same operation, and a test that means one must be able to say which
+  /// one it saw (ADR 0029).
+  final List<(String, bool)> saveAsCalls = [];
+
   @override
-  Future<SaveOutcome> saveAs(String path) async {
+  Future<SaveOutcome> saveAs(String path, {bool overwrite = false}) async {
+    saveAsCalls.add((path, overwrite));
+    // The core's two refusals, with a set standing in for the filesystem. A Save
+    // As onto the file this script already is stays allowed — it is a save.
+    if (path != filePath && openScripts.contains(path)) {
+      return SaveOutcome.failed(
+        failure: SaveFailure.scriptIsOpen,
+        path: path,
+        message: '$path is open here',
+      );
+    }
+    if (!overwrite && path != filePath && existingFiles.contains(path)) {
+      return SaveOutcome.failed(
+        failure: SaveFailure.alreadyExists,
+        path: path,
+        message: '$path is already there',
+      );
+    }
     filePath = path;
-    return _write(path, autosave: false);
+    final outcome = await _write(path, autosave: false);
+    if (outcome is SaveOutcome_Saved) existingFiles.add(path);
+    return outcome;
   }
 
   @override
@@ -599,9 +625,9 @@ class FakeCore implements DocumentCore {
   /// Every export the editor asked for, in order, as `(path, overwrite)`.
   final List<(String, bool)> exports = [];
 
-  /// The destinations an export must refuse: what `AlreadyExists` and
-  /// `ScriptIsOpen` are for in the real core, without a filesystem to have them
-  /// in.
+  /// The destinations an export or a Save As must refuse: what `AlreadyExists`
+  /// and `ScriptIsOpen` are for in the real core, without a filesystem to have
+  /// them in.
   final Set<String> existingFiles = {};
   final Set<String> openScripts = {};
 

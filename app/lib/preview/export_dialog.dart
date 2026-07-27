@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/save_dialogs.dart' show confirmReplace;
 import 'package:slugline/preview/preview_view.dart';
 
 /// Preview, then export (§Phase 7).
@@ -189,25 +190,8 @@ class _ExportDialogState extends State<ExportDialog> {
     if (outcome is! SaveOutcome_Failed) return outcome;
     if (outcome.failure != SaveFailure.alreadyExists) return outcome;
     if (!mounted) return outcome;
-    final replace = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.help_outline),
-        title: const Text('There is already a file there'),
-        content: Text('${outcome.path} exists. Replacing it cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Replace'),
-          ),
-        ],
-      ),
-    );
-    if (replace != true) return outcome;
+    if (!await confirmReplace(context, outcome.path)) return outcome;
+    if (!mounted) return outcome;
     return again(true);
   }
 
