@@ -97,6 +97,12 @@ impl Paths {
     }
 
     pub fn preferences(&self) -> PathBuf {
+        self.config.join("prefs.json")
+    }
+
+    /// Phase 4 used this longer name before Phase 10 fixed the public path in
+    /// the specification. It is read only as a one-time compatibility source.
+    pub fn legacy_preferences(&self) -> PathBuf {
         self.config.join("preferences.json")
     }
 

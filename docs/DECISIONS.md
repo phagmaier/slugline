@@ -2785,3 +2785,72 @@ central invariant.
   debounce, every menu action and an asynchronous 120-page/3,000-block sweep.
   `crates/spell/src/lib.rs` proves discovery, checking, token ranges and tolerant
   word-list persistence.
+
+---
+
+## ADR 0037 — Preferences split display policy from screenplay output
+
+**Status:** Accepted
+**Date:** 2026-07-27
+**Phase:** 10
+
+### Context
+
+Phase 10 puts many choices in one settings surface, but only two of them may
+affect screenplay geometry: paper size and scene-number gutters. Theme, editor
+text size and window chrome are presentation. Autosave is a Dart-owned clock.
+PDF font choice changes glyph shapes but must not become a second pagination
+input. These distinctions need to survive hand-edited preference files and live
+changes while a script is open.
+
+The phase also revisits the custom file chooser from ADR 0015. The native
+Flutter Linux selector still brings an HTTP client into the release dependency
+graph, conflicting with the build-time zero-network proof. The existing chooser
+already provides the required file workflow and can select a directory without
+that dependency.
+
+### Decision
+
+Preferences are tolerant, readable JSON at
+`$XDG_CONFIG_HOME/slugline/prefs.json`, written atomically. On first launch after
+an older build, `preferences.json` is read and copied to the new path; the old
+file is left as a harmless fallback. Enum-like strings are validated, numeric
+retention and timer values are bounded, and unknown fields remain forward
+compatible.
+
+Dart applies light, dark or system theme mode, editor text size and
+distraction-free chrome immediately. Autosave timers are reconfigured in place.
+F11 also asks the GTK runner to enter or leave actual full screen through one
+small method channel. F1 opens the in-app copy of the keyboard map.
+
+Rust remains the owner of output defaults. Explicit and automatic saves count
+pages with the preferred paper and scene-number gutters, and preview/export
+opens with that same setup. A selected TrueType system face is read off the
+actor and embedded by `render_pdf`; its widths are declared on the fixed
+screenplay grid, and the UI warns that a non-standard face may not visually fit
+that grid. With only one selected face, PDF fill-and-stroke and matrix shear
+preserve bold and italic emphasis without guessing sibling font paths.
+
+New scripts start with a title page named from the chosen file and one editable
+scene heading. The library empty state explains Fountain ownership and offers
+both Create and Open. The dependency-free chooser is retained and gains an
+explicit directory-selection mode for backup location.
+
+The `Ctrl+digit` element map remains stable for 1.0. The earlier forward note
+in `docs/KEYMAP.md` that Phase 10 might make it configurable was not a SPEC
+requirement and would add another way for the shortcut sheet and element table
+to disagree.
+
+### Consequences
+
+* `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` changes
+  every appearance-only value and compares the pagination dump byte-for-byte.
+* The saved page count, preview and PDF all use Rust `PageConfig`; editor zoom
+  changes only the fluid custom surface.
+* A malformed system font reports an export failure rather than panicking the
+  process. Courier Prime remains the deterministic default.
+* Widget tests cover live autosave reconfiguration, settings round-trips,
+  F1/F11/zoom keys, output defaults, focus-mode chrome and Escape dismissal,
+  including blocking failure dialogs that remain non-click-away.
+* No dependency was added, and the zero-network packaging proof remains
+  straightforward.

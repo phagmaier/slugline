@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `paginate_for_export`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `SavedPagination`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -335,11 +335,19 @@ class BackupView {
           bytes == other.bytes;
 }
 
-/// §6's `Preferences`, through Phase 8.
+/// §6's preferences, through Phase 10.
 class PreferencesView {
   final bool autosaveEnabled;
   final bool autocompleteEnabled;
   final bool navigatorVisible;
+  final bool spellEnabled;
+  final String? spellLanguage;
+  final String appearance;
+  final int editorTextSize;
+  final String defaultPaper;
+  final String sceneNumbers;
+  final String? pdfFontPath;
+  final bool distractionFree;
   final int autosaveIdleMs;
   final int autosaveIntervalMs;
   final String? backupDir;
@@ -350,6 +358,14 @@ class PreferencesView {
     required this.autosaveEnabled,
     required this.autocompleteEnabled,
     required this.navigatorVisible,
+    required this.spellEnabled,
+    this.spellLanguage,
+    required this.appearance,
+    required this.editorTextSize,
+    required this.defaultPaper,
+    required this.sceneNumbers,
+    this.pdfFontPath,
+    required this.distractionFree,
     required this.autosaveIdleMs,
     required this.autosaveIntervalMs,
     this.backupDir,
@@ -362,6 +378,14 @@ class PreferencesView {
       autosaveEnabled.hashCode ^
       autocompleteEnabled.hashCode ^
       navigatorVisible.hashCode ^
+      spellEnabled.hashCode ^
+      spellLanguage.hashCode ^
+      appearance.hashCode ^
+      editorTextSize.hashCode ^
+      defaultPaper.hashCode ^
+      sceneNumbers.hashCode ^
+      pdfFontPath.hashCode ^
+      distractionFree.hashCode ^
       autosaveIdleMs.hashCode ^
       autosaveIntervalMs.hashCode ^
       backupDir.hashCode ^
@@ -376,6 +400,14 @@ class PreferencesView {
           autosaveEnabled == other.autosaveEnabled &&
           autocompleteEnabled == other.autocompleteEnabled &&
           navigatorVisible == other.navigatorVisible &&
+          spellEnabled == other.spellEnabled &&
+          spellLanguage == other.spellLanguage &&
+          appearance == other.appearance &&
+          editorTextSize == other.editorTextSize &&
+          defaultPaper == other.defaultPaper &&
+          sceneNumbers == other.sceneNumbers &&
+          pdfFontPath == other.pdfFontPath &&
+          distractionFree == other.distractionFree &&
           autosaveIdleMs == other.autosaveIdleMs &&
           autosaveIntervalMs == other.autosaveIntervalMs &&
           backupDir == other.backupDir &&

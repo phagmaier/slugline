@@ -133,6 +133,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('scene-numbers')));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Both margins').last);
+    await tester.pumpAndSettle();
     expect(output.setups.last.sceneNumbers, SceneNumbers.both);
   });
 }

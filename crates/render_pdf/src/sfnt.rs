@@ -13,11 +13,10 @@
 //!
 //! ## What is trusted, and what is not
 //!
-//! The input is [`crate::fonts`]' vendored files and nothing else — they are
-//! `include_bytes!`d into the binary, so a malformed one is a broken build, not
-//! a broken document. Parsing therefore *asserts* rather than degrading, and
-//! `every_vendored_face_parses` is the test that runs those assertions.
-//! Everything derived from a *user's* script — which characters to keep — is
+//! The ordinary input is [`crate::fonts`]' vendored files. Phase 10 also permits
+//! a user-selected system monospace face; the public renderer catches parser
+//! assertions around that untrusted input and reports a normal export error.
+//! Everything derived from a user's script — which characters to keep — is
 //! ordinary data and is handled without any such assumption.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,11 +24,10 @@ use std::collections::{BTreeMap, BTreeSet};
 const HEADER: usize = 12;
 const RECORD: usize = 16;
 
-/// A parsed face. Borrowed, because every face this crate uses is `'static`
-/// bytes compiled into the library.
+/// A parsed face, borrowing either a compiled-in or user-selected font.
 #[derive(Debug)]
-pub(crate) struct Face {
-    data: &'static [u8],
+pub(crate) struct Face<'a> {
+    data: &'a [u8],
     tables: BTreeMap<[u8; 4], (usize, usize)>,
     pub units_per_em: u16,
     pub num_glyphs: u16,
@@ -46,8 +44,8 @@ pub(crate) struct Face {
     pub weight_class: u16,
 }
 
-impl Face {
-    pub fn parse(data: &'static [u8]) -> Face {
+impl<'a> Face<'a> {
+    pub fn parse(data: &'a [u8]) -> Face<'a> {
         assert!(
             data.len() > HEADER,
             "font file is too short to have a header"
@@ -134,7 +132,7 @@ impl Face {
         face
     }
 
-    fn table(&self, tag: &[u8; 4]) -> &'static [u8] {
+    fn table(&self, tag: &[u8; 4]) -> &'a [u8] {
         let (offset, length) = self
             .tables
             .get(tag)
@@ -143,7 +141,7 @@ impl Face {
         &self.data[offset..offset + length]
     }
 
-    fn optional_table(&self, tag: &[u8; 4]) -> Option<&'static [u8]> {
+    fn optional_table(&self, tag: &[u8; 4]) -> Option<&'a [u8]> {
         self.tables
             .get(tag)
             .map(|(offset, length)| &self.data[*offset..*offset + *length])
@@ -201,7 +199,7 @@ impl Face {
         0
     }
 
-    fn unicode_subtable(&self) -> Option<&'static [u8]> {
+    fn unicode_subtable(&self) -> Option<&'a [u8]> {
         let cmap = self.optional_table(b"cmap")?;
         let count = usize::from(u16(cmap, 2));
         for index in 0..count {
@@ -245,7 +243,7 @@ impl Face {
         }
     }
 
-    fn glyph_data(&self, glyph: u16) -> &'static [u8] {
+    fn glyph_data(&self, glyph: u16) -> &'a [u8] {
         let glyf = self.table(b"glyf");
         let (start, end) = self.glyph_range(glyph);
         if start >= end || end > glyf.len() {

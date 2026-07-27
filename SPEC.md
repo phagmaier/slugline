@@ -987,14 +987,14 @@ prompt that cries wolf is a prompt that gets dismissed the one time it matters.
 
 ### Still open at the end of Phase 4
 
-- [ ] **Preferences UI.** `prefs_get`/`prefs_set` are wired and the file is
-      read and written; nothing in the application edits it yet. §Phase 4 says
-      the autosave numbers must be configurable, and they are — by hand, in
-      `$XDG_CONFIG_HOME/slugline/preferences.json`. The settings pane is Phase 10.
-- [ ] **A native file dialog.** ADR 0015: `file_selector_linux` brings `http`
+- [x] **Preferences UI.** Phase 10 added the in-app settings surface and moved
+      the public file to `$XDG_CONFIG_HOME/slugline/prefs.json`; a legacy
+      `preferences.json` is imported atomically on first launch.
+- [x] **A native file dialog was reconsidered and not adopted.** ADR 0015:
+      `file_selector_linux` brings `http`
       transitively and §1.2 makes "zero network requests" a build-time assertion.
-      The chooser we wrote works and is keyboard-first, but GTK's is better.
-      Revisit in Phase 10.
+      Phase 10 retains the dependency-free, keyboard-first chooser and adds
+      directory selection for backup preferences. ADR 0037 records the decision.
 
 ---
 
@@ -1240,24 +1240,24 @@ Requirement §9.
 
 Requirement §14.
 
-- [ ] Preferences stored as readable JSON in `$XDG_CONFIG_HOME/slugline/prefs.json`
-- [ ] Light and dark appearance, plus follow-system
-- [ ] Editor zoom / text size
-- [ ] Spell-check language
-- [ ] Autosave interval and enable/disable
-- [ ] Default paper size
-- [ ] Default PDF font (Courier Prime + any system monospace, with a warning that
+- [x] Preferences stored as readable JSON in `$XDG_CONFIG_HOME/slugline/prefs.json`
+- [x] Light and dark appearance, plus follow-system
+- [x] Editor zoom / text size
+- [x] Spell-check language
+- [x] Autosave interval and enable/disable
+- [x] Default paper size
+- [x] Default PDF font (Courier Prime + any system monospace, with a warning that
       non-standard fonts break grid fidelity)
-- [ ] Scene number visibility
-- [ ] Autocomplete on/off
-- [ ] Backup location and retention
-- [ ] **Test: for every appearance-only preference, changing it leaves the golden pagination
+- [x] Scene number visibility
+- [x] Autocomplete on/off
+- [x] Backup location and retention
+- [x] **Test: for every appearance-only preference, changing it leaves the golden pagination
       output byte-identical.** This is requirement §14's core constraint and it deserves a
       dedicated test file.
-- [ ] Full-screen / distraction-free mode
-- [ ] Keyboard shortcut reference sheet in-app
-- [ ] Empty states, first-run experience, and a sensible default new-script template
-- [ ] Every dialog dismissible with `Escape`; every destructive action confirmable and, where
+- [x] Full-screen / distraction-free mode
+- [x] Keyboard shortcut reference sheet in-app
+- [x] Empty states, first-run experience, and a sensible default new-script template
+- [x] Every dialog dismissible with `Escape`; every destructive action confirmable and, where
       possible, undoable
 
 ---

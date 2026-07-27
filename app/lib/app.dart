@@ -11,6 +11,9 @@ import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/library/recovery_dialog.dart';
+import 'package:slugline/settings/preferences_dialog.dart';
+import 'package:slugline/settings/shortcuts_dialog.dart';
+import 'package:slugline/settings/window_mode.dart';
 import 'package:slugline/src/rust/api/files.dart' as files;
 
 /// The application: the library, one open script at a time, and the startup
@@ -46,12 +49,19 @@ class _SluglineAppState extends State<SluglineApp> {
   late final AppLifecycleListener _lifecycle;
 
   bool _startedUp = false;
+  late files.PreferencesView _preferences;
 
   @override
   void initState() {
     super.initState();
+    _preferences = widget.core.preferences();
     _events = widget.core.events.listen(_onCoreEvent);
     _lifecycle = AppLifecycleListener(onExitRequested: _onExitRequested);
+    if (_preferences.distractionFree) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(WindowMode.setFullscreen(true)),
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_startUp()));
   }
 
@@ -157,7 +167,7 @@ class _SluglineAppState extends State<SluglineApp> {
 
   Future<void> _adopt(DocumentCore core, {int initialScrollRow = 0}) async {
     _open?.dispose();
-    final preferences = widget.core.preferences();
+    final preferences = _preferences;
     final controller = EditorController(core);
     final status = SaveStatus(core: core);
     final autosave = AutosaveDriver(
@@ -191,19 +201,73 @@ class _SluglineAppState extends State<SluglineApp> {
   Future<void> _setNavigatorVisible(bool visible) async {
     final open = _open;
     if (open != null) open.navigatorVisible = visible;
-    final preferences = widget.core.preferences();
-    await widget.core.setPreferences(
-      files.PreferencesView(
-        autosaveEnabled: preferences.autosaveEnabled,
-        autocompleteEnabled: preferences.autocompleteEnabled,
-        navigatorVisible: visible,
-        autosaveIdleMs: preferences.autosaveIdleMs,
-        autosaveIntervalMs: preferences.autosaveIntervalMs,
-        backupDir: preferences.backupDir,
-        backupKeepVersions: preferences.backupKeepVersions,
-        backupKeepDays: preferences.backupKeepDays,
-      ),
+    final next = _copyPreferences(_preferences, navigatorVisible: visible);
+    if (await widget.core.setPreferences(next) && mounted) {
+      setState(() => _preferences = widget.core.preferences());
+    }
+  }
+
+  Future<void> _openPreferences() async {
+    final context = _navigator.currentContext;
+    if (context == null || !context.mounted) return;
+    final chosen = await PreferencesDialog.show(
+      context,
+      preferences: _preferences,
+      spelling: widget.core.spellStatus(),
     );
+    if (chosen == null || !context.mounted) return;
+
+    final oldFocusMode = _preferences.distractionFree;
+    if (!await widget.core.setPreferences(chosen)) {
+      _say(
+        'Preferences could not be saved. Your previous settings are still active.',
+      );
+      return;
+    }
+    final spelling = await widget.core.configureSpelling(
+      enabled: chosen.spellEnabled,
+      language: chosen.spellLanguage,
+    );
+    final saved = widget.core.preferences();
+    _open?.autosave.reconfigure(
+      enabled: saved.autosaveEnabled,
+      idle: Duration(milliseconds: saved.autosaveIdleMs),
+      interval: Duration(milliseconds: saved.autosaveIntervalMs),
+    );
+    if (oldFocusMode != saved.distractionFree) {
+      await WindowMode.setFullscreen(saved.distractionFree);
+    }
+    if (!mounted) return;
+    setState(() => _preferences = saved);
+    if (spelling case SpellActionResult_Failed(:final message)) {
+      _say(message);
+    }
+  }
+
+  Future<void> _setDistractionFree(bool enabled) async {
+    final next = _copyPreferences(_preferences, distractionFree: enabled);
+    if (!await widget.core.setPreferences(next)) {
+      _say('The display preference could not be saved.');
+      return;
+    }
+    await WindowMode.setFullscreen(enabled);
+    if (mounted) setState(() => _preferences = widget.core.preferences());
+  }
+
+  Future<void> _setEditorTextSize(int size) async {
+    final next = _copyPreferences(_preferences, editorTextSize: size);
+    if (!await widget.core.setPreferences(next)) {
+      _say('The editor text size could not be saved.');
+      return;
+    }
+    if (mounted) setState(() => _preferences = widget.core.preferences());
+  }
+
+  Future<void> _showShortcuts() async {
+    final context = _navigator.currentContext;
+    if (context != null && context.mounted) {
+      await ShortcutsDialog.show(context);
+    }
   }
 
   Future<void> _closeScript() async {
@@ -258,12 +322,25 @@ class _SluglineAppState extends State<SluglineApp> {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF3B6EA5),
+          brightness: Brightness.light,
+        ),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6F9FD2),
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
       ),
+      themeMode: _themeMode(_preferences.appearance),
       home: open == null
-          ? LibraryPage(core: widget.core, onOpen: _openPath)
+          ? LibraryPage(
+              core: widget.core,
+              onOpen: _openPath,
+              onOpenPreferences: _openPreferences,
+              onShowShortcuts: _showShortcuts,
+            )
           : EditorPage(
               key: _editorKey,
               controller: open.controller,
@@ -271,13 +348,61 @@ class _SluglineAppState extends State<SluglineApp> {
               saveStatus: open.status,
               initialScrollRow: open.initialScrollRow,
               navigatorVisible: open.navigatorVisible,
+              textSize: _preferences.editorTextSize.toDouble(),
+              distractionFree: _preferences.distractionFree,
+              initialPageSetup: _pageSetup(_preferences),
               onNavigatorVisibilityChanged: _setNavigatorVisible,
+              onOpenPreferences: _openPreferences,
+              onShowShortcuts: _showShortcuts,
+              onDistractionFreeChanged: _setDistractionFree,
+              onTextSizeChanged: _setEditorTextSize,
               onClosed: _closeScript,
               title: _titleOf(open.core),
             ),
     );
   }
 }
+
+ThemeMode _themeMode(String appearance) => switch (appearance) {
+  'light' => ThemeMode.light,
+  'dark' => ThemeMode.dark,
+  _ => ThemeMode.system,
+};
+
+PageSetup _pageSetup(files.PreferencesView preferences) => PageSetup(
+  paper: preferences.defaultPaper == 'a4' ? PaperSize.a4 : PaperSize.usLetter,
+  sceneNumbers: switch (preferences.sceneNumbers) {
+    'left' => SceneNumbers.left,
+    'right' => SceneNumbers.right,
+    'both' => SceneNumbers.both,
+    _ => SceneNumbers.off,
+  },
+  debugLinesPerPage: null,
+);
+
+files.PreferencesView _copyPreferences(
+  files.PreferencesView value, {
+  bool? navigatorVisible,
+  int? editorTextSize,
+  bool? distractionFree,
+}) => files.PreferencesView(
+  autosaveEnabled: value.autosaveEnabled,
+  autocompleteEnabled: value.autocompleteEnabled,
+  navigatorVisible: navigatorVisible ?? value.navigatorVisible,
+  spellEnabled: value.spellEnabled,
+  spellLanguage: value.spellLanguage,
+  appearance: value.appearance,
+  editorTextSize: editorTextSize ?? value.editorTextSize,
+  defaultPaper: value.defaultPaper,
+  sceneNumbers: value.sceneNumbers,
+  pdfFontPath: value.pdfFontPath,
+  distractionFree: distractionFree ?? value.distractionFree,
+  autosaveIdleMs: value.autosaveIdleMs,
+  autosaveIntervalMs: value.autosaveIntervalMs,
+  backupDir: value.backupDir,
+  backupKeepVersions: value.backupKeepVersions,
+  backupKeepDays: value.backupKeepDays,
+);
 
 String _titleOf(DocumentCore core) {
   final path = core.path;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/widgets/escape_dismissible.dart';
 
 /// The dialogs §Phase 4 requires around saving, in one file so that the wording
 /// of a failure and the escape hatch offered with it stay together.
@@ -33,10 +34,10 @@ Future<SaveFailureChoice> showSaveFailure(
 ) async {
   final choice = await showDialog<SaveFailureChoice>(
     context: context,
-    // Not dismissible: §Phase 4's "blocking, explicit error … never a silent
-    // toast". Clicking away from this would be the silent version.
+    // Not click-away: §Phase 4's "blocking, explicit error … never a silent
+    // toast". Phase 10 still gives the intentional Escape key a Cancel route.
     barrierDismissible: false,
-    builder: (context) => AlertDialog(
+    builder: (context) => EscapeDismissible(child: AlertDialog(
       icon: const Icon(Icons.error_outline),
       title: Text(_headline(failure.failure)),
       content: Column(
@@ -69,7 +70,7 @@ Future<SaveFailureChoice> showSaveFailure(
           child: const Text('Save as…'),
         ),
       ],
-    ),
+    )),
   );
   return choice ?? SaveFailureChoice.cancel;
 }
@@ -128,7 +129,7 @@ Future<ExternalChangeChoice?> showExternalChange(
   return showDialog<ExternalChangeChoice>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => AlertDialog(
+    builder: (context) => EscapeDismissible(child: AlertDialog(
       icon: const Icon(Icons.compare_arrows),
       title: const Text('This file changed on disk'),
       content: Column(
@@ -160,7 +161,7 @@ Future<ExternalChangeChoice?> showExternalChange(
           child: const Text('Keep mine'),
         ),
       ],
-    ),
+    )),
   );
 }
 
@@ -173,7 +174,7 @@ Future<UnsavedChoice> showUnsavedChanges(BuildContext context, String title) asy
   final choice = await showDialog<UnsavedChoice>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => AlertDialog(
+    builder: (context) => EscapeDismissible(child: AlertDialog(
       title: Text('Save changes to $title?'),
       content: const Text('There are edits here that are not in the file yet.'),
       actions: [
@@ -190,7 +191,7 @@ Future<UnsavedChoice> showUnsavedChanges(BuildContext context, String title) asy
           child: const Text('Save'),
         ),
       ],
-    ),
+    )),
   );
   return choice ?? UnsavedChoice.cancel;
 }

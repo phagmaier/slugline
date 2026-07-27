@@ -12,3 +12,6 @@ pub mod layout;
 /// Dictionary discovery, background block checks and explicit dictionary
 /// actions (§Phase 9).
 pub mod spell;
+
+#[cfg(test)]
+mod appearance_prefs_dont_affect_pagination;

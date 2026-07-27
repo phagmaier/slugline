@@ -3084,17 +3084,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PreferencesView dco_decode_preferences_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return PreferencesView(
       autosaveEnabled: dco_decode_bool(arr[0]),
       autocompleteEnabled: dco_decode_bool(arr[1]),
       navigatorVisible: dco_decode_bool(arr[2]),
-      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[3]),
-      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[4]),
-      backupDir: dco_decode_opt_String(arr[5]),
-      backupKeepVersions: dco_decode_u_32(arr[6]),
-      backupKeepDays: dco_decode_u_32(arr[7]),
+      spellEnabled: dco_decode_bool(arr[3]),
+      spellLanguage: dco_decode_opt_String(arr[4]),
+      appearance: dco_decode_String(arr[5]),
+      editorTextSize: dco_decode_u_16(arr[6]),
+      defaultPaper: dco_decode_String(arr[7]),
+      sceneNumbers: dco_decode_String(arr[8]),
+      pdfFontPath: dco_decode_opt_String(arr[9]),
+      distractionFree: dco_decode_bool(arr[10]),
+      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[11]),
+      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[12]),
+      backupDir: dco_decode_opt_String(arr[13]),
+      backupKeepVersions: dco_decode_u_32(arr[14]),
+      backupKeepDays: dco_decode_u_32(arr[15]),
     );
   }
 
@@ -3304,6 +3312,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       key: dco_decode_String(arr[0]),
       value: dco_decode_String(arr[1]),
     );
+  }
+
+  @protected
+  int dco_decode_u_16(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -4370,6 +4384,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_autosaveEnabled = sse_decode_bool(deserializer);
     var var_autocompleteEnabled = sse_decode_bool(deserializer);
     var var_navigatorVisible = sse_decode_bool(deserializer);
+    var var_spellEnabled = sse_decode_bool(deserializer);
+    var var_spellLanguage = sse_decode_opt_String(deserializer);
+    var var_appearance = sse_decode_String(deserializer);
+    var var_editorTextSize = sse_decode_u_16(deserializer);
+    var var_defaultPaper = sse_decode_String(deserializer);
+    var var_sceneNumbers = sse_decode_String(deserializer);
+    var var_pdfFontPath = sse_decode_opt_String(deserializer);
+    var var_distractionFree = sse_decode_bool(deserializer);
     var var_autosaveIdleMs = sse_decode_CastedPrimitive_u_64(deserializer);
     var var_autosaveIntervalMs = sse_decode_CastedPrimitive_u_64(deserializer);
     var var_backupDir = sse_decode_opt_String(deserializer);
@@ -4379,6 +4401,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       autosaveEnabled: var_autosaveEnabled,
       autocompleteEnabled: var_autocompleteEnabled,
       navigatorVisible: var_navigatorVisible,
+      spellEnabled: var_spellEnabled,
+      spellLanguage: var_spellLanguage,
+      appearance: var_appearance,
+      editorTextSize: var_editorTextSize,
+      defaultPaper: var_defaultPaper,
+      sceneNumbers: var_sceneNumbers,
+      pdfFontPath: var_pdfFontPath,
+      distractionFree: var_distractionFree,
       autosaveIdleMs: var_autosaveIdleMs,
       autosaveIntervalMs: var_autosaveIntervalMs,
       backupDir: var_backupDir,
@@ -4613,6 +4643,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_key = sse_decode_String(deserializer);
     var var_value = sse_decode_String(deserializer);
     return TitleEntryView(key: var_key, value: var_value);
+  }
+
+  @protected
+  int sse_decode_u_16(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint16();
   }
 
   @protected
@@ -5610,6 +5646,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.autosaveEnabled, serializer);
     sse_encode_bool(self.autocompleteEnabled, serializer);
     sse_encode_bool(self.navigatorVisible, serializer);
+    sse_encode_bool(self.spellEnabled, serializer);
+    sse_encode_opt_String(self.spellLanguage, serializer);
+    sse_encode_String(self.appearance, serializer);
+    sse_encode_u_16(self.editorTextSize, serializer);
+    sse_encode_String(self.defaultPaper, serializer);
+    sse_encode_String(self.sceneNumbers, serializer);
+    sse_encode_opt_String(self.pdfFontPath, serializer);
+    sse_encode_bool(self.distractionFree, serializer);
     sse_encode_CastedPrimitive_u_64(self.autosaveIdleMs, serializer);
     sse_encode_CastedPrimitive_u_64(self.autosaveIntervalMs, serializer);
     sse_encode_opt_String(self.backupDir, serializer);
@@ -5798,6 +5842,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.key, serializer);
     sse_encode_String(self.value, serializer);
+  }
+
+  @protected
+  void sse_encode_u_16(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint16(self);
   }
 
   @protected

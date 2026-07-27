@@ -67,9 +67,9 @@ class AutosaveDriver {
   /// shows the bad.
   final void Function(SaveOutcome outcome) onOutcome;
 
-  final Duration idle;
-  final Duration interval;
-  final bool enabled;
+  Duration idle;
+  Duration interval;
+  bool enabled;
 
   Timer? _idleTimer;
   Timer? _intervalTimer;
@@ -98,6 +98,28 @@ class AutosaveDriver {
 
   /// Whether a save is owed — for tests, and for the status bar's "saving…".
   bool get pending => _owed || _idleTimer != null;
+
+  /// Applies Phase 10 preference changes without reopening the script.
+  ///
+  /// Existing timers are based on the old durations, so they are replaced.
+  /// Turning autosave off also clears a deferred automatic save; explicit
+  /// Ctrl+S remains available through [saveNow].
+  void reconfigure({
+    required bool enabled,
+    required Duration idle,
+    required Duration interval,
+  }) {
+    if (_disposed) return;
+    this.enabled = enabled;
+    this.idle = idle;
+    this.interval = interval;
+    _cancelTimers();
+    if (!enabled) {
+      _owed = false;
+      return;
+    }
+    _onChanged();
+  }
 
   /// Holds autosave off while [reason] applies. §Phase 4 names two: a modal
   /// being open, and an active IME composition.

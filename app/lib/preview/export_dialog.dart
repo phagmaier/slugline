@@ -43,11 +43,17 @@ class ExportDialog extends StatefulWidget {
     required this.core,
     required this.output,
     this.chooseFile = _chooseWithFileChooser,
+    this.initialSetup = const PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      debugLinesPerPage: null,
+    ),
     super.key,
   });
 
   final DocumentCore core;
   final ScreenplayOutput output;
+  final PageSetup initialSetup;
 
   /// How a destination is asked for. The application's own chooser, and a seam
   /// a test replaces — what §Phase 7 specifies about exporting is what happens
@@ -58,10 +64,16 @@ class ExportDialog extends StatefulWidget {
   static Future<void> show(
     BuildContext context,
     DocumentCore core,
-    ScreenplayOutput output,
-  ) => showDialog<void>(
+    ScreenplayOutput output, {
+    PageSetup initialSetup = const PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      debugLinesPerPage: null,
+    ),
+  }) => showDialog<void>(
     context: context,
-    builder: (_) => ExportDialog(core: core, output: output),
+    builder: (_) =>
+        ExportDialog(core: core, output: output, initialSetup: initialSetup),
   );
 
   static Future<String?> _chooseWithFileChooser(
@@ -82,8 +94,8 @@ class ExportDialog extends StatefulWidget {
 }
 
 class _ExportDialogState extends State<ExportDialog> {
-  PaperSize _paper = PaperSize.usLetter;
-  bool _sceneNumbers = false;
+  late PaperSize _paper;
+  late SceneNumbers _sceneNumbers;
   double _scale = 4.2;
 
   late Future<PaginationOutcome> _pagination;
@@ -95,7 +107,7 @@ class _ExportDialogState extends State<ExportDialog> {
 
   PageSetup get _setup => PageSetup(
     paper: _paper,
-    sceneNumbers: _sceneNumbers ? SceneNumbers.both : SceneNumbers.off,
+    sceneNumbers: _sceneNumbers,
     // Never set outside the Phase 6F diagnostic: a real preview and a real
     // export take the row count from the paper (§5.2).
     debugLinesPerPage: null,
@@ -104,6 +116,8 @@ class _ExportDialogState extends State<ExportDialog> {
   @override
   void initState() {
     super.initState();
+    _paper = widget.initialSetup.paper;
+    _sceneNumbers = widget.initialSetup.sceneNumbers;
     _repaginate();
   }
 
@@ -119,10 +133,10 @@ class _ExportDialogState extends State<ExportDialog> {
     });
   }
 
-  void _setSceneNumbers(bool on) {
-    if (on == _sceneNumbers) return;
+  void _setSceneNumbers(SceneNumbers value) {
+    if (value == _sceneNumbers) return;
     setState(() {
-      _sceneNumbers = on;
+      _sceneNumbers = value;
       _repaginate();
     });
   }
@@ -180,9 +194,7 @@ class _ExportDialogState extends State<ExportDialog> {
       builder: (context) => AlertDialog(
         icon: const Icon(Icons.help_outline),
         title: const Text('There is already a file there'),
-        content: Text(
-          '${outcome.path} exists. Replacing it cannot be undone.',
-        ),
+        content: Text('${outcome.path} exists. Replacing it cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -382,13 +394,26 @@ class _ExportDialogState extends State<ExportDialog> {
           ),
         ),
         const Divider(),
-        SwitchListTile(
+        DropdownButtonFormField<SceneNumbers>(
           key: const Key('scene-numbers'),
-          value: _sceneNumbers,
-          onChanged: _setSceneNumbers,
-          dense: true,
-          title: const Text('Scene numbers'),
-          subtitle: const Text('In both margins, where the script has them'),
+          initialValue: _sceneNumbers,
+          decoration: const InputDecoration(labelText: 'Scene numbers'),
+          items: const [
+            DropdownMenuItem(value: SceneNumbers.off, child: Text('Hidden')),
+            DropdownMenuItem(
+              value: SceneNumbers.left,
+              child: Text('Left margin'),
+            ),
+            DropdownMenuItem(
+              value: SceneNumbers.right,
+              child: Text('Right margin'),
+            ),
+            DropdownMenuItem(
+              value: SceneNumbers.both,
+              child: Text('Both margins'),
+            ),
+          ],
+          onChanged: (value) => _setSceneNumbers(value ?? SceneNumbers.off),
         ),
         const Divider(),
         Text('Preview size', style: Theme.of(context).textTheme.labelLarge),

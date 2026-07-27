@@ -36,6 +36,7 @@ mod sfnt;
 pub mod sha256;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use slugline_fountain::emphasis;
 use slugline_layout::{LayoutLineKind, Page, PageConfig, PaginatedScript};
@@ -159,6 +160,33 @@ struct Placed {
 /// `config` must be the one the script was paginated with: it is where the paper
 /// size comes from, and a mismatch would place a 58-row A4 script on US Letter.
 pub fn render(script: &PaginatedScript, config: &PageConfig, info: &DocumentInfo) -> Vec<u8> {
+    render_inner(script, config, info, None)
+}
+
+/// Renders with one user-selected TrueType face for every emphasis style.
+///
+/// The fixed grid is still authoritative, so a proportional face cannot move
+/// layout but will look wrong; the settings UI warns about that. Font files are
+/// untrusted input, unlike the vendored Courier Prime family, so malformed data
+/// is a reported failure rather than a process panic.
+pub fn render_with_font(
+    script: &PaginatedScript,
+    config: &PageConfig,
+    info: &DocumentInfo,
+    font: &[u8],
+) -> Result<Vec<u8>, String> {
+    catch_unwind(AssertUnwindSafe(|| {
+        render_inner(script, config, info, Some(font))
+    }))
+    .map_err(|_| "the selected PDF font is not a supported TrueType face".to_owned())
+}
+
+fn render_inner(
+    script: &PaginatedScript,
+    config: &PageConfig,
+    info: &DocumentInfo,
+    custom_font: Option<&[u8]>,
+) -> Vec<u8> {
     let geometry = Geometry::of(config);
     let sheets = place(script);
 
@@ -175,7 +203,12 @@ pub fn render(script: &PaginatedScript, config: &PageConfig, info: &DocumentInfo
     let pages_object = document.reserve();
     let embedded: BTreeMap<Style, Embedded> = used
         .iter()
-        .map(|(style, characters)| (*style, embed(&mut document, *style, characters)))
+        .map(|(style, characters)| {
+            (
+                *style,
+                embed(&mut document, *style, characters, custom_font),
+            )
+        })
         .collect();
 
     let resources = {
@@ -193,7 +226,7 @@ pub fn render(script: &PaginatedScript, config: &PageConfig, info: &DocumentInfo
     );
     let mut page_objects = Vec::with_capacity(sheets.len());
     for sheet in &sheets {
-        let stream = content(sheet, &geometry, &embedded);
+        let stream = content(sheet, &geometry, &embedded, custom_font);
         let contents = document.add_stream("", &stream);
         page_objects.push(document.add(format!(
             "<< /Type /Page /Parent {pages_object} /MediaBox {media} \
@@ -222,7 +255,11 @@ pub fn render(script: &PaginatedScript, config: &PageConfig, info: &DocumentInfo
         text_string("Slugline"),
     ));
 
-    document.finish(catalog, info_object, &identifier(script, info, config))
+    document.finish(
+        catalog,
+        info_object,
+        &identifier(script, info, config, custom_font),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -366,9 +403,15 @@ struct Embedded {
     glyphs: BTreeMap<char, u16>,
 }
 
-fn embed(document: &mut Pdf, style: Style, characters: &BTreeSet<char>) -> Embedded {
+fn embed(
+    document: &mut Pdf,
+    style: Style,
+    characters: &BTreeSet<char>,
+    custom_font: Option<&[u8]>,
+) -> Embedded {
     let vendored = style.face();
-    let face = Face::parse(vendored.bytes);
+    let bytes = custom_font.unwrap_or(vendored.bytes);
+    let face = Face::parse(bytes);
 
     let wanted: BTreeSet<u16> = characters.iter().map(|c| face.glyph_for(*c)).collect();
     let kept = face.closure(&wanted);
@@ -383,7 +426,12 @@ fn embed(document: &mut Pdf, style: Style, characters: &BTreeSet<char>) -> Embed
 
     let scale = GLYPH_SPACE / f64::from(face.units_per_em);
     let unit = |value: i16| number(f64::from(value) * scale);
-    let base = format!("{}+{}", subset_tag(&subset), vendored.postscript_name);
+    let postscript_name = if custom_font.is_some() {
+        format!("SluglineSystemMonospace-{}", style.resource())
+    } else {
+        vendored.postscript_name.to_owned()
+    };
+    let base = format!("{}+{postscript_name}", subset_tag(&subset));
 
     let file = document.add_stream(&format!("/Length1 {}", subset.len()), &subset);
     let descriptor = document.add(format!(
@@ -480,7 +528,12 @@ fn to_unicode_cmap(glyphs: &BTreeMap<char, u16>) -> String {
 // Content streams
 // ---------------------------------------------------------------------------
 
-fn content(sheet: &[Placed], geometry: &Geometry, embedded: &BTreeMap<Style, Embedded>) -> Vec<u8> {
+fn content(
+    sheet: &[Placed],
+    geometry: &Geometry,
+    embedded: &BTreeMap<Style, Embedded>,
+    custom_font: Option<&[u8]>,
+) -> Vec<u8> {
     use std::fmt::Write as _;
 
     let mut text = String::from("BT\n");
@@ -497,11 +550,28 @@ fn content(sheet: &[Placed], geometry: &Geometry, embedded: &BTreeMap<Style, Emb
                 name(placed.style.resource()),
                 number(BODY_FONT_POINTS)
             );
+            if custom_font.is_some() {
+                // One selected face has no family metadata telling us where
+                // sibling bold/italic files live. Preserve screenplay emphasis
+                // without guessing paths: PDF's fill-and-stroke mode supplies
+                // a modest bold, and a text-matrix shear supplies italic.
+                if matches!(placed.style, Style::Bold | Style::BoldItalic) {
+                    text.push_str("2 Tr\n0.35 w\n");
+                } else {
+                    text.push_str("0 Tr\n");
+                }
+            }
             current = Some(placed.style);
         }
         let x = geometry.x(placed.column);
         let y = geometry.baseline_y(placed.row);
-        let _ = write!(text, "1 0 0 1 {} {} Tm <", number(x), number(y));
+        let shear =
+            if custom_font.is_some() && matches!(placed.style, Style::Italic | Style::BoldItalic) {
+                "0.21256"
+            } else {
+                "0"
+            };
+        let _ = write!(text, "1 0 {shear} 1 {} {} Tm <", number(x), number(y));
         for character in placed.text.chars() {
             let _ = write!(
                 text,
@@ -515,7 +585,7 @@ fn content(sheet: &[Placed], geometry: &Geometry, embedded: &BTreeMap<Style, Emb
             // Under the baseline by the amount the face itself specifies, so
             // that the rule sits where the type designer put it rather than
             // where the renderer guessed.
-            let face = Face::parse(placed.style.face().bytes);
+            let face = Face::parse(custom_font.unwrap_or(placed.style.face().bytes));
             let scale = BODY_FONT_POINTS / f64::from(face.units_per_em);
             let offset = f64::from(face.underline_position) * scale;
             let thickness = f64::from(face.underline_thickness) * scale;
@@ -542,7 +612,12 @@ fn content(sheet: &[Placed], geometry: &Geometry, embedded: &BTreeMap<Style, Emb
 /// answers with a random number or a clock. §Phase 7 asks instead for a *fixed*
 /// one, so this is a digest of what the file says: two exports of one script are
 /// the same document and say so, and two different scripts do not collide.
-fn identifier(script: &PaginatedScript, info: &DocumentInfo, config: &PageConfig) -> [u8; 16] {
+fn identifier(
+    script: &PaginatedScript,
+    info: &DocumentInfo,
+    config: &PageConfig,
+    custom_font: Option<&[u8]>,
+) -> [u8; 16] {
     let mut seed = script.debug_dump();
     seed.push_str(&format!(
         "\n{}\n{}\n{}\n{:?}\n{}\n",
@@ -552,7 +627,11 @@ fn identifier(script: &PaginatedScript, info: &DocumentInfo, config: &PageConfig
         config.page_size,
         config.lines_per_page(),
     ));
-    let digest = sha256::digest(seed.as_bytes());
+    let mut bytes = seed.into_bytes();
+    if let Some(font) = custom_font {
+        bytes.extend_from_slice(font);
+    }
+    let digest = sha256::digest(&bytes);
     let mut id = [0u8; 16];
     id.copy_from_slice(&digest[..16]);
     id
@@ -718,6 +797,27 @@ mod tests {
         assert_eq!(once, twice);
         // And nothing about the file depends on the process it was made in.
         assert_eq!(sha256::hex(&once), sha256::hex(&twice));
+    }
+
+    #[test]
+    fn a_selected_true_type_font_is_embedded_deterministically() {
+        let config = PageConfig::us_letter();
+        let script = paginate(&Document::parse("Custom face.\n"), &config);
+        let once = render_with_font(&script, &config, &info(), fonts::REGULAR.bytes)
+            .expect("vendored TrueType is a valid stand-in for a system face");
+        let twice = render_with_font(&script, &config, &info(), fonts::REGULAR.bytes)
+            .expect("the same face remains valid");
+
+        assert_eq!(once, twice);
+        assert!(String::from_utf8_lossy(&once).contains("SluglineSystemMonospace"));
+        assert_ne!(once, render(&script, &config, &info()));
+    }
+
+    #[test]
+    fn malformed_selected_font_is_a_failure_not_a_process_panic() {
+        let config = PageConfig::us_letter();
+        let script = paginate(&Document::parse("Action.\n"), &config);
+        assert!(render_with_font(&script, &config, &info(), b"not a font").is_err());
     }
 
     #[test]

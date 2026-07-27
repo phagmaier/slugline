@@ -1,11 +1,11 @@
-//! Preferences used through Phase 9.
+//! Application preferences.
 //!
 //! §Phase 4 asks for autosave and backup controls, §7 adds autocomplete, and
 //! §Phase 8 persists the navigator's expanded state, and §Phase 9 adds spell
-//! checking enablement and language. §6's `prefs_get` and `prefs_set` carry the
-//! existing editor fields while the spell surface updates its two fields. This
-//! file has no preference without a consumer:
-//! scaffolding is a §1.4 non-goal.
+//! checking enablement and language. Phase 10 adds appearance, editor text size,
+//! output defaults, the PDF face and distraction-free mode. §6's `prefs_get`
+//! and `prefs_set` carry the general fields while the spell surface updates its
+//! two fields.
 //!
 //! Reading is total. A preferences file that has been hand-edited into nonsense
 //! yields the defaults rather than an error, because the alternative is an
@@ -24,6 +24,17 @@ use crate::backup::Retention;
 /// §Phase 4's defaults, named.
 const AUTOSAVE_IDLE_MS: u64 = 2_000;
 const AUTOSAVE_INTERVAL_MS: u64 = 30_000;
+const EDITOR_TEXT_SIZE: u16 = 15;
+
+pub const APPEARANCE_SYSTEM: &str = "system";
+pub const APPEARANCE_LIGHT: &str = "light";
+pub const APPEARANCE_DARK: &str = "dark";
+pub const PAPER_US_LETTER: &str = "us_letter";
+pub const PAPER_A4: &str = "a4";
+pub const SCENE_NUMBERS_OFF: &str = "off";
+pub const SCENE_NUMBERS_LEFT: &str = "left";
+pub const SCENE_NUMBERS_RIGHT: &str = "right";
+pub const SCENE_NUMBERS_BOTH: &str = "both";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -48,6 +59,20 @@ pub struct Preferences {
     /// An installed Hunspell locale such as `en_US`. `None` asks discovery for
     /// US English, then its first deterministic result.
     pub spell_language: Option<String>,
+    /// `system`, `light`, or `dark`. Kept as readable text so the on-disk file
+    /// remains hand-editable.
+    pub appearance: String,
+    /// Flutter logical pixels. This changes only the fluid editor.
+    pub editor_text_size: u16,
+    /// `us_letter` or `a4`.
+    pub default_paper: String,
+    /// `off`, `left`, `right`, or `both`.
+    pub scene_numbers: String,
+    /// A user-selected TrueType face. `None` means the vendored Courier Prime
+    /// family and is the fidelity-safe default.
+    pub pdf_font_path: Option<PathBuf>,
+    /// Hides application chrome and asks the Linux window to go full-screen.
+    pub distraction_free: bool,
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
@@ -66,6 +91,12 @@ impl Default for Preferences {
             navigator_visible: true,
             spell_enabled: true,
             spell_language: None,
+            appearance: APPEARANCE_SYSTEM.to_owned(),
+            editor_text_size: EDITOR_TEXT_SIZE,
+            default_paper: PAPER_US_LETTER.to_owned(),
+            scene_numbers: SCENE_NUMBERS_OFF.to_owned(),
+            pdf_font_path: None,
+            distraction_free: false,
             backup_dir: None,
             backup_keep_versions: retention.keep_versions,
             backup_keep_days: retention.keep_days,
@@ -79,7 +110,35 @@ impl Preferences {
         std::fs::read_to_string(path)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
+            .map(Preferences::sanitised)
             .unwrap_or_default()
+    }
+
+    /// Bounds hand-edited values before a timer or a painter sees them.
+    pub fn sanitised(mut self) -> Preferences {
+        if !matches!(
+            self.appearance.as_str(),
+            APPEARANCE_SYSTEM | APPEARANCE_LIGHT | APPEARANCE_DARK
+        ) {
+            self.appearance = APPEARANCE_SYSTEM.to_owned();
+        }
+        self.editor_text_size = self.editor_text_size.clamp(12, 24);
+        if !matches!(self.default_paper.as_str(), PAPER_US_LETTER | PAPER_A4) {
+            self.default_paper = PAPER_US_LETTER.to_owned();
+        }
+        if !matches!(
+            self.scene_numbers.as_str(),
+            SCENE_NUMBERS_OFF | SCENE_NUMBERS_LEFT | SCENE_NUMBERS_RIGHT | SCENE_NUMBERS_BOTH
+        ) {
+            self.scene_numbers = SCENE_NUMBERS_OFF.to_owned();
+        }
+        self.autosave_idle_ms = self.autosave_idle_ms.clamp(250, 60_000);
+        self.autosave_interval_ms = self.autosave_interval_ms.clamp(1_000, 3_600_000);
+        self.backup_keep_versions = self.backup_keep_versions.clamp(1, 100);
+        self.backup_keep_days = self.backup_keep_days.clamp(1, 3_650);
+        self.backup_dir = nonempty_path(self.backup_dir);
+        self.pdf_font_path = nonempty_path(self.pdf_font_path);
+        self
     }
 
     /// Writes the file, atomically. Preferences are not user text, but a
@@ -113,6 +172,10 @@ impl Preferences {
     }
 }
 
+fn nonempty_path(path: Option<PathBuf>) -> Option<PathBuf> {
+    path.filter(|path| !path.as_os_str().is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +189,12 @@ mod tests {
         assert!(prefs.navigator_visible);
         assert!(prefs.spell_enabled);
         assert!(prefs.spell_language.is_none());
+        assert_eq!(prefs.appearance, "system");
+        assert_eq!(prefs.editor_text_size, 15);
+        assert_eq!(prefs.default_paper, "us_letter");
+        assert_eq!(prefs.scene_numbers, "off");
+        assert!(prefs.pdf_font_path.is_none());
+        assert!(!prefs.distraction_free);
         assert_eq!(prefs.backup_keep_versions, 10);
         assert_eq!(prefs.backup_keep_days, 7);
     }
@@ -137,6 +206,11 @@ mod tests {
         let prefs = Preferences {
             autosave_idle_ms: 500,
             navigator_visible: false,
+            appearance: APPEARANCE_LIGHT.to_owned(),
+            editor_text_size: 18,
+            default_paper: PAPER_A4.to_owned(),
+            scene_numbers: SCENE_NUMBERS_BOTH.to_owned(),
+            pdf_font_path: Some(PathBuf::from("/usr/share/fonts/mono.ttf")),
             backup_dir: Some(PathBuf::from("/mnt/usb/backups")),
             ..Preferences::default()
         };
@@ -173,5 +247,34 @@ mod tests {
         let prefs = Preferences::load(&path);
         assert_eq!(prefs.autosave_idle_ms, 750);
         assert_eq!(prefs.autosave_interval_ms, 30_000, "the rest are defaults");
+    }
+
+    #[test]
+    fn unsafe_hand_edited_values_are_bounded_individually() {
+        let dir = TempDir::new("prefs-bounds");
+        let path = dir.path().join("prefs.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "appearance":"sepia",
+                "editor_text_size":600,
+                "default_paper":"legal",
+                "scene_numbers":"sometimes",
+                "autosave_idle_ms":0,
+                "autosave_interval_ms":0,
+                "backup_keep_versions":0,
+                "backup_keep_days":99999
+            }"#,
+        )
+        .unwrap();
+        let prefs = Preferences::load(&path);
+        assert_eq!(prefs.appearance, APPEARANCE_SYSTEM);
+        assert_eq!(prefs.editor_text_size, 24);
+        assert_eq!(prefs.default_paper, PAPER_US_LETTER);
+        assert_eq!(prefs.scene_numbers, SCENE_NUMBERS_OFF);
+        assert_eq!(prefs.autosave_idle_ms, 250);
+        assert_eq!(prefs.autosave_interval_ms, 1_000);
+        assert_eq!(prefs.backup_keep_versions, 1);
+        assert_eq!(prefs.backup_keep_days, 3_650);
     }
 }

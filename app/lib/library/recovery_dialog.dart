@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/core.dart';
+import 'package:slugline/widgets/escape_dismissible.dart';
 
 /// §Phase 4's crash-recovery prompt.
 ///
@@ -33,7 +34,9 @@ class RecoveryDialog extends StatelessWidget {
     final chosen = await showDialog<Map<String, RecoveryChoice>>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => RecoveryDialog(offers: offers),
+      builder: (context) => EscapeDismissible(
+        child: RecoveryDialog(offers: offers),
+      ),
     );
     return chosen ?? const {};
   }
@@ -160,7 +163,7 @@ Future<void> showRecoveryNotJournalled(
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => AlertDialog(
+    builder: (context) => EscapeDismissible(child: AlertDialog(
       icon: const Icon(Icons.warning_amber_outlined),
       title: const Text('Recovered, but not protected'),
       content: Column(
@@ -188,7 +191,7 @@ Future<void> showRecoveryNotJournalled(
           child: const Text('Continue'),
         ),
       ],
-    ),
+    )),
   );
 }
 
@@ -199,7 +202,7 @@ Future<void> showRecoveryFailed(BuildContext context, String message) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => AlertDialog(
+    builder: (context) => EscapeDismissible(child: AlertDialog(
       icon: const Icon(Icons.error_outline),
       title: const Text('That recovery could not be opened'),
       content: Column(
@@ -221,6 +224,6 @@ Future<void> showRecoveryFailed(BuildContext context, String message) {
           child: const Text('Close'),
         ),
       ],
-    ),
+    )),
   );
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:slugline/src/rust/api/events.dart' as bus;
 import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/src/rust/api/handshake.dart' as rust;
+import 'package:slugline/src/rust/api/spell.dart' as spelling;
 import 'package:slugline/src/rust/frb_generated.dart';
 
 export 'package:slugline/src/rust/api/events.dart'
@@ -27,6 +28,13 @@ export 'package:slugline/src/rust/api/files.dart'
         ScriptView;
 export 'package:slugline/src/rust/api/handshake.dart'
     show CoreInfo, CrateInfo, ProofEvent, ProofEvent_Pong, ProofEvent_Ready, TextMetrics;
+export 'package:slugline/src/rust/api/spell.dart'
+    show
+        SpellActionResult,
+        SpellActionResult_Applied,
+        SpellActionResult_Failed,
+        SpellLanguage,
+        SpellStatus;
 
 /// The string Phase 0 requires to survive the bridge unchanged: ASCII, a
 /// Latin-1 accent, CJK, and an astral-plane emoji (a surrogate pair in Dart).
@@ -124,6 +132,13 @@ class Core {
 
   Future<bool> setPreferences(files.PreferencesView preferences) =>
       files.prefsSet(preferences: preferences);
+
+  spelling.SpellStatus spellStatus() => spelling.spellStatus();
+
+  Future<spelling.SpellActionResult> configureSpelling({
+    required bool enabled,
+    String? language,
+  }) => spelling.spellConfigure(enabled: enabled, language: language);
 
   // --- Phase 0 proofs --------------------------------------------------------
 

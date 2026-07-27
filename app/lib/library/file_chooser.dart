@@ -9,10 +9,9 @@ import 'package:flutter/services.dart';
 /// It is turned down for one reason: it pulls `http` in transitively, and §1.2
 /// makes "the application makes **zero** network requests" a build-time
 /// assertion (§13). An HTTP client linked into the bundle is a thing that
-/// assertion then has to argue with. A native dialog is a better dialog than
-/// this one and it is worth revisiting in Phase 10, when the assertion can be
-/// written to allow a linked-but-unreached client — or when the platform
-/// interface stops needing one.
+/// assertion then has to argue with. Phase 10 revisited the choice and retained
+/// this dependency-free surface (ADR 0037), adding directory selection for
+/// backup preferences.
 ///
 /// What this does instead is small and honest: list a directory, walk into it,
 /// and type a name. Keyboard-first, like everything else here (§1.1).
@@ -23,6 +22,7 @@ class FileChooser extends StatefulWidget {
     required this.directory,
     this.suggestedName,
     this.mustExist = false,
+    this.selectDirectory = false,
     super.key,
   });
 
@@ -41,6 +41,7 @@ class FileChooser extends StatefulWidget {
 
   /// Whether the chosen file has to be one that is already there.
   final bool mustExist;
+  final bool selectDirectory;
 
   /// Shows the chooser. Returns the absolute path chosen, or null.
   static Future<String?> show(
@@ -50,6 +51,7 @@ class FileChooser extends StatefulWidget {
     String? directory,
     String? suggestedName,
     bool mustExist = false,
+    bool selectDirectory = false,
   }) {
     return showDialog<String>(
       context: context,
@@ -59,6 +61,7 @@ class FileChooser extends StatefulWidget {
         directory: directory ?? defaultDirectory(),
         suggestedName: suggestedName,
         mustExist: mustExist,
+        selectDirectory: selectDirectory,
       ),
     );
   }
@@ -87,7 +90,7 @@ class _FileChooserState extends State<FileChooser> {
   void initState() {
     super.initState();
     _list();
-    _nameFocus.requestFocus();
+    if (!widget.selectDirectory) _nameFocus.requestFocus();
   }
 
   @override
@@ -136,6 +139,7 @@ class _FileChooserState extends State<FileChooser> {
   }
 
   String get _chosen {
+    if (widget.selectDirectory) return _directory;
     var name = _name.text.trim();
     if (name.isEmpty) return '';
     if (name.startsWith('/')) return name;
@@ -207,7 +211,7 @@ class _FileChooserState extends State<FileChooser> {
                           onTap: () {
                             if (isDirectory) {
                               _enter(entry.path);
-                            } else {
+                            } else if (!widget.selectDirectory) {
                               _name.text = name;
                               _nameFocus.requestFocus();
                             }
@@ -216,8 +220,9 @@ class _FileChooserState extends State<FileChooser> {
                       },
                     ),
             ),
-            const Divider(height: 1),
-            Padding(
+            if (!widget.selectDirectory) ...[
+              const Divider(height: 1),
+              Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Shortcuts(
                 shortcuts: const {
@@ -246,7 +251,8 @@ class _FileChooserState extends State<FileChooser> {
                   ),
                 ),
               ),
-            ),
+              ),
+            ],
           ],
         ),
       ),

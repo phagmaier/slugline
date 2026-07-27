@@ -3435,6 +3435,14 @@ impl SseDecode for crate::api::files::PreferencesView {
         let mut var_autosaveEnabled = <bool>::sse_decode(deserializer);
         let mut var_autocompleteEnabled = <bool>::sse_decode(deserializer);
         let mut var_navigatorVisible = <bool>::sse_decode(deserializer);
+        let mut var_spellEnabled = <bool>::sse_decode(deserializer);
+        let mut var_spellLanguage = <Option<String>>::sse_decode(deserializer);
+        let mut var_appearance = <String>::sse_decode(deserializer);
+        let mut var_editorTextSize = <u16>::sse_decode(deserializer);
+        let mut var_defaultPaper = <String>::sse_decode(deserializer);
+        let mut var_sceneNumbers = <String>::sse_decode(deserializer);
+        let mut var_pdfFontPath = <Option<String>>::sse_decode(deserializer);
+        let mut var_distractionFree = <bool>::sse_decode(deserializer);
         let mut var_autosaveIdleMs = <u64>::sse_decode(deserializer);
         let mut var_autosaveIntervalMs = <u64>::sse_decode(deserializer);
         let mut var_backupDir = <Option<String>>::sse_decode(deserializer);
@@ -3444,6 +3452,14 @@ impl SseDecode for crate::api::files::PreferencesView {
             autosave_enabled: var_autosaveEnabled,
             autocomplete_enabled: var_autocompleteEnabled,
             navigator_visible: var_navigatorVisible,
+            spell_enabled: var_spellEnabled,
+            spell_language: var_spellLanguage,
+            appearance: var_appearance,
+            editor_text_size: var_editorTextSize,
+            default_paper: var_defaultPaper,
+            scene_numbers: var_sceneNumbers,
+            pdf_font_path: var_pdfFontPath,
+            distraction_free: var_distractionFree,
             autosave_idle_ms: var_autosaveIdleMs,
             autosave_interval_ms: var_autosaveIntervalMs,
             backup_dir: var_backupDir,
@@ -3736,6 +3752,13 @@ impl SseDecode for crate::api::doc::TitleEntryView {
             key: var_key,
             value: var_value,
         };
+    }
+}
+
+impl SseDecode for u16 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u16::<NativeEndian>().unwrap()
     }
 }
 
@@ -4623,6 +4646,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::PreferencesView {
             self.autosave_enabled.into_into_dart().into_dart(),
             self.autocomplete_enabled.into_into_dart().into_dart(),
             self.navigator_visible.into_into_dart().into_dart(),
+            self.spell_enabled.into_into_dart().into_dart(),
+            self.spell_language.into_into_dart().into_dart(),
+            self.appearance.into_into_dart().into_dart(),
+            self.editor_text_size.into_into_dart().into_dart(),
+            self.default_paper.into_into_dart().into_dart(),
+            self.scene_numbers.into_into_dart().into_dart(),
+            self.pdf_font_path.into_into_dart().into_dart(),
+            self.distraction_free.into_into_dart().into_dart(),
             self.autosave_idle_ms.into_into_dart().into_dart(),
             self.autosave_interval_ms.into_into_dart().into_dart(),
             self.backup_dir.into_into_dart().into_dart(),
@@ -5827,6 +5858,14 @@ impl SseEncode for crate::api::files::PreferencesView {
         <bool>::sse_encode(self.autosave_enabled, serializer);
         <bool>::sse_encode(self.autocomplete_enabled, serializer);
         <bool>::sse_encode(self.navigator_visible, serializer);
+        <bool>::sse_encode(self.spell_enabled, serializer);
+        <Option<String>>::sse_encode(self.spell_language, serializer);
+        <String>::sse_encode(self.appearance, serializer);
+        <u16>::sse_encode(self.editor_text_size, serializer);
+        <String>::sse_encode(self.default_paper, serializer);
+        <String>::sse_encode(self.scene_numbers, serializer);
+        <Option<String>>::sse_encode(self.pdf_font_path, serializer);
+        <bool>::sse_encode(self.distraction_free, serializer);
         <u64>::sse_encode(self.autosave_idle_ms, serializer);
         <u64>::sse_encode(self.autosave_interval_ms, serializer);
         <Option<String>>::sse_encode(self.backup_dir, serializer);
@@ -6063,6 +6102,13 @@ impl SseEncode for crate::api::doc::TitleEntryView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.key, serializer);
         <String>::sse_encode(self.value, serializer);
+    }
+}
+
+impl SseEncode for u16 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u16::<NativeEndian>(self).unwrap();
     }
 }
 

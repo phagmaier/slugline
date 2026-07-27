@@ -42,7 +42,18 @@ class EditorPage extends StatefulWidget {
     this.saveStatus,
     this.initialScrollRow = 0,
     this.navigatorVisible = false,
+    this.textSize = 15,
+    this.distractionFree = false,
+    this.initialPageSetup = const PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      debugLinesPerPage: null,
+    ),
     this.onNavigatorVisibilityChanged,
+    this.onOpenPreferences,
+    this.onShowShortcuts,
+    this.onDistractionFreeChanged,
+    this.onTextSizeChanged,
     this.onClosed,
     this.title,
     super.key,
@@ -61,7 +72,14 @@ class EditorPage extends StatefulWidget {
 
   /// §Phase 8's persisted global sidebar state.
   final bool navigatorVisible;
+  final double textSize;
+  final bool distractionFree;
+  final PageSetup initialPageSetup;
   final Future<void> Function(bool visible)? onNavigatorVisibilityChanged;
+  final Future<void> Function()? onOpenPreferences;
+  final Future<void> Function()? onShowShortcuts;
+  final Future<void> Function(bool enabled)? onDistractionFreeChanged;
+  final Future<void> Function(int size)? onTextSizeChanged;
 
   /// Back to the library. Null when the editor is the whole application, which
   /// is what a test pumping this page directly gets.
@@ -294,7 +312,14 @@ class EditorPageState extends State<EditorPage> {
 
   Future<void> _showPreview() async {
     if (_output case final output?) {
-      await withModal(() => ExportDialog.show(context, _core, output));
+      await withModal(
+        () => ExportDialog.show(
+          context,
+          _core,
+          output,
+          initialSetup: widget.initialPageSetup,
+        ),
+      );
     }
   }
 
@@ -386,6 +411,14 @@ class EditorPageState extends State<EditorPage> {
   KeyEventResult _onPageKey(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final keys = HardwareKeyboard.instance;
+    if (event.logicalKey == LogicalKeyboardKey.f11) {
+      unawaited(widget.onDistractionFreeChanged?.call(!widget.distractionFree));
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f1) {
+      unawaited(widget.onShowShortcuts?.call());
+      return KeyEventResult.handled;
+    }
     if (!keys.isControlPressed) return KeyEventResult.ignored;
     switch (event.logicalKey) {
       case LogicalKeyboardKey.keyS when keys.isShiftPressed:
@@ -396,6 +429,20 @@ class EditorPageState extends State<EditorPage> {
         unawaited(_showPreview());
       case LogicalKeyboardKey.keyJ:
         _showNavigatorSearch();
+      case LogicalKeyboardKey.comma:
+        unawaited(widget.onOpenPreferences?.call());
+      case LogicalKeyboardKey.equal || LogicalKeyboardKey.numpadAdd:
+        unawaited(
+          widget.onTextSizeChanged?.call(
+            (widget.textSize.round() + 1).clamp(12, 24),
+          ),
+        );
+      case LogicalKeyboardKey.minus || LogicalKeyboardKey.numpadSubtract:
+        unawaited(
+          widget.onTextSizeChanged?.call(
+            (widget.textSize.round() - 1).clamp(12, 24),
+          ),
+        );
       default:
         return KeyEventResult.ignored;
     }
@@ -413,7 +460,7 @@ class EditorPageState extends State<EditorPage> {
       // only what it ignores reaches here.
       onKeyEvent: (_, event) => _onPageKey(event),
       child: Scaffold(
-        appBar: widget.onClosed == null
+        appBar: widget.onClosed == null || widget.distractionFree
             ? null
             : AppBar(
                 leading: IconButton(
@@ -469,12 +516,22 @@ class EditorPageState extends State<EditorPage> {
                     tooltip: 'Save (Ctrl+S)',
                     onPressed: () => unawaited(save()),
                   ),
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_outlined),
+                    tooltip: 'Keyboard shortcuts (F1)',
+                    onPressed: widget.onShowShortcuts,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    tooltip: 'Preferences (Ctrl+,)',
+                    onPressed: widget.onOpenPreferences,
+                  ),
                   const SizedBox(width: 8),
                 ],
               ),
         body: Row(
           children: [
-            if (_navigatorVisible) ...[
+            if (_navigatorVisible && !widget.distractionFree) ...[
               SizedBox(
                 width: navigatorWidth,
                 child: NavigatorSidebar(
@@ -500,6 +557,7 @@ class EditorPageState extends State<EditorPage> {
                               Positioned.fill(
                                 child: EditorSurface(
                                   controller: widget.controller,
+                                  textSize: widget.textSize,
                                   initialScrollRow: widget.initialScrollRow,
                                   focusNode: _editorFocus,
                                   // The surface has the focus, so it sees these keys first and
@@ -516,7 +574,7 @@ class EditorPageState extends State<EditorPage> {
                                   onScrolled: _onScrolled,
                                 ),
                               ),
-                              if (!_navigatorVisible)
+                              if (!_navigatorVisible && !widget.distractionFree)
                                 Positioned(
                                   top: 8,
                                   left: 8,
@@ -559,13 +617,32 @@ class EditorPageState extends State<EditorPage> {
                                     onDismiss: _dismiss,
                                   ),
                                 ),
+                              if (widget.distractionFree)
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: IconButton.filledTonal(
+                                    key: const ValueKey(
+                                      'leave distraction free',
+                                    ),
+                                    tooltip:
+                                        'Leave distraction-free mode (F11)',
+                                    onPressed: () => unawaited(
+                                      widget.onDistractionFreeChanged?.call(
+                                        false,
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.fullscreen_exit),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
-                        ElementBar(
-                          controller: widget.controller,
-                          saveStatus: widget.saveStatus,
-                        ),
+                        if (!widget.distractionFree)
+                          ElementBar(
+                            controller: widget.controller,
+                            saveStatus: widget.saveStatus,
+                          ),
                       ],
                     ),
                   ),

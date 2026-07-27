@@ -184,12 +184,20 @@ pub enum RecoveryOutcome {
     Failed { message: String },
 }
 
-/// §6's `Preferences`, through Phase 8.
+/// §6's preferences, through Phase 10.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreferencesView {
     pub autosave_enabled: bool,
     pub autocomplete_enabled: bool,
     pub navigator_visible: bool,
+    pub spell_enabled: bool,
+    pub spell_language: Option<String>,
+    pub appearance: String,
+    pub editor_text_size: u16,
+    pub default_paper: String,
+    pub scene_numbers: String,
+    pub pdf_font_path: Option<String>,
+    pub distraction_free: bool,
     pub autosave_idle_ms: u64,
     pub autosave_interval_ms: u64,
     pub backup_dir: Option<String>,
@@ -220,7 +228,7 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
         Paths::at(config_dir, data_dir, state_dir)
     };
 
-    let mut prefs = CorePreferences::load(&paths.preferences());
+    let mut prefs = load_preferences(&paths);
     let mut library = Library::load(&paths.library_index());
     library.refresh();
     // Discovery, dictionary parsing and personal-dictionary I/O all happen on
@@ -257,6 +265,21 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
         });
     });
     true
+}
+
+fn load_preferences(paths: &Paths) -> CorePreferences {
+    let current = paths.preferences();
+    if current.exists() {
+        return CorePreferences::load(&current);
+    }
+    let legacy_path = paths.legacy_preferences();
+    let legacy = CorePreferences::load(&legacy_path);
+    if legacy_path.exists() {
+        // Phase 10 shortened the public name to `prefs.json`. Keep the old
+        // file as a harmless fallback and atomically write the new one.
+        let _ = legacy.save(&current);
+    }
+    legacy
 }
 
 /// Ends the session cleanly: every journal is discarded and the library index is
@@ -314,7 +337,7 @@ pub async fn library_open(path: String) -> Option<DocumentHandle> {
     Some(open_source(path, source, false))
 }
 
-/// §6's `library_create`. A new, empty script at `path`.
+/// §6's `library_create`, with Phase 10's useful first-run template.
 ///
 /// The file is written immediately, and the handle only comes back if it was:
 /// "create" that leaves nothing on disk is a promise the library index would
@@ -324,8 +347,18 @@ pub async fn library_create(path: String) -> Option<DocumentHandle> {
     if path.exists() {
         return None;
     }
-    atomic::save_atomically(&path, "").ok()?;
-    Some(open_source(path, String::new(), true))
+    let source = starter_source(&path);
+    atomic::save_atomically(&path, &source).ok()?;
+    Some(open_source(path, source, true))
+}
+
+fn starter_source(path: &Path) -> String {
+    let title = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Untitled");
+    format!("Title: {title}\nCredit: Written by\nAuthor:\n\nINT. LOCATION - DAY\n\n")
 }
 
 /// §6's `library_rename`. Moves the file and follows it.
@@ -649,7 +682,7 @@ pub async fn doc_export_pdf(
         return failed(SaveFailure::NoPath, &path, "no file was chosen");
     }
 
-    let Some((info, open_scripts)) = actor().run({
+    let Some((info, open_scripts, pdf_font_path)) = actor().run({
         let handle = handle.id;
         move |state| {
             let session = state.session(handle)?;
@@ -673,7 +706,10 @@ pub async fn doc_export_pdf(
                 .filter_map(Session::path)
                 .map(Path::to_path_buf)
                 .collect::<Vec<_>>();
-            Some((info, open_scripts))
+            let pdf_font_path = state
+                .storage()
+                .and_then(|storage| storage.prefs.pdf_font_path.clone());
+            Some((info, open_scripts, pdf_font_path))
         }
     }) else {
         return failed(
@@ -716,7 +752,31 @@ pub async fn doc_export_pdf(
         );
     };
 
-    let bytes = render_pdf::render(&pagination.script, &config, &info);
+    let custom_font = match pdf_font_path {
+        Some(font_path) => match std::fs::read(&font_path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                return failed(
+                    SaveFailure::Io,
+                    &path,
+                    &format!(
+                        "the selected PDF font {} could not be read: {error}",
+                        font_path.display()
+                    ),
+                );
+            }
+        },
+        None => None,
+    };
+    let bytes = match custom_font {
+        Some(ref font) => {
+            match render_pdf::render_with_font(&pagination.script, &config, &info, font) {
+                Ok(bytes) => bytes,
+                Err(message) => return failed(SaveFailure::Io, &path, &message),
+            }
+        }
+        None => render_pdf::render(&pagination.script, &config, &info),
+    };
     if let Err(error) = atomic::save_atomically(&path, &bytes) {
         return SaveOutcome::Failed {
             failure: failure_of(&error),
@@ -979,12 +1039,17 @@ async fn write_document(
                 .and_then(Session::id)
                 .map(str::to_owned)
                 .and_then(|id| {
+                    let config = state
+                        .storage()
+                        .map(|storage| preference_page_config(&storage.prefs))
+                        .unwrap_or_default();
                     state.storage_mut().map(|storage| SavedPagination {
                         token: storage.begin_page_count(&id),
                         id,
                         handle: handle.id,
                         generation,
                         snapshot,
+                        config,
                     })
                 });
             save_library(state);
@@ -1049,16 +1114,12 @@ struct SavedPagination {
     handle: u64,
     generation: u64,
     snapshot: slugline_layout::ScriptSnapshot,
+    config: PageConfig,
 }
 
 fn update_saved_page_count(job: SavedPagination) {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        layout::paginate_snapshot(
-            job.handle,
-            job.generation,
-            job.snapshot,
-            &slugline_layout::PageConfig::default(),
-        )
+        layout::paginate_snapshot(job.handle, job.generation, job.snapshot, &job.config)
     }));
     let pagination = match result {
         Ok(pagination) => pagination,
@@ -1074,6 +1135,20 @@ fn update_saved_page_count(job: SavedPagination) {
     actor().run(move |state| {
         commit_saved_page_count(state, &job.id, job.token, page_count);
     });
+}
+
+pub(super) fn preference_page_config(preferences: &CorePreferences) -> PageConfig {
+    let config = if preferences.default_paper == prefs::PAPER_A4 {
+        PageConfig::a4()
+    } else {
+        PageConfig::us_letter()
+    };
+    config.with_scene_numbers(match preferences.scene_numbers.as_str() {
+        prefs::SCENE_NUMBERS_LEFT => slugline_layout::SceneNumberGutters::Left,
+        prefs::SCENE_NUMBERS_RIGHT => slugline_layout::SceneNumberGutters::Right,
+        prefs::SCENE_NUMBERS_BOTH => slugline_layout::SceneNumberGutters::Both,
+        _ => slugline_layout::SceneNumberGutters::None,
+    })
 }
 
 fn commit_saved_page_count(state: &mut AppState, id: &str, token: u64, page_count: u32) {
@@ -1717,16 +1792,23 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
             autosave_enabled: preferences.autosave_enabled,
             autocomplete_enabled: preferences.autocomplete_enabled,
             navigator_visible: preferences.navigator_visible,
-            // This older general-preferences surface does not edit Phase 9's
-            // spell controls. Preserve the values owned by `spell_configure`.
+            // Dictionary loading stays on `spell_configure`; this general
+            // surface preserves the values owned by that worker-backed call.
             spell_enabled: storage.prefs.spell_enabled,
             spell_language: storage.prefs.spell_language.clone(),
+            appearance: preferences.appearance,
+            editor_text_size: preferences.editor_text_size,
+            default_paper: preferences.default_paper,
+            scene_numbers: preferences.scene_numbers,
+            pdf_font_path: preferences.pdf_font_path.map(PathBuf::from),
+            distraction_free: preferences.distraction_free,
             autosave_idle_ms: preferences.autosave_idle_ms,
             autosave_interval_ms: preferences.autosave_interval_ms,
             backup_dir: preferences.backup_dir.map(PathBuf::from),
             backup_keep_versions: preferences.backup_keep_versions,
             backup_keep_days: preferences.backup_keep_days,
-        };
+        }
+        .sanitised();
         let path = storage.paths.preferences();
         storage.prefs.save(&path).is_ok()
     })
@@ -1889,6 +1971,17 @@ fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
         autosave_enabled: preferences.autosave_enabled,
         autocomplete_enabled: preferences.autocomplete_enabled,
         navigator_visible: preferences.navigator_visible,
+        spell_enabled: preferences.spell_enabled,
+        spell_language: preferences.spell_language.clone(),
+        appearance: preferences.appearance.clone(),
+        editor_text_size: preferences.editor_text_size,
+        default_paper: preferences.default_paper.clone(),
+        scene_numbers: preferences.scene_numbers.clone(),
+        pdf_font_path: preferences
+            .pdf_font_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned()),
+        distraction_free: preferences.distraction_free,
         autosave_idle_ms: preferences.autosave_idle_ms,
         autosave_interval_ms: preferences.autosave_interval_ms,
         backup_dir: preferences
@@ -1982,6 +2075,35 @@ mod tests {
     use crate::api::doc::{doc_apply, doc_blocks, doc_source, EditCommand};
 
     const SCRIPT: &str = "The house is quiet.\n";
+
+    #[test]
+    fn a_new_script_starts_with_a_useful_valid_fountain_template() {
+        let source = starter_source(Path::new("/scripts/The Long Road.fountain"));
+        assert!(source.starts_with("Title: The Long Road\nCredit: Written by\nAuthor:"));
+        let document = model::Document::parse(&source);
+        assert!(!document.title_page().is_empty());
+        assert_eq!(
+            document.blocks()[0].kind(),
+            slugline_document::BlockKind::SceneHeading
+        );
+    }
+
+    #[test]
+    fn phase_ten_imports_the_legacy_preferences_file_atomically() {
+        let root = temp_root("legacy-preferences");
+        let paths = Paths::under(&root);
+        let expected = CorePreferences {
+            appearance: prefs::APPEARANCE_DARK.to_owned(),
+            editor_text_size: 19,
+            ..CorePreferences::default()
+        };
+        expected.save(&paths.legacy_preferences()).unwrap();
+
+        assert_eq!(load_preferences(&paths), expected);
+        assert_eq!(CorePreferences::load(&paths.preferences()), expected);
+        assert!(paths.legacy_preferences().exists());
+        let _ = fs::remove_dir_all(root);
+    }
 
     /// How long a save is given to reach the disk before the test calls it
     /// stuck. Generous: a wrong answer here should mean a deadlock, not a busy

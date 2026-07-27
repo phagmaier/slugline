@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:slugline/core/core.dart';
-import 'package:slugline/library/backups_dialog.dart' show formatBytes, formatTimestamp;
+import 'package:slugline/library/backups_dialog.dart'
+    show formatBytes, formatTimestamp;
 import 'package:slugline/library/file_chooser.dart';
 
 /// §Phase 4's library: create, open, rename, duplicate, remove, delete, and the
@@ -19,6 +23,8 @@ class LibraryPage extends StatefulWidget {
   const LibraryPage({
     required this.core,
     required this.onOpen,
+    this.onOpenPreferences,
+    this.onShowShortcuts,
     super.key,
   });
 
@@ -26,6 +32,8 @@ class LibraryPage extends StatefulWidget {
 
   /// Open a script at this path. The shell above turns it into an editor.
   final Future<void> Function(String path) onOpen;
+  final Future<void> Function()? onOpenPreferences;
+  final Future<void> Function()? onShowShortcuts;
 
   @override
   State<LibraryPage> createState() => _LibraryPageState();
@@ -100,7 +108,8 @@ class _LibraryPageState extends State<LibraryPage> {
     if (deleteFile) {
       // The only irreversible thing on this page. It says the file name, it says
       // the word "permanently", and its confirming button is destructive-red.
-      final confirmed = await showDialog<bool>(
+      final confirmed =
+          await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               icon: const Icon(Icons.delete_forever_outlined),
@@ -132,53 +141,112 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   void _say(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scripts = _scripts;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Slugline'),
-        actions: [
-          TextButton.icon(
-            onPressed: _openScript,
-            icon: const Icon(Icons.folder_open),
-            label: const Text('Open'),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: _newScript,
-            icon: const Icon(Icons.add),
-            label: const Text('New script'),
-          ),
-          const SizedBox(width: 12),
-        ],
-      ),
-      body: switch (scripts) {
-        null => const Center(child: CircularProgressIndicator()),
-        [] => Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('No scripts yet', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text(
-                  'Everything Slugline writes is an ordinary .fountain file '
-                  'at a path you chose.',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.f1) {
+          unawaited(widget.onShowShortcuts?.call());
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.comma &&
+            HardwareKeyboard.instance.isControlPressed) {
+          unawaited(widget.onOpenPreferences?.call());
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Slugline'),
+          actions: [
+            IconButton(
+              tooltip: 'Keyboard shortcuts (F1)',
+              onPressed: widget.onShowShortcuts,
+              icon: const Icon(Icons.keyboard_outlined),
+            ),
+            IconButton(
+              tooltip: 'Preferences (Ctrl+,)',
+              onPressed: widget.onOpenPreferences,
+              icon: const Icon(Icons.settings_outlined),
+            ),
+            TextButton.icon(
+              onPressed: _openScript,
+              icon: const Icon(Icons.folder_open),
+              label: const Text('Open'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: _newScript,
+              icon: const Icon(Icons.add),
+              label: const Text('New script'),
+            ),
+            const SizedBox(width: 12),
+          ],
+        ),
+        body: switch (scripts) {
+          null => const Center(child: CircularProgressIndicator()),
+          [] => Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.movie_creation_outlined,
+                    size: 64,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Write your first screenplay',
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Start with a title page and scene-heading template, or '
+                    'open any ordinary .fountain file. Your work stays in the '
+                    'folder you choose.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      FilledButton.icon(
+                        key: const ValueKey('create first script'),
+                        onPressed: _newScript,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create first script'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _openScript,
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('Open existing'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        final found => ListView.separated(
+          final found => ListView.separated(
             itemCount: found.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) => _row(found[index]),
           ),
-      },
+        },
+      ),
     );
   }
 

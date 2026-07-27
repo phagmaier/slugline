@@ -29,6 +29,7 @@ class EditorSurface extends StatefulWidget {
   const EditorSurface({
     required this.controller,
     this.initialScrollRow = 0,
+    this.textSize = 15,
     this.focusNode,
     this.onOpenPalette,
     this.onOpenFind,
@@ -44,6 +45,7 @@ class EditorSurface extends StatefulWidget {
   /// Applied once, rather than through [ScrollController.initialScrollOffset],
   /// because a stale row must be clamped against the newly laid-out document.
   final int initialScrollRow;
+  final double textSize;
 
   /// Supplied when something above the surface has to be able to give it the
   /// keyboard back — which the editor page does when it closes a panel. The
@@ -76,8 +78,6 @@ class EditorSurface extends StatefulWidget {
 
 /// 12 pt Courier at 6 lines per inch is the printed grid (§5.2). On screen the
 /// size is a preference (Phase 10); these are the defaults.
-const double _fontSize = 15.0;
-const double _lineHeight = 21.0;
 const double _padding = 28.0;
 
 /// Columns across the printed text area: 1.5" to 7.5" at 10 characters per inch.
@@ -120,6 +120,8 @@ class EditorSurfaceState extends State<EditorSurface>
   int? _sessionBlock;
 
   EditorController get _controller => widget.controller;
+  double get _fontSize => widget.textSize.clamp(12, 24).toDouble();
+  double get _lineHeight => _fontSize * 1.4;
 
   @override
   void initState() {
@@ -135,12 +137,17 @@ class EditorSurfaceState extends State<EditorSurface>
   @override
   void didUpdateWidget(EditorSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller == widget.controller) return;
-    oldWidget.controller.removeListener(_onDocumentChanged);
-    widget.controller.addListener(_onDocumentChanged);
-    _reportedRow = -1;
-    _initialScrollPending = true;
-    _scheduleInitialScroll();
+    if (oldWidget.textSize != widget.textSize) {
+      _measureAdvance();
+      _reportedRow = -1;
+    }
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onDocumentChanged);
+      widget.controller.addListener(_onDocumentChanged);
+      _reportedRow = -1;
+      _initialScrollPending = true;
+      _scheduleInitialScroll();
+    }
   }
 
   @override
@@ -157,7 +164,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   void _measureAdvance() {
     final painter = TextPainter(
-      text: const TextSpan(text: 'MMMMMMMMMM', style: _textStyle),
+      text: TextSpan(text: 'MMMMMMMMMM', style: _textStyle(_fontSize)),
       textDirection: TextDirection.ltr,
     )..layout();
     _advance = painter.width / 10;
@@ -711,7 +718,7 @@ class EditorSurfaceState extends State<EditorSurface>
   /// while it is held, and a timer would be a wakeup in an idle process (§1.3).
   void _autoScroll(Offset local) {
     if (!_scroll.hasClients) return;
-    const edge = 2 * _lineHeight;
+    final edge = 2 * _lineHeight;
     final height = _scroll.position.viewportDimension;
     final delta = switch (local.dy) {
       final y when y < edge => -_lineHeight,
@@ -743,7 +750,7 @@ class EditorSurfaceState extends State<EditorSurface>
   /// Keeps the caret on screen with a few rows of air around it.
   void _ensureCaretVisible() {
     if (_initialScrollPending || !_scroll.hasClients) return;
-    const margin = 3 * _lineHeight;
+    final margin = 3 * _lineHeight;
     final caretTop = _padding + _controller.caretRow * _lineHeight;
     final caretBottom = caretTop + _lineHeight;
     final top = _scroll.offset;
@@ -922,6 +929,8 @@ class EditorSurfaceState extends State<EditorSurface>
                               showCaret: _focusNode.hasFocus,
                               composing: _composing,
                               colours: _EditorColours.of(context),
+                              fontSize: _fontSize,
+                              lineHeight: _lineHeight,
                             ),
                           ),
                         ),
@@ -933,7 +942,10 @@ class EditorSurfaceState extends State<EditorSurface>
                           top:
                               _padding +
                               (_controller.caretRow + 1) * _lineHeight,
-                          child: _CompletionPopup(controller: _controller),
+                          child: _CompletionPopup(
+                            controller: _controller,
+                            textSize: _fontSize,
+                          ),
                         ),
                     ],
                   ),
@@ -959,9 +971,10 @@ class EditorSurfaceState extends State<EditorSurface>
 /// at the page as at a candidate, and the version of it that guesses wrong
 /// writes a scene prefix into the script.
 class _CompletionPopup extends StatelessWidget {
-  const _CompletionPopup({required this.controller});
+  const _CompletionPopup({required this.controller, required this.textSize});
 
   final EditorController controller;
+  final double textSize;
 
   @override
   Widget build(BuildContext context) {
@@ -994,7 +1007,7 @@ class _CompletionPopup extends StatelessWidget {
                     Expanded(
                       child: Text(
                         candidate.value,
-                        style: _textStyle.copyWith(
+                        style: _textStyle(textSize).copyWith(
                           color: index == controller.completionIndex
                               ? colours.onPrimaryContainer
                               : colours.onSurface,
@@ -1024,8 +1037,8 @@ class _CompletionPopup extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
               child: Text(
                 'Tab accepts · ↑↓ then Enter · Esc dismisses',
-                style: _textStyle.copyWith(
-                  fontSize: _fontSize * 0.75,
+                style: _textStyle(textSize).copyWith(
+                  fontSize: textSize * 0.75,
                   color: colours.onSurfaceVariant,
                 ),
               ),
@@ -1037,10 +1050,10 @@ class _CompletionPopup extends StatelessWidget {
   }
 }
 
-const TextStyle _textStyle = TextStyle(
+TextStyle _textStyle(double fontSize) => TextStyle(
   fontFamily: 'monospace',
-  fontFamilyFallback: ['Courier New', 'DejaVu Sans Mono'],
-  fontSize: _fontSize,
+  fontFamilyFallback: const ['Courier New', 'DejaVu Sans Mono'],
+  fontSize: fontSize,
   height: 1.0,
 );
 
@@ -1084,6 +1097,8 @@ class _SurfacePainter extends CustomPainter {
     required this.showCaret,
     required this.composing,
     required this.colours,
+    required this.fontSize,
+    required this.lineHeight,
   }) : super(repaint: Listenable.merge([controller, scroll]));
 
   final EditorController controller;
@@ -1093,6 +1108,8 @@ class _SurfacePainter extends CustomPainter {
   final bool showCaret;
   final TextRange composing;
   final _EditorColours colours;
+  final double fontSize;
+  final double lineHeight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1106,11 +1123,11 @@ class _SurfacePainter extends CustomPainter {
     // The whole performance story: the band, not the document.
     final firstRow = math.max(
       0,
-      ((offset - _padding) / _lineHeight).floor() - 1,
+      ((offset - _padding) / lineHeight).floor() - 1,
     );
     final lastRow = math.min(
       layout.totalRows,
-      ((offset + viewport - _padding) / _lineHeight).ceil() + 1,
+      ((offset + viewport - _padding) / lineHeight).ceil() + 1,
     );
     if (lastRow <= firstRow) return;
 
@@ -1139,7 +1156,7 @@ class _SurfacePainter extends CustomPainter {
       final display = displayText(block.kind, block.text);
 
       if (block.kind == BlockKind.pageBreak) {
-        final y = _padding + first * _lineHeight + _lineHeight / 2;
+        final y = _padding + first * lineHeight + lineHeight / 2;
         canvas.drawLine(
           Offset(pageLeft, y),
           Offset(pageLeft + _pageColumns * advance, y),
@@ -1154,7 +1171,7 @@ class _SurfacePainter extends CustomPainter {
         final line = lines[i];
         final column = layout.columnOf(index, i);
         final x = pageLeft + column * advance;
-        final y = _padding + row * _lineHeight;
+        final y = _padding + row * lineHeight;
 
         if (hasSelection) {
           _paintSelection(
@@ -1177,7 +1194,7 @@ class _SurfacePainter extends CustomPainter {
           TextPainter(
               text: TextSpan(
                 text: text,
-                style: _textStyle.copyWith(
+                style: _textStyle(fontSize).copyWith(
                   color: _isMuted(block.kind) ? colours.dim : colours.text,
                   fontStyle: _isMuted(block.kind) ? FontStyle.italic : null,
                 ),
@@ -1185,7 +1202,7 @@ class _SurfacePainter extends CustomPainter {
               textDirection: TextDirection.ltr,
             )
             ..layout()
-            ..paint(canvas, Offset(x, y + (_lineHeight - _fontSize) / 2));
+            ..paint(canvas, Offset(x, y + (lineHeight - fontSize) / 2));
         }
 
         _paintSpellingUnderlines(canvas, block.id, line, x, y);
@@ -1212,7 +1229,7 @@ class _SurfacePainter extends CustomPainter {
       if (end <= start) continue;
       final from = x + line.columnAtOffset(start) * advance;
       final to = x + line.columnAtOffset(end) * advance;
-      final baseline = y + _lineHeight - 1.5;
+      final baseline = y + lineHeight - 1.5;
       final path = Path()..moveTo(from, baseline);
       var cursor = from;
       var up = true;
@@ -1259,10 +1276,12 @@ class _SurfacePainter extends CustomPainter {
     final selectionEnd = index == toIndex
         ? to.offsetUtf16
         : controller.blocks[index].text.length;
-    final startOffset =
-        math.max(selectionStart, line.start).clamp(line.start, line.end);
-    final endOffset =
-        math.min(selectionEnd, line.end).clamp(line.start, line.end);
+    final startOffset = math
+        .max(selectionStart, line.start)
+        .clamp(line.start, line.end);
+    final endOffset = math
+        .min(selectionEnd, line.end)
+        .clamp(line.start, line.end);
     // Grid cells, not code units: an astral scalar is one cell of two units and
     // a tab is one unit of up to four cells.
     final startColumn = line.columnAtOffset(startOffset);
@@ -1270,7 +1289,7 @@ class _SurfacePainter extends CustomPainter {
     final textWidth = (endColumn - startColumn) * advance;
     if (textWidth > 0) {
       canvas.drawRect(
-        Rect.fromLTWH(x + startColumn * advance, y, textWidth, _lineHeight),
+        Rect.fromLTWH(x + startColumn * advance, y, textWidth, lineHeight),
         paint,
       );
     }
@@ -1286,13 +1305,13 @@ class _SurfacePainter extends CustomPainter {
           x + line.columnAtOffset(hardBreak) * advance,
           y,
           advance / 2,
-          _lineHeight,
+          lineHeight,
         ),
         paint,
       );
     } else if (line.columns == 0 && index < toIndex) {
       // A selected empty block still needs a visible mark.
-      canvas.drawRect(Rect.fromLTWH(x, y, advance / 2, _lineHeight), paint);
+      canvas.drawRect(Rect.fromLTWH(x, y, advance / 2, lineHeight), paint);
     }
   }
 
@@ -1309,8 +1328,8 @@ class _SurfacePainter extends CustomPainter {
     final endColumn = line.columnAtOffset(end);
     final x = pageLeft + (column + startColumn) * advance;
     canvas.drawLine(
-      Offset(x, y + _lineHeight - 2),
-      Offset(x + (endColumn - startColumn) * advance, y + _lineHeight - 2),
+      Offset(x, y + lineHeight - 2),
+      Offset(x + (endColumn - startColumn) * advance, y + lineHeight - 2),
       Paint()
         ..color = colours.text
         ..strokeWidth = 1.5,
@@ -1334,9 +1353,9 @@ class _SurfacePainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(
         pageLeft + column * advance,
-        _padding + (layout.firstRowOf(index) + lineIndex) * _lineHeight,
+        _padding + (layout.firstRowOf(index) + lineIndex) * lineHeight,
         2.0,
-        _lineHeight,
+        lineHeight,
       ),
       Paint()..color = colours.caret,
     );
@@ -1347,6 +1366,8 @@ class _SurfacePainter extends CustomPainter {
       old.controller != controller ||
       old.advance != advance ||
       old.pageLeft != pageLeft ||
+      old.fontSize != fontSize ||
+      old.lineHeight != lineHeight ||
       old.showCaret != showCaret ||
       old.composing != composing;
 }

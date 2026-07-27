@@ -83,6 +83,29 @@ void main() {
     expect(it.core.saves.length, 1);
   });
 
+  testWidgets('changed preferences re-arm or disable the live clock', (
+    tester,
+  ) async {
+    final it = setUpDriver(idle: const Duration(seconds: 1));
+    type(it.core, it.changes, 'a');
+    it.driver.reconfigure(
+      enabled: false,
+      idle: const Duration(milliseconds: 10),
+      interval: const Duration(milliseconds: 20),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(it.core.saves, isEmpty, reason: 'turning autosave off cancels it');
+
+    it.driver.reconfigure(
+      enabled: true,
+      idle: const Duration(milliseconds: 10),
+      interval: const Duration(milliseconds: 20),
+    );
+    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pumpAndSettle();
+    expect(it.core.saves.length, 1, reason: 'the dirty document was re-armed');
+  });
+
   testWidgets('a writer who never pauses is still saved by the interval',
       (tester) async {
     // The reason the interval exists: a good session has no two-second pause in

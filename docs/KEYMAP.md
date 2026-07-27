@@ -13,7 +13,7 @@ Two rules govern the whole map:
 2. **Nothing here can lose text.** Escape in particular is never a deletion and
    never a command; the worst it does is drop a selection.
 
-Phase 10 makes the digits a preference. Until then these are the bindings, and
+These bindings are stable for 1.0, and
 `app/lib/editor/elements.dart` is the one table the shortcuts, the element
 selector and the command palette all read.
 
@@ -179,6 +179,10 @@ classification says so.
 | `Ctrl+S` | Save |
 | `Ctrl+Shift+S` | Save as… |
 | `Ctrl+P` | Preview and export… |
+| `Ctrl+,` | Preferences |
+| `Ctrl++`, `Ctrl+-` | Increase or decrease editor text size |
+| `F1` | Keyboard shortcut reference |
+| `F11` | Distraction-free full screen |
 
 All three are also in the command palette, along with "Previous versions…" and
 "Title page…".

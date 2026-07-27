@@ -44,13 +44,21 @@ void main() {
     answer = null;
   });
 
-  Future<void> open(WidgetTester tester) async {
+  Future<void> open(
+    WidgetTester tester, {
+    PageSetup initialSetup = const PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      debugLinesPerPage: null,
+    ),
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: ExportDialog(
             core: core,
             output: output,
+            initialSetup: initialSetup,
             chooseFile:
                 (
                   context, {
@@ -71,6 +79,20 @@ void main() {
   String report(WidgetTester tester) => tester
       .widget<SelectableText>(find.byKey(const Key('export-report')))
       .data!;
+
+  testWidgets('saved page defaults drive the first preview', (tester) async {
+    await open(
+      tester,
+      initialSetup: const PageSetup(
+        paper: PaperSize.a4,
+        sceneNumbers: SceneNumbers.right,
+        debugLinesPerPage: null,
+      ),
+    );
+
+    expect(output.setups.single.paper, PaperSize.a4);
+    expect(output.setups.single.sceneNumbers, SceneNumbers.right);
+  });
 
   testWidgets('exporting a PDF writes one and moves nothing', (tester) async {
     await open(tester);

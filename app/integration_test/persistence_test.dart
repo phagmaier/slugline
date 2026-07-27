@@ -511,6 +511,14 @@ void main() {
       autosaveEnabled: true,
       autocompleteEnabled: false,
       navigatorVisible: false,
+      spellEnabled: defaults.spellEnabled,
+      spellLanguage: defaults.spellLanguage,
+      appearance: 'light',
+      editorTextSize: 18,
+      defaultPaper: 'a4',
+      sceneNumbers: 'right',
+      pdfFontPath: null,
+      distractionFree: false,
       autosaveIdleMs: 750,
       autosaveIntervalMs: 15000,
       backupDir: null,
@@ -521,7 +529,7 @@ void main() {
     expect(Core.instance.preferences().autosaveIdleMs, 750);
     expect(Core.instance.preferences().navigatorVisible, isFalse);
     expect(
-      File('${root.path}/config/preferences.json').existsSync(),
+      File('${root.path}/config/prefs.json').existsSync(),
       isTrue,
       reason: 'human-readable on disk, by design (§2.6)',
     );
