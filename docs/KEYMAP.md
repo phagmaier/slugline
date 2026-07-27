@@ -121,6 +121,10 @@ Parenthetical". Enter normally keeps its editing meaning and splits the block;
 after Up/Down explicitly moves through the popup, Enter accepts that chosen item.
 Escape dismisses and suppresses the highlighted item for the rest of the session.
 Merely showing or automatically highlighting an item never changes text (ADR 0017).
+The popup says all of this on itself, in a footer, because none of it was
+guessable from the screen (ADR 0030). It is keyboard-only on purpose: clicking a
+candidate places the caret in the text under the popup, as any other click on the
+page does, and never accepts.
 
 ### The cue workflow
 

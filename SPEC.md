@@ -997,7 +997,10 @@ Requirement §7.
       times of day, transitions
 - [x] Rebuilt incrementally on edit — never a full document scan on the hot path
 - [x] Character extension normalisation: `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`,
-      `(SUBTITLE)` stripped for the index key, retained for display
+      `(SUBTITLE)` stripped for the index key, retained for display. Recognised by
+      their letters rather than their punctuation, so `(O.S)`, `(VO)` and a
+      typographic `(CONT’D)` are the same extension and not a second character
+      (ADR 0031). `(VOICE)`, `(JR)` and `(32)` are names and are kept.
 - [x] Entities that no longer appear drop out of normal suggestions
 - [x] Pinned entities persist regardless of occurrence count (stored per-script, in the
       library index — **not** written into the `.fountain` file)
@@ -1014,6 +1017,10 @@ Requirement §7.
 - [x] **Nothing is ever inserted without an explicit keypress** (Tab accepts the
       default item; Enter accepts only after Up/Down explicitly navigates the popup).
       No inline ghost-text auto-acceptance. This is a hard requirement (ADR 0017).
+      The popup's rows are not click targets, and a click on one places the caret
+      like any other click on the page (ADR 0030)
+- [x] The popup names its own gestures in a footer, so the writer who reaches for
+      Enter or the mouse is not looking at a list nothing appears to take (ADR 0030)
 - [x] `Escape` dismisses; a preference disables autocomplete entirely
 - [x] Dismissing a specific suggestion suppresses it for the session
 

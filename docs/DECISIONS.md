@@ -2250,3 +2250,139 @@ Confirmed to fail first: with `doc_export_fountain` implemented as
 `write_document(handle, Some(path), true)` — the F9 behaviour — four of the six
 Rust tests fail; with the open-script refusal removed, one does; with the
 overwrite check and the canonical comparison removed, two do.
+
+---
+
+## ADR 0030 — The completion popup names its gestures, and its rows are not click targets
+
+**Date:** 2026-07-26 · **Status:** accepted · **Phase:** 5 (mid-project
+remediation, Phase 9)
+
+### Context
+
+ADR 0017 settled which *key* accepts a completion: Tab takes the default, Enter
+takes a candidate the writer moved to with Up or Down, and Enter otherwise
+splits the block. It said nothing about the mouse, and the popup was built to
+match — each row was a `Container` whose only pressable part was the pin button.
+
+Phase 9's manual pass reported autocomplete as not working at all: "if it
+suggests something and I press enter or click it nothing happens". Both halves
+are explained. Enter splitting the block is ADR 0017 behaving exactly as
+decided. Clicking did nothing because nothing was listening. What neither of
+them explains is why the writer had to guess: the popup listed candidates and
+said nothing about the one gesture that takes them.
+
+### Decision
+
+**The popup carries a footer naming its gestures** — `Tab accepts · ↑↓ then
+Enter · Esc dismisses`. That is the repair for the reported defect.
+
+**A click on a candidate does not accept it.** The rows stay labels, and a
+pointer that lands on the popup goes on meaning what it has always meant on this
+surface: place the caret in the text.
+
+### Alternatives considered
+
+**Make the rows click targets.** This was written, tested and rejected on the
+evidence. The popup is positioned one line below the caret, floats over the
+writer's own page, and — because `_refreshCompletions` runs on every caret move,
+not only while typing — is showing far more of the time than a popup that waits
+for a typed prefix. It is up to eight rows tall, which measured 344 px over a
+566 px editor: opening any script whose first block is a scene heading puts a
+six-candidate list of `INT.`/`EXT.`/`EST.` over the top of the page.
+
+With the rows clickable, a click aimed at the text under that list writes a
+scene prefix into the script instead of moving the caret. This is not a
+hypothetical: three integration tests in `writing_test.dart` — all three whose
+script begins with a scene heading — turned `INT. HOUSE - DAY` into
+`EST.INT. HOUSE - DAY` on the ordinary tap their helper uses to focus the
+surface, and the panel test lost its focus and its Find bar with it. Seven test
+helpers across five files use that tap, which is a fair measure of how firmly
+"clicking the surface places the caret" is this surface's contract.
+
+Every other editor makes its suggestion list clickable, and that convention is
+built on a popup that appears when you type. Ours appears when the caret moves.
+Until that changes, a click cannot tell aim from accident, and §1.2 makes the
+wrong guess a P0: it mutates the script.
+
+**Accept on click only after the pointer has hovered the popup.** A writer
+clicking the text under the popup has hovered it on the way. It separates the
+test harness from the human, which is not the same as separating aim from
+accident, and a rule that only holds in production is a rule with no test.
+
+**Suppress the popup when there is no typed prefix, then make rows clickable.**
+It would remove the hazard, and it would also remove Tab in an empty character
+cue offering the cast — the gesture §7 exists for. Rejected as a bad trade made
+for the sake of a gesture nobody asked for.
+
+### Consequences
+
+* The reported defect is fixed by the footer: the writer is told that Tab
+  accepts, which they could not have known from the screen.
+* The popup is one row taller. It is still positioned one line below the caret.
+* `autocomplete_test.dart` pins both halves — *the popup says what accepts a
+  candidate*, and *clicking a candidate does not write it into the document*,
+  which is the invariant the rejected version broke.
+* If a click gesture is wanted later, this record is the list of what it has to
+  answer first, and `writing_test.dart` is the test that will say whether it did.
+  The saved diff is not kept in the tree.
+
+## ADR 0031 — A character extension is recognised by its letters, not its punctuation
+
+**Date:** 2026-07-26 · **Status:** accepted · **Phase:** 5 (mid-project
+remediation, Phase 9)
+
+### Context
+
+§7 says the extensions `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)` and `(SUBTITLE)`
+are stripped for the entity index key and retained for display, so that `BOB` and
+`BOB (V.O.)` are one character with one completion and one frequency count.
+
+`normalize_character` matched those five spellings literally — case-insensitively,
+but otherwise exactly. Phase 9's manual pass typed `BOB (O.S)`, which is the same
+extension with one period missing, and got a second character: a phantom `BOB
+(O.S)` in the completion list beside the real `BOB`, with the speeches divided
+between them. `(VO)`, `(V.O)` and a word processor's `(CONT’D)` all did the same.
+A test named `a_name_that_merely_resembles_an_extension_keeps_it` had pinned that
+behaviour deliberately, on the reasoning that a near-miss might be a name.
+
+### Decision
+
+**The trailing parenthesised group is an extension when its letters and digits,
+uppercased, spell one of `VO`, `OS`, `OC`, `CONTD`, `SUBTITLE`.** Case, periods,
+spaces and the apostrophe — straight or typographic — are all ignored, because
+they are what a writer varies. Anything else in parentheses is part of the name
+and is kept: `(VOICE)`, `(JR)`, `(32)` and `(O S T)` are untouched.
+
+Only the index *key* is affected. The cue is displayed, serialised and parsed
+exactly as typed, so `BOB (O.S)` still reads `BOB (O.S)` on the page and in the
+file.
+
+### Alternatives considered
+
+**Add the near-miss spellings to the table.** `(O.S)`, `(OS)`, `(O.S.)`, `(OS.)`
+for each of five extensions, times an apostrophe variant, is a table nobody can
+keep complete — and the one spelling left out is the one a writer uses.
+
+**Keep exact matching and fix it in the UI instead.** Offering to merge two
+characters is a feature; the writer here did not make two characters, they made
+one and typed it twice.
+
+**Ignore punctuation everywhere in a cue, not only in the trailing group.** Too
+wide: `MRS. PEEL` and `MRS PEEL` are the same character to a reader, but the same
+rule would also merge names that only look alike, and §7 asks for extension
+normalisation, not name normalisation.
+
+### Consequences
+
+* `a_name_that_merely_resembles_an_extension_keeps_it` changed meaning and was
+  rewritten around cases that are still kept, beside a new
+  `an_extension_missing_its_punctuation_is_still_an_extension`. This is a
+  deliberate behaviour change, not a weakened assertion.
+* F11's rule holds: the split is `text`'s own byte index of the `(`, never a
+  length measured on an uppercased copy, so `BOB (ſUBTıTLE)` still normalises
+  without a char-boundary panic. Nothing on the path allocates.
+* The match reads only the trailing group, so the cost does not grow with the
+  length of the name.
+* A character genuinely called `BOB (OS)` is now indexed as `BOB`. Nobody is
+  called that.

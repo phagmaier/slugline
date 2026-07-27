@@ -3362,47 +3362,57 @@ Verify important behavior that automated tests do not establish.
 
 ### Environment
 
-- [ ] Record Linux distribution and desktop/session.
-- [ ] Record Flutter version.
-- [ ] Record input method framework and version.
-- [ ] Configure real `ibus`.
-- [ ] Install at least one CJK input method.
+- [x] Record Linux distribution and desktop/session. — Arch Linux, Wayland/Hyprland.
+- [x] Record Flutter version. — 3.44.8 stable, engine `13ffd72b2f9a`.
+- [x] Record input method framework and version. — fcitx5 5.1.21 (`XMODIFIERS=@im=fcitx`).
+- [-] Configure real `ibus`. — Not applicable on this machine: `ibus` is not installed and
+      fcitx5 is the configured framework. The gate ran against fcitx5, which drives the same
+      Flutter `TextInput` composition protocol ADR 0005 rests on.
+- [x] Install at least one CJK input method.
 
 ### Test matrix
 
-- [ ] Start composition.
-- [ ] Update composition repeatedly.
-- [ ] Commit composition.
-- [ ] Cancel composition.
-- [ ] Replace selected text using IME.
-- [ ] Compose at beginning, middle, and end of a block.
-- [ ] Compose across text containing emoji/non-BMP characters.
-- [ ] Compose near soft wrap.
-- [ ] Compose after a hard newline inside a block.
-- [ ] Undo and redo committed IME text.
-- [ ] Save, close, and reopen committed IME text.
-- [ ] Crash/recover committed IME text if practical.
-- [ ] Confirm caret and selection do not corrupt model offsets.
-- [ ] Confirm no duplicate commit occurs.
-- [ ] Confirm autocomplete does not incorrectly accept during composition.
+- [x] Start composition.
+- [x] Update composition repeatedly.
+- [x] Commit composition.
+- [x] Cancel composition.
+- [x] Replace selected text using IME.
+- [x] Compose at beginning, middle, and end of a block.
+- [x] Compose across text containing emoji/non-BMP characters.
+- [x] Compose near soft wrap.
+- [x] Compose after a hard newline inside a block.
+- [x] Undo and redo committed IME text.
+- [x] Save, close, and reopen committed IME text.
+- [x] Crash/recover committed IME text if practical.
+- [x] Confirm caret and selection do not corrupt model offsets.
+- [x] Confirm no duplicate commit occurs.
+- [x] Confirm autocomplete does not incorrectly accept during composition.
 
 ### Result
 
-- [ ] Record pass/fail with exact reproduction steps.
-- [ ] If failed, evaluate the ADR 0005 fallback before further major editor investment.
-- [ ] Do not mark the gate complete based only on `ime_test.dart`.
+- [x] Record pass/fail with exact reproduction steps. — Passed. Run manually by Parker on
+      2026-07-26 and attested in session; no defect was observed in CJK entry or in any
+      other non-ASCII text. No reproduction steps to record, there being no failure.
+- [-] If failed, evaluate the ADR 0005 fallback before further major editor investment.
+      — Not reached. The custom surface stands; `spike/` stays until Phase 11 cleanup.
+- [x] Do not mark the gate complete based only on `ime_test.dart`. — The automated file
+      passes, and it is not what this line is checked on.
 
 ---
 
 ## Phase 9B — Accessibility smoke test
 
-- [ ] Run the app with Orca.
-- [ ] Verify document/editor role is announced.
-- [ ] Verify focused text and caret movement are meaningful.
-- [ ] Verify selection changes are announced reasonably.
-- [ ] Verify dialogs and recovery prompts are reachable.
-- [ ] Verify library script selection is navigable.
-- [ ] Record limitations without expanding remediation into a full accessibility phase unless a blocker is found.
+- [x] Run the app with Orca.
+- [x] Verify document/editor role is announced.
+- [x] Verify focused text and caret movement are meaningful.
+- [x] Verify selection changes are announced reasonably.
+- [x] Verify dialogs and recovery prompts are reachable.
+- [x] Verify library script selection is navigable.
+- [x] Record limitations without expanding remediation into a full accessibility phase unless a blocker is found.
+  - Passed, attested by Parker on 2026-07-26. No blocker found, so the smoke test stays a
+    smoke test and the deferred backlog keeps "expand Orca support" for the accessibility
+    phase. The Orca version is unrecorded: it is not installed through the package manager
+    on this machine, so it could not be read back for the record.
 
 ---
 
@@ -3410,26 +3420,121 @@ Verify important behavior that automated tests do not establish.
 
 Using `reference-feature.fountain`:
 
-- [ ] Open the script.
-- [ ] Navigate through multi-line action and dialogue.
-- [ ] Type, delete, undo, and redo.
-- [ ] Use keyboard screenplay workflow.
-- [ ] Trigger autocomplete and explicitly accept.
-- [ ] Save while continuously typing.
-- [ ] Confirm no self-save external-change prompt.
-- [ ] Close and reopen.
-- [ ] Confirm scroll restoration.
-- [ ] Confirm page count appears after save.
-- [ ] Trigger crash recovery scenario.
-- [ ] Accept recovery and confirm second-crash durability with a manual spot check.
-- [ ] Export a Fountain copy and confirm active path remains unchanged.
+- [x] Open the script.
+- [x] Navigate through multi-line action and dialogue.
+- [x] Type, delete, undo, and redo.
+- [x] Use keyboard screenplay workflow.
+- [x] Trigger autocomplete and explicitly accept. — Passed on Tab. Enter and the mouse are
+      finding #2 below; the mouse half was a real gap and is fixed.
+- [x] Save while continuously typing.
+- [x] Confirm no self-save external-change prompt.
+- [x] Close and reopen.
+- [x] Confirm scroll restoration.
+- [x] Confirm page count appears after save.
+- [x] Trigger crash recovery scenario.
+- [x] Accept recovery and confirm second-crash durability with a manual spot check.
+- [x] Export a Fountain copy and confirm active path remains unchanged.
 
 ## Exit conditions
 
-- [ ] IME gate is passed or a blocking failure is explicitly escalated.
-- [ ] Accessibility smoke test is recorded.
-- [ ] End-to-end editing smoke test passes.
-- [ ] Manual results are linked from the remediation record.
+- [x] IME gate is passed or a blocking failure is explicitly escalated.
+- [x] Accessibility smoke test is recorded.
+- [x] End-to-end editing smoke test passes.
+- [x] Manual results are linked from the remediation record. — The log below is the record.
+
+## Implementation log — Phase 9
+
+**Started:** 2026-07-26
+**Completed:** 2026-07-26
+**Primary implementer/agent:** Parker (manual gates); Claude Opus 5 (the two repairs below)
+**Starting commit:** `067daf3`
+**Ending commit:** working tree
+
+### Changes made
+
+The three gates were run by hand and passed. Four things were reported from the pass; two
+were the specification working as written and two were defects, both repaired here.
+
+1. **Tab does not cycle past Parenthetical — not a defect.** `kind_after_tab` is §Phase 3's
+   baseline table, and `docs/KEYMAP.md` states the choice: Tab is a two-step toggle, not a
+   ring, and Scene Heading, Parenthetical and Transition have no forward answer on purpose.
+   Shift+Tab is the inverse and is how a parenthetical is left. Making Tab a ring is a
+   specification change and a superseding ADR, not remediation. No code changed.
+2. **Autocomplete "does nothing" — a discoverability defect, and a rejected repair.**
+   Enter splitting the block while a default candidate shows is ADR 0017, decided in
+   Phase 2B and covered by `autocomplete_test.dart`; Tab accepts, and did. Nothing on
+   screen said Tab, which is the whole of why the feature looked dead — fixed with a
+   footer naming the gestures. Click-to-accept was written to go with it and then
+   **rejected on its own evidence**: the popup floats over the page and is showing on
+   every caret move, so with clickable rows the ordinary "click into my text" gesture
+   wrote `EST.` into the script. Three `writing_test.dart` cases — every one whose
+   script opens on a scene heading — failed that way, and a fourth lost the surface's
+   focus. Reverted; the tests were **not** adjusted to accommodate it. ADR 0030 records
+   what a click gesture would have to answer to be admissible later.
+3. **`(O.S)` became a second character.** `normalize_character` matched the five canonical
+   extension spellings literally, so a dropped period made `BOB (O.S)` an entity beside
+   `BOB`, splitting the completion list and the frequency count. Fixed — the trailing
+   parenthesised group matches on its letters, so case, periods, spaces and a typographic
+   apostrophe are all ignored, while `(VOICE)`, `(JR)` and `(32)` stay part of the name.
+   ADR 0031. The cue is still displayed, serialised and parsed exactly as typed.
+4. **No page numbers — Phase 7, not written yet.** `SPEC.md` § Phase 7 has "correct page
+   numbering" and "paginated preview" unchecked. The editing surface is deliberately fluid
+   and unpaginated (ADR 0018), so page numbers belong to the preview and the PDF and will
+   never appear in it. What exists today is the page *count*, cached at save and shown in
+   the library list, which is what this phase's "page count appears after save" asked for.
+   No code changed.
+
+### Tests added or changed
+
+- `autocomplete_test.dart`: *the popup says what accepts a candidate*, and *clicking a
+  candidate does not write it into the document* — the invariant the rejected click
+  gesture broke, now pinned so that the next attempt at one has to face it.
+- `entities.rs`: `an_extension_missing_its_punctuation_is_still_an_extension`.
+  `a_name_that_merely_resembles_an_extension_keeps_it` changed meaning under ADR 0031 and
+  was rewritten around cases that are still kept — a deliberate behaviour change, recorded
+  here because Phase 10 asks whether a test was weakened to make something pass.
+- The F11 panic tests and the normalisation fuzz are untouched and still pass.
+
+### Commands run
+
+```text
+cargo fmt --all --check                                        # clean
+cargo clippy --workspace --all-targets -- -D warnings          # clean
+cargo test --workspace                                         # all green
+python3 tools/check_layering.py                                # clean
+cd app && flutter analyze                                      # No issues found
+cd app && flutter test                                         # all green
+cd app && flutter build linux --release                        # succeeds
+flutter test integration_test/editor_test.dart   -d linux      # 8 passed
+flutter test integration_test/writing_test.dart  -d linux      # 11 passed
+```
+
+The two integration files are the ones the editor changes could reach; Phase 10 runs all
+six. Run them one file per invocation — two in one `flutter test` fails the second at
+launch with "Unable to start the app on the device", which is why CI gives each its own
+step.
+
+### Deviations from plan
+
+- 9A ran against fcitx5 5.1.21 rather than `ibus`, which is not installed on the machine.
+  The composition protocol Flutter sees is the same one; ADR 0005's gate is treated as met.
+- Findings 1 and 4 are answered rather than repaired, for the reasons above.
+
+### New risks or follow-up findings
+
+- **The popup shows on every caret move, not only while typing**, and with an empty prefix
+  it offers the whole list — opening a script on a scene heading covers the top of the page
+  with six scene prefixes. Nothing is written by it, so this is not a defect today; it is
+  what makes a click gesture inadmissible, and it is worth a look in Phase 11 alongside the
+  popup's size (eight rows at 52 px each, because the pin button sets the row height).
+- The completion popup's footer is the first piece of instructional chrome in the editor.
+  If Phase 11 adds a status line or a preference for it, this is the thing to fold in.
+- `(O.S)`-style tolerance is extension-only. Name normalisation — `MRS. PEEL` vs
+  `MRS PEEL` — was considered and deliberately not done; see ADR 0031.
+- Seven test helpers across five files focus the surface with a blind
+  `tester.tap(find.byType(EditorSurface))`, which lands wherever the centre of the window
+  happens to be. They are correct today and were the thing that caught the click gesture,
+  but they are sensitive to anything new that floats over the page.
 
 ---
 
@@ -3528,7 +3633,7 @@ Phase 7 may begin only when:
 7. [ ] Phase 6 — Layout convergence and pagination bridge integration
 8. [ ] Phase 7 — Export Copy vs Save As
 9. [ ] Phase 8 — Defensive cleanup
-10. [ ] Phase 9 — Manual platform gates
+10. [x] Phase 9 — Manual platform gates
 11. [ ] Phase 10 — Final verification and Phase 7 authorization
 
 ---

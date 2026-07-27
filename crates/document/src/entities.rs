@@ -8,7 +8,15 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{Block, BlockId, BlockKind, Document};
 
-const CHARACTER_EXTENSIONS: [&str; 5] = ["(V.O.)", "(O.S.)", "(O.C.)", "(CONT'D)", "(SUBTITLE)"];
+/// The §7 extensions, written as the letters they are made of.
+///
+/// The canonical spellings are `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)` and
+/// `(SUBTITLE)`, and those are what a script displays. The keys drop the
+/// punctuation because the punctuation is what writers drop: `(O.S)` and `(VO)`
+/// are the same extension typed in a hurry, and matching the canonical spelling
+/// literally made each of them a *separate character* in the index — a phantom
+/// `BOB (O.S)` beside the real `BOB`. See ADR 0031.
+const CHARACTER_EXTENSIONS: [&str; 5] = ["VO", "OS", "OC", "CONTD", "SUBTITLE"];
 const TIMES: [&str; 8] = [
     "DAY",
     "NIGHT",
@@ -307,44 +315,42 @@ pub fn normalize_character(text: &str) -> String {
     let mut value = text.trim();
     loop {
         let trimmed = value.trim_end();
-        let Some(stripped) = CHARACTER_EXTENSIONS
-            .into_iter()
-            .find_map(|extension| strip_extension(trimmed, extension))
-        else {
+        let Some(stripped) = strip_extension(trimmed) else {
             return trimmed.to_owned();
         };
         value = stripped;
     }
 }
 
-/// `text` without a trailing `extension`, matched without regard to case, or
-/// `None` if it does not end with one.
+/// `text` without a trailing character extension, or `None` if it does not end
+/// with one.
 ///
-/// The suffix is found by walking `text`'s own character boundaries, so the
-/// range that gets sliced is always a range of `text`. Measuring the match on an
-/// uppercased copy and then slicing `text` by that length is F11: uppercasing is
-/// not length-preserving — `ſ` → `S` and `ı` → `I` each lose a byte — and two of
-/// them in one extension is enough to put the split inside a character and panic
-/// the actor thread. `BOB (ſUBTıTLE)` did exactly that.
-fn strip_extension<'a>(text: &'a str, extension: &str) -> Option<&'a str> {
-    // Uppercasing never yields fewer characters than it consumed, so a suffix
-    // that uppercases to `extension` is at most that many characters long. This
-    // is also the loop the audit asked to stop uppercasing the whole cue in:
-    // nothing longer than the extension is ever examined, and nothing allocates.
-    let mut start = text.len();
-    for _ in 0..extension.chars().count() {
-        let previous = text[..start].chars().next_back()?;
-        start -= previous.len_utf8();
-        if uppercases_to(&text[start..], extension) {
-            return Some(&text[..start]);
-        }
-    }
-    None
+/// The extension is the last parenthesised group, and it matches when its
+/// *letters* are one of [`CHARACTER_EXTENSIONS`]. Everything the writer might
+/// vary is therefore ignored — case, the periods in `(V.O.)`, and a typographic
+/// `’` in `(CONT’D)` — while anything else in parentheses, `(JR)` or `(32)` or
+/// `(VOICE)`, is a name and is kept.
+///
+/// The split is `text`'s own byte index of that `(`, never a length measured on
+/// an uppercased copy. That is F11: uppercasing is not length-preserving — `ſ` →
+/// `S` and `ı` → `I` each lose a byte — and two of them in one extension is
+/// enough to put the split inside a character and panic the actor thread.
+/// `BOB (ſUBTıTLE)` did exactly that. Nothing here allocates, and nothing longer
+/// than the trailing group is examined.
+fn strip_extension(text: &str) -> Option<&str> {
+    let inside = text.strip_suffix(')')?;
+    let open = inside.rfind('(')?;
+    CHARACTER_EXTENSIONS
+        .into_iter()
+        .any(|extension| letters_uppercase_to(&inside[open + 1..], extension))
+        .then(|| &text[..open])
 }
 
-fn uppercases_to(text: &str, extension: &str) -> bool {
+/// Whether `text`'s letters and digits, uppercased, are exactly `extension`.
+fn letters_uppercase_to(text: &str, extension: &str) -> bool {
     text.chars()
         .flat_map(char::to_uppercase)
+        .filter(|c| c.is_alphanumeric())
         .eq(extension.chars())
 }
 
@@ -417,13 +423,37 @@ mod tests {
         assert_eq!(normalize_character(""), "");
     }
 
+    /// ADR 0031. A dropped period is a typo, not a different character: every
+    /// one of these was its own entity in the index before, so a script with
+    /// `BOB` and `BOB (O.S)` in it offered two Bobs and counted each half.
+    #[test]
+    fn an_extension_missing_its_punctuation_is_still_an_extension() {
+        assert_eq!(normalize_character("BOB (O.S)"), "BOB");
+        assert_eq!(normalize_character("BOB (OS)"), "BOB");
+        assert_eq!(normalize_character("BOB (V.O)"), "BOB");
+        assert_eq!(normalize_character("BOB (VO.)"), "BOB");
+        assert_eq!(normalize_character("BOB (vo)"), "BOB");
+        assert_eq!(normalize_character("BOB (O.C)"), "BOB");
+        // A typographic apostrophe is the one a word processor would have left.
+        assert_eq!(normalize_character("BOB (CONT’D)"), "BOB");
+        assert_eq!(normalize_character("BOB (CONTD)"), "BOB");
+        // Stacked, and mixed between the two spellings.
+        assert_eq!(normalize_character("BOB (O.S) (CONT’D)"), "BOB");
+    }
+
     #[test]
     fn a_name_that_merely_resembles_an_extension_keeps_it() {
-        assert_eq!(normalize_character("BOB (V.O)"), "BOB (V.O)");
-        assert_eq!(normalize_character("BOB (VO.)"), "BOB (VO.)");
+        // Parenthesised, but not one of the five: a name, and it stays one.
+        assert_eq!(normalize_character("BOB (VOICE)"), "BOB (VOICE)");
+        assert_eq!(normalize_character("BOB (JR)"), "BOB (JR)");
+        assert_eq!(normalize_character("BOB (32)"), "BOB (32)");
+        assert_eq!(normalize_character("BOB (O S T)"), "BOB (O S T)");
+        // Not a parenthesised group at all: no `(` to split on.
         assert_eq!(normalize_character("V.O.)"), "V.O.)");
-        // The whole cue is shorter than the extension being tested for.
         assert_eq!(normalize_character("O.)"), "O.)");
+        assert_eq!(normalize_character("BOB V.O."), "BOB V.O.");
+        // The group is not at the end.
+        assert_eq!(normalize_character("BOB (V.O.) JR"), "BOB (V.O.) JR");
     }
 
     /// F11. Uppercasing is not length-preserving, so the old check — uppercase

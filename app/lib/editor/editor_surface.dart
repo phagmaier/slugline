@@ -824,6 +824,17 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 }
 
+/// The candidate list, and the gestures that accept or dismiss one.
+///
+/// The footer is not decoration. Tab is the only thing that takes the default
+/// candidate (ADR 0017), and nothing on screen said so: the Phase 9 pass reached
+/// for Enter and for the mouse, got a block split and nothing at all, and
+/// reported autocomplete as broken. Naming the gestures is the repair (ADR 0030).
+///
+/// The rows are deliberately **not** click targets. See ADR 0030: the popup
+/// floats over the writer's own text, so a click there is as likely to be aimed
+/// at the page as at a candidate, and the version of it that guesses wrong
+/// writes a scene prefix into the script.
 class _CompletionPopup extends StatelessWidget {
   const _CompletionPopup({required this.controller});
 
@@ -885,6 +896,17 @@ class _CompletionPopup extends StatelessWidget {
                   ],
                 ),
               ),
+            Container(
+              key: const ValueKey('completion-hint'),
+              padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+              child: Text(
+                'Tab accepts · ↑↓ then Enter · Esc dismisses',
+                style: _textStyle.copyWith(
+                  fontSize: _fontSize * 0.75,
+                  color: colours.onSurfaceVariant,
+                ),
+              ),
+            ),
           ],
         ),
       ),
