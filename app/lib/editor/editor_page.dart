@@ -14,6 +14,8 @@ import 'package:slugline/editor/element_bar.dart';
 import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/save_status.dart';
+import 'package:slugline/editor/title_page_dialog.dart';
+import 'package:slugline/preview/export_dialog.dart';
 import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/library/save_dialogs.dart';
 
@@ -141,6 +143,22 @@ class EditorPageState extends State<EditorPage> {
   Future<void> _showBackups() =>
       withModal(() => BackupsDialog.show(context, _core));
 
+  /// §Phase 7's title page. An ordinary modal, so autosave is held off while it
+  /// is open like every other one.
+  Future<void> _showTitlePage() =>
+      withModal(() => TitlePageDialog.show(context, _core));
+
+  /// §Phase 7's preview-before-export. Null when the core cannot paginate,
+  /// which is every widget test driving the editor through the double: a
+  /// command that would open a window with nothing in it is not offered.
+  ScreenplayOutput? get _output => _core is ScreenplayOutput ? _core as ScreenplayOutput : null;
+
+  Future<void> _showPreview() async {
+    if (_output case final output?) {
+      await withModal(() => ExportDialog.show(context, _core, output));
+    }
+  }
+
   /// Called when the file changed on disk under this document.
   ///
   /// §Phase 4's rule exactly: unmodified in the app → reload silently; modified
@@ -235,6 +253,8 @@ class EditorPageState extends State<EditorPage> {
         unawaited(save(forcePath: true));
       case LogicalKeyboardKey.keyS:
         unawaited(save());
+      case LogicalKeyboardKey.keyP when _output != null:
+        unawaited(_showPreview());
       default:
         return KeyEventResult.ignored;
     }
@@ -262,18 +282,26 @@ class EditorPageState extends State<EditorPage> {
                 ),
                 title: Text(widget.title ?? 'Untitled'),
                 actions: [
-                  if (kDebugMode && _core is PaginationDebugCore)
+                  if (kDebugMode && _output != null)
                     IconButton(
                       icon: const Icon(Icons.view_agenda_outlined),
                       tooltip: 'Pagination debug',
                       onPressed: () => unawaited(
                         withModal(
-                          () => PaginationDebugDialog.show(
-                            context,
-                            _core as PaginationDebugCore,
-                          ),
+                          () => PaginationDebugDialog.show(context, _output!),
                         ),
                       ),
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.article_outlined),
+                    tooltip: 'Title page',
+                    onPressed: () => unawaited(_showTitlePage()),
+                  ),
+                  if (_output != null)
+                    IconButton(
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      tooltip: 'Preview and export (Ctrl+P)',
+                      onPressed: () => unawaited(_showPreview()),
                     ),
                   IconButton(
                     icon: const Icon(Icons.history),
@@ -330,6 +358,10 @@ class EditorPageState extends State<EditorPage> {
                           save: () => unawaited(save()),
                           saveAs: () => unawaited(save(forcePath: true)),
                           showBackups: () => unawaited(_showBackups()),
+                          editTitlePage: () => unawaited(_showTitlePage()),
+                          previewAndExport: _output == null
+                              ? null
+                              : () => unawaited(_showPreview()),
                         ),
                         onDismiss: _dismiss,
                       ),

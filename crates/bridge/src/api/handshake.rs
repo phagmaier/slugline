@@ -85,8 +85,8 @@ const WORKSPACE_CRATES: &[(&str, &str, &[&str])] = &[
     ),
     (
         "render_pdf",
-        "PDF writer. Consumes layout output.",
-        &["layout"],
+        "PDF writer. Consumes layout output; embeds Courier Prime.",
+        &["layout", "fountain"],
     ),
     (
         "storage",

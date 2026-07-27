@@ -425,7 +425,7 @@ fn a_full_filesystem_is_a_clear_error_and_no_truncated_file() {
     }
 
     let error =
-        save_atomically(&script, &"y".repeat(1024 * 1024)).expect_err("there is no room for that");
+        save_atomically(&script, "y".repeat(1024 * 1024)).expect_err("there is no room for that");
     assert!(
         matches!(error, SaveError::NoSpace { .. }),
         "a full filesystem must say so: {error:?}"
@@ -557,6 +557,7 @@ fn a_split_and_a_merge_survive_recovery() {
                 .filter_map(|id| document.snapshot(*id))
                 .collect(),
             inserted,
+            title_page: None,
         })
         .unwrap();
 

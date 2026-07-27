@@ -1133,6 +1133,7 @@ dependencies = [
  "flutter_rust_bridge",
  "slugline_document",
  "slugline_layout",
+ "slugline_render_pdf",
  "slugline_storage",
 ]
 
@@ -1164,6 +1165,9 @@ dependencies = [
 name = "slugline_render_pdf"
 version = "0.1.0"
 dependencies = [
+ "criterion",
+ "slugline_document",
+ "slugline_fountain",
  "slugline_layout",
 ]
 

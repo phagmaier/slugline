@@ -11,6 +11,21 @@ export 'package:slugline/src/rust/api/files.dart'
         SaveOutcome_Saved,
         SaveOutcome_Unchanged;
 
+export 'package:slugline/src/rust/api/layout.dart'
+    show
+        LayoutLineKind,
+        LayoutLineView,
+        PageSetup,
+        PageView,
+        PaginationOutcome,
+        PaginationOutcome_Current,
+        PaginationOutcome_NoSuchDocument,
+        PaginationOutcome_Stale,
+        PaginationStats,
+        PaginationView,
+        PaperSize,
+        SceneNumbers;
+
 export 'package:slugline/src/rust/api/doc.dart'
     show
         BlockKind,
@@ -36,16 +51,35 @@ export 'package:slugline/src/rust/api/doc.dart'
         FindMatch,
         FindQuery,
         InsertedBlock,
-        NewBlock;
+        NewBlock,
+        TitleEntryView;
 
-/// The explicit, diagnostic pagination seam used by Phase 6F.
+/// Everything that turns a script into pages: the preview and the PDF.
 ///
-/// This is deliberately separate from [DocumentCore]: pagination is not part
-/// of editing and must never become a per-keystroke dependency. The real core
-/// implements it; ordinary widget-test doubles do not need to pretend to lay
-/// out a screenplay.
-abstract interface class PaginationDebugCore {
-  Future<layout.PaginationOutcome> paginateForDebug({int? linesPerPage});
+/// Deliberately separate from [DocumentCore], and it stays separate. Pagination
+/// is not part of editing and must never become a per-keystroke dependency —
+/// the editor is fluid and unpaginated (ADR 0018), and nothing on the typing
+/// path may reach through here. The real core implements it; a widget test
+/// driving the editor does not have to pretend it can lay out a screenplay.
+///
+/// The preview and the PDF read the **same** [layout.PaginationView], which is
+/// §Phase 7's "never a second layout implementation" written as a type: there is
+/// one paginator, it is in Rust, and both consumers are downstream of it.
+abstract interface class ScreenplayOutput {
+  /// Lays the document out on the page grid (§6's `paginate`).
+  Future<layout.PaginationOutcome> paginate(layout.PageSetup setup);
+
+  /// Writes a PDF (§6's `export_pdf`).
+  ///
+  /// An export, so ADR 0029 applies: the session stays where it is, a
+  /// destination that already exists comes back as
+  /// [files.SaveFailure.alreadyExists] until [overwrite] says otherwise, and one
+  /// that is a script open here is refused outright.
+  Future<files.SaveOutcome> exportPdf(
+    String path, {
+    required layout.PageSetup setup,
+    bool overwrite = false,
+  });
 }
 
 /// One open script, as the editor sees it.
@@ -69,6 +103,17 @@ abstract class DocumentCore {
 
   /// The whole document as Fountain — what a save would write.
   String source();
+
+  /// The title page, in the order a save would write it (§6's `doc_title_page`).
+  List<rust.TitleEntryView> titlePage();
+
+  /// Sets one title-page field; an empty [value] removes it. One undo step per
+  /// call, and setting a field to what it already holds is not an edit at all.
+  ///
+  /// [key] is matched case-insensitively against the keys Fountain names, and
+  /// kept verbatim otherwise — the format allows any key and a writer's
+  /// `Revision Colour:` is theirs.
+  rust.EditOutcome setTitleField(String key, String value);
 
   /// Applies one command. [before] is the selection the user had before the
   /// edit, so that undo restores the caret as well as the text (§3.4).
@@ -187,7 +232,7 @@ abstract class DocumentCore {
 }
 
 /// The real thing: a handle into the Rust core.
-class RustDocumentCore implements DocumentCore, PaginationDebugCore {
+class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   RustDocumentCore._(this._handle);
 
   /// A new, empty script.
@@ -205,15 +250,20 @@ class RustDocumentCore implements DocumentCore, PaginationDebugCore {
   final rust.DocumentHandle _handle;
 
   @override
-  Future<layout.PaginationOutcome> paginateForDebug({int? linesPerPage}) =>
-      layout.docPaginate(
-        handle: _handle,
-        setup: layout.PageSetup(
-          paper: layout.PaperSize.usLetter,
-          sceneNumbers: layout.SceneNumbers.both,
-          debugLinesPerPage: linesPerPage,
-        ),
-      );
+  Future<layout.PaginationOutcome> paginate(layout.PageSetup setup) =>
+      layout.docPaginate(handle: _handle, setup: setup);
+
+  @override
+  Future<files.SaveOutcome> exportPdf(
+    String path, {
+    required layout.PageSetup setup,
+    bool overwrite = false,
+  }) => files.docExportPdf(
+    handle: _handle,
+    setup: setup,
+    path: path,
+    overwrite: overwrite,
+  );
 
   @override
   int get blockCount => rust.docBlockCount(handle: _handle);
@@ -224,6 +274,13 @@ class RustDocumentCore implements DocumentCore, PaginationDebugCore {
 
   @override
   String source() => rust.docSource(handle: _handle);
+
+  @override
+  List<rust.TitleEntryView> titlePage() => rust.docTitlePage(handle: _handle);
+
+  @override
+  rust.EditOutcome setTitleField(String key, String value) =>
+      rust.docSetTitleField(handle: _handle, key: key, value: value);
 
   @override
   rust.EditOutcome apply(

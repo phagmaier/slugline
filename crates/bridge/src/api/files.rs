@@ -38,6 +38,8 @@ use std::sync::{Arc, PoisonError};
 use flutter_rust_bridge::frb;
 
 use slugline_document as model;
+use slugline_layout::PageConfig;
+use slugline_render_pdf as render_pdf;
 use slugline_storage::backup::{self, Retention};
 use slugline_storage::journal::{self, Journal};
 use slugline_storage::library::{Library, ScriptEntry};
@@ -602,6 +604,144 @@ pub async fn doc_export_fountain(
         bytes: text.len().min(u32::MAX as usize) as u32,
         backup: None,
     }
+}
+
+/// §6's `export_pdf`. Paginates the document and writes a PDF (§Phase 7).
+///
+/// ## It is an export, so ADR 0029 applies unchanged
+///
+/// The session stays exactly where it is: no path is rebound, no journal moves,
+/// the dirty flag is untouched, and nothing is armed. The two refusals are
+/// [`doc_export_fountain`]'s two refusals, for its two reasons — a destination
+/// that is already there is a question, and a destination that is a script open
+/// here is refused outright because writing it from outside its own session
+/// would leave that session's journal describing bytes the file no longer has.
+/// A `.pdf` is very unlikely to be an open script; "unlikely" is not the
+/// standard §1.2 sets for losing a writer's work.
+///
+/// ## Where the work happens
+///
+/// Off the actor, like every long job (§2.3), and in the order §2.3 asks for:
+/// visit the actor for what is needed, let go, paginate and render, come back
+/// only to write nothing. The pagination goes through [`layout::paginate`], so
+/// it takes the session's own engine and its warm per-block cache (ADR 0022)
+/// rather than starting cold, and an export straight after a save costs no
+/// pagination at all because the save already did it.
+///
+/// A pagination that came back [stale](layout::PaginationOutcome::Stale) is
+/// retried once. It means the writer typed while it ran; the second attempt is
+/// against what they typed, and if they are still typing the export goes ahead
+/// with the newer of the two rather than chasing them.
+pub async fn doc_export_pdf(
+    handle: DocumentHandle,
+    setup: layout::PageSetup,
+    path: String,
+    overwrite: bool,
+) -> SaveOutcome {
+    let path = PathBuf::from(path);
+    if path.as_os_str().is_empty() {
+        return failed(SaveFailure::NoPath, &path, "no file was chosen");
+    }
+
+    let Some((info, open_scripts)) = actor().run({
+        let handle = handle.id;
+        move |state| {
+            let session = state.session(handle)?;
+            let title_page = session.document().title_page();
+            let info = render_pdf::DocumentInfo {
+                title: title_page
+                    .get(&model::TitleField::Title)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| script_name(session.path())),
+                author: title_page
+                    .get(&model::TitleField::Author)
+                    .or_else(|| title_page.get(&model::TitleField::Authors))
+                    .unwrap_or_default()
+                    .to_owned(),
+                created_epoch_seconds: 0,
+            };
+            let open_scripts = state
+                .handles()
+                .into_iter()
+                .filter_map(|open| state.session(open))
+                .filter_map(Session::path)
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>();
+            Some((info, open_scripts))
+        }
+    }) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            &path,
+            "no document with that handle",
+        );
+    };
+
+    if open_scripts.iter().any(|open| same_file(open, &path)) {
+        return failed(
+            SaveFailure::ScriptIsOpen,
+            &path,
+            &format!(
+                "{} is open here; save that script rather than exporting over it",
+                path.display()
+            ),
+        );
+    }
+    if !overwrite && path.exists() {
+        return failed(
+            SaveFailure::AlreadyExists,
+            &path,
+            &format!("{} is already there", path.display()),
+        );
+    }
+
+    // Read once, here, so that every page of one export carries the same
+    // timestamp and `SOURCE_DATE_EPOCH` is honoured (§Phase 7).
+    let info = render_pdf::DocumentInfo {
+        created_epoch_seconds: render_pdf::creation_time(),
+        ..info
+    };
+    let config = layout::page_config(&setup);
+    let Some(pagination) = paginate_for_export(handle.id, &config) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            &path,
+            "the document was closed while it was being paginated",
+        );
+    };
+
+    let bytes = render_pdf::render(&pagination.script, &config, &info);
+    if let Err(error) = atomic::save_atomically(&path, &bytes) {
+        return SaveOutcome::Failed {
+            failure: failure_of(&error),
+            path: path.to_string_lossy().into_owned(),
+            message: error.to_string(),
+        };
+    }
+    SaveOutcome::Saved {
+        path: path.to_string_lossy().into_owned(),
+        bytes: bytes.len().min(u32::MAX as usize) as u32,
+        backup: None,
+    }
+}
+
+/// Paginates for an export, giving a document that moved on one second chance.
+fn paginate_for_export(handle: u64, config: &PageConfig) -> Option<crate::state::Pagination> {
+    let (pagination, current) = layout::paginate(handle, config)?;
+    if current {
+        return Some(pagination);
+    }
+    layout::paginate(handle, config).map(|(newer, _)| newer)
+}
+
+/// A title for a document whose title page does not give one.
+///
+/// The file's stem, which is what the library shows for the same script, so an
+/// exported PDF and the shelf it came off agree.
+fn script_name(path: Option<&Path>) -> String {
+    path.and_then(Path::file_stem)
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Untitled".to_owned())
 }
 
 /// The autosave, called by Dart's own timers.
@@ -3113,6 +3253,206 @@ mod tests {
         assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
         assert_eq!(other.on_disk(), SCRIPT);
         assert_eq!(other.in_memory(), SCRIPT);
+    }
+
+    /// §1.2 does not grade user text by which part of the document it is in.
+    ///
+    /// Before Phase 7 the title page was not typeable, so the journal's
+    /// block-shaped records covered everything there was. Now it is, and a draft
+    /// date typed thirty seconds before the power goes has to come back with the
+    /// dialogue typed thirty seconds before that (ADR 0033).
+    #[test]
+    fn a_title_page_edit_survives_a_crash_like_any_other_edit() {
+        let it = Fixture::open_source("journal-title", "Title: Big Fish\n\nThe house is quiet.\n");
+        it.types("A line. ");
+        crate::api::doc::doc_set_title_field(
+            it.handle,
+            "Draft date".to_owned(),
+            "26 July 2026".to_owned(),
+        );
+        it.types("Another. ");
+
+        assert_eq!(
+            it.recovers_to(),
+            it.in_memory(),
+            "what the journal recovers is what the writer can see"
+        );
+        assert!(it.recovers_to().contains("Draft date: 26 July 2026"));
+
+        // And undoing it takes it away again, in the journal as on screen.
+        crate::api::doc::doc_undo(it.handle);
+        crate::api::doc::doc_undo(it.handle);
+        assert_eq!(it.recovers_to(), it.in_memory());
+        assert!(!it.recovers_to().contains("Draft date"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Exporting a PDF (§Phase 7)
+    // -----------------------------------------------------------------------
+
+    fn letter() -> layout::PageSetup {
+        layout::PageSetup {
+            paper: layout::PaperSize::UsLetter,
+            scene_numbers: layout::SceneNumbers::Off,
+            debug_lines_per_page: None,
+        }
+    }
+
+    #[test]
+    fn a_pdf_export_writes_a_pdf_and_moves_nothing() {
+        const SOURCE: &str =
+            "Title: Big Fish\nAuthor: Ed Bloom\n\nINT. HOUSE - DAY\n\nJohn enters.\n";
+        let it = Fixture::open_source("export-pdf", SOURCE);
+        it.types("More words. ");
+        let before = it.recovers_to();
+        let journalled = it.journalled();
+        let dirty = it.dirty();
+        let pdf = it.root.join("export.pdf");
+
+        let outcome = block_on(doc_export_pdf(
+            it.handle,
+            letter(),
+            pdf.to_string_lossy().into_owned(),
+            false,
+        ));
+        let SaveOutcome::Saved { bytes, backup, .. } = outcome else {
+            panic!("expected a saved PDF, got {outcome:?}");
+        };
+        assert!(backup.is_none(), "an export writes no backup");
+
+        let written = fs::read(&pdf).expect("the PDF is readable");
+        assert_eq!(written.len() as u32, bytes);
+        assert!(written.starts_with(b"%PDF-1.7"));
+        assert!(
+            String::from_utf8_lossy(&written).contains("/Type /Catalog"),
+            "it is a whole document, not a prefix of one"
+        );
+
+        // ADR 0029, unchanged: an export copies and moves nothing.
+        assert_eq!(it.on_disk(), SOURCE, "the script's own file is untouched");
+        assert_eq!(it.dirty(), dirty, "the dirty flag is not cleared by a copy");
+        assert_eq!(
+            it.journal_describes().as_deref(),
+            Some(it.script.as_path()),
+            "the journal still covers the file the session is bound to"
+        );
+        assert_eq!(it.journalled(), journalled);
+        assert_eq!(it.recovers_to(), before);
+        assert!(!it.is_saving(), "an export arms nothing");
+        assert!(
+            it.own_writes().is_empty(),
+            "the PDF is not a file this session watches"
+        );
+    }
+
+    #[test]
+    fn a_pdf_export_refuses_the_same_two_destinations_a_fountain_export_does() {
+        let it = Fixture::open("export-pdf-refusals");
+        let occupied = it.root.join("occupied.pdf");
+        fs::write(&occupied, "not really a pdf\n").expect("the file is written");
+
+        let refused = block_on(doc_export_pdf(
+            it.handle,
+            letter(),
+            occupied.to_string_lossy().into_owned(),
+            false,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::AlreadyExists);
+        assert_eq!(
+            fs::read_to_string(&occupied).unwrap(),
+            "not really a pdf\n",
+            "a refused export writes nothing"
+        );
+
+        let confirmed = block_on(doc_export_pdf(
+            it.handle,
+            letter(),
+            occupied.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert!(matches!(confirmed, SaveOutcome::Saved { .. }));
+        assert!(fs::read(&occupied).unwrap().starts_with(b"%PDF"));
+
+        // And an open script is refused however firmly the caller insists —
+        // a chooser with the wrong filter would otherwise destroy a screenplay.
+        let refused = block_on(doc_export_pdf(
+            it.handle,
+            letter(),
+            it.script.to_string_lossy().into_owned(),
+            true,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
+        assert_eq!(it.on_disk(), SCRIPT);
+    }
+
+    #[test]
+    fn a_pdf_export_is_the_same_bytes_every_time_under_source_date_epoch() {
+        // §Phase 7's determinism requirement, through the whole application
+        // path rather than only through `render_pdf`'s own function.
+        let it = Fixture::open_source(
+            "export-pdf-determinism",
+            "Title: Big Fish\n\nINT. HOUSE - DAY\n\nJohn enters, *quietly*.\n",
+        );
+        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        let mut written = Vec::new();
+        for run in 0..2 {
+            let pdf = it.root.join(format!("run-{run}.pdf"));
+            let outcome = block_on(doc_export_pdf(
+                it.handle,
+                letter(),
+                pdf.to_string_lossy().into_owned(),
+                false,
+            ));
+            assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+            written.push(fs::read(&pdf).expect("the PDF is readable"));
+        }
+        std::env::remove_var("SOURCE_DATE_EPOCH");
+        assert_eq!(written[0], written[1]);
+        assert!(
+            String::from_utf8_lossy(&written[0]).contains("D:20231114221320+00'00'"),
+            "the timestamp is the one the environment named"
+        );
+    }
+
+    #[test]
+    fn a_pdf_export_uses_the_title_page_the_document_holds() {
+        let it = Fixture::open_source(
+            "export-pdf-title",
+            "Title: The Long Way Round\nAuthor: A Writer\n\nAction.\n",
+        );
+        let pdf = it.root.join("titled.pdf");
+        block_on(doc_export_pdf(
+            it.handle,
+            letter(),
+            pdf.to_string_lossy().into_owned(),
+            false,
+        ));
+        let written = String::from_utf8_lossy(&fs::read(&pdf).unwrap()).into_owned();
+
+        // UTF-16BE with a byte-order mark, which is how a PDF text string says
+        // anything a writer might actually type.
+        assert!(
+            written.contains("/Title <FEFF0054006800650020004C006F006E0067"),
+            "the document's own title is what the file says it is"
+        );
+        assert!(written.contains("/Author <FEFF00410020005700720069007400650072>"));
+    }
+
+    #[test]
+    fn a_closed_document_exports_no_pdf() {
+        let it = Fixture::open("export-pdf-closed");
+        let pdf = it.root.join("nothing.pdf");
+        let handle = it.handle;
+        crate::api::doc::doc_close(handle);
+
+        let refused = block_on(doc_export_pdf(
+            handle,
+            letter(),
+            pdf.to_string_lossy().into_owned(),
+            false,
+        ));
+        assert_eq!(failure_of_outcome(&refused), SaveFailure::NoSuchDocument);
+        assert!(!pdf.exists());
     }
 
     /// A failed export is a failed write and nothing else: there is no state it

@@ -10,9 +10,9 @@ import 'package:slugline/src/rust/api/layout.dart' as layout;
 class PaginationDebugDialog extends StatefulWidget {
   const PaginationDebugDialog({required this.core, super.key});
 
-  final PaginationDebugCore core;
+  final ScreenplayOutput core;
 
-  static Future<void> show(BuildContext context, PaginationDebugCore core) =>
+  static Future<void> show(BuildContext context, ScreenplayOutput core) =>
       showDialog<void>(
         context: context,
         builder: (_) => PaginationDebugDialog(core: core),
@@ -35,7 +35,13 @@ class _PaginationDebugDialogState extends State<PaginationDebugDialog> {
     // A deliberately short page makes split rules and continuation furniture
     // visible in an ordinary scene. It is the Rust PageConfig debug knob, not
     // a Dart pagination decision.
-    _result = widget.core.paginateForDebug(linesPerPage: 12);
+    _result = widget.core.paginate(
+      const layout.PageSetup(
+        paper: layout.PaperSize.usLetter,
+        sceneNumbers: layout.SceneNumbers.both,
+        debugLinesPerPage: 12,
+      ),
+    );
   }
 
   void _refresh() {

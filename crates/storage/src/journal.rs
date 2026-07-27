@@ -53,7 +53,9 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use slugline_document::{BlockId, BlockKind, BlockSnapshot, Patch};
+use slugline_document::{
+    BlockId, BlockKind, BlockSnapshot, Patch, TitleEntry, TitleField, TitlePage,
+};
 
 /// Bumped if the record shape ever changes. A journal from a future version is
 /// not replayed — it is left alone and reported, so that a downgrade cannot
@@ -105,6 +107,16 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+/// One `Key: value` pair of a title page, as a line of JSON.
+///
+/// The key keeps the spelling it was written with, which is what lets a key this
+/// version does not recognise survive a crash as well as it survives a save.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RecordTitle {
+    key: String,
+    value: String,
+}
+
 /// One line of a journal after the header: what one edit did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Record {
@@ -115,6 +127,11 @@ struct Record {
     changed: Vec<RecordBlock>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     inserted: Vec<(u32, RecordBlock)>,
+    /// Present only on the edits that changed the title page, so an ordinary
+    /// keystroke's line is exactly as long as it was before Phase 7 — and a
+    /// journal written by a build without this field still reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    title: Option<Vec<RecordTitle>>,
 }
 
 impl RecordBlock {
@@ -414,6 +431,15 @@ fn record(seq: u64, patch: &Patch) -> Record {
             .iter()
             .map(|(index, block)| (*index, RecordBlock::of(block)))
             .collect(),
+        title: patch.title_page.as_ref().map(|page| {
+            page.entries
+                .iter()
+                .map(|entry| RecordTitle {
+                    key: entry.field.key().to_owned(),
+                    value: entry.value.clone(),
+                })
+                .collect()
+        }),
     }
 }
 
@@ -556,6 +582,18 @@ fn to_patch(record: Record) -> Option<Patch> {
         removed: record.removed.into_iter().map(BlockId).collect(),
         changed,
         inserted,
+        title_page: record.title.map(|entries| TitlePage {
+            entries: entries
+                .into_iter()
+                .map(|entry| TitleEntry {
+                    field: TitleField::from_key(&entry.key),
+                    value: entry.value,
+                })
+                .collect(),
+            // A recorded title page is one the writer edited, so it has no
+            // provenance in the file it will be replayed onto.
+            provenance: None,
+        }),
     })
 }
 
@@ -668,6 +706,72 @@ mod tests {
             changed: vec![snapshot(id, BlockKind::Action, text)],
             ..Patch::default()
         }
+    }
+
+    fn title_page(entries: &[(&str, &str)]) -> TitlePage {
+        TitlePage {
+            entries: entries
+                .iter()
+                .map(|(key, value)| TitleEntry {
+                    field: TitleField::from_key(key),
+                    value: (*value).to_owned(),
+                })
+                .collect(),
+            provenance: None,
+        }
+    }
+
+    #[test]
+    fn a_title_page_edit_is_recorded_and_read_back_whole() {
+        let dir = TempDir::new("journal-title");
+        let script = dir.path().join("x.fountain");
+        let mut journal =
+            Journal::create(dir.path(), &script_id(&script), &script, "base").unwrap();
+        // An unknown key beside a known one: the writer's own key survives a
+        // crash exactly as it survives a save.
+        let page = title_page(&[
+            ("Title", "Big Fish"),
+            ("Draft date", "26 July 2026"),
+            ("Revision Colour", "Blue"),
+        ]);
+        journal.append(&change(1, "typed")).unwrap();
+        journal
+            .append(&Patch {
+                title_page: Some(page.clone()),
+                ..Patch::default()
+            })
+            .unwrap();
+        let path = journal.path().to_path_buf();
+        drop(journal);
+
+        let recovery = read(&path).expect("the journal reads");
+        assert_eq!(recovery.patches.len(), 2);
+        assert_eq!(
+            recovery.patches[0].title_page, None,
+            "a keystroke records none"
+        );
+        assert_eq!(recovery.patches[1].title_page.as_ref(), Some(&page));
+    }
+
+    #[test]
+    fn an_ordinary_keystroke_line_says_nothing_about_the_title_page() {
+        // The field is skipped when absent, so Phase 7 did not make every line
+        // of every journal longer, and a journal a Phase 6 build wrote still
+        // reads here.
+        let dir = TempDir::new("journal-title-absent");
+        let script = dir.path().join("x.fountain");
+        let mut journal =
+            Journal::create(dir.path(), &script_id(&script), &script, "base").unwrap();
+        journal.append(&change(1, "typed")).unwrap();
+        let path = journal.path().to_path_buf();
+        drop(journal);
+
+        let text = fs::read_to_string(&path).unwrap();
+        let record = text.lines().nth(1).expect("a header and one record");
+        assert_eq!(
+            record,
+            r#"{"seq":1,"changed":[{"id":1,"kind":"action","text":"typed"}]}"#
+        );
     }
 
     /// A rebuilt journal is byte-for-byte what an appended one would have been.
@@ -1009,6 +1113,10 @@ mod tests {
                 removed: vec![BlockId(2)],
                 changed: vec![snapshot(1, BlockKind::Section { level: 3 }, "x")],
                 inserted: vec![(0, snapshot(9, BlockKind::Dialogue, "y"))],
+                title_page: Some(title_page(&[
+                    ("Title", "Héllo 🎬"),
+                    ("Revision Colour", "Blue"),
+                ])),
             })
             .unwrap();
         let path = journal.path().to_path_buf();

@@ -45,7 +45,8 @@ pub use workflow::{enter_makes_a_cue, kind_after_enter, kind_after_tab, kind_bef
 // Re-exported so a caller does not have to depend on `fountain` directly to
 // name a block's kind or a title-page field.
 pub use slugline_fountain::{
-    split_scene_number, without_notes_and_boneyards, BlockKind, LineEnding, TitleField, TitlePage,
+    split_scene_number, without_notes_and_boneyards, BlockKind, LineEnding, TitleEntry, TitleField,
+    TitlePage,
 };
 
 /// Stable for the lifetime of a loaded document. Never reused after deletion.

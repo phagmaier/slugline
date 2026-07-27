@@ -114,7 +114,8 @@ impl std::error::Error for SaveError {}
 /// On success the file at `path` holds exactly `contents` and has reached the
 /// disk. On failure the file at `path` is untouched and no temporary file is
 /// left behind.
-pub fn save_atomically(path: &Path, contents: &str) -> Result<(), SaveError> {
+pub fn save_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), SaveError> {
+    let contents = contents.as_ref();
     let directory = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty());
@@ -180,9 +181,9 @@ pub fn save_atomically(path: &Path, contents: &str) -> Result<(), SaveError> {
 }
 
 /// Steps 1 and 2.
-fn write_and_sync(temp: &Path, contents: &str) -> io::Result<()> {
+fn write_and_sync(temp: &Path, contents: &[u8]) -> io::Result<()> {
     let mut file = OpenOptions::new().write(true).create_new(true).open(temp)?;
-    file.write_all(contents.as_bytes())?;
+    file.write_all(contents)?;
     // `write_all` reaching the OS is not the same as the bytes reaching the
     // disk, and `sync_all` is where a full filesystem usually says so.
     file.sync_all()?;

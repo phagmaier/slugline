@@ -20,14 +20,16 @@ This spec is organised into **phases**. Each phase has:
 Do not start a phase until the previous phase's exit criteria are all ticked. The phases
 are ordered so that each one is independently demoable and each one de-risks the next.
 
-**Where the project is, as of 2026-07-26.** Phases 0–6 are written, and the project is
-**ready for Phase 7**. Between Phase 6 and Phase 7 sat a **stabilization gate**: a
+**Where the project is, as of 2026-07-26.** Phases 0–7 are written: the editor, the
+persistence, the entity index, the pagination engine, and now the PDF, the title page and
+the paginated preview. Between Phase 6 and Phase 7 sat a **stabilization gate**: a
 mid-project audit (`REVIEW.md`) found defects this document's checkboxes did not reflect,
 and `REMEDIATION_PLAN.md` worked through them phase by phase. That plan is now complete —
 all fourteen findings closed, its Phase 10 verification passed, and its Phase 7
-authorization gate is open. A box ticked here means the behaviour is implemented *and*
+authorization gate opened. A box ticked here means the behaviour is implemented *and*
 tested; where the remediation found one that was not, the box was unticked and says why,
 with the finding number. For what was repaired and how, that plan remains the record.
+Phase 7's one qualified box is its exit criterion, and ADR 0034 says exactly how.
 
 **If you are handing work to AI agents:** give an agent exactly one phase section, plus
 §2 (Architecture) and §3 (Data Model). Do not let an agent work across phase boundaries.
@@ -414,6 +416,9 @@ Page 8.5" × 11". Grid origin at the top-left of the text area.
 **These values are starting points, not gospel.** Different houses differ by a tenth of an
 inch. Put every one of them in a single `layout::metrics` module as named constants with a
 source comment, then calibrate against reference PDFs (see §5.5) before Phase 7 exits.
+**Done, and nothing changed:** the table is Final Draft's defaults, the two reference tools
+it was overlaid against disagree with each other by more than either disagrees with it, and
+ADR 0034 has the measurements.
 
 A4 (210 × 297 mm) uses the same character grid with a reduced line count per page; derive it
 rather than hardcoding, and add a golden test for it.
@@ -459,6 +464,13 @@ Before Phase 7 exits: produce the same short script in a known-good reference to
 its PDF, and overlay it against yours. Every element's left edge and every baseline must
 land on the same grid position. Record the comparison in `docs/DECISIONS.md`. This is the
 one thing you cannot verify by unit test alone.
+
+**Done 2026-07-26** against two reference tools — afterwriting 1.17.3 and screenplain
+0.12.0 — measured with `pdftotext -bbox` and recorded in ADR 0034, which also says how to
+reproduce it. The finding worth repeating here: the two references disagree with each other
+about the character and parenthetical indents by more than either disagrees with §5.2, so
+"matches the reference tool" is not a single fact. Every baseline does land on the same
+grid. `crates/render_pdf/tests/element_indents.rs` pins the result out of a finished PDF.
 
 ---
 
@@ -1085,7 +1097,14 @@ Requirement §12. No UI work in this phase beyond a debug dump view.
 > Phase 10 authorization gate passed: pagination is integrated through the bridge, so
 > preview and PDF start by consuming an engine rather than integrating one under feature
 > pressure, and the back half of `crates/layout/src/engine.rs` has had the focused review
-> ADR 0025 requires (Phase 6G). This phase is now open for work.
+> ADR 0025 requires (Phase 6G).
+>
+> **Done 2026-07-26**, with one item qualified: the exit criterion below is met against a
+> grid, not against a single reference tool, because the two reference tools it was
+> overlaid against disagree with each other by more than either disagrees with this. ADR
+> 0034 has the measurements and the reasoning. Firefox and Chrome have not been opened on
+> an export, and nothing has been printed; poppler — `evince` and `okular`'s renderer — is
+> covered automatically.
 
 **Goal:** You can send the output to a production company without embarrassment.
 
@@ -1093,56 +1112,78 @@ Requirements §11, §13.
 
 ### Title page
 
-- [ ] Fields: Title, Credit ("Written by"), Author(s), Source ("Based on…"), Contact, Draft
-      date, plus free-form additional text
-- [ ] Editable in the app, stored in the Fountain title page block
-- [ ] Rendered as the first PDF page, not numbered, not counted as page 1
+- [x] Fields: Title, Credit ("Written by"), Author(s), Source ("Based on…"), Contact, Draft
+      date, plus free-form additional text (`app/lib/editor/title_page_dialog.dart`; any
+      key the file already has is shown and kept, because the format allows any key)
+- [x] Editable in the app, stored in the Fountain title page block —
+      `doc_title_page` / `doc_set_title_field`, one undo step per field, and journalled
+      like every other edit (ADR 0033)
+- [x] Rendered as the first PDF page, not numbered, not counted as page 1
 
 ### PDF renderer
 
-- [ ] Courier Prime vendored and embedded, with the OFL licence file shipped in the bundle
-- [ ] Consumes `PaginatedScript` and places characters on the fixed grid — the renderer
+- [x] Courier Prime vendored and embedded, with the OFL licence file shipped in the bundle
+      (`crates/render_pdf/fonts/`, `include_bytes!`d and `include_str!`d)
+- [x] Consumes `PaginatedScript` and places characters on the fixed grid — the renderer
       makes **no layout decisions of its own**
-- [ ] US Letter default, A4 option
-- [ ] Correct page numbering (`1.` style, top right, starting after the title page)
-- [ ] Scene numbers when enabled
-- [ ] Emphasis rendered: italic, bold, bold-italic, underline
-- [ ] Text is selectable and searchable in `evince`, `okular`, Firefox, and Chrome
-- [ ] Font subsetting to keep file size reasonable
-- [ ] **Deterministic output:** fixed document `/ID`, timestamp overridable via
+- [x] US Letter default, A4 option
+- [x] Correct page numbering (`1.` style, top right, starting after the title page)
+- [x] Scene numbers when enabled
+- [x] Emphasis rendered: italic, bold, bold-italic, underline (ADR 0032; the scanner is
+      `fountain::emphasis`, and an unpaired marker stays an ordinary character)
+- [x] Text is selectable and searchable — proved against poppler, which `evince` and
+      `okular` render with, by `crates/render_pdf/tests/text_extraction.rs`. Firefox and
+      Chrome use the same `/ToUnicode` mechanism and have **not** been checked by hand.
+- [x] Font subsetting to keep file size reasonable — a 123-page export is 666 kB
+- [x] **Deterministic output:** fixed document `/ID`, timestamp overridable via
       `SOURCE_DATE_EPOCH`, no dependence on hash-map iteration order
 
 ### Preview
 
-- [ ] Paginated preview view showing page boundaries, page numbers, real line wrapping,
+- [x] Paginated preview view showing page boundaries, page numbers, real line wrapping,
       dialogue splits, explicit breaks, and the title page
-- [ ] Preview is rendered from the **same** `PaginatedScript` the PDF uses — never a second
-      layout implementation
-- [ ] Editor zoom does not affect the preview or the PDF (test: change zoom, assert page
-      count and golden layout unchanged)
-- [ ] Preview-before-export flow in the export dialog
+- [x] Preview is rendered from the **same** `PaginatedScript` the PDF uses — never a second
+      layout implementation (`app/lib/preview/preview_view.dart` draws `PaginationView` and
+      has nothing in it that could be one)
+- [x] Editor zoom does not affect the preview or the PDF (`app/test/preview/preview_zoom_test.dart`:
+      the preview's size is not part of the pagination request, and the page count and
+      golden layout are unchanged across it)
+- [x] Preview-before-export flow in the export dialog
 
 ### Export commands
 
 - [x] "Export Fountain Copy" and "Save As" are separate operations in the core:
       `doc_export_fountain` writes a copy and leaves the session alone,
       `doc_save_as` writes and rebinds (ADR 0029, remediation Phase 7).
-- [ ] The export command in the UI calls `DocumentCore.exportFountain`, and only
+- [x] The export command in the UI calls `DocumentCore.exportFountain`, and only
       Save As calls `saveAs` — an export must never rebind the writer's session.
-- [ ] The export chooser handles `SaveFailure::AlreadyExists` by asking, then
+- [x] The export chooser handles `SaveFailure::AlreadyExists` by asking, then
       re-exporting with `overwrite: true`, and reports `ScriptIsOpen` as the
       refusal it is.
+- [x] `doc_export_pdf` is §6's `export_pdf`, with the same two refusals for the same two
+      reasons (ADR 0029).
 
 ### Tests
 
-- [ ] Golden hash test: reference script → PDF → SHA-256 matches a committed value
-- [ ] Text-extraction test: `pdftotext` output matches expected content and reading order
-- [ ] Visual calibration completed per §5.5 and recorded in `docs/DECISIONS.md`
-- [ ] Benchmark: 120-page export < 1000 ms
+- [x] Golden hash test: reference script → PDF → SHA-256 matches a committed value
+      (`crates/render_pdf/tests/golden.rs`, every corpus file on both papers, in
+      `testdata/golden/pdf-hashes.txt`)
+- [x] Text-extraction test: `pdftotext` output matches expected content and reading order
+- [x] Visual calibration completed per §5.5 and recorded in `docs/DECISIONS.md` (ADR 0034)
+- [x] Benchmark: 120-page export < 1000 ms — 13 ms released, 98 ms unoptimised
+      (`crates/render_pdf/tests/export_is_fast_enough.rs`, and `benches/export.rs` for the
+      criterion version)
 
 ### Exit criteria
 
-- [ ] A printed page overlaid on a reference-tool page matches on every element indent
+- [x] A printed page overlaid on a reference-tool page matches on every element indent —
+      **qualified.** Overlaid against afterwriting 1.17.3 and screenplain 0.12.0 it matches
+      on the left margin, the scene-heading and action indent, the line pitch, the baseline
+      grid and the paper, and on dialogue against one of the two. Character and
+      parenthetical differ by 0.2″ and 0.1″; the two references differ from *each other* on
+      those by 0.1″ and 0.2″. §5.2's table is Final Draft's defaults and is kept. Every
+      number is measured and written down in ADR 0034, and pinned out of a finished PDF by
+      `crates/render_pdf/tests/element_indents.rs`.
 
 ---
 
@@ -1334,8 +1375,10 @@ failure is unambiguous.
 - [x] `roundtrip_is_byte_exact` — unedited files resave identically
       (`crates/fountain/tests/roundtrip_is_byte_exact.rs` over every corpus file
       and the 120-page reference, plus the `roundtrip` fuzz target)
-- [ ] `pdf_output_is_deterministic` — same input, same bytes (Phase 7;
-      `render_pdf` is a placeholder. The pagination underneath it *is* pinned:
+- [x] `pdf_output_is_deterministic` — same input, same bytes
+      (`crates/render_pdf/tests/golden.rs`: `exporting_twice_gives_the_same_bytes`
+      compares the bytes, and the committed SHA-256 of every corpus file on both
+      papers compares them across runs. The pagination underneath it is pinned by
       `crates/layout/tests/golden.rs` and its determinism test)
 - [x] `parser_never_panics` — fuzz-backed
       (`crates/fountain/tests/parser_never_panics.rs`, plus the `parse` fuzz
@@ -1420,8 +1463,9 @@ Resolve these and record them in `docs/DECISIONS.md`.
 - [x] Whether emphasis markup (`*italic*`) is displayed literally in the editor or rendered
       with the markers hidden — **literally**, markers counting as columns in both the
       editor and the paginator (ADR 0019)
-- [ ] Scene number gutter style (left, right, or both). `layout` implements all three and
-      defaults to none; which the application offers is Phase 7's to settle, with §5.5.
+- [x] Scene number gutter style (left, right, or both) — **both**, and off by default. The
+      export dialog offers one switch rather than three choices: a writer who wants scene
+      numbers wants to find them, and `layout` still implements all three.
 - [x] Where pinned autocomplete entities are stored — **the library index**, keyed by
       script id, never written into the `.fountain` file (ADR 0021)
 

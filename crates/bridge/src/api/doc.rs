@@ -326,6 +326,76 @@ pub fn doc_source(handle: DocumentHandle) -> String {
     })
 }
 
+/// One `Key: value` pair of the title page (§6's `TitlePage`).
+///
+/// A key and a string, rather than an enumeration of the fields §Phase 7 names.
+/// The format allows any key and the parser keeps the spelling of one it does
+/// not recognise (`TitleField::Other`), so a surface that could only say
+/// "Title" or "Credit" would be a surface that quietly dropped a writer's
+/// `Revision Colour:` the first time they edited anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TitleEntryView {
+    /// As it will be written back to the file.
+    pub key: String,
+    /// Multi-line values keep their `\n`, whatever the file's line ending is.
+    pub value: String,
+}
+
+/// The title page, in the order a save would write it (§6's `doc_title_page`).
+///
+/// Canonical order, not written order: this is what the Phase 7 editor shows
+/// and what the paginator lays out, and both want Title first.
+#[frb(sync)]
+pub fn doc_title_page(handle: DocumentHandle) -> Vec<TitleEntryView> {
+    actor().run(move |state| {
+        let Some(session) = state.session(handle.id) else {
+            return Vec::new();
+        };
+        session
+            .document()
+            .title_page()
+            .in_canonical_order()
+            .into_iter()
+            .map(|entry| TitleEntryView {
+                key: entry.field.key().to_owned(),
+                value: entry.value.clone(),
+            })
+            .collect()
+    })
+}
+
+/// Sets one title-page field. An empty `value` removes it.
+///
+/// One field per call, and one undo step per call, because that is how the
+/// Phase 7 title-page editor is used: a writer fills in a form, and the
+/// undo they expect is of the field they just changed. `key` is matched
+/// case-insensitively against the keys the format names and kept verbatim
+/// otherwise, so `draft date` and `Draft Date` are the same field and
+/// `Revision Colour` is a new one.
+///
+/// Setting a field to what it already holds changes nothing and records
+/// nothing — a form that rebuilds itself on every keystroke must not be able to
+/// fill the undo stack with edits that did not happen.
+#[frb(sync)]
+pub fn doc_set_title_field(handle: DocumentHandle, key: String, value: String) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        // Structural, like every other edit that is not typing into a block:
+        // it neither joins the run of typing before it nor leaves one open.
+        let document = session.interrupt();
+        let result = document.apply(model::EditCommand::SetTitlePage {
+            field: model::TitleField::from_key(&key),
+            value,
+        });
+        // The one edit that ends in `outcome_with_title_page`: a title page is
+        // not a block, so the patch a block-shaped journal entry would record
+        // is empty, and an empty patch is a lost draft date (ADR 0033).
+        outcome_with_title_page(session, result)
+    })
+}
+
 /// The Fountain text between two positions, for the clipboard. `None` when
 /// either position does not resolve.
 #[frb(sync)]
@@ -710,8 +780,12 @@ fn step(
         let result = take(session.interrupt())?;
         session.document_changed();
         // An undo is an edit. A crash after one must not bring back the text it
-        // took away, so it goes in the journal like everything else.
-        journal(session, &result);
+        // took away, so it goes in the journal like everything else — including
+        // the title page, because an `EditResult` does not say whether the step
+        // just taken was a title-page one and the cost of always saying is nine
+        // short strings on a line a writer produces by pressing a key on
+        // purpose, not by typing.
+        journal(session, &result, true);
         refresh_entities(session, &result);
         Some(result_view(session.document(), result))
     })
@@ -1218,10 +1292,30 @@ fn outcome(
     session: &mut Session,
     result: Result<model::EditResult, model::EditError>,
 ) -> EditOutcome {
+    finish(session, result, false)
+}
+
+/// The same, for the one edit whose effect is not a block: the title page.
+///
+/// It is a separate entry point rather than a flag on [`outcome`] because
+/// exactly one caller wants it, and a `false` at the other five would be five
+/// places to get it wrong.
+fn outcome_with_title_page(
+    session: &mut Session,
+    result: Result<model::EditResult, model::EditError>,
+) -> EditOutcome {
+    finish(session, result, true)
+}
+
+fn finish(
+    session: &mut Session,
+    result: Result<model::EditResult, model::EditError>,
+    title_page: bool,
+) -> EditOutcome {
     match result {
         Ok(result) => {
             session.document_changed();
-            journal(session, &result);
+            journal(session, &result, title_page);
             refresh_entities(session, &result);
             EditOutcome::Applied {
                 result: result_view(session.document(), result),
@@ -1239,7 +1333,11 @@ fn outcome(
 ///
 /// This runs after `reinfer`, so the kinds it records are the kinds the writer
 /// is looking at.
-fn journal(session: &mut Session, result: &model::EditResult) {
+///
+/// `title_page` says whether to record it as well. Only one caller sets it, and
+/// it records the page whole: an edit that changed nothing about it would put a
+/// second copy of the same nine strings on every keystroke's line.
+fn journal(session: &mut Session, result: &model::EditResult, title_page: bool) {
     let document = session.document();
     let mut inserted: Vec<(u32, model::BlockSnapshot)> = result
         .inserted
@@ -1255,7 +1353,13 @@ fn journal(session: &mut Session, result: &model::EditResult) {
             .filter_map(|id| document.snapshot(*id))
             .collect(),
         inserted,
+        title_page: title_page.then(|| document.title_page().clone()),
     };
+    if patch.is_empty() {
+        // Nothing happened — a title field set to what it already held, most
+        // often. A journal line saying so would only be a line to replay.
+        return;
+    }
     if session.record(patch) {
         // Said once, not once per keystroke.
         emit(CoreEvent::JournalBroken {
@@ -1294,7 +1398,7 @@ fn inferring(
         Ok(mut result) => {
             session.document_mut().reinfer(&mut result, before);
             session.document_changed();
-            journal(session, &result);
+            journal(session, &result, false);
             refresh_entities(session, &result);
             EditOutcome::Applied {
                 result: result_view(session.document(), result),
@@ -2548,5 +2652,114 @@ mod tests {
         doc_paste(doc.handle(), caret, String::new(), false);
         assert_eq!(doc.text(), SCRIPT);
         assert!(doc_undo(doc.handle()).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // The title page (§Phase 7)
+    // -----------------------------------------------------------------------
+
+    fn title_page(doc: &Doc) -> Vec<(String, String)> {
+        doc_title_page(doc.handle())
+            .into_iter()
+            .map(|entry| (entry.key, entry.value))
+            .collect()
+    }
+
+    #[test]
+    fn the_title_page_is_read_in_the_order_a_save_would_write_it() {
+        let doc = Doc::parse(
+            "Contact: nobody@example.com\nTitle: Big Fish\nRevision Colour: Blue\n\nAction.\n",
+        );
+        assert_eq!(
+            title_page(&doc),
+            [
+                ("Title".to_owned(), "Big Fish".to_owned()),
+                ("Contact".to_owned(), "nobody@example.com".to_owned()),
+                ("Revision Colour".to_owned(), "Blue".to_owned()),
+            ],
+            "canonical order, with the writer's own key last and spelled as they spelled it"
+        );
+    }
+
+    #[test]
+    fn a_title_field_is_set_removed_and_undone() {
+        let doc = Doc::parse("Title: Big Fish\n\nAction.\n");
+        let applied = doc_set_title_field(
+            doc.handle(),
+            "Draft date".to_owned(),
+            "26 July 2026".to_owned(),
+        );
+        assert!(matches!(applied, EditOutcome::Applied { .. }));
+        assert_eq!(
+            doc.text(),
+            "Title: Big Fish\nDraft date: 26 July 2026\n\nAction.\n"
+        );
+
+        // An empty value removes the field rather than writing a blank one.
+        doc_set_title_field(doc.handle(), "Draft date".to_owned(), String::new());
+        assert_eq!(doc.text(), "Title: Big Fish\n\nAction.\n");
+
+        doc_undo(doc.handle()).expect("the removal undoes");
+        assert_eq!(
+            doc.text(),
+            "Title: Big Fish\nDraft date: 26 July 2026\n\nAction.\n"
+        );
+        doc_undo(doc.handle()).expect("and so does the setting");
+        assert_eq!(doc.text(), "Title: Big Fish\n\nAction.\n");
+    }
+
+    #[test]
+    fn a_title_key_is_matched_however_it_is_capitalised_and_a_new_one_is_kept_verbatim() {
+        let doc = Doc::parse("Title: Big Fish\n\nAction.\n");
+        doc_set_title_field(doc.handle(), "DRAFT DATE".to_owned(), "March".to_owned());
+        doc_set_title_field(doc.handle(), "draft date".to_owned(), "April".to_owned());
+        doc_set_title_field(
+            doc.handle(),
+            "Revision Colour".to_owned(),
+            "Blue".to_owned(),
+        );
+
+        assert_eq!(
+            title_page(&doc),
+            [
+                ("Title".to_owned(), "Big Fish".to_owned()),
+                ("Draft date".to_owned(), "April".to_owned()),
+                ("Revision Colour".to_owned(), "Blue".to_owned()),
+            ],
+            "one draft date, spelled the way the format spells it"
+        );
+    }
+
+    #[test]
+    fn setting_a_title_field_to_what_it_already_holds_is_not_an_edit() {
+        // The Phase 7 editor rebuilds its form as the writer types elsewhere. A
+        // form that re-sent every field would otherwise fill the undo stack
+        // with edits that did nothing.
+        let doc = Doc::parse("Title: Big Fish\n\nAction.\n");
+        doc_set_title_field(doc.handle(), "Title".to_owned(), "Big Fish".to_owned());
+        assert!(doc_undo(doc.handle()).is_none(), "there is nothing to undo");
+        assert_eq!(doc.text(), "Title: Big Fish\n\nAction.\n");
+    }
+
+    #[test]
+    fn a_title_page_can_be_given_to_a_script_that_had_none() {
+        let doc = Doc::parse("INT. HOUSE - DAY\n\nJohn enters.\n");
+        assert!(title_page(&doc).is_empty());
+        doc_set_title_field(doc.handle(), "Title".to_owned(), "Untitled Two".to_owned());
+        assert_eq!(
+            doc.text(),
+            "Title: Untitled Two\n\nINT. HOUSE - DAY\n\nJohn enters.\n"
+        );
+    }
+
+    #[test]
+    fn the_title_page_of_a_document_that_is_not_open_is_empty_rather_than_a_panic() {
+        let handle = doc_parse("Title: Gone\n\nAction.\n".to_owned());
+        doc_close(handle);
+        assert!(doc_title_page(handle).is_empty());
+        assert!(matches!(
+            doc_set_title_field(handle, "Title".to_owned(), "x".to_owned()),
+            EditOutcome::Rejected { .. }
+        ));
     }
 }

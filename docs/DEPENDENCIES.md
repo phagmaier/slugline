@@ -19,8 +19,16 @@ Format: `name` — what it does — why we cannot reasonably do without it.
 | `directories` | 6.0.0 | `storage` | ADR 0006 settled `$XDG_*_HOME/slugline`; this is the one crate that knows the XDG rules and the fallbacks. Two transitive crates (`dirs-sys`, `option-ext`) plus `libc`. Hand-rolling it means hand-rolling the fallbacks, and getting one wrong puts a user's journal somewhere they will never find it. |
 | `notify` | 8.2.0 | `storage` | §2.6's choice, and §Phase 4's "`notify` watcher on open files". Taken with `default-features = false`, which drops the polling backend: a poller is a wakeup several times a second in a process §1.3 budgets at 0% idle CPU. The cost is that a script on NFS reports no external changes, which is a convenience, not a safety property. |
 
-Nothing else yet. The remaining crates from the §2.6 shortlist (`printpdf`,
-`spellbook`) are added in the phase that first needs them, not before.
+Nothing else yet. `spellbook`, the remaining crate from the §2.6 shortlist, is
+added in the phase that first needs it (Phase 9), not before. `printpdf` was
+turned down when Phase 7 reached it — see below.
+
+## Vendored assets
+
+| Asset | Version | Used by | Justification |
+| --- | --- | --- | --- |
+| Courier Prime — Regular, Bold, Italic, Bold Italic | 1.203 | `render_pdf` | §Phase 7: "Courier Prime vendored and embedded, with the OFL licence file shipped in the bundle". Taken unmodified from the upstream release and `include_bytes!`d, because §1.2 rules out font downloads and a screenplay that renders differently because a system font moved is not one you can send anyone. 305 KB in the repository; a subset of about 30 KB in each export. |
+| `OFL.txt` | SIL OFL 1.1 | `render_pdf` | The licence those four faces are under. `include_str!`d as well as shipped, so it cannot be dropped from a package without breaking the build. |
 
 `tempfile` is deliberately absent: `storage`'s tests want `mkdir` and `rm -r`,
 which is twenty-five lines in `storage/src/testing.rs`. `DEPENDENCIES.md` already
@@ -47,4 +55,8 @@ turns down `cargo-deny` on the same grounds.
 | `json_annotation` | — | Pulled in transitively by `freezed_annotation`; we do not use it directly. |
 | `file_selector` / `file_selector_linux` | `library/file_chooser.dart` | It brings `http` transitively, and §1.2 makes "zero network requests" a build-time assertion (§13) — an HTTP client in the bundle is a thing that assertion has to argue with. The umbrella package is worse: eleven crates, four of them for platforms §1.2 says not to write code for. Revisit in Phase 10 (ADR 0015). |
 | `intl` | `backups_dialog.dart` | One date format and one byte format, for a UI where "Today at 14:32" is the whole requirement. |
+| `printpdf` (Rust) | `crates/render_pdf` | §2.6 shortlisted it and Phase 7 turned it down (ADR 0032). Everything §Phase 7 asks for beyond drawing text is a statement about bytes — a fixed `/ID`, a `SOURCE_DATE_EPOCH` timestamp, no hash-map iteration order, subsetting, a pinned SHA-256 — and those are properties of a writer, not of a drawing API. A large tree, its own subsetter, and a document id this crate would have to reach past it to fix, to write the easy half. |
+| `sha2` / `sha1` (Rust) | `render_pdf::sha256` | Two callers — the document `/ID` and the golden test — and fifty lines of FIPS 180-4 with published vectors beside it. |
+| `flate2` (Rust) | uncompressed PDF streams | Compressing the content streams would save perhaps 60% of 666 KB. Subsetting the font is where the weight actually was, and an uncompressed stream is one a person can read and one less place for output to vary. |
+| `ttf-parser` / `allsorts` (Rust) | `render_pdf::sfnt` | Embedding a `CIDFontType2` needs six tables read and six written, from four files this repository ships and controls. A general-purpose parser is for fonts you did not choose. |
 | `chrono` (Rust) | `storage::backup` | Backups are named by Unix milliseconds and retention buckets by `millis / 86_400_000`. No calendar arithmetic is needed anywhere, and the UI formats the date in Dart, where the locale is. |

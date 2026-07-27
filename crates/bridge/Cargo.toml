@@ -10,6 +10,7 @@ crate-type = ["cdylib", "staticlib"]
 flutter_rust_bridge = "=2.12.0"
 slugline_document.workspace = true
 slugline_layout.workspace = true
+slugline_render_pdf.workspace = true
 slugline_storage.workspace = true
 
 [lints.rust]

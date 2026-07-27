@@ -96,6 +96,41 @@ class FakeCore implements DocumentCore {
   @override
   String source() => _blocks.map((b) => b.text).join('\n\n');
 
+  /// The title page, as `Key: value` in the order it was written.
+  ///
+  /// A list rather than a map so that the order a save would write is the order
+  /// this hands back — and list surgery, like everything else here. Which keys
+  /// mean the same thing, and what canonical order is, are Fountain questions
+  /// and are answered in Rust (ADR 0011).
+  final List<TitleEntryView> title = [];
+
+  /// Every field the editor set, in order, as `(key, value)`.
+  final List<(String, String)> titleEdits = [];
+
+  @override
+  List<TitleEntryView> titlePage() => List.of(title);
+
+  @override
+  EditOutcome setTitleField(String key, String value) {
+    titleEdits.add((key, value));
+    final at = title.indexWhere((entry) => entry.key == key);
+    // The real core answers "nothing happened" for a value that is already
+    // there, and the dialog leans on it — so this does too.
+    if (at < 0 ? value.isEmpty : title[at].value == value) {
+      return _applied(caret: null);
+    }
+    if (value.isEmpty) {
+      title.removeAt(at);
+    } else if (at < 0) {
+      title.add(TitleEntryView(key: key, value: value));
+    } else {
+      title[at] = TitleEntryView(key: key, value: value);
+    }
+    _dirty = true;
+    _journalled++;
+    return _applied(caret: null);
+  }
+
   @override
   String? extract(DocPosition from, DocPosition to) {
     final first = _indexOf(from.block);

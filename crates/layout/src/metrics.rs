@@ -3,6 +3,14 @@
 //! Columns are relative to the 1.5-inch left edge of the text area. Physical
 //! dimensions use micrometres so deriving a page's line count remains exact and
 //! integer-only.
+//!
+//! §5.2 calls these "starting points, not gospel" and asks for them to be
+//! calibrated against reference PDFs before Phase 7 exits. That was done, and
+//! **nothing here changed**: the table is Final Draft's defaults, the two
+//! open-source tools it was overlaid against disagree with each other by more
+//! than either disagrees with this, and ADR 0034 has the measurements. The
+//! indents are pinned out of a finished PDF by
+//! `crates/render_pdf/tests/element_indents.rs`.
 
 /// SPEC §5.2: fixed Courier grid at 10 characters per inch.
 pub const CHARACTERS_PER_INCH: u16 = 10;
@@ -84,6 +92,16 @@ pub const LYRIC_INDENT: i16 = 10;
 pub const LYRIC_WIDTH: u16 = 35;
 /// SPEC §5.2: lyrics have one blank line before them.
 pub const LYRIC_BLANKS_BEFORE: u16 = 1;
+
+/// The title page's lower-left block — contact, copyright, notes.
+///
+/// §Phase 7 puts the draft date opposite it, and the two share the 60-column
+/// text area. Splitting the width between them is what stops a long contact
+/// address printing on top of the date: neither column can reach the other, and
+/// the two blank columns between them are the gutter.
+pub const TITLE_LOWER_LEFT_WIDTH: u16 = 36;
+/// The title page's lower-right block, right-aligned to the text area's edge.
+pub const TITLE_LOWER_RIGHT_WIDTH: u16 = 22;
 
 /// SPEC §5.3: rules 2-7 may iterate no more than this many times.
 pub const BREAK_RULE_ITERATION_CAP: u8 = 8;

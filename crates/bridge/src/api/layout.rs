@@ -437,7 +437,7 @@ fn changed_block(previous: &[(BlockId, u64)], current: &[(BlockId, u64)]) -> Opt
 // Conversion
 // ---------------------------------------------------------------------------
 
-fn page_config(setup: &PageSetup) -> PageConfig {
+pub(crate) fn page_config(setup: &PageSetup) -> PageConfig {
     let config = match setup.paper {
         PaperSize::UsLetter => PageConfig::us_letter(),
         PaperSize::A4 => PageConfig::a4(),

@@ -5,11 +5,12 @@
 
 import '../frb_generated.dart';
 import 'doc.dart';
+import 'layout.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_view`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `open_source`, `paginate_for_export`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `SavedPagination`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -166,6 +167,44 @@ Future<SaveOutcome> docExportFountain({
   required bool overwrite,
 }) => RustLib.instance.api.crateApiFilesDocExportFountain(
   handle: handle,
+  path: path,
+  overwrite: overwrite,
+);
+
+/// §6's `export_pdf`. Paginates the document and writes a PDF (§Phase 7).
+///
+/// ## It is an export, so ADR 0029 applies unchanged
+///
+/// The session stays exactly where it is: no path is rebound, no journal moves,
+/// the dirty flag is untouched, and nothing is armed. The two refusals are
+/// [`doc_export_fountain`]'s two refusals, for its two reasons — a destination
+/// that is already there is a question, and a destination that is a script open
+/// here is refused outright because writing it from outside its own session
+/// would leave that session's journal describing bytes the file no longer has.
+/// A `.pdf` is very unlikely to be an open script; "unlikely" is not the
+/// standard §1.2 sets for losing a writer's work.
+///
+/// ## Where the work happens
+///
+/// Off the actor, like every long job (§2.3), and in the order §2.3 asks for:
+/// visit the actor for what is needed, let go, paginate and render, come back
+/// only to write nothing. The pagination goes through [`layout::paginate`], so
+/// it takes the session's own engine and its warm per-block cache (ADR 0022)
+/// rather than starting cold, and an export straight after a save costs no
+/// pagination at all because the save already did it.
+///
+/// A pagination that came back [stale](layout::PaginationOutcome::Stale) is
+/// retried once. It means the writer typed while it ran; the second attempt is
+/// against what they typed, and if they are still typing the export goes ahead
+/// with the newer of the two rather than chasing them.
+Future<SaveOutcome> docExportPdf({
+  required DocumentHandle handle,
+  required PageSetup setup,
+  required String path,
+  required bool overwrite,
+}) => RustLib.instance.api.crateApiFilesDocExportPdf(
+  handle: handle,
+  setup: setup,
   path: path,
   overwrite: overwrite,
 );

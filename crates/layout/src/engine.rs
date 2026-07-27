@@ -1069,7 +1069,6 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
     let mut lower_right = Vec::new();
 
     for entry in snapshot.title_page.in_canonical_order() {
-        let lines = break_lines(&entry.value, metrics::ACTION_WIDTH);
         match entry.field {
             TitleField::Title
             | TitleField::Credit
@@ -1079,17 +1078,20 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
                 if !main.is_empty() {
                     main.push(String::new());
                 }
-                main.extend(lines);
+                main.extend(break_lines(&entry.value, metrics::ACTION_WIDTH));
             }
-            TitleField::DraftDate => lower_right.extend(lines),
+            TitleField::DraftDate => {
+                lower_right.extend(break_lines(&entry.value, metrics::TITLE_LOWER_RIGHT_WIDTH));
+            }
             TitleField::Contact | TitleField::Copyright | TitleField::Notes => {
                 if !lower_left.is_empty() {
                     lower_left.push(String::new());
                 }
-                lower_left.extend(lines);
+                lower_left.extend(break_lines(&entry.value, metrics::TITLE_LOWER_LEFT_WIDTH));
             }
             TitleField::Other(ref key) => {
-                lower_left.push(format!("{}: {}", key, entry.value));
+                let line = format!("{}: {}", key, entry.value);
+                lower_left.extend(break_lines(&line, metrics::TITLE_LOWER_LEFT_WIDTH));
             }
         }
     }
@@ -1211,6 +1213,45 @@ mod tests {
             }
         }
         assert_eq!(declined, ['ß', 'ŉ', 'ǰ']);
+    }
+
+    #[test]
+    fn the_title_page_lower_columns_cannot_reach_each_other() {
+        // A long contact block opposite a draft date: before the widths were
+        // split, the address printed straight through the date.
+        let document = Document::parse(
+            "Title: Heat\n\
+             Draft date: 24 July 2026\n\
+             Contact: A very long address indeed, on one line, with no break in it at all\n\
+             \nAction.\n",
+        );
+        let output = paginate(&document, &PageConfig::us_letter());
+        let title = output.title_page.expect("there is a title page");
+
+        for line in title.lines.iter() {
+            let end = line.column + char_count(&line.content) as i16;
+            if line.column < i16_from_u16(metrics::TITLE_LOWER_LEFT_WIDTH) {
+                assert!(
+                    end <= i16_from_u16(metrics::TITLE_LOWER_LEFT_WIDTH),
+                    "{:?} runs into the gutter",
+                    line.content
+                );
+            } else {
+                assert!(
+                    line.column
+                        >= i16_from_u16(metrics::ACTION_WIDTH - metrics::TITLE_LOWER_RIGHT_WIDTH),
+                    "{:?} starts inside the left column",
+                    line.content
+                );
+            }
+        }
+        assert!(
+            title
+                .lines
+                .iter()
+                .any(|line| line.content.contains("24 July 2026")),
+            "the date is still on the page"
+        );
     }
 
     #[test]

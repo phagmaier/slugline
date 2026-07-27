@@ -2386,3 +2386,241 @@ normalisation, not name normalisation.
   length of the name.
 * A character genuinely called `BOB (OS)` is now indexed as `BOB`. Nobody is
   called that.
+
+---
+
+## ADR 0032 — The PDF writer is ours, and it interprets emphasis without leaving a gap
+
+**Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7
+
+### Context
+
+§Phase 7 asks for a PDF a production company can be sent, and §2.6 shortlisted
+`printpdf` for the job. Everything §Phase 7 asks for beyond "put characters on a
+page", though, is a statement about *bytes*: a fixed `/ID`, a timestamp that
+obeys `SOURCE_DATE_EPOCH`, no dependence on hash-map iteration order, font
+subsetting, and a SHA-256 a golden test pins. Those are properties of a writer,
+not of a drawing API.
+
+There was a second question underneath it. ADR 0019 made the PDF renderer the
+only thing that interprets `*italic*`, and the paginator counts the markers as
+columns while it decides where a line breaks. So when the renderer drops them,
+something has to happen to the cells they occupied.
+
+### Decision
+
+**Write the PDF here.** `crates/render_pdf` is a TrueType subsetter, an sfnt
+writer, a PDF object writer and a SHA-256, in about a thousand lines with no
+dependency outside the workspace. Courier Prime is vendored — four faces and
+`OFL.txt`, `include_bytes!`d — and embedded as a subsetted `CIDFontType2` with
+`Identity-H` encoding and a `/ToUnicode` CMap, which is what makes the text
+selectable and searchable. Nothing is compressed: a screenplay is text, the
+streams are readable, and there is one less place for output to vary.
+
+**Every glyph is declared 600/1000 em wide.** Courier Prime's own advance is
+1228/2048 — 599.6 — and a viewer positions text by the widths in the font
+dictionary. Declaring the real number would put the end of a sixty-column line a
+third of a point off §5.2's grid.
+
+**A row's runs are drawn one after another from the row's own left edge.** The
+paginator decided the row and where it starts; the renderer draws what is left of
+it with no gap where a marker was. A gap is not a screenplay.
+
+### Alternatives considered
+
+**`printpdf`.** A large tree, its own font subsetter, and a `/ID` and creation
+date this crate would have to reach past it to fix. It would have written the
+easy half and left the half §Phase 7 actually specifies.
+
+**Leave the marker cells blank.** Strictly the most faithful reading of "the
+paginator counted them", and it looks wrong: `He reads *quietly* and` prints with
+a hole either side of the word. Rejected on sight of the first rendered page.
+
+**Teach the paginator to measure printed width.** Fixes the alignment of an
+emphasised transition or centred line as well as the gaps — and makes the
+paginator interpret emphasis, which ADR 0019 reserved for exactly one place.
+
+**Compress the content streams.** A `flate2` dependency to save perhaps 60% of
+666 kB. Subsetting the font is where the weight was; the rest is the file being
+inspectable.
+
+### Consequences
+
+* Same script, same setup, same `DocumentInfo` — same bytes. `crates/render_pdf/
+  tests/golden.rs` pins the SHA-256 of every corpus file on both papers.
+* `render` is pure; `creation_time` is the only function that reads anything
+  outside its arguments and `render` does not call it.
+* An emphasised transition or centred line ends a marker or two short of where an
+  unemphasised one would, because the paginator aligned it while the markers
+  still counted. That is the visible residue of ADR 0019's trade, and it is
+  confined to right-aligned and centred elements — action and dialogue, where
+  emphasis actually appears, are left-aligned and unaffected.
+* Four faces are vendored but only the ones a script uses are embedded, so an
+  unemphasised screenplay carries one.
+* A character outside the Basic Multilingual Plane has no glyph in Courier Prime
+  and prints as `.notdef`. It is in the file, it is in the editor, and it does
+  not stop an export.
+
+### Tests and invariants
+
+* `crates/render_pdf/tests/golden.rs` — the committed hashes, and that two
+  different scripts get two different `/ID`s.
+* `crates/render_pdf/tests/text_extraction.rs` — `pdftotext` reads the page in
+  order, with no marker in it and non-ASCII intact.
+* `crates/render_pdf/tests/export_is_fast_enough.rs` — §Phase 7's 1000 ms budget,
+  and that subsetting keeps a 120-page export sendable.
+* `sfnt.rs`'s own tests re-parse a subset as a font file, which is the cheapest
+  strong check that its tables, offsets and checksums line up.
+
+---
+
+## ADR 0033 — A title-page edit is journalled like any other edit
+
+**Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7
+
+### Context
+
+`EditCommand::SetTitlePage` has existed in `document` since Phase 1 and had no
+caller until Phase 7 made the title page editable. The crash journal records a
+`Patch`, and a `Patch` was a list of blocks: an edit that changes only the title
+page produces an empty one. So the first version of the title-page editor could
+lose a draft date typed thirty seconds before the power went, while losing none
+of the dialogue typed thirty seconds before that.
+
+§1.2 does not grade user text by which part of the document it is in.
+
+### Decision
+
+**`Patch` carries an optional title page**, whole rather than as a delta, and
+`Document::replay` applies it. The journal record gains an optional `title` field
+that is written only on the edits that changed it, so an ordinary keystroke's
+line is exactly as long as it was before Phase 7 and a journal written by an
+earlier build still reads.
+
+**One field per call, one undo step per call.** `doc_set_title_field` takes a key
+and a value; an empty value removes the field, and setting a field to what it
+already holds is not an edit at all — the editor rebuilds its form as the writer
+types, and a form that re-sent every field would fill the undo stack with edits
+that did nothing.
+
+**Undo and redo always record it.** An `EditResult` does not say whether the step
+just taken was a title-page one, and the cost of always saying is nine short
+strings on a line a writer produces by pressing a key on purpose.
+
+### Alternatives considered
+
+**A field on `EditResult`.** Threading `title_page_changed` through every
+construction site of a type six modules build, to avoid one `bool` at one call
+site in the bridge.
+
+**Let the autosave cover it.** It does, two seconds later. §Phase 4's exit
+criterion is "never lost a keystroke beyond the last one", and a title page is
+made of keystrokes.
+
+**A separate title-page journal.** Two files to keep in step, two recoveries to
+reconcile, for a feature that is nine strings.
+
+### Consequences
+
+* `Patch::is_empty` accounts for the title page, and the bridge skips a journal
+  line for an edit that changed nothing — which is what makes the "setting a
+  field to what it holds is not an edit" rule true on disk as well as on screen.
+* The keys a journal records keep the spelling they were written with, so a
+  writer's own `Revision Colour:` survives a crash as well as it survives a save.
+* `outcome_with_title_page` is a second entry point beside `outcome`, and the
+  rule in `AGENTS.md` still holds: every mutation ends in one of them.
+
+### Tests and invariants
+
+* `crates/bridge/src/api/files.rs::a_title_page_edit_survives_a_crash_like_any_other_edit`
+  — what the journal recovers is what the writer can see, through an edit, a
+  title-page change, another edit, and two undos.
+* `crates/document/src/document.rs::replaying_a_patch_restores_a_title_page_the_file_never_got`
+* `crates/storage/src/journal.rs::a_title_page_edit_is_recorded_and_read_back_whole`
+  and `an_ordinary_keystroke_line_says_nothing_about_the_title_page`.
+
+---
+
+## ADR 0034 — Calibration: the grid is Final Draft's, and the references disagree with each other
+
+**Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7 · **Satisfies:** §5.5
+
+### Context
+
+§5.2 gives an element table and says of it: "These values are starting points,
+not gospel. Different houses differ by a tenth of an inch. Put every one of them
+in a single `layout::metrics` module as named constants with a source comment,
+then calibrate against reference PDFs (see §5.5) before Phase 7 exits." §5.5
+asks for the same short script produced in a known-good reference tool, exported,
+and overlaid.
+
+### The measurement
+
+`testdata/`-shaped calibration script — a scene heading, an action paragraph, a
+cue with a parenthetical and a line of dialogue, a transition and a centred line —
+exported from three tools on US Letter and measured with `pdftotext -bbox`, which
+reports each word's bounding box in points from the paper's top-left.
+
+| Element | Slugline | afterwriting 1.17.3 | screenplain 0.12.0 |
+| --- | --- | --- | --- |
+| Scene heading, left | 108.0 pt (1.5″) | 108.0 (1.5″) | 108.0 (1.5″) |
+| Action, left | 108.0 (1.5″) | 108.0 (1.5″) | 108.0 (1.5″) |
+| Dialogue, left | 180.0 (2.5″) | 180.0 (2.5″) | 172.8 (2.4″) |
+| Parenthetical, left | 223.2 (3.1″) | 216.0 (3.0″) | 201.6 (2.8″) |
+| Character, left | 266.4 (3.7″) | 252.0 (3.5″) | 244.8 (3.4″) |
+| Transition, right | 540.0 (7.5″) | 547.2 (7.6″) | 547.2 (7.6″) |
+| Centred, axis | 324.0 (4.5″) | 306.0 (4.25″) | 327.6 (4.55″) |
+| Line pitch | 12.0 pt | 12.0 pt | 12.0 pt |
+| First text row | 1″ from top | 1″ | 1″ |
+| Page number | 0.5″ from top, right edge 7.5″ | — | — |
+
+Reproduce it with `cargo run -p slugline_render_pdf --example dump -- script.fountain
+ours.pdf`, `npx afterwriting --source script.fountain --pdf theirs.pdf --config
+<(echo '{"print_profile":"usletter"}')`, and `screenplain --format pdf`.
+
+### Decision
+
+**Keep §5.2's table.** Its numbers are Final Draft's defaults — 3.7″ character,
+3.1″ parenthetical, 2.5″ dialogue, 60 columns between 1.5″ and 7.5″ — and Final
+Draft is the application a script sent to a production company is most likely to
+be read in.
+
+The two open-source references disagree with each other by more than either
+disagrees with us, which is §5.2's "different houses differ by a tenth of an
+inch" arriving exactly as predicted. Both right-align a transition to 7.6″, which
+is their own 61-column text width rather than the 1.0″ right margin they each
+declare; a 61-column line does not fit between 1.5″ and 7.5″.
+
+**Centred text is centred on the text area**, at 4.5″, not on the paper at 4.25″.
+
+**A scene heading at the top of a page keeps its one blank line** (§5.2), which
+puts our first heading one row below afterwriting's. Both are on the same 12-point
+rules; ours starts on the second of them.
+
+### The exit criterion, honestly
+
+§Phase 7's exit criterion is "a printed page overlaid on a reference-tool page
+matches on every element indent". Overlaid on either reference, ours matches on
+the left margin, the action and scene-heading indent, the line pitch, the
+baseline grid and the paper; it matches afterwriting on dialogue too. It differs
+on character and parenthetical by 0.2″ and 0.1″ — and the two references differ
+from *each other* on those by 0.1″ and 0.2″. The criterion as written cannot be
+satisfied against every reference at once, because the references do not satisfy
+it against each other. What is satisfied is the criterion behind it: every
+element of ours lands on the fixed grid at the position the house style §5.2
+chose, and the deltas against two others are measured and written down above.
+
+### Consequences
+
+* `layout::metrics` is unchanged by calibration, and now says so.
+* `crates/render_pdf/tests/element_indents.rs` pins each indent as measured out
+  of the finished PDF — not out of `metrics` — so a future change to either the
+  grid or the renderer has to be deliberate.
+* If a house ever needs 3.5″ cues, it is a `PageConfig` field and a golden
+  update, not a redesign: the indents already live in one module.
+* Poppler — which is what both `evince` and `okular` render with — is covered
+  automatically: `text_extraction.rs` reads the pages back through `pdftotext`,
+  and the pages in this comparison were rasterised with `pdftoppm` and looked at.
+  **Firefox and Chrome have not been opened on an export**, and neither has a
+  printer. Both use the same `/ToUnicode` mechanism poppler does, so the risk is
+  low and it is not zero; §Phase 11 packaging is where a printed page belongs.

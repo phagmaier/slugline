@@ -35,6 +35,8 @@ List<EditorCommand> editorCommands({
   VoidCallback? save,
   VoidCallback? saveAs,
   VoidCallback? showBackups,
+  VoidCallback? editTitlePage,
+  VoidCallback? previewAndExport,
 }) {
   return [
     // Phase 4's file commands, and null where there is no persistence attached —
@@ -51,6 +53,18 @@ List<EditorCommand> editorCommands({
       ),
     if (showBackups case final run?)
       EditorCommand(group: 'File', label: 'Previous versions…', run: run),
+    // Phase 7. "Export" is not among the labels on purpose: the export lives
+    // inside the preview, because §Phase 7 wants a writer to have looked at the
+    // pages before they send them anywhere.
+    if (editTitlePage case final run?)
+      EditorCommand(group: 'File', label: 'Title page…', run: run),
+    if (previewAndExport case final run?)
+      EditorCommand(
+        group: 'File',
+        label: 'Preview and export…',
+        shortcut: 'Ctrl+P',
+        run: run,
+      ),
     for (final choice in elementChoices)
       EditorCommand(
         group: 'Element',

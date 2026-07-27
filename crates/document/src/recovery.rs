@@ -20,7 +20,7 @@
 //! edit rather than every transaction — which is what makes §Phase 4's exit
 //! criterion ("never lost a keystroke beyond the last one") reachable at all.
 
-use slugline_fountain::BlockKind;
+use slugline_fountain::{BlockKind, TitlePage};
 
 use crate::BlockId;
 
@@ -46,12 +46,23 @@ pub struct Patch {
     pub changed: Vec<BlockSnapshot>,
     /// `(index after the edit, block)`, in ascending index order.
     pub inserted: Vec<(u32, BlockSnapshot)>,
+    /// The title page as it stood after the edit, when the edit changed it.
+    ///
+    /// Whole rather than a delta, for the same reason a block is recorded whole:
+    /// replaying is list surgery, and a title page is nine short strings. It is
+    /// here at all because §1.2 does not distinguish between kinds of user text
+    /// — a draft date typed thirty seconds before a crash is as much theirs as
+    /// a line of dialogue, and Phase 7 is where it became typeable.
+    pub title_page: Option<TitlePage>,
 }
 
 impl Patch {
     /// Whether this patch would change anything.
     pub fn is_empty(&self) -> bool {
-        self.removed.is_empty() && self.changed.is_empty() && self.inserted.is_empty()
+        self.removed.is_empty()
+            && self.changed.is_empty()
+            && self.inserted.is_empty()
+            && self.title_page.is_none()
     }
 }
 

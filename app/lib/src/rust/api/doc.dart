@@ -8,8 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome`, `paste`, `plain_blocks`, `position_view`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
 ///
@@ -46,6 +46,35 @@ List<BlockView> docBlocks({
 /// actually holds. Phase 4's `doc_save` writes the same bytes through `storage`.
 String docSource({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiDocDocSource(handle: handle);
+
+/// The title page, in the order a save would write it (§6's `doc_title_page`).
+///
+/// Canonical order, not written order: this is what the Phase 7 editor shows
+/// and what the paginator lays out, and both want Title first.
+List<TitleEntryView> docTitlePage({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiDocDocTitlePage(handle: handle);
+
+/// Sets one title-page field. An empty `value` removes it.
+///
+/// One field per call, and one undo step per call, because that is how the
+/// Phase 7 title-page editor is used: a writer fills in a form, and the
+/// undo they expect is of the field they just changed. `key` is matched
+/// case-insensitively against the keys the format names and kept verbatim
+/// otherwise, so `draft date` and `Draft Date` are the same field and
+/// `Revision Colour` is a new one.
+///
+/// Setting a field to what it already holds changes nothing and records
+/// nothing — a form that rebuilds itself on every keystroke must not be able to
+/// fill the undo stack with edits that did not happen.
+EditOutcome docSetTitleField({
+  required DocumentHandle handle,
+  required String key,
+  required String value,
+}) => RustLib.instance.api.crateApiDocDocSetTitleField(
+  handle: handle,
+  key: key,
+  value: value,
+);
 
 /// The Fountain text between two positions, for the clipboard. `None` when
 /// either position does not resolve.
@@ -616,4 +645,32 @@ class NewBlock {
           text == other.text &&
           forced == other.forced &&
           dual == other.dual;
+}
+
+/// One `Key: value` pair of the title page (§6's `TitlePage`).
+///
+/// A key and a string, rather than an enumeration of the fields §Phase 7 names.
+/// The format allows any key and the parser keeps the spelling of one it does
+/// not recognise (`TitleField::Other`), so a surface that could only say
+/// "Title" or "Credit" would be a surface that quietly dropped a writer's
+/// `Revision Colour:` the first time they edited anything.
+class TitleEntryView {
+  /// As it will be written back to the file.
+  final String key;
+
+  /// Multi-line values keep their `\n`, whatever the file's line ending is.
+  final String value;
+
+  const TitleEntryView({required this.key, required this.value});
+
+  @override
+  int get hashCode => key.hashCode ^ value.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TitleEntryView &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          value == other.value;
 }

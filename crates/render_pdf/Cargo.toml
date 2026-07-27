@@ -9,3 +9,17 @@ publish.workspace = true
 
 [dependencies]
 slugline_layout.workspace = true
+# Inline emphasis is Fountain syntax, and ADR 0019 makes this crate the only
+# thing that interprets it. The rules live in `fountain` with the rest of the
+# format rather than being re-stated here.
+slugline_fountain.workspace = true
+
+[dev-dependencies]
+# Tests build a real screenplay to render. Parsing one is `document`'s job, and
+# nothing outside `#[cfg(test)]` reaches for it.
+slugline_document.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "export"
+harness = false

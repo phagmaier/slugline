@@ -483,6 +483,13 @@ impl Document {
             self.next_id = self.next_id.max(snapshot.id.0);
         }
 
+        if let Some(title_page) = &patch.title_page {
+            self.title_page = title_page.clone();
+            // The bytes no longer match the file they were read from, so the
+            // serialiser takes the title page down its canonical path too.
+            self.title_page.provenance = None;
+        }
+
         self.next_revision += 1;
         self.revision = self.next_revision;
         Ok(())
@@ -1902,6 +1909,38 @@ mod tests {
 
         doc.undo().unwrap();
         assert_eq!(doc.serialise(), "Title: Big Fish\n\nAction.\n");
+    }
+
+    #[test]
+    fn replaying_a_patch_restores_a_title_page_the_file_never_got() {
+        // The crash case Phase 7 opened: a draft date typed after the last save
+        // is user text, and §1.2 does not grade user text by which part of the
+        // document it is in.
+        let saved = "Title: Big Fish\n\nAction.\n";
+        let mut typed = Document::parse(saved);
+        typed
+            .apply(EditCommand::SetTitlePage {
+                field: TitleField::DraftDate,
+                value: "26 July 2026".into(),
+            })
+            .unwrap();
+
+        let patch = Patch {
+            title_page: Some(typed.title_page().clone()),
+            ..Patch::default()
+        };
+        let mut recovered = Document::parse(saved);
+        recovered.replay(&patch).unwrap();
+
+        assert_eq!(recovered.serialise(), typed.serialise());
+        assert_eq!(
+            recovered.serialise(),
+            "Title: Big Fish\nDraft date: 26 July 2026\n\nAction.\n"
+        );
+        assert!(
+            recovered.title_page().provenance.is_none(),
+            "the replayed title page is not the one the file was parsed from"
+        );
     }
 
     #[test]

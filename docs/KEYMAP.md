@@ -178,11 +178,21 @@ classification says so.
 | --- | --- |
 | `Ctrl+S` | Save |
 | `Ctrl+Shift+S` | Save as… |
+| `Ctrl+P` | Preview and export… |
 
-Both are also in the command palette, along with "Previous versions…".
+All three are also in the command palette, along with "Previous versions…" and
+"Title page…".
 
 There is no key for "open" or "new": both need a path, so both are a dialog
 either way, and the library is one Escape and one click away.
+
+`Ctrl+P` opens the pages as they will print, and both exports are inside it:
+§Phase 7 wants a writer to have looked at the pages before they send them
+anywhere. **An export is not a Save As.** Both write a file somewhere else, and
+only Save As makes the writer's session follow it there — after an export the
+script is still the script it was, with its own path, its own journal and its own
+unsaved changes (ADR 0029). The core refuses a destination that is already there
+until it is asked twice, and refuses a script this application has open outright.
 
 `Ctrl+S` on a script that has never been saved asks where to put it. A save that
 fails says why — read-only, no permission, full disk each get their own sentence

@@ -28,7 +28,8 @@ swallowed by panels, 3 documentation and CI, 4 save serialization and the watche
 5 scroll restoration, 6 layout convergence and the pagination bridge, 7 export
 copy versus Save As, 8 defensive cleanup, 9 the manual IME, accessibility and
 end-to-end gates, and 10 final verification. What was knowingly left undone is the
-deferred backlog at the end of that plan; none of it blocks Phase 7.
+deferred backlog at the end of that plan; none of it blocked Phase 7, which is now
+written too — the PDF, the title page and the paginated preview.
 
 ## Requirements
 
@@ -40,6 +41,15 @@ sudo pacman -S --needed clang cmake ninja pkgconf gtk3 xz
 
 # Debian/Ubuntu
 sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+```
+
+`poppler` is optional and test-only: `cargo test` reads an exported PDF back
+through `pdftotext` to prove the text in it is selectable and in reading order.
+Without it that one test prints `SKIPPED` and stops rather than passing quietly.
+
+```sh
+sudo pacman -S --needed poppler   # Arch
+sudo apt install poppler-utils    # Debian/Ubuntu
 ```
 
 ## Build and run

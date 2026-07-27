@@ -1,0 +1,27 @@
+# SHA-256 of every corpus file exported to PDF, at SOURCE_DATE_EPOCH
+# 1700000000. Written by crates/render_pdf/tests/golden.rs; regenerate
+# with UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf --test golden.
+# The format is `sha256sum`'s, so a hash here can be checked against an
+# exported file with sha256sum(1).
+ef360e5a4f274196660f6ccdd734ec9b5b6a1f47efc80d4fec0a6fbd5d110ea7  01-minimal.a4.pdf
+c2c138f594d58f573ba1491d043f15c38406a80c16adbe2d863c41800302e461  01-minimal.pdf
+2f8ba8ae4463dcea3d8bd50a5a9e9bb3c287123632dff10477d1e022ae7ddd6c  02-every-element.a4.pdf
+fc860fbaed9fc13e3422b684f12d377215fd52ff234778717aa3d534b80d9596  02-every-element.pdf
+a5b496569c04f1eaf6ebe6f8500f28d65efe3478db2cc38f0f0a6a6d909b719d  03-dual-dialogue.a4.pdf
+a73a76c08543cc16c7c86b733f792add3969e1a3191c29dfaf20f57d5fb6a79b  03-dual-dialogue.pdf
+08a607fbdbc7ecfdf756778443fb4add871cec9ee53cd9685996fd369367aa28  04-notes-and-boneyard.a4.pdf
+41cd475a2976293f72ea523de7c0948d8177d0fb72263f2dd5fbd8dc238c5fb0  04-notes-and-boneyard.pdf
+db6781d98766d52583f3d6695695813de777ab025da5bf02153c91aaeafbeda8  05-title-page.a4.pdf
+6c16df7a08efdf2e23024cb02be2c228d2b485f22def48a46e72258e29eb7699  05-title-page.pdf
+3df9437f67d5928d93cda5cf8adfa8ac29967f6329f0926d20223d1d4f11f0f0  06-crlf.a4.pdf
+4d44916120b4e0d8b6917cd4e40cf3db5b7607ed99f39b3268576384aa545542  06-crlf.pdf
+0ff5f96d8b487e8df19d1db2c218fde6cbcbdfcdad1f72ff3fdafb7347516983  07-bom.a4.pdf
+d4bfd65cee2620ad12df4bd56a1730cc3f49b0870c19fb53936b6d4f6c7485db  07-bom.pdf
+dc86808bcdb334e3ccdfa0d8df9a2e52264249c838c4e991154dd2e7077e69f6  08-non-ascii.a4.pdf
+9c0fd4fd029834bc646fc13e1e39483c3ada981b0b069de97b947cd0b33080f7  08-non-ascii.pdf
+14b603c4c3caa0a865c70e64edcf74df8e98d0fac02818b55f93485a2c6cc832  09-whitespace.a4.pdf
+d57384df0cbeb41b10120f639a6374d9dc30bcb511349c184955d25f802d5f17  09-whitespace.pdf
+7c72a0999eb230e277de90dddf7c369e8983b9c132f6d6c4c4790050bebedc38  10-malformed.a4.pdf
+d84885bc1d5b029bbe71fc477f8f77c54fc72bf8d27b07983310c39bc5bbdf31  10-malformed.pdf
+b49086baa73bbcc625a92f4062b83f1ae67f34702d371dd4928daa1c05031378  reference-feature.a4.pdf
+20cf4849e5e417b76667f2b4a81f994d68b7789ab87a9023cb827d2e241a9131  reference-feature.pdf

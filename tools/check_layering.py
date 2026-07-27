@@ -44,7 +44,11 @@ EXPECTED_DIRECT: dict[str, set[str]] = {
     "fountain": set(),
     "document": {"fountain"},
     "layout": {"document"},
-    "render_pdf": {"layout"},
+    # Phase 7 added `fountain`: inline emphasis is Fountain syntax, and ADR 0019
+    # makes the PDF renderer the only thing that interprets it, so it reads the
+    # rules from where they live rather than restating them. `document` is a
+    # dev-dependency only — the tests need a parsed screenplay to render.
+    "render_pdf": {"layout", "fountain", "document"},
     "storage": {"document"},
     "spell": set(),
     # Phase 2 wired the document in, Phase 4 the storage, and remediation Phase
