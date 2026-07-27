@@ -3,16 +3,14 @@
 A fast, keyboard-driven screenplay editor that reads and writes plain Fountain
 files and produces submission-quality PDFs. Linux only.
 
-**Status: Phases 0–6 written, stabilized, and ready for Phase 7.**
+**Status: Phases 0–8 written; Phase 9 (spell checking) is next.**
 `crates/fountain` and `crates/document` read and write Fountain losslessly and hold
 the model, the edit commands and undo. `crates/bridge` is the actor thread and the
-§6 surface, `app/` is the editor, the keyboard workflow, autocomplete and the
-library, and `crates/storage` is the atomic save, the crash journal, backups and
-the library index. `crates/layout` paginates, and since remediation Phase 6 the
-application calls it: every successful save paginates the exact snapshot it wrote
-and caches the page count in the library. What Phase 7 adds is the polished
-preview and the PDF, from that same pagination. `render_pdf` and `spell` are still
-one-constant placeholders for Phases 7 and 9. See `docs/DECISIONS.md`.
+§6 surface, `app/` is the editor, keyboard workflow, autocomplete, library,
+preview, export and navigator, and `crates/storage` is the atomic save, crash
+journal, backups, preferences and library index. `crates/layout` paginates and
+`crates/render_pdf` writes deterministic PDFs from that layout. `spell` remains
+the one-constant placeholder for Phase 9. See `docs/DECISIONS.md`.
 
 ## Remediation status
 
@@ -28,8 +26,8 @@ swallowed by panels, 3 documentation and CI, 4 save serialization and the watche
 5 scroll restoration, 6 layout convergence and the pagination bridge, 7 export
 copy versus Save As, 8 defensive cleanup, 9 the manual IME, accessibility and
 end-to-end gates, and 10 final verification. What was knowingly left undone is the
-deferred backlog at the end of that plan; none of it blocked Phase 7, which is now
-written too — the PDF, the title page and the paginated preview.
+deferred backlog at the end of that plan; none of it blocked Phases 7 or 8, which
+are now written too — PDF/title-page/preview output and scene/character navigation.
 
 ## Requirements
 

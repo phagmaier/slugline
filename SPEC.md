@@ -1193,14 +1193,19 @@ Requirements §11, §13.
 
 Requirement §8.
 
-- [ ] Sidebar listing scene headings in document order
-- [ ] Each entry shows: scene number (when enabled), INT/EXT, location, time of day
-- [ ] Character list derived from the entity index, with occurrence counts
-- [ ] Clicking a scene scrolls the editor to it and places the caret
-- [ ] Current scene highlighted as you scroll or type
-- [ ] Keyboard navigation within the navigator; `Ctrl+P`-style quick jump to scene
-- [ ] Filter/search within the navigator
-- [ ] Collapsible; hidden state persists
+- [x] Sidebar listing scene headings in document order
+- [x] Each entry shows: scene number (when enabled), INT/EXT, location, time of day
+- [x] Character list derived from the entity index, with occurrence counts
+- [x] Clicking a scene scrolls the editor to it and places the caret
+- [x] Current scene highlighted as you scroll or type
+- [x] Keyboard navigation within the navigator; `Ctrl+P`-style quick jump to scene
+- [x] Filter/search within the navigator
+- [x] Collapsible; hidden state persists
+
+ADR 0035 records the boundary: `doc_navigator` is a read-only Rust snapshot,
+characters come from the incrementally maintained entity index, and Dart owns
+filtering, focus, scrolling and highlighting. `Ctrl+J` is the quick-jump key
+because Phase 7 already assigned `Ctrl+P` to preview and export.
 
 **Deferred (explicitly out of scope for 1.0):** drag-and-drop scene reordering. When it is
 built, it must be a single `EditCommand` producing a single undo transaction, with a golden

@@ -1,9 +1,9 @@
-//! Preferences, as far as Phase 4 needs them.
+//! Preferences used through Phase 8.
 //!
-//! §Phase 4 asks for three things to be configurable — the autosave debounce,
-//! the autosave interval, and where backups go — and §6 has `prefs_get` and
-//! `prefs_set` for them. This is that file and no more: a preference with no
-//! consumer is scaffolding, which §1.4 rules out.
+//! §Phase 4 asks for autosave and backup controls, §7 adds autocomplete, and
+//! §Phase 8 persists the navigator's expanded state. §6's `prefs_get` and
+//! `prefs_set` carry them. This file has no preference without a consumer:
+//! scaffolding is a §1.4 non-goal.
 //!
 //! Reading is total. A preferences file that has been hand-edited into nonsense
 //! yields the defaults rather than an error, because the alternative is an
@@ -38,6 +38,9 @@ pub struct Preferences {
     pub autosave_enabled: bool,
     /// §7: the completion popup can be disabled without disabling entity data.
     pub autocomplete_enabled: bool,
+    /// §Phase 8: whether the navigator sidebar is expanded. The collapsed rail
+    /// remains available, so this never makes the feature unreachable.
+    pub navigator_visible: bool,
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
@@ -53,6 +56,7 @@ impl Default for Preferences {
             autosave_interval_ms: AUTOSAVE_INTERVAL_MS,
             autosave_enabled: true,
             autocomplete_enabled: true,
+            navigator_visible: true,
             backup_dir: None,
             backup_keep_versions: retention.keep_versions,
             backup_keep_days: retention.keep_days,
@@ -110,6 +114,7 @@ mod tests {
         let prefs = Preferences::default();
         assert_eq!(prefs.autosave_idle_ms, 2_000);
         assert_eq!(prefs.autosave_interval_ms, 30_000);
+        assert!(prefs.navigator_visible);
         assert_eq!(prefs.backup_keep_versions, 10);
         assert_eq!(prefs.backup_keep_days, 7);
     }
@@ -120,6 +125,7 @@ mod tests {
         let path = dir.path().join("preferences.json");
         let prefs = Preferences {
             autosave_idle_ms: 500,
+            navigator_visible: false,
             backup_dir: Some(PathBuf::from("/mnt/usb/backups")),
             ..Preferences::default()
         };

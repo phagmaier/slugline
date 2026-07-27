@@ -50,6 +50,13 @@ class FakeCore implements DocumentCore {
   /// Keep at least one such test: the real entity index is commonly non-empty.
   List<Completion> completions = const [];
 
+  /// Explicit navigator data for widget tests. The double does not derive this
+  /// from blocks: scene parsing and entity indexing belong to Rust.
+  NavigatorView navigatorData = const NavigatorView(scenes: [], characters: []);
+
+  @override
+  NavigatorView navigator() => navigatorData;
+
   @override
   List<Completion> complete(
     int block,

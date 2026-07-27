@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{Block, BlockId, BlockKind, Document};
+use crate::{split_scene_number, Block, BlockId, BlockKind, Document};
 
 /// The §7 extensions, written as the letters they are made of.
 ///
@@ -45,6 +45,27 @@ pub struct Completion {
     pub frequency: u32,
     pub recency: u64,
     pub pinned: bool,
+}
+
+/// The parts of a scene heading that navigation displays.
+///
+/// A forced scene heading is allowed to have no standard INT/EXT prefix. In
+/// that case `prefix` is empty and the whole heading (apart from an optional
+/// scene number and time of day) is the location.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneHeadingParts {
+    pub prefix: String,
+    pub location: String,
+    pub time_of_day: Option<String>,
+    pub scene_number: Option<String>,
+}
+
+/// One character in the navigator, derived from the entity index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigatorCharacter {
+    pub name: String,
+    pub frequency: u32,
+    pub blocks: Vec<BlockId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +123,53 @@ impl EntityIndex {
             .iter()
             .map(|((kind, _), display)| (*kind, display.clone()))
             .collect()
+    }
+
+    /// Characters in deterministic name order, with occurrences in document
+    /// order.
+    ///
+    /// The aggregates and per-block contributions are the index's two views of
+    /// these facts. The document is consulted only to order the stable block
+    /// ids; character recognition is not repeated here.
+    pub fn characters(&self, document: &Document) -> Vec<NavigatorCharacter> {
+        let mut characters: BTreeMap<String, NavigatorCharacter> = self
+            .entities
+            .iter()
+            .filter_map(|((kind, character_key), aggregate)| {
+                if *kind != EntityKind::Character {
+                    return None;
+                }
+                let display = aggregate
+                    .displays
+                    .iter()
+                    .max_by_key(|(display, count)| (**count, std::cmp::Reverse(*display)))
+                    .map(|(display, _)| normalize_character(display))
+                    .unwrap_or_else(|| character_key.clone());
+                Some((
+                    character_key.clone(),
+                    NavigatorCharacter {
+                        name: display,
+                        frequency: aggregate.frequency,
+                        blocks: Vec::new(),
+                    },
+                ))
+            })
+            .collect();
+
+        for block in document.blocks() {
+            let Some(contributions) = self.by_block.get(&block.id()) else {
+                continue;
+            };
+            for contribution in contributions {
+                if contribution.kind == EntityKind::Character {
+                    if let Some(character) = characters.get_mut(&contribution.key) {
+                        character.blocks.push(block.id());
+                    }
+                }
+            }
+        }
+
+        characters.into_values().collect()
     }
 
     pub fn complete(
@@ -277,38 +345,79 @@ fn contributions(block: &Block) -> Vec<Contribution> {
 }
 
 fn scene_contributions(text: &str) -> Vec<Contribution> {
-    let upper = key(text);
-    let Some((prefix, rest)) = SCENE_PREFIXES
-        .into_iter()
-        .find_map(|prefix| upper.strip_prefix(prefix).map(|rest| (prefix, rest.trim())))
-    else {
-        return Vec::new();
-    };
-    let (location, time) = rest
-        .rsplit_once(" - ")
-        .map_or((rest, None), |(location, time)| {
-            (location.trim(), Some(time.trim()))
-        });
-    let mut result = vec![Contribution {
-        kind: EntityKind::ScenePrefix,
-        key: key(prefix),
-        display: prefix.to_owned(),
-    }];
-    if !location.is_empty() {
+    let parts = scene_heading_parts(text);
+    let mut result = Vec::new();
+    if !parts.prefix.is_empty() {
         result.push(Contribution {
-            kind: EntityKind::Location,
-            key: key(location),
-            display: location.to_owned(),
+            kind: EntityKind::ScenePrefix,
+            key: key(&parts.prefix),
+            display: parts.prefix,
         });
     }
-    if let Some(time) = time.filter(|time| !time.is_empty()) {
+    if !parts.location.is_empty() {
+        result.push(Contribution {
+            kind: EntityKind::Location,
+            key: key(&parts.location),
+            display: parts.location,
+        });
+    }
+    if let Some(time) = parts.time_of_day {
         result.push(Contribution {
             kind: EntityKind::TimeOfDay,
-            key: key(time),
-            display: time.to_owned(),
+            key: key(&time),
+            display: time,
         });
     }
     result
+}
+
+/// Splits a recognised or forced scene heading for the navigator and entity
+/// index. Scene-number recognition stays in `fountain::syntax`; this function
+/// only gives names to the display parts after the parser has already decided
+/// the block is a scene heading.
+pub fn scene_heading_parts(text: &str) -> SceneHeadingParts {
+    const PREFIXES: [&str; 12] = [
+        "INT./EXT.",
+        "INT./EXT",
+        "INT/EXT.",
+        "INT/EXT",
+        "I/E.",
+        "I/E",
+        "INT.",
+        "INT",
+        "EXT.",
+        "EXT",
+        "EST.",
+        "EST",
+    ];
+
+    let (heading, scene_number) = split_scene_number(text);
+    let heading = heading.trim();
+    let upper = key(heading);
+    let (prefix, rest) = PREFIXES
+        .into_iter()
+        .find_map(|prefix| {
+            upper.strip_prefix(prefix).and_then(|rest| {
+                (rest.is_empty() || rest.starts_with(char::is_whitespace))
+                    .then(|| (prefix, rest.trim()))
+            })
+        })
+        .unwrap_or(("", upper.as_str()));
+    let (location, time_of_day) =
+        rest.rsplit_once(" - ")
+            .map_or((rest, None), |(location, time)| {
+                (
+                    location.trim(),
+                    (!time.trim().is_empty()).then(|| time.trim()),
+                )
+            });
+
+    SceneHeadingParts {
+        prefix: prefix.to_owned(),
+        location: location.to_owned(),
+        time_of_day: time_of_day.map(str::to_owned),
+        scene_number: scene_number.map(str::to_owned),
+    }
 }
 
 pub fn normalize_character(text: &str) -> String {
@@ -587,6 +696,51 @@ mod tests {
         assert!(
             p99 < std::time::Duration::from_millis(5),
             "completion p99 was {p99:?}"
+        );
+    }
+
+    #[test]
+    fn scene_heading_parts_include_authored_numbers_and_forced_headings() {
+        assert_eq!(
+            scene_heading_parts("INT./EXT. CAR - MOMENTS LATER #12A#"),
+            SceneHeadingParts {
+                prefix: "INT./EXT.".to_owned(),
+                location: "CAR".to_owned(),
+                time_of_day: Some("MOMENTS LATER".to_owned()),
+                scene_number: Some("12A".to_owned()),
+            }
+        );
+        assert_eq!(
+            scene_heading_parts("A DREAM - NIGHT"),
+            SceneHeadingParts {
+                prefix: String::new(),
+                location: "A DREAM".to_owned(),
+                time_of_day: Some("NIGHT".to_owned()),
+                scene_number: None,
+            }
+        );
+    }
+
+    #[test]
+    fn navigator_characters_use_index_counts_and_document_order() {
+        let document =
+            Document::parse("BOB (V.O.)\nFirst.\n\nALICE\nSecond.\n\nBOB (O.S.)\nThird.\n");
+        let index = EntityIndex::build(&document);
+        let characters = index.characters(&document);
+        assert_eq!(
+            characters
+                .iter()
+                .map(|character| (
+                    character.name.as_str(),
+                    character.frequency,
+                    character.blocks.len()
+                ))
+                .collect::<Vec<_>>(),
+            vec![("ALICE", 1, 1), ("BOB", 2, 2)]
+        );
+        assert!(
+            characters[1].blocks[0] < characters[1].blocks[1],
+            "occurrences are in document order"
         );
     }
 }

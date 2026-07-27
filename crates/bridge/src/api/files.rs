@@ -184,11 +184,12 @@ pub enum RecoveryOutcome {
     Failed { message: String },
 }
 
-/// §6's `Preferences`, as far as Phase 4 defines them.
+/// §6's `Preferences`, through Phase 8.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreferencesView {
     pub autosave_enabled: bool,
     pub autocomplete_enabled: bool,
+    pub navigator_visible: bool,
     pub autosave_idle_ms: u64,
     pub autosave_interval_ms: u64,
     pub backup_dir: Option<String>,
@@ -1710,6 +1711,7 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
         storage.prefs = prefs::Preferences {
             autosave_enabled: preferences.autosave_enabled,
             autocomplete_enabled: preferences.autocomplete_enabled,
+            navigator_visible: preferences.navigator_visible,
             autosave_idle_ms: preferences.autosave_idle_ms,
             autosave_interval_ms: preferences.autosave_interval_ms,
             backup_dir: preferences.backup_dir.map(PathBuf::from),
@@ -1877,6 +1879,7 @@ fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
     PreferencesView {
         autosave_enabled: preferences.autosave_enabled,
         autocomplete_enabled: preferences.autocomplete_enabled,
+        navigator_visible: preferences.navigator_visible,
         autosave_idle_ms: preferences.autosave_idle_ms,
         autosave_interval_ms: preferences.autosave_interval_ms,
         backup_dir: preferences

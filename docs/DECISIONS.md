@@ -2624,3 +2624,74 @@ chose, and the deltas against two others are measured and written down above.
   **Firefox and Chrome have not been opened on an export**, and neither has a
   printer. Both use the same `/ToUnicode` mechanism poppler does, so the risk is
   low and it is not zero; §Phase 11 packaging is where a printed page belongs.
+
+---
+
+## ADR 0035 — The navigator is a Rust semantic snapshot and a Dart interaction
+
+**Status:** Accepted
+**Date:** 2026-07-26
+**Phase:** 8
+
+### Context
+
+Phase 8 needs two related views of an open screenplay: scene headings in
+document order, split into scene number, prefix, location and time of day; and
+characters with occurrence counts. The character facts already live in
+`document::EntityIndex`, which is updated from every edit patch. Scene-heading
+recognition and Fountain's trailing `#12A#` syntax already live in Rust too.
+
+The navigator also needs interaction state that does not belong in the core:
+which tab and filtered row have keyboard focus, which visual row is at the top
+of the fluid editor, and whether the sidebar is expanded. Sending a bridge call
+for every arrow key or scroll pixel would put navigation bookkeeping on the
+editing path. Re-parsing headings or normalising character names in Dart would
+instead give Flutter a second opinion about screenplay semantics.
+
+Phase 7 already assigned `Ctrl+P` to Preview and export. Phase 8 asks for a
+"`Ctrl+P`-style" quick jump, which describes the searchable quick-open gesture;
+it cannot also own the literal key without taking a shipped command away.
+
+### Decision
+
+`doc_navigator` returns one read-only `NavigatorView` from the actor:
+
+* scenes are the document's `SceneHeading` blocks in document order;
+  `document::scene_heading_parts` uses Fountain's shared
+  `split_scene_number` rule and names the remaining prefix, location and time;
+* characters and their counts come from the session's incrementally maintained
+  `EntityIndex`; their stable cue block ids are returned in document order so a
+  click can jump without another semantic query;
+* a stale handle returns an empty snapshot, as the other read-only document
+  views do.
+
+Dart reads the snapshot when the page opens and, while the sidebar is visible,
+120 ms after a document revision. Selection-only notifications do not refresh
+it. Dart maps the returned scene ids over its existing block list so caret and
+scroll changes can highlight a scene without crossing the bridge.
+
+The sidebar owns filtering, the Scenes/Characters tabs, arrow-key selection and
+Enter. A jump sets a collapsed caret at the returned stable block id; the
+existing editor-surface listener scrolls that caret into view. `Ctrl+J` expands
+the sidebar and focuses the scene filter. `Ctrl+P` remains Preview and export.
+
+The expanded state is the `navigator_visible` global preference. It is read with
+the other preferences at document adoption and written through the existing
+atomic preferences path. The collapsed editor keeps a visible button back to
+the navigator.
+
+Drag-and-drop scene reordering remains out of scope exactly as Phase 8 says.
+
+### Consequences
+
+* Dart displays screenplay facts but does not derive them. The widget-test
+  `FakeCore` receives explicit `NavigatorView` data and performs no parsing.
+* Typing pays the entity index's existing incremental update. Snapshot refresh
+  is debounced in Dart and never runs for caret motion alone.
+* Authored Fountain scene numbers appear when present; no number is invented for
+  an unnumbered heading.
+* `crates/document/src/entities.rs` tests scene splitting and index-derived
+  counts, `crates/bridge/src/api/doc.rs` tests the complete snapshot, and
+  `app/test/editor/navigator_test.dart` covers the Phase 8 gestures and
+  highlighting. `app/integration_test/writing_test.dart` proves the real Rust
+  snapshot drives the Flutter navigator.

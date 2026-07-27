@@ -110,9 +110,9 @@ class _SluglineAppState extends State<SluglineApp> {
                 // is better than silently dropping them.
                 return;
               case files.RecoveryOutcome_Degraded(
-                  :final handle,
-                  :final message
-                ):
+                :final handle,
+                :final message,
+              ):
                 // The text is here and the old journal is still on disk, but
                 // nothing typed from now on is being recorded. That is not a
                 // thing to discover later.
@@ -183,8 +183,27 @@ class _SluglineAppState extends State<SluglineApp> {
         autosave: autosave,
         status: status,
         initialScrollRow: initialScrollRow,
+        navigatorVisible: preferences.navigatorVisible,
       );
     });
+  }
+
+  Future<void> _setNavigatorVisible(bool visible) async {
+    final open = _open;
+    if (open != null) open.navigatorVisible = visible;
+    final preferences = widget.core.preferences();
+    await widget.core.setPreferences(
+      files.PreferencesView(
+        autosaveEnabled: preferences.autosaveEnabled,
+        autocompleteEnabled: preferences.autocompleteEnabled,
+        navigatorVisible: visible,
+        autosaveIdleMs: preferences.autosaveIdleMs,
+        autosaveIntervalMs: preferences.autosaveIntervalMs,
+        backupDir: preferences.backupDir,
+        backupKeepVersions: preferences.backupKeepVersions,
+        backupKeepDays: preferences.backupKeepDays,
+      ),
+    );
   }
 
   Future<void> _closeScript() async {
@@ -251,6 +270,8 @@ class _SluglineAppState extends State<SluglineApp> {
               autosave: open.autosave,
               saveStatus: open.status,
               initialScrollRow: open.initialScrollRow,
+              navigatorVisible: open.navigatorVisible,
+              onNavigatorVisibilityChanged: _setNavigatorVisible,
               onClosed: _closeScript,
               title: _titleOf(open.core),
             ),
@@ -274,6 +295,7 @@ class _OpenScript {
     required this.autosave,
     required this.status,
     required this.initialScrollRow,
+    required this.navigatorVisible,
   });
 
   final DocumentCore core;
@@ -281,6 +303,7 @@ class _OpenScript {
   final AutosaveDriver autosave;
   final SaveStatus status;
   final int initialScrollRow;
+  bool navigatorVisible;
 
   /// Ends the session, in the order the pieces depend on each other: the
   /// autosave timers first so nothing fires at a document that is going away,

@@ -241,6 +241,7 @@ The exit criterion for this phase is that you never need it. It still works.
 | `Ctrl+F` | Find and replace |
 | `Ctrl+G` | Find next |
 | `Ctrl+Shift+G` | Find previous |
+| `Ctrl+J` | Show the navigator and focus its scene quick-jump filter |
 | `Escape` | Dismiss the open panel; with none open, drop the selection |
 
 At most one panel is open at a time. Two panels would both want Escape and both
@@ -249,6 +250,12 @@ want the focus, and neither question has a good answer.
 Inside the find bar, `Enter` and `Shift+Enter` step through the matches.
 
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
+
+Inside the navigator, typing filters the current Scenes or Characters list,
+`↑` and `↓` move the highlight, and `Enter` jumps. Clicking a scene or accepting
+one from the keyboard places the caret at its heading; clicking a character
+jumps to its next cue. `Ctrl+J` uses the quick-open shape Phase 8 calls
+"`Ctrl+P`-style"; the literal `Ctrl+P` remains Preview and export from Phase 7.
 
 ### Escape
 

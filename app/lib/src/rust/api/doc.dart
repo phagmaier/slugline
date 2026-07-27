@@ -9,7 +9,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
 ///
@@ -39,6 +39,14 @@ List<BlockView> docBlocks({
   from: from,
   to: to,
 );
+
+/// Scene and character navigation data (§Phase 8).
+///
+/// A feature-length script is only a few thousand blocks. This is a read-only
+/// actor visit over those blocks, and character recognition comes from the
+/// session's incrementally maintained entity index rather than a second scan.
+NavigatorView docNavigator({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiDocDocNavigator(handle: handle);
 
 /// The document as Fountain.
 ///
@@ -609,6 +617,89 @@ class InsertedBlock {
           runtimeType == other.runtimeType &&
           index == other.index &&
           block == other.block;
+}
+
+/// One character in §Phase 8's navigator.
+class NavigatorCharacter {
+  final String name;
+  final int occurrences;
+
+  /// Character-cue block ids, in document order. The UI uses these for an
+  /// explicit jump; reading the navigator never changes the document.
+  final List<int> blocks;
+
+  const NavigatorCharacter({
+    required this.name,
+    required this.occurrences,
+    required this.blocks,
+  });
+
+  @override
+  int get hashCode => name.hashCode ^ occurrences.hashCode ^ blocks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NavigatorCharacter &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          occurrences == other.occurrences &&
+          blocks == other.blocks;
+}
+
+/// One scene in §Phase 8's navigator.
+class NavigatorScene {
+  final int block;
+  final String? sceneNumber;
+  final String prefix;
+  final String location;
+  final String? timeOfDay;
+
+  const NavigatorScene({
+    required this.block,
+    this.sceneNumber,
+    required this.prefix,
+    required this.location,
+    this.timeOfDay,
+  });
+
+  @override
+  int get hashCode =>
+      block.hashCode ^
+      sceneNumber.hashCode ^
+      prefix.hashCode ^
+      location.hashCode ^
+      timeOfDay.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NavigatorScene &&
+          runtimeType == other.runtimeType &&
+          block == other.block &&
+          sceneNumber == other.sceneNumber &&
+          prefix == other.prefix &&
+          location == other.location &&
+          timeOfDay == other.timeOfDay;
+}
+
+/// The read-only semantic snapshot behind §Phase 8's navigator.
+class NavigatorView {
+  final List<NavigatorScene> scenes;
+  final List<NavigatorCharacter> characters;
+
+  const NavigatorView({required this.scenes, required this.characters});
+
+  @override
+  int get hashCode => scenes.hashCode ^ characters.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NavigatorView &&
+          runtimeType == other.runtimeType &&
+          scenes == other.scenes &&
+          characters == other.characters;
 }
 
 /// A block to be inserted, before the document has given it an identity.

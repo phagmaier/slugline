@@ -55,11 +55,13 @@ class EditorController extends ChangeNotifier {
   EditRejection? lastRejection;
 
   late final UnmodifiableListView<BlockView> _blocksView;
+  int _documentRevision = 0;
 
   /// The blocks, in document order. The layout below shares this list rather
   /// than copying it, so a patch mutates both at once.
   List<BlockView> get blocks => _blocksView;
   DocumentLayout get layout => _layout;
+  int get documentRevision => _documentRevision;
   DocSelection get selection => _selection;
   bool get hasSelection => _selection.anchor != _selection.focus;
 
@@ -80,6 +82,10 @@ class EditorController extends ChangeNotifier {
 
   /// The row the caret is on, for scrolling it into view.
   int get caretRow => _layout.rowAt(_focusIndex, _selection.focus.offsetUtf16);
+
+  /// The block occupying a visual row. Rows outside the document clamp to its
+  /// first or last block through [DocumentLayout], like pointer placement does.
+  BlockView blockAtRow(int row) => _blocks[_layout.blockAtRow(row)];
 
   /// What the core would write out. Phase 2 saves nothing; this is how a test
   /// asks what the core actually holds.
@@ -175,6 +181,7 @@ class EditorController extends ChangeNotifier {
     if (_blocks.isEmpty) return;
     _reindexIds();
     _layout.rebuild();
+    _documentRevision += 1;
     final first = _blocks.first;
     _selection = DocSelection(
       anchor: DocPosition(block: first.id, offsetUtf16: 0),
@@ -208,6 +215,15 @@ class EditorController extends ChangeNotifier {
     _selection = selection;
     _refreshCompletions();
     notifyListeners();
+  }
+
+  /// Places a collapsed caret at a navigator target. False means the snapshot
+  /// was stale and the block no longer exists; nothing is aimed elsewhere.
+  bool jumpToBlock(int blockId) {
+    if (_indexOf(blockId) == null) return false;
+    final position = DocPosition(block: blockId, offsetUtf16: 0);
+    setSelection(DocSelection(anchor: position, focus: position));
+    return true;
   }
 
   void _moveTo(
@@ -898,6 +914,7 @@ class EditorController extends ChangeNotifier {
   /// appeared. Nothing is refetched — a full refetch of a 120-page script on
   /// every keystroke is the thing this exists to avoid.
   void _applyResult(EditResult result) {
+    _documentRevision += 1;
     var structural = false;
 
     if (result.removed.isNotEmpty) {

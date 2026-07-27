@@ -35,7 +35,11 @@ void main() {
       source == null ? RustDocumentCore.create() : RustDocumentCore.parse(source),
     );
     addTearDown(controller.dispose);
-    await tester.pumpWidget(MaterialApp(home: EditorPage(controller: controller)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EditorPage(controller: controller, navigatorVisible: true),
+      ),
+    );
     await tester.tap(find.byType(EditorSurface));
     await tester.pump();
     return controller;
@@ -136,6 +140,36 @@ void main() {
     final reopened = EditorController(RustDocumentCore.parse(controller.source));
     addTearDown(reopened.dispose);
     expect(kinds(reopened), kinds(controller));
+  });
+
+  testWidgets('the real entity index and scene parser drive the navigator',
+      (tester) async {
+    final controller = await open(
+      tester,
+      'INT. HOUSE - DAY #1#\n\n'
+      'BOB (V.O.)\nHello.\n\n'
+      'EXT. STREET - NIGHT #2A#\n\n'
+      'BOB (O.S.)\nAgain.\n',
+    );
+
+    expect(find.text('HOUSE'), findsOneWidget);
+    expect(find.text('INT. · DAY'), findsOneWidget);
+    expect(find.text('2A'), findsOneWidget);
+
+    await tester.tap(find.textContaining('Characters'));
+    await tester.pump();
+    expect(find.text('BOB'), findsOneWidget);
+    expect(find.text('2 occurrences'), findsOneWidget);
+
+    await press(tester, LogicalKeyboardKey.keyJ, control: true);
+    tester.testTextInput.enterText('street');
+    await tester.pump();
+    await press(tester, LogicalKeyboardKey.enter);
+
+    final street = controller.blocks.firstWhere(
+      (block) => block.text.contains('STREET'),
+    );
+    expect(controller.selection.focus.block, street.id);
   });
 
   testWidgets('double-Enter after a speech asks for the next cue', (tester) async {

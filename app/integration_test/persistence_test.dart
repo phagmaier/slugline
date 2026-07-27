@@ -358,8 +358,9 @@ void main() {
 
     final reported = <String>[];
     final watching = Core.instance.events.listen((event) {
-      if (event case CoreEvent_FileChangedOnDisk(:final path)
-          when path == file) {
+      if (event case CoreEvent_FileChangedOnDisk(
+        :final path,
+      ) when path == file) {
         reported.add(path);
       }
     });
@@ -395,11 +396,10 @@ void main() {
       isNotEmpty,
       reason: 'suppression swallowed a real external change',
     );
-    expect(
-      await core.externalChange(),
-      (true, true),
-      reason: 'and it is a real one',
-    );
+    expect(await core.externalChange(), (
+      true,
+      true,
+    ), reason: 'and it is a real one');
   });
 
   testWidgets(
@@ -441,7 +441,12 @@ void main() {
 
     expect(find.byType(EditorSurface), findsOneWidget);
     final position = tester
-        .state<ScrollableState>(find.byType(Scrollable))
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(EditorSurface),
+            matching: find.byType(Scrollable),
+          ),
+        )
         .position;
     expect(position.pixels, 28 + 42 * 21);
 
@@ -505,6 +510,7 @@ void main() {
     final changed = PreferencesView(
       autosaveEnabled: true,
       autocompleteEnabled: false,
+      navigatorVisible: false,
       autosaveIdleMs: 750,
       autosaveIntervalMs: 15000,
       backupDir: null,
@@ -513,6 +519,7 @@ void main() {
     );
     expect(await Core.instance.setPreferences(changed), isTrue);
     expect(Core.instance.preferences().autosaveIdleMs, 750);
+    expect(Core.instance.preferences().navigatorVisible, isFalse);
     expect(
       File('${root.path}/config/preferences.json').existsSync(),
       isTrue,

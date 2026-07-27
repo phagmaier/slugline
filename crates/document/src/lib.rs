@@ -37,7 +37,10 @@ pub use document::{parse_blocks, Block, Document, Grouped, SerialisationSnapshot
 pub use edit::{
     DocPosition, DocSelection, EditCommand, EditError, EditResult, InvalidBlockReason, NewBlock,
 };
-pub use entities::{normalize_character, Completion, EntityIndex, EntityKind};
+pub use entities::{
+    normalize_character, scene_heading_parts, Completion, EntityIndex, EntityKind,
+    NavigatorCharacter, SceneHeadingParts,
+};
 pub use find::{FindQuery, Match};
 pub use recovery::{BlockSnapshot, Patch, ReplayError};
 pub use workflow::{enter_makes_a_cue, kind_after_enter, kind_after_tab, kind_before_tab};

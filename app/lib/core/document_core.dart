@@ -52,6 +52,9 @@ export 'package:slugline/src/rust/api/doc.dart'
         FindQuery,
         InsertedBlock,
         NewBlock,
+        NavigatorCharacter,
+        NavigatorScene,
+        NavigatorView,
         TitleEntryView;
 
 /// Everything that turns a script into pages: the preview and the PDF.
@@ -100,6 +103,9 @@ abstract class DocumentCore {
 
   /// Blocks `from..to`, clamped to what exists.
   List<rust.BlockView> blocks(int from, int to);
+
+  /// Scene and character data for §Phase 8's read-only navigator.
+  rust.NavigatorView navigator();
 
   /// The whole document as Fountain — what a save would write.
   String source();
@@ -273,6 +279,9 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
       rust.docBlocks(handle: _handle, from: from, to: to);
 
   @override
+  rust.NavigatorView navigator() => rust.docNavigator(handle: _handle);
+
+  @override
   String source() => rust.docSource(handle: _handle);
 
   @override
@@ -370,12 +379,11 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   Future<files.SaveOutcome> exportFountain(
     String path, {
     bool overwrite = false,
-  }) =>
-      files.docExportFountain(
-        handle: _handle,
-        path: path,
-        overwrite: overwrite,
-      );
+  }) => files.docExportFountain(
+    handle: _handle,
+    path: path,
+    overwrite: overwrite,
+  );
 
   @override
   Future<files.SaveOutcome> autosave() => files.docAutosave(handle: _handle);

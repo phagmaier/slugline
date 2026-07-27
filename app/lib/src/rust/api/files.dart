@@ -335,10 +335,11 @@ class BackupView {
           bytes == other.bytes;
 }
 
-/// §6's `Preferences`, as far as Phase 4 defines them.
+/// §6's `Preferences`, through Phase 8.
 class PreferencesView {
   final bool autosaveEnabled;
   final bool autocompleteEnabled;
+  final bool navigatorVisible;
   final int autosaveIdleMs;
   final int autosaveIntervalMs;
   final String? backupDir;
@@ -348,6 +349,7 @@ class PreferencesView {
   const PreferencesView({
     required this.autosaveEnabled,
     required this.autocompleteEnabled,
+    required this.navigatorVisible,
     required this.autosaveIdleMs,
     required this.autosaveIntervalMs,
     this.backupDir,
@@ -359,6 +361,7 @@ class PreferencesView {
   int get hashCode =>
       autosaveEnabled.hashCode ^
       autocompleteEnabled.hashCode ^
+      navigatorVisible.hashCode ^
       autosaveIdleMs.hashCode ^
       autosaveIntervalMs.hashCode ^
       backupDir.hashCode ^
@@ -372,6 +375,7 @@ class PreferencesView {
           runtimeType == other.runtimeType &&
           autosaveEnabled == other.autosaveEnabled &&
           autocompleteEnabled == other.autocompleteEnabled &&
+          navigatorVisible == other.navigatorVisible &&
           autosaveIdleMs == other.autosaveIdleMs &&
           autosaveIntervalMs == other.autosaveIntervalMs &&
           backupDir == other.backupDir &&

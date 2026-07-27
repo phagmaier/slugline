@@ -12,6 +12,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/element_bar.dart';
 import 'package:slugline/editor/find_bar.dart';
+import 'package:slugline/editor/navigator_sidebar.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/editor/title_page_dialog.dart';
@@ -39,6 +40,8 @@ class EditorPage extends StatefulWidget {
     this.autosave,
     this.saveStatus,
     this.initialScrollRow = 0,
+    this.navigatorVisible = false,
+    this.onNavigatorVisibilityChanged,
     this.onClosed,
     this.title,
     super.key,
@@ -54,6 +57,10 @@ class EditorPage extends StatefulWidget {
 
   /// The visual row parked for this script in the previous session.
   final int initialScrollRow;
+
+  /// §Phase 8's persisted global sidebar state.
+  final bool navigatorVisible;
+  final Future<void> Function(bool visible)? onNavigatorVisibilityChanged;
 
   /// Back to the library. Null when the editor is the whole application, which
   /// is what a test pumping this page directly gets.
@@ -78,17 +85,144 @@ class EditorPageState extends State<EditorPage> {
   /// contract, and "can the writer type?" is not a question to leave to one. The
   /// tests in `test/editor/` assert the outcome rather than the mechanism.
   final FocusNode _editorFocus = FocusNode(debugLabel: 'editor surface');
+  final GlobalKey<NavigatorSidebarState> _navigatorKey =
+      GlobalKey<NavigatorSidebarState>();
 
   int _externalChangeSerial = 0;
   int _externalChangesActive = 0;
   Completer<void>? _externalChangesSettled;
+  Timer? _navigatorRefresh;
+  late NavigatorView _navigator;
+  late bool _navigatorVisible;
+  int? _currentSceneBlock;
+  int _knownDocumentRevision = 0;
+  final Map<int, int?> _sceneAtBlock = {};
+  bool _ignoreScrollHighlightThisFrame = false;
 
   DocumentCore get _core => widget.controller.core;
 
   @override
+  void initState() {
+    super.initState();
+    _navigatorVisible = widget.navigatorVisible;
+    _navigator = _core.navigator();
+    _knownDocumentRevision = widget.controller.documentRevision;
+    _rebuildSceneMap();
+    _currentSceneBlock = _sceneAtBlock[widget.controller.selection.focus.block];
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(EditorPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    oldWidget.controller.removeListener(_onControllerChanged);
+    widget.controller.addListener(_onControllerChanged);
+    _navigatorRefresh?.cancel();
+    _navigator = _core.navigator();
+    _knownDocumentRevision = widget.controller.documentRevision;
+    _rebuildSceneMap();
+    _currentSceneBlock = _sceneAtBlock[widget.controller.selection.focus.block];
+  }
+
+  @override
   void dispose() {
+    _navigatorRefresh?.cancel();
+    widget.controller.removeListener(_onControllerChanged);
     _editorFocus.dispose();
     super.dispose();
+  }
+
+  void _onControllerChanged() {
+    _ignoreScrollHighlightThisFrame = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ignoreScrollHighlightThisFrame = false;
+    });
+    if (_knownDocumentRevision != widget.controller.documentRevision) {
+      _knownDocumentRevision = widget.controller.documentRevision;
+      if (_navigatorVisible) {
+        _navigatorRefresh?.cancel();
+        _navigatorRefresh = Timer(
+          const Duration(milliseconds: 120),
+          _refreshNavigator,
+        );
+      }
+    }
+    final current = _sceneAtBlock[widget.controller.selection.focus.block];
+    if (current != _currentSceneBlock && mounted) {
+      setState(() => _currentSceneBlock = current);
+    }
+  }
+
+  void _refreshNavigator() {
+    _navigatorRefresh = null;
+    final navigator = _core.navigator();
+    if (!mounted) return;
+    setState(() {
+      _navigator = navigator;
+      _rebuildSceneMap();
+      _currentSceneBlock =
+          _sceneAtBlock[widget.controller.selection.focus.block];
+    });
+  }
+
+  void _rebuildSceneMap() {
+    _sceneAtBlock.clear();
+    final scenes = _navigator.scenes.map((scene) => scene.block).toSet();
+    int? current;
+    for (final block in widget.controller.blocks) {
+      if (scenes.contains(block.id)) current = block.id;
+      _sceneAtBlock[block.id] = current;
+    }
+  }
+
+  void _setNavigatorVisible(bool visible) {
+    if (_navigatorVisible == visible) return;
+    setState(() => _navigatorVisible = visible);
+    unawaited(widget.onNavigatorVisibilityChanged?.call(visible));
+    if (visible) _refreshNavigator();
+  }
+
+  void _showNavigatorSearch() {
+    _setNavigatorVisible(true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _navigatorKey.currentState?.focusSceneSearch();
+    });
+  }
+
+  void _jumpToScene(int block) {
+    if (!widget.controller.jumpToBlock(block)) {
+      _refreshNavigator();
+      return;
+    }
+    _editorFocus.requestFocus();
+  }
+
+  void _jumpToCharacter(NavigatorCharacter character) {
+    if (character.blocks.isEmpty) return;
+    final order = <int, int>{
+      for (var i = 0; i < widget.controller.blocks.length; i++)
+        widget.controller.blocks[i].id: i,
+    };
+    final caretIndex = order[widget.controller.selection.focus.block] ?? -1;
+    final target = character.blocks.firstWhere(
+      (block) => (order[block] ?? -1) > caretIndex,
+      orElse: () => character.blocks.first,
+    );
+    if (!widget.controller.jumpToBlock(target)) {
+      _refreshNavigator();
+      return;
+    }
+    _editorFocus.requestFocus();
+  }
+
+  void _onScrolled(int row) {
+    _core.setScrollRow(row);
+    if (_ignoreScrollHighlightThisFrame) return;
+    final current = _sceneAtBlock[widget.controller.blockAtRow(row).id];
+    if (current != _currentSceneBlock && mounted) {
+      setState(() => _currentSceneBlock = current);
+    }
   }
 
   void _show(_Panel panel) {
@@ -151,7 +285,8 @@ class EditorPageState extends State<EditorPage> {
   /// §Phase 7's preview-before-export. Null when the core cannot paginate,
   /// which is every widget test driving the editor through the double: a
   /// command that would open a window with nothing in it is not offered.
-  ScreenplayOutput? get _output => _core is ScreenplayOutput ? _core as ScreenplayOutput : null;
+  ScreenplayOutput? get _output =>
+      _core is ScreenplayOutput ? _core as ScreenplayOutput : null;
 
   Future<void> _showPreview() async {
     if (_output case final output?) {
@@ -255,6 +390,8 @@ class EditorPageState extends State<EditorPage> {
         unawaited(save());
       case LogicalKeyboardKey.keyP when _output != null:
         unawaited(_showPreview());
+      case LogicalKeyboardKey.keyJ:
+        _showNavigatorSearch();
       default:
         return KeyEventResult.ignored;
     }
@@ -263,6 +400,10 @@ class EditorPageState extends State<EditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final navigatorWidth = (MediaQuery.sizeOf(context).width * 0.34).clamp(
+      176.0,
+      288.0,
+    );
     return Focus(
       // Above the surface, so the surface still sees every editing key first and
       // only what it ignores reaches here.
@@ -293,6 +434,11 @@ class EditorPageState extends State<EditorPage> {
                       ),
                     ),
                   IconButton(
+                    icon: const Icon(Icons.format_list_bulleted),
+                    tooltip: 'Jump to scene (Ctrl+J)',
+                    onPressed: _showNavigatorSearch,
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.article_outlined),
                     tooltip: 'Title page',
                     onPressed: () => unawaited(_showTitlePage()),
@@ -316,62 +462,105 @@ class EditorPageState extends State<EditorPage> {
                   const SizedBox(width: 8),
                 ],
               ),
-        body: Column(
+        body: Row(
           children: [
+            if (_navigatorVisible) ...[
+              SizedBox(
+                width: navigatorWidth,
+                child: NavigatorSidebar(
+                  key: _navigatorKey,
+                  data: _navigator,
+                  currentSceneBlock: _currentSceneBlock,
+                  onSceneSelected: _jumpToScene,
+                  onCharacterSelected: _jumpToCharacter,
+                  onCollapse: () => _setNavigatorVisible(false),
+                ),
+              ),
+              const VerticalDivider(width: 1),
+            ],
             Expanded(
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: EditorSurface(
-                      controller: widget.controller,
-                      initialScrollRow: widget.initialScrollRow,
-                      focusNode: _editorFocus,
-                      // The surface has the focus, so it sees these keys first and
-                      // hands the ones that are not editing back up here.
-                      onOpenPalette: () => _show(_Panel.palette),
-                      onOpenFind: () => _show(_Panel.find),
-                      onEscape: _dismiss,
-                      // §Phase 4: no autosave during a composition. A save that
-                      // serialises the document mid-composition would write text
-                      // the platform still considers provisional.
-                      onComposingChanged: (composing) => composing
-                          ? widget.autosave?.suppress('composing')
-                          : widget.autosave?.release('composing'),
-                      onScrolled: _core.setScrollRow,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: EditorSurface(
+                                  controller: widget.controller,
+                                  initialScrollRow: widget.initialScrollRow,
+                                  focusNode: _editorFocus,
+                                  // The surface has the focus, so it sees these keys first and
+                                  // hands the ones that are not editing back up here.
+                                  onOpenPalette: () => _show(_Panel.palette),
+                                  onOpenFind: () => _show(_Panel.find),
+                                  onEscape: _dismiss,
+                                  // §Phase 4: no autosave during a composition. A save that
+                                  // serialises the document mid-composition would write text
+                                  // the platform still considers provisional.
+                                  onComposingChanged: (composing) => composing
+                                      ? widget.autosave?.suppress('composing')
+                                      : widget.autosave?.release('composing'),
+                                  onScrolled: _onScrolled,
+                                ),
+                              ),
+                              if (!_navigatorVisible)
+                                Positioned(
+                                  top: 8,
+                                  left: 8,
+                                  child: IconButton.filledTonal(
+                                    key: const ValueKey('show navigator'),
+                                    tooltip: 'Show navigator (Ctrl+J)',
+                                    onPressed: () => _setNavigatorVisible(true),
+                                    icon: const Icon(
+                                      Icons.format_list_bulleted,
+                                    ),
+                                  ),
+                                ),
+                              if (_panel == _Panel.find)
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: FindBar(
+                                    controller: widget.controller,
+                                    onDismiss: _dismiss,
+                                  ),
+                                ),
+                              if (_panel == _Panel.palette)
+                                Positioned.fill(
+                                  child: CommandPalette(
+                                    commands: editorCommands(
+                                      controller: widget.controller,
+                                      openFind: () => _show(_Panel.find),
+                                      openNavigator: _showNavigatorSearch,
+                                      save: () => unawaited(save()),
+                                      saveAs: () =>
+                                          unawaited(save(forcePath: true)),
+                                      showBackups: () =>
+                                          unawaited(_showBackups()),
+                                      editTitlePage: () =>
+                                          unawaited(_showTitlePage()),
+                                      previewAndExport: _output == null
+                                          ? null
+                                          : () => unawaited(_showPreview()),
+                                    ),
+                                    onDismiss: _dismiss,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        ElementBar(
+                          controller: widget.controller,
+                          saveStatus: widget.saveStatus,
+                        ),
+                      ],
                     ),
                   ),
-                  if (_panel == _Panel.find)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: FindBar(
-                        controller: widget.controller,
-                        onDismiss: _dismiss,
-                      ),
-                    ),
-                  if (_panel == _Panel.palette)
-                    Positioned.fill(
-                      child: CommandPalette(
-                        commands: editorCommands(
-                          controller: widget.controller,
-                          openFind: () => _show(_Panel.find),
-                          save: () => unawaited(save()),
-                          saveAs: () => unawaited(save(forcePath: true)),
-                          showBackups: () => unawaited(_showBackups()),
-                          editTitlePage: () => unawaited(_showTitlePage()),
-                          previewAndExport: _output == null
-                              ? null
-                              : () => unawaited(_showPreview()),
-                        ),
-                        onDismiss: _dismiss,
-                      ),
-                    ),
                 ],
               ),
-            ),
-            ElementBar(
-              controller: widget.controller,
-              saveStatus: widget.saveStatus,
             ),
           ],
         ),

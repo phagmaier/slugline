@@ -32,6 +32,7 @@ class EditorCommand {
 List<EditorCommand> editorCommands({
   required EditorController controller,
   required VoidCallback openFind,
+  VoidCallback? openNavigator,
   VoidCallback? save,
   VoidCallback? saveAs,
   VoidCallback? showBackups,
@@ -70,7 +71,8 @@ List<EditorCommand> editorCommands({
         group: 'Element',
         label: choice.label,
         shortcut: choice.shortcut,
-        run: () => controller.setKind(choice.kind, sectionLevel: choice.sectionLevel),
+        run: () =>
+            controller.setKind(choice.kind, sectionLevel: choice.sectionLevel),
       ),
     EditorCommand(
       group: 'Element',
@@ -144,6 +146,13 @@ List<EditorCommand> editorCommands({
       shortcut: 'Ctrl+Shift+G',
       run: controller.previousMatch,
     ),
+    if (openNavigator case final run?)
+      EditorCommand(
+        group: 'Go to',
+        label: 'Jump to scene…',
+        shortcut: 'Ctrl+J',
+        run: run,
+      ),
     EditorCommand(
       group: 'Go to',
       label: 'Start of script',
@@ -176,7 +185,9 @@ List<EditorCommand> filterCommands(List<EditorCommand> commands, String query) {
     if (score != null) scored.add((score, i, commands[i]));
   }
   // The index is the tie-breaker, so equal scores keep the declared order.
-  scored.sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+  scored.sort(
+    (a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2),
+  );
   return [for (final entry in scored) entry.$3];
 }
 

@@ -185,6 +185,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<LayoutLineView> dco_decode_list_layout_line_view(dynamic raw);
 
   @protected
+  List<NavigatorCharacter> dco_decode_list_navigator_character(dynamic raw);
+
+  @protected
+  List<NavigatorScene> dco_decode_list_navigator_scene(dynamic raw);
+
+  @protected
   List<NewBlock> dco_decode_list_new_block(dynamic raw);
 
   @protected
@@ -201,6 +207,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<TitleEntryView> dco_decode_list_title_entry_view(dynamic raw);
+
+  @protected
+  NavigatorCharacter dco_decode_navigator_character(dynamic raw);
+
+  @protected
+  NavigatorScene dco_decode_navigator_scene(dynamic raw);
+
+  @protected
+  NavigatorView dco_decode_navigator_view(dynamic raw);
 
   @protected
   NewBlock dco_decode_new_block(dynamic raw);
@@ -488,6 +503,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<NavigatorCharacter> sse_decode_list_navigator_character(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NavigatorScene> sse_decode_list_navigator_scene(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NewBlock> sse_decode_list_new_block(SseDeserializer deserializer);
 
   @protected
@@ -508,6 +533,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TitleEntryView> sse_decode_list_title_entry_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  NavigatorCharacter sse_decode_navigator_character(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigatorScene sse_decode_navigator_scene(SseDeserializer deserializer);
+
+  @protected
+  NavigatorView sse_decode_navigator_view(SseDeserializer deserializer);
 
   @protected
   NewBlock sse_decode_new_block(SseDeserializer deserializer);
@@ -889,6 +925,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_navigator_character(
+    List<NavigatorCharacter> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_navigator_scene(
+    List<NavigatorScene> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_new_block(List<NewBlock> self, SseSerializer serializer);
 
   @protected
@@ -917,6 +965,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<TitleEntryView> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_navigator_character(
+    NavigatorCharacter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigator_scene(
+    NavigatorScene self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigator_view(NavigatorView self, SseSerializer serializer);
 
   @protected
   void sse_encode_new_block(NewBlock self, SseSerializer serializer);

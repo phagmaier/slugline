@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -793435242;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -157513556;
 
 // Section: executor
 
@@ -712,6 +712,36 @@ fn wire__crate__api__files__doc_journal_state_impl(
             transform_result_sse::<_, ()>((move || {
                 let output_ok =
                     Result::<_, ()>::Ok(crate::api::files::doc_journal_state(api_handle))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__doc__doc_navigator_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "doc_navigator",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::doc::doc_navigator(api_handle))?;
                 Ok(output_ok)
             })())
         },
@@ -2664,6 +2694,32 @@ impl SseDecode for Vec<crate::api::layout::LayoutLineView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::doc::NavigatorCharacter> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::doc::NavigatorCharacter>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::doc::NavigatorScene> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::doc::NavigatorScene>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::doc::NewBlock> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2733,6 +2789,51 @@ impl SseDecode for Vec<crate::api::doc::TitleEntryView> {
             ans_.push(<crate::api::doc::TitleEntryView>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::doc::NavigatorCharacter {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_occurrences = <u32>::sse_decode(deserializer);
+        let mut var_blocks = <Vec<u64>>::sse_decode(deserializer);
+        return crate::api::doc::NavigatorCharacter {
+            name: var_name,
+            occurrences: var_occurrences,
+            blocks: var_blocks,
+        };
+    }
+}
+
+impl SseDecode for crate::api::doc::NavigatorScene {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_block = <u64>::sse_decode(deserializer);
+        let mut var_sceneNumber = <Option<String>>::sse_decode(deserializer);
+        let mut var_prefix = <String>::sse_decode(deserializer);
+        let mut var_location = <String>::sse_decode(deserializer);
+        let mut var_timeOfDay = <Option<String>>::sse_decode(deserializer);
+        return crate::api::doc::NavigatorScene {
+            block: var_block,
+            scene_number: var_sceneNumber,
+            prefix: var_prefix,
+            location: var_location,
+            time_of_day: var_timeOfDay,
+        };
+    }
+}
+
+impl SseDecode for crate::api::doc::NavigatorView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_scenes = <Vec<crate::api::doc::NavigatorScene>>::sse_decode(deserializer);
+        let mut var_characters =
+            <Vec<crate::api::doc::NavigatorCharacter>>::sse_decode(deserializer);
+        return crate::api::doc::NavigatorView {
+            scenes: var_scenes,
+            characters: var_characters,
+        };
     }
 }
 
@@ -3000,6 +3101,7 @@ impl SseDecode for crate::api::files::PreferencesView {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_autosaveEnabled = <bool>::sse_decode(deserializer);
         let mut var_autocompleteEnabled = <bool>::sse_decode(deserializer);
+        let mut var_navigatorVisible = <bool>::sse_decode(deserializer);
         let mut var_autosaveIdleMs = <u64>::sse_decode(deserializer);
         let mut var_autosaveIntervalMs = <u64>::sse_decode(deserializer);
         let mut var_backupDir = <Option<String>>::sse_decode(deserializer);
@@ -3008,6 +3110,7 @@ impl SseDecode for crate::api::files::PreferencesView {
         return crate::api::files::PreferencesView {
             autosave_enabled: var_autosaveEnabled,
             autocomplete_enabled: var_autocompleteEnabled,
+            navigator_visible: var_navigatorVisible,
             autosave_idle_ms: var_autosaveIdleMs,
             autosave_interval_ms: var_autosaveIntervalMs,
             backup_dir: var_backupDir,
@@ -3274,26 +3377,26 @@ fn pde_ffi_dispatcher_primary_impl(
         14 => wire__crate__api__files__doc_export_fountain_impl(port, ptr, rust_vec_len, data_len),
         15 => wire__crate__api__files__doc_export_pdf_impl(port, ptr, rust_vec_len, data_len),
         16 => wire__crate__api__files__doc_external_change_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__layout__doc_paginate_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__handshake__init_app_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__handshake__proof_events_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__layout__doc_paginate_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__handshake__init_app_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__handshake__proof_events_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3318,25 +3421,26 @@ fn pde_ffi_dispatcher_sync_impl(
         17 => wire__crate__api__doc__doc_extract_impl(ptr, rust_vec_len, data_len),
         18 => wire__crate__api__doc__doc_find_impl(ptr, rust_vec_len, data_len),
         19 => wire__crate__api__files__doc_journal_state_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__doc__doc_new_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__doc__doc_parse_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__doc__doc_paste_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__files__doc_path_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__doc__doc_redo_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__doc__doc_replace_all_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__doc__doc_set_title_field_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__doc__doc_title_page_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__handshake__echo_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__handshake__ping_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__handshake__slice_utf16_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__handshake__text_metrics_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__doc__doc_navigator_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__doc__doc_new_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__doc__doc_parse_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__doc__doc_paste_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__files__doc_path_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__doc__doc_redo_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__doc__doc_replace_all_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__doc__doc_set_title_field_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__doc__doc_title_page_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__handshake__echo_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__handshake__ping_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__handshake__slice_utf16_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__handshake__text_metrics_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3858,6 +3962,73 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::LayoutLineView>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorCharacter {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.occurrences.into_into_dart().into_dart(),
+            self.blocks.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::doc::NavigatorCharacter
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::NavigatorCharacter>
+    for crate::api::doc::NavigatorCharacter
+{
+    fn into_into_dart(self) -> crate::api::doc::NavigatorCharacter {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorScene {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.block.into_into_dart().into_dart(),
+            self.scene_number.into_into_dart().into_dart(),
+            self.prefix.into_into_dart().into_dart(),
+            self.location.into_into_dart().into_dart(),
+            self.time_of_day.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::doc::NavigatorScene
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::NavigatorScene>
+    for crate::api::doc::NavigatorScene
+{
+    fn into_into_dart(self) -> crate::api::doc::NavigatorScene {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.scenes.into_into_dart().into_dart(),
+            self.characters.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::doc::NavigatorView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::NavigatorView>
+    for crate::api::doc::NavigatorView
+{
+    fn into_into_dart(self) -> crate::api::doc::NavigatorView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::doc::NewBlock {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -4016,6 +4187,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::PreferencesView {
         [
             self.autosave_enabled.into_into_dart().into_dart(),
             self.autocomplete_enabled.into_into_dart().into_dart(),
+            self.navigator_visible.into_into_dart().into_dart(),
             self.autosave_idle_ms.into_into_dart().into_dart(),
             self.autosave_interval_ms.into_into_dart().into_dart(),
             self.backup_dir.into_into_dart().into_dart(),
@@ -4771,6 +4943,26 @@ impl SseEncode for Vec<crate::api::layout::LayoutLineView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::doc::NavigatorCharacter> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::doc::NavigatorCharacter>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::doc::NavigatorScene> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::doc::NavigatorScene>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::doc::NewBlock> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4828,6 +5020,34 @@ impl SseEncode for Vec<crate::api::doc::TitleEntryView> {
         for item in self {
             <crate::api::doc::TitleEntryView>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::doc::NavigatorCharacter {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <u32>::sse_encode(self.occurrences, serializer);
+        <Vec<u64>>::sse_encode(self.blocks, serializer);
+    }
+}
+
+impl SseEncode for crate::api::doc::NavigatorScene {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.block, serializer);
+        <Option<String>>::sse_encode(self.scene_number, serializer);
+        <String>::sse_encode(self.prefix, serializer);
+        <String>::sse_encode(self.location, serializer);
+        <Option<String>>::sse_encode(self.time_of_day, serializer);
+    }
+}
+
+impl SseEncode for crate::api::doc::NavigatorView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::doc::NavigatorScene>>::sse_encode(self.scenes, serializer);
+        <Vec<crate::api::doc::NavigatorCharacter>>::sse_encode(self.characters, serializer);
     }
 }
 
@@ -5047,6 +5267,7 @@ impl SseEncode for crate::api::files::PreferencesView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.autosave_enabled, serializer);
         <bool>::sse_encode(self.autocomplete_enabled, serializer);
+        <bool>::sse_encode(self.navigator_visible, serializer);
         <u64>::sse_encode(self.autosave_idle_ms, serializer);
         <u64>::sse_encode(self.autosave_interval_ms, serializer);
         <Option<String>>::sse_encode(self.backup_dir, serializer);

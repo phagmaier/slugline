@@ -82,6 +82,33 @@ pub struct BlockView {
     pub read_only: bool,
 }
 
+/// One scene in §Phase 8's navigator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigatorScene {
+    pub block: u64,
+    pub scene_number: Option<String>,
+    pub prefix: String,
+    pub location: String,
+    pub time_of_day: Option<String>,
+}
+
+/// One character in §Phase 8's navigator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigatorCharacter {
+    pub name: String,
+    pub occurrences: u32,
+    /// Character-cue block ids, in document order. The UI uses these for an
+    /// explicit jump; reading the navigator never changes the document.
+    pub blocks: Vec<u64>,
+}
+
+/// The read-only semantic snapshot behind §Phase 8's navigator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigatorView {
+    pub scenes: Vec<NavigatorScene>,
+    pub characters: Vec<NavigatorCharacter>,
+}
+
 /// A caret position, in document coordinates (§3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocPosition {
@@ -309,6 +336,50 @@ pub fn doc_blocks(handle: DocumentHandle, from: u32, to: u32) -> Vec<BlockView> 
         let start = (from as usize).min(blocks.len());
         let end = (to as usize).clamp(start, blocks.len());
         blocks[start..end].iter().map(view_of).collect()
+    })
+}
+
+/// Scene and character navigation data (§Phase 8).
+///
+/// A feature-length script is only a few thousand blocks. This is a read-only
+/// actor visit over those blocks, and character recognition comes from the
+/// session's incrementally maintained entity index rather than a second scan.
+#[frb(sync)]
+pub fn doc_navigator(handle: DocumentHandle) -> NavigatorView {
+    actor().run(move |state| {
+        let Some(session) = state.session(handle.id) else {
+            return NavigatorView {
+                scenes: Vec::new(),
+                characters: Vec::new(),
+            };
+        };
+        let document = session.document();
+        let scenes = document
+            .blocks()
+            .iter()
+            .filter(|block| block.kind() == model::BlockKind::SceneHeading)
+            .map(|block| {
+                let parts = model::scene_heading_parts(block.text());
+                NavigatorScene {
+                    block: block.id().0,
+                    scene_number: parts.scene_number,
+                    prefix: parts.prefix,
+                    location: parts.location,
+                    time_of_day: parts.time_of_day,
+                }
+            })
+            .collect();
+        let characters = session
+            .entities()
+            .characters(document)
+            .into_iter()
+            .map(|character| NavigatorCharacter {
+                name: character.name,
+                occurrences: character.frequency,
+                blocks: character.blocks.into_iter().map(|block| block.0).collect(),
+            })
+            .collect();
+        NavigatorView { scenes, characters }
     })
 }
 
@@ -1627,6 +1698,57 @@ mod tests {
             ]
         );
         assert_eq!(doc.text(), SCRIPT, "an untouched document round-trips");
+    }
+
+    #[test]
+    fn navigator_reports_scenes_and_entity_index_characters() {
+        let doc = Doc::parse(
+            "INT. HOUSE - DAY #1#\n\nBOB (V.O.)\nHello.\n\n\
+             EXT. STREET - NIGHT #2A#\n\nALICE\nHi.\n\nBOB (O.S.)\nAgain.\n",
+        );
+        let navigator = doc_navigator(doc.handle());
+        assert_eq!(
+            navigator.scenes,
+            vec![
+                NavigatorScene {
+                    block: doc.id(0),
+                    scene_number: Some("1".to_owned()),
+                    prefix: "INT.".to_owned(),
+                    location: "HOUSE".to_owned(),
+                    time_of_day: Some("DAY".to_owned()),
+                },
+                NavigatorScene {
+                    block: doc.id(3),
+                    scene_number: Some("2A".to_owned()),
+                    prefix: "EXT.".to_owned(),
+                    location: "STREET".to_owned(),
+                    time_of_day: Some("NIGHT".to_owned()),
+                },
+            ]
+        );
+        assert_eq!(
+            navigator
+                .characters
+                .iter()
+                .map(|character| (
+                    character.name.as_str(),
+                    character.occurrences,
+                    character.blocks.len()
+                ))
+                .collect::<Vec<_>>(),
+            vec![("ALICE", 1, 1), ("BOB", 2, 2)]
+        );
+    }
+
+    #[test]
+    fn navigator_on_a_stale_handle_is_empty() {
+        assert_eq!(
+            doc_navigator(DocumentHandle { id: u64::MAX }),
+            NavigatorView {
+                scenes: Vec::new(),
+                characters: Vec::new(),
+            }
+        );
     }
 
     #[test]
