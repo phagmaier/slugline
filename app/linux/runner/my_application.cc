@@ -85,6 +85,15 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  // A floor, not a preference. The app bar's actions and the element bar along
+  // the bottom are laid out in one row each, and below roughly this width the
+  // chrome has nowhere left to put them. A tiling window manager is free to
+  // ignore this hint — the bars ellipsize rather than overflow so that it
+  // degrades into unreadable-but-intact rather than clipped.
+  GdkGeometry minimum;
+  minimum.min_width = 800;
+  minimum.min_height = 480;
+  gtk_window_set_geometry_hints(window, nullptr, &minimum, GDK_HINT_MIN_SIZE);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

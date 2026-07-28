@@ -20,15 +20,20 @@ This spec is organised into **phases**. Each phase has:
 Do not start a phase until the previous phase's exit criteria are all ticked. The phases
 are ordered so that each one is independently demoable and each one de-risks the next.
 
-**Where the project is, as of 2026-07-26.** Phases 0–7 are written: the editor, the
-persistence, the entity index, the pagination engine, and now the PDF, the title page and
-the paginated preview. Between Phase 6 and Phase 7 sat a **stabilization gate**: a
-mid-project audit (`REVIEW.md`) found defects this document's checkboxes did not reflect,
-and `REMEDIATION_PLAN.md` worked through them phase by phase. That plan is now complete —
-all fourteen findings closed, its Phase 10 verification passed, and its Phase 7
-authorization gate opened. A box ticked here means the behaviour is implemented *and*
-tested; where the remediation found one that was not, the box was unticked and says why,
-with the finding number. For what was repaired and how, that plan remains the record.
+**Where the project is, as of 2026-07-27.** Phases 0–10 are written: the editor, the
+persistence, the entity index, the pagination engine, the PDF, the title page, the
+paginated preview, the navigator, spell-check, and the preferences. **Phase 11 —
+packaging and release — is the one that is left**, and its checklist below is the
+list of what stands between this and a shippable artifact.
+
+Between Phase 6 and Phase 7 sat a **stabilization gate**: a mid-project audit
+(`REVIEW.md`) found defects this document's checkboxes did not reflect, and a
+remediation plan worked through them phase by phase. That plan is now complete — all
+fourteen findings closed, its Phase 10 verification passed, and its Phase 7
+authorization gate opened. Its tracker file is not part of this repository; `REVIEW.md`
+is the audit that survives, and `docs/DECISIONS.md` carries the decisions it produced.
+A box ticked here means the behaviour is implemented *and* tested; where the remediation
+found one that was not, the box was unticked and says why, with the finding number.
 Phase 7's one qualified box is its exit criterion, and ADR 0034 says exactly how.
 
 **If you are handing work to AI agents:** give an agent exactly one phase section, plus
@@ -1375,8 +1380,10 @@ failure is unambiguous.
       never applied")
 - [x] `spellcheck_never_modifies` — no automatic correction
       (`crates/bridge/src/api/spellcheck_never_modifies.rs`)
-- [ ] `appearance_prefs_dont_affect_pagination` — zoom/theme leave golden layout
-      identical (Phase 10; nothing edits preferences yet)
+- [x] `appearance_prefs_dont_affect_pagination` — zoom/theme leave golden layout
+      identical (`crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs`,
+      which byte-compares the pagination either side of a preference change;
+      ADR 0037 is why the presentation preferences never reach Rust at all)
 - [x] `roundtrip_is_byte_exact` — unedited files resave identically
       (`crates/fountain/tests/roundtrip_is_byte_exact.rs` over every corpus file
       and the 120-page reference, plus the `roundtrip` fuzz target)
@@ -1405,9 +1412,9 @@ What `.github/workflows/ci.yml` actually runs, as of the remediation:
 | --- | --- |
 | `rust` | `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace` — with a 4 MB tmpfs mounted and named in `SLUGLINE_FULL_DISK_DIR`, so the full-disk test is the real thing — `tools/check_layering.py`, `tools/make_reference.py --check` |
 | `fuzz` | `parse` and `roundtrip`, 200k iterations each, as a smoke run rather than the 1M-iteration gate |
-| `flutter` | `flutter analyze`, `flutter test`, the release build, the bundled-`.so` and 60 MB bundle assertions, then **all six** integration tests under `xvfb-run`: `bridge_test`, `editor_test`, `writing_test`, `ime_test`, `persistence_test`, `keystroke_benchmark_test` |
+| `flutter` | `flutter analyze`, `flutter test`, the release build, the bundled-`.so` and 60 MB bundle assertions, then **all seven** integration tests under `xvfb-run`: `bridge_test`, `editor_test`, `writing_test`, `ime_test`, `persistence_test`, `export_test`, `keystroke_benchmark_test` |
 
-Three of those six integration tests did not run in CI until remediation Phase 3, and
+Three of those integration tests did not run in CI until remediation Phase 3, and
 `SLUGLINE_FULL_DISK_DIR` was never set — the audit's F7 and test-gap #4. Both are closed.
 CI still triggers on `main` and on pull requests only, so work on a long-lived branch is
 not gated until it is proposed.

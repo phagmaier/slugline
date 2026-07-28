@@ -332,4 +332,44 @@ void main() {
       expect(rejectionMessage(EditRejection.badOffset), 'That edit was refused.');
     });
   });
+
+  group('a narrow window:', () {
+    // The bar is one `Row` holding a refusal sentence and a Tab hint, either of
+    // which is wider than a tiled window. It used to overflow, and an
+    // overflowing `Row` does not shrink — it paints its children off the edge
+    // and drops the rest, so the counts on the right went missing rather than
+    // getting shorter. Both long labels ellipsize now.
+    Future<void> pumpAt(WidgetTester tester, double width) async {
+      final core = oneBlock(BlockKind.action);
+      core.refuseWith = EditRejection.notEditable;
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      controller.insertText('x');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: width, child: ElementBar(controller: controller)),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('does not overflow the element bar', (tester) async {
+      for (final width in [1280.0, 800.0, 480.0, 320.0, 200.0]) {
+        await pumpAt(tester, width);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'the element bar overflowed at ${width}px',
+        );
+      }
+    });
+
+    testWidgets('keeps the block count, which is the shortest thing on it',
+        (tester) async {
+      await pumpAt(tester, 480);
+      expect(find.text('1 blocks'), findsOneWidget);
+    });
+  });
 }

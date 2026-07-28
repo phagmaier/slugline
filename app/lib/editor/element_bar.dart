@@ -38,25 +38,40 @@ class ElementBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  _ElementSelector(controller: controller, block: block),
+                  Flexible(
+                    child: _ElementSelector(controller: controller, block: block),
+                  ),
                   const SizedBox(width: 10),
-                  _TabHint(controller: controller),
-                  const Spacer(),
+                  // The hint takes the slack the `Spacer` used to, so that the
+                  // counts on the right stay right-aligned — and it is the first
+                  // thing to give up room, because it is the one thing here the
+                  // writer can also read off the keyboard. Both it and the
+                  // rejection ellipsize: a bar that overflows paints nothing at
+                  // all where the text was, and this bar's job is to be read.
+                  Expanded(child: _TabHint(controller: controller)),
                   if (rejection != null)
-                    Text(
-                      rejectionMessage(rejection),
-                      style: theme.textTheme.labelMedium
-                          ?.copyWith(color: theme.colorScheme.error),
+                    Flexible(
+                      child: Text(
+                        rejectionMessage(rejection),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium
+                            ?.copyWith(color: theme.colorScheme.error),
+                      ),
                     ),
                   const SizedBox(width: 16),
-                  Text(
-                    '${controller.blocks.length} blocks',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: theme.disabledColor),
+                  Flexible(
+                    child: Text(
+                      '${controller.blocks.length} blocks',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium
+                          ?.copyWith(color: theme.disabledColor),
+                    ),
                   ),
                   if (saveStatus case final status?) ...[
                     const SizedBox(width: 12),
-                    _SaveStatusLabel(status: status),
+                    Flexible(child: _SaveStatusLabel(status: status)),
                   ],
                 ],
               ),
@@ -85,6 +100,8 @@ class _SaveStatusLabel extends StatelessWidget {
       animation: status,
       builder: (context, _) => Text(
         status.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: theme.textTheme.labelMedium?.copyWith(
           color: status.isError ? theme.colorScheme.error : theme.disabledColor,
         ),
@@ -144,8 +161,16 @@ class _ElementSelector extends StatelessWidget {
           ),
       ],
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: theme.textTheme.labelLarge),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelLarge,
+            ),
+          ),
           // `forced` is Fountain's own record that a human said so, and it is
           // visible in the file as a `.`, `@`, `>` or `!` — so it is worth
           // saying on screen too.
@@ -185,6 +210,8 @@ class _TabHint extends StatelessWidget {
     return Text(
       label,
       key: const Key('tab-hint'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       style: theme.textTheme.labelMedium?.copyWith(color: theme.disabledColor),
     );
   }
