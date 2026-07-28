@@ -1,5 +1,9 @@
 # Slugline — Mid-Project Technical Audit
 
+> **ARCHIVAL.** All fourteen findings are closed. This audit is preserved as
+> provenance for the quality claims in `README.md`; the decisions it produced are
+> recorded in `docs/DECISIONS.md`.
+
 **Date:** 2026-07-25 · **Reviewed at:** commit `16b6cff` ("phase 6"), branch `dev`
 
 **Scope reviewed:** all of `crates/` (fountain, document, layout, storage, bridge in

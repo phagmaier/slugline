@@ -1,11 +1,14 @@
 # Screenwriting Application — Technical Specification & Build Plan
 
+> **ARCHIVAL.** This document drove the build through 1.0. It is preserved for
+> provenance — to answer "why is this like this?" — not as a live plan. The
+> application's current state is described in `README.md` and `docs/DECISIONS.md`.
+
 **Target platform:** Linux (X11 + Wayland), 64-bit
 **UI:** Dart / Flutter (Linux desktop embedder, GTK)
 **Core:** Rust (compiled as a `cdylib` linked into the Flutter bundle)
 **Bridge:** `flutter_rust_bridge` v2
 **Canonical format:** Fountain (`.fountain`)
-**Status:** Draft 1 — working document, revise as decisions are made
 
 ---
 
