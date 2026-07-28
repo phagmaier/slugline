@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:slugline/editor/commands.dart';
+import 'package:slugline/theme.dart';
 
 /// `Ctrl+K`: a searchable list of every element type and command.
 ///
@@ -100,7 +101,7 @@ class _CommandPaletteState extends State<CommandPalette> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colours = context.colours;
     final visible = _visible;
     if (_highlighted >= visible.length) _highlighted = 0;
 
@@ -111,7 +112,7 @@ class _CommandPaletteState extends State<CommandPalette> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: widget.onDismiss,
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+            child: ColoredBox(color: colours.scrim),
           ),
         ),
         Align(
@@ -120,10 +121,15 @@ class _CommandPaletteState extends State<CommandPalette> {
             padding: const EdgeInsets.only(top: 72),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520, maxHeight: 420),
+              // The overlay surface and a hairline, like every other thing in
+              // this application that floats.
               child: Material(
-                elevation: 8,
-                borderRadius: BorderRadius.circular(10),
-                color: theme.colorScheme.surfaceContainerHigh,
+                elevation: 0,
+                color: colours.surfaceOverlay,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: hairline(colours),
+                ),
                 child: Focus(
                   onKeyEvent: _onKey,
                   child: Column(
@@ -190,10 +196,11 @@ class _PaletteRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: selected ? theme.colorScheme.primary.withValues(alpha: 0.18) : null,
+        color: selected ? colours.accentSubtle : null,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         alignment: Alignment.centerLeft,
         child: Row(
@@ -202,14 +209,18 @@ class _PaletteRow extends StatelessWidget {
               width: 72,
               child: Text(
                 command.group,
-                style: theme.textTheme.labelSmall?.copyWith(color: theme.disabledColor),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colours.textTertiary,
+                ),
               ),
             ),
             Expanded(child: Text(command.label, style: theme.textTheme.bodyMedium)),
             if (command.shortcut.isNotEmpty)
               Text(
                 command.shortcut,
-                style: theme.textTheme.labelSmall?.copyWith(color: theme.disabledColor),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colours.textTertiary,
+                ),
               ),
           ],
         ),

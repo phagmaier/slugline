@@ -14,6 +14,7 @@ import 'package:slugline/editor/metrics.dart';
 import 'package:slugline/editor/page_geometry.dart';
 import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/surface_semantics.dart';
+import 'package:slugline/theme.dart';
 import 'package:slugline/typography.dart';
 
 /// One editing surface for the whole document (ADR 0005).
@@ -1026,12 +1027,15 @@ class _CompletionPopup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colours = Theme.of(context).colorScheme;
+    final colours = context.colours;
     return Material(
       key: const ValueKey('completion-popup'),
-      elevation: 6,
-      color: colours.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(4),
+      elevation: 0,
+      color: colours.surfaceOverlay,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: hairline(colours),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
         child: Column(
@@ -1043,7 +1047,7 @@ class _CompletionPopup extends StatelessWidget {
               Container(
                 key: ValueKey('completion-${candidate.value}'),
                 color: index == controller.completionIndex
-                    ? colours.primaryContainer
+                    ? colours.accentSubtle
                     : null,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -1057,8 +1061,8 @@ class _CompletionPopup extends StatelessWidget {
                         candidate.value,
                         style: _textStyle(textSize).copyWith(
                           color: index == controller.completionIndex
-                              ? colours.onPrimaryContainer
-                              : colours.onSurface,
+                              ? colours.textPrimary
+                              : colours.textSecondary,
                         ),
                       ),
                     ),
@@ -1090,7 +1094,7 @@ class _CompletionPopup extends StatelessWidget {
               child: Text(
                 'Tab accepts · ↑↓ then Enter · Esc dismisses',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colours.onSurfaceVariant,
+                  color: colours.textTertiary,
                 ),
               ),
             ),
@@ -1127,25 +1131,29 @@ class _EditorColours {
   });
 
   factory _EditorColours.of(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final colours = context.colours;
     return _EditorColours(
-      text: scheme.onSurface,
-      dim: scheme.onSurface.withValues(alpha: 0.55),
-      selection: scheme.primary.withValues(alpha: 0.30),
-      caret: scheme.primary,
-      rule: scheme.onSurface.withValues(alpha: 0.25),
-      spelling: scheme.error,
+      text: colours.textPrimary,
+      // Notes, synopses and the boneyard: still there and still meant to be
+      // read, plainly not the script. The second weight, not the third.
+      dim: colours.textSecondary,
+      // The accent's one job on this surface, in its two forms: what is selected
+      // and where the caret is. A selection is read *through*, so it is the
+      // accent at a strength of its own rather than the subtle fill a row gets.
+      selection: colours.accent.withValues(alpha: 0.30),
+      caret: colours.accent,
+      rule: colours.border,
+      spelling: colours.danger,
       // The sheet is the surface a script is read on, so it is lifted out of the
-      // background rather than tinted: paper white in a light theme, and one
-      // step up from the background in a dark one, which is what the container
-      // roles already mean.
-      paper: scheme.surfaceContainerLowest,
-      paperEdge: scheme.shadow.withValues(alpha: 0.18),
+      // background rather than tinted: white in a light theme, one step up from
+      // the background in a dark one.
+      paper: colours.sheet,
+      paperEdge: colours.border,
       // A page break is information, not decoration. It has to be findable at a
       // glance and invisible while reading, which is what a hairline this faint
       // buys.
-      pageBreak: scheme.outlineVariant,
-      gutter: scheme.onSurface.withValues(alpha: 0.40),
+      pageBreak: colours.border,
+      gutter: colours.textTertiary,
     );
   }
 

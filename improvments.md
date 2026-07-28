@@ -10,12 +10,12 @@
 > Add a user setting for page view (visible page breaks / paper-like surface) vs. continuous scroll, defaulting to continuous with a subtle page-break rule and page number in the gutter.
 
 
-- [ ] See below 
+- [x] See below 
 ## 2. Typography split
 
 > Establish two type systems and stop mixing them. Script body: Courier Prime (bundle the font, don't rely on system fallback) at a size that makes 60 characters fit the 6" column exactly — derive size from column width rather than hardcoding. UI chrome: a single sans (Inter or the platform default) at 13–14px, never Courier. The script font is currently too large relative to its container; sizing it off the column width fixes this automatically.
 
-- [ ] See below 
+- [x] See below 
 ## 3. Design tokens and elevation
 
 > Replace all hardcoded colors with a token set in a single theme file, wired through `ThemeData`/`ColorScheme`. Define at least: `surface` (app background), `surfaceRaised` (sidebar, bars), `surfaceOverlay` (menus, dialogs), `border` (a low-contrast hairline, ~8–12% white), `textPrimary`, `textSecondary`, `textTertiary`, and one `accent`.

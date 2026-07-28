@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart' hide PageView;
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/theme.dart';
 import 'package:slugline/typography.dart';
 
 /// The paginated preview (§Phase 7).
@@ -128,7 +129,7 @@ class _Sheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final colours = context.colours;
     final page = sheet.page;
     return Center(
       child: Semantics(
@@ -145,12 +146,16 @@ class _Sheet extends StatelessWidget {
           height: geometry.height,
           decoration: BoxDecoration(
             // Paper is white in both themes. A preview is a picture of a printed
-            // page, and a dark one would be a picture of something else.
-            color: Colors.white,
-            border: Border.all(color: dark ? Colors.white24 : Colors.black26),
+            // page, and a dark one would be a picture of something else — which
+            // is why this is the one surface in the application that is not a
+            // theme token but a `paper` one.
+            color: colours.paper,
+            border: Border.all(color: colours.paperEdge),
+            // The one shadow left in the application, and the only place one is
+            // honest: a sheet of paper lying on a desk really does cast one.
             boxShadow: const [
               BoxShadow(
-                color: Colors.black26,
+                color: Color(0x40000000),
                 blurRadius: 6,
                 offset: Offset(0, 2),
               ),
@@ -160,7 +165,11 @@ class _Sheet extends StatelessWidget {
             children: [
               Positioned.fill(
                 child: CustomPaint(
-                  painter: _PagePainter(lines: page.lines, geometry: geometry),
+                  painter: _PagePainter(
+                    lines: page.lines,
+                    geometry: geometry,
+                    ink: colours.onPaper,
+                  ),
                 ),
               ),
               for (final line in page.lines)
@@ -194,7 +203,10 @@ class _PageNumber extends StatelessWidget {
       child: ExcludeSemantics(
         child: Align(
           alignment: Alignment.centerLeft,
-          child: Text(line.content, style: _textStyle(geometry)),
+          child: Text(
+            line.content,
+            style: _textStyle(geometry, context.colours.onPaper),
+          ),
         ),
       ),
     );
@@ -202,14 +214,22 @@ class _PageNumber extends StatelessWidget {
 }
 
 class _PagePainter extends CustomPainter {
-  _PagePainter({required this.lines, required this.geometry});
+  _PagePainter({
+    required this.lines,
+    required this.geometry,
+    required this.ink,
+  });
 
   final List<LayoutLineView> lines;
   final PreviewGeometry geometry;
 
+  /// Ink on paper. Passed in rather than read from a `ColorScheme`, because a
+  /// painter has no [Theme] to ask.
+  final Color ink;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final style = _textStyle(geometry);
+    final style = _textStyle(geometry, ink);
     for (final line in lines) {
       if (line.content.isEmpty || line.kind == LayoutLineKind.pageNumber) {
         continue;
@@ -231,6 +251,7 @@ class _PagePainter extends CustomPainter {
   @override
   bool shouldRepaint(_PagePainter old) =>
       old.lines != lines ||
+      old.ink != ink ||
       old.geometry.scale != geometry.scale ||
       old.geometry.paper != geometry.paper;
 }
@@ -238,9 +259,9 @@ class _PagePainter extends CustomPainter {
 /// The preview is a picture of the printed page, so it is set in the face that
 /// prints it. Before the face was bundled this was the system's monospace and
 /// the preview was only approximately the PDF; now the two agree.
-TextStyle _textStyle(PreviewGeometry geometry) => TextStyle(
+TextStyle _textStyle(PreviewGeometry geometry, Color ink) => TextStyle(
   fontFamily: scriptFontFamily,
   fontSize: geometry.fontSize,
   height: 1.0,
-  color: Colors.black,
+  color: ink,
 );

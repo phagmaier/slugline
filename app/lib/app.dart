@@ -15,28 +15,7 @@ import 'package:slugline/settings/preferences_dialog.dart';
 import 'package:slugline/settings/shortcuts_dialog.dart';
 import 'package:slugline/settings/window_mode.dart';
 import 'package:slugline/src/rust/api/files.dart' as files;
-import 'package:slugline/typography.dart';
-
-/// The application's theme, in one place for both windows.
-///
-/// The two [MaterialApp]s below — the editor and the storage-unavailable
-/// screen — used to spell out four `ThemeData`s between them, which is four
-/// chances for the chrome in one window to stop matching the chrome in the
-/// other. The type scale in particular has to be one decision: `typography.dart`
-/// is where the chrome's sans and its 13-point body are settled, and this is the
-/// only thing that applies them.
-ThemeData sluglineTheme(Brightness brightness) {
-  final base = ThemeData(
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: brightness == Brightness.dark
-          ? const Color(0xFF6F9FD2)
-          : const Color(0xFF3B6EA5),
-      brightness: brightness,
-    ),
-    useMaterial3: true,
-  );
-  return base.copyWith(textTheme: chromeTextTheme(base.textTheme));
-}
+import 'package:slugline/theme.dart';
 
 /// Which of the scripts that were open last time the session restore may
 /// reopen, given the crash offers and what the writer did about them.

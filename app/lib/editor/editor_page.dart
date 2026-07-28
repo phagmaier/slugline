@@ -21,6 +21,7 @@ import 'package:slugline/editor/title_page_dialog.dart';
 import 'package:slugline/preview/export_dialog.dart';
 import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/library/save_dialogs.dart';
+import 'package:slugline/theme.dart';
 
 /// The editor, the two panels that can sit over it, the element bar, and — from
 /// Phase 4 — everything that keeps the file in step with what is on screen.
@@ -488,6 +489,7 @@ class EditorPageState extends State<EditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colours = context.colours;
     final navigatorWidth = (MediaQuery.sizeOf(context).width * 0.34).clamp(
       176.0,
       288.0,
@@ -620,6 +622,7 @@ class EditorPageState extends State<EditorPage> {
                                   child: IconButton.filledTonal(
                                     key: const ValueKey('show navigator'),
                                     tooltip: 'Show navigator (Ctrl+J)',
+                                    style: _floatingButton(colours),
                                     onPressed: () => _setNavigatorVisible(true),
                                     icon: const Icon(
                                       Icons.format_list_bulleted,
@@ -666,6 +669,7 @@ class EditorPageState extends State<EditorPage> {
                                     ),
                                     tooltip:
                                         'Leave distraction-free mode (F11)',
+                                    style: _floatingButton(colours),
                                     onPressed: () => unawaited(
                                       widget.onDistractionFreeChanged?.call(
                                         false,
@@ -697,3 +701,14 @@ class EditorPageState extends State<EditorPage> {
 }
 
 enum _Panel { none, find, palette }
+
+/// The two buttons that float over the script itself.
+///
+/// Neither marks a selection and neither is the primary action in a group, so
+/// neither wears the accent (see [SluglineColors.accent]). They are overlays,
+/// and they look like every other overlay: the overlay surface and a hairline.
+ButtonStyle _floatingButton(SluglineColors colours) => IconButton.styleFrom(
+  backgroundColor: colours.surfaceOverlay,
+  foregroundColor: colours.textSecondary,
+  side: hairline(colours),
+);

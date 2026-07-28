@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/core.dart';
+import 'package:slugline/theme.dart';
 import 'package:slugline/widgets/escape_dismissible.dart';
 
 /// §Phase 4's crash-recovery prompt.
@@ -90,7 +91,7 @@ class RecoveryDialog extends StatelessWidget {
                         Text(
                           'Cannot be recovered: $why',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.error,
+                            color: context.colours.danger,
                           ),
                         ),
                       ],

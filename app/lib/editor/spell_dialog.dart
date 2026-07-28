@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/theme.dart';
 
 /// Phase 9's installed-language selector and master switch.
 class SpellDialog extends StatefulWidget {
@@ -103,14 +104,14 @@ class _SpellDialogState extends State<SpellDialog> {
               Text(
                 _status.message,
                 key: const ValueKey('spell unavailable'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: context.colours.danger),
               ),
             if (_error case final error?) ...[
               const SizedBox(height: 12),
               Text(
                 error,
                 key: const ValueKey('spell error'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: context.colours.danger),
               ),
             ],
           ],

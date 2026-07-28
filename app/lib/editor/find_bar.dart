@@ -5,6 +5,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/metrics.dart';
+import 'package:slugline/theme.dart';
 
 /// `Ctrl+F`: find, with a live match count, and replace.
 ///
@@ -84,13 +85,19 @@ class _FindBarState extends State<FindBar> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colours = context.colours;
     return Focus(
       onKeyEvent: _onKey,
+      // An overlay, floating over the script: the overlay surface and a
+      // hairline of its own. No elevation — on a near-black background a drop
+      // shadow separates nothing, and the surface step already does.
       child: Material(
-        elevation: 4,
-        borderRadius: BorderRadius.circular(8),
-        color: theme.colorScheme.surfaceContainerHigh,
+        elevation: 0,
+        color: colours.surfaceOverlay,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: hairline(colours),
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
           child: Padding(
@@ -224,14 +231,20 @@ class _MatchCount extends StatelessWidget {
         label,
         key: const Key('find-match-count'),
         textAlign: TextAlign.right,
-        style: theme.textTheme.labelMedium?.copyWith(color: theme.disabledColor),
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: context.colours.textTertiary,
+        ),
       ),
     );
   }
 }
 
 class _Toggle extends StatelessWidget {
-  const _Toggle({required this.label, required this.value, required this.onChanged});
+  const _Toggle({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
 
   final String label;
   final bool value;

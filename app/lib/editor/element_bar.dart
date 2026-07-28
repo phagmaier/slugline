@@ -6,6 +6,7 @@ import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/metrics.dart';
 import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/save_status.dart';
+import 'package:slugline/theme.dart';
 
 /// The bar along the bottom: what element the caret is in, what Tab would do
 /// next, and whether the last edit was refused.
@@ -33,8 +34,12 @@ class ElementBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
+      // A region: the same raised surface as the top bar and the navigator, and
+      // a hairline where it meets the script rather than a shadow over it.
+      color: colours.surfaceRaised,
+      shape: Border(top: hairline(colours)),
       child: SizedBox(
         height: 34,
         child: AnimatedBuilder(
@@ -67,7 +72,7 @@ class ElementBar extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.error,
+                          color: colours.danger,
                         ),
                       ),
                     ),
@@ -78,7 +83,7 @@ class ElementBar extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.disabledColor,
+                        color: colours.textTertiary,
                       ),
                     ),
                   ),
@@ -108,6 +113,7 @@ class _PageIndicatorLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     return AnimatedBuilder(
       animation: indicator,
       builder: (context, _) => Text(
@@ -116,7 +122,7 @@ class _PageIndicatorLabel extends StatelessWidget {
         maxLines: 1,
         semanticsLabel: indicator.label,
         style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+          color: colours.textSecondary,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
@@ -137,6 +143,7 @@ class _SaveStatusLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     return AnimatedBuilder(
       animation: status,
       builder: (context, _) => Text(
@@ -144,7 +151,7 @@ class _SaveStatusLabel extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.labelMedium?.copyWith(
-          color: status.isError ? theme.colorScheme.error : theme.disabledColor,
+          color: status.isError ? colours.danger : colours.textTertiary,
         ),
       ),
     );
@@ -169,6 +176,7 @@ class _ElementSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     final label = kindLabel(block.kind, block.sectionLevel);
     return PopupMenuButton<ElementChoice>(
       key: const Key('element-selector'),
@@ -195,7 +203,7 @@ class _ElementSelector extends StatelessWidget {
                   Text(
                     choice.shortcut,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.disabledColor,
+                      color: colours.textTertiary,
                     ),
                   ),
               ],
@@ -219,7 +227,11 @@ class _ElementSelector extends StatelessWidget {
           if (block.forced)
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Icon(Icons.push_pin, size: 13, color: theme.disabledColor),
+              child: Icon(
+                Icons.push_pin,
+                size: 13,
+                color: colours.textTertiary,
+              ),
             ),
           if (!block.readOnly) const Icon(Icons.arrow_drop_up, size: 18),
         ],
@@ -241,6 +253,7 @@ class _TabHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     final suggestion = controller.characterSuggestion;
     final target = controller.tabTarget();
     final label = switch ((suggestion, target)) {
@@ -254,7 +267,7 @@ class _TabHint extends StatelessWidget {
       key: const Key('tab-hint'),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: theme.textTheme.labelMedium?.copyWith(color: theme.disabledColor),
+      style: theme.textTheme.labelMedium?.copyWith(color: colours.textTertiary),
     );
   }
 }

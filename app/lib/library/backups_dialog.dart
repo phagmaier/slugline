@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/theme.dart';
 
 /// §Phase 4's "Restore previous version" — the list of rolling backups, with
 /// timestamps and sizes.
@@ -114,7 +115,7 @@ class _BackupsDialogState extends State<BackupsDialog> {
                 child: Text(
                   message,
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.error),
+                      ?.copyWith(color: context.colours.danger),
                 ),
               ),
           ],

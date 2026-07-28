@@ -7,6 +7,7 @@ import 'package:slugline/core/core.dart';
 import 'package:slugline/library/backups_dialog.dart'
     show formatBytes, formatTimestamp;
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/theme.dart';
 
 /// §Phase 4's library: create, open, rename, duplicate, remove, delete, and the
 /// recent list.
@@ -125,7 +126,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
+                    backgroundColor: context.colours.danger,
                   ),
                   onPressed: () => Navigator.of(context).pop(true),
                   child: const Text('Delete'),
@@ -204,7 +205,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   Icon(
                     Icons.movie_creation_outlined,
                     size: 64,
-                    color: theme.colorScheme.primary,
+                    color: context.colours.accent,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -255,7 +256,7 @@ class _LibraryPageState extends State<LibraryPage> {
     return ListTile(
       leading: Icon(
         script.missing ? Icons.help_outline : Icons.description_outlined,
-        color: script.missing ? theme.colorScheme.error : null,
+        color: script.missing ? context.colours.danger : null,
       ),
       title: Text(script.title),
       subtitle: Text(
@@ -303,7 +304,7 @@ class _LibraryPageState extends State<LibraryPage> {
             enabled: !script.missing,
             child: Text(
               'Delete file…',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(color: context.colours.danger),
             ),
           ),
         ],

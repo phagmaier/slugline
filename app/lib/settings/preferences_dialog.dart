@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:slugline/core/core.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/theme.dart';
 
 /// Phase 10's single settings surface.
 ///
@@ -264,7 +265,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                     Text(
                       widget.spelling.message,
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
+                        color: context.colours.danger,
                       ),
                     ),
                   const Divider(height: 32),
@@ -394,7 +395,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                         'face may not fit it.',
                         key: const ValueKey('font fidelity warning'),
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                          color: context.colours.danger,
                         ),
                       ),
                     ),

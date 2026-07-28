@@ -4,6 +4,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/library/save_dialogs.dart' show confirmReplace;
 import 'package:slugline/preview/preview_view.dart';
+import 'package:slugline/theme.dart';
 
 /// Preview, then export (§Phase 7).
 ///
@@ -340,7 +341,7 @@ class _ExportDialogState extends State<ExportDialog> {
                   key: const Key('export-report'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: _reportIsFailure
-                        ? Theme.of(context).colorScheme.error
+                        ? context.colours.danger
                         : null,
                   ),
                 ),

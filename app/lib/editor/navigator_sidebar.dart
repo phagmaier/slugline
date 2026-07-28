@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/theme.dart';
 
 /// §Phase 8's scene and character navigator.
 ///
@@ -154,6 +155,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colours = context.colours;
     return Shortcuts(
       shortcuts: const {
         SingleActivator(LogicalKeyboardKey.arrowDown): _MoveNavigatorIntent(1),
@@ -176,7 +178,9 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
           ),
         },
         child: Material(
-          color: theme.colorScheme.surfaceContainer,
+          // A region, not a panel floating over the script: its own surface, and
+          // the hairline `editor_page.dart` draws between it and the editor.
+          color: colours.surfaceRaised,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -299,11 +303,16 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
       scene.prefix,
       scene.timeOfDay,
     ].whereType<String>().where((part) => part.isNotEmpty).join(' · ');
+    final colours = context.colours;
     return Material(
+      // Two different states, and only one of them is *selection*: the scene the
+      // caret is in wears the accent, and the row the arrow keys are sitting on
+      // is raised without it. They used to be two saturated blocks a shade
+      // apart, which said the same thing twice and neither clearly.
       color: current
-          ? theme.colorScheme.secondaryContainer
+          ? colours.accentSubtle
           : keyboardSelected
-          ? theme.colorScheme.surfaceContainerHighest
+          ? colours.surfaceOverlay
           : Colors.transparent,
       child: ListTile(
         key: ValueKey('navigator scene ${scene.block}'),
@@ -344,7 +353,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     final count = character.occurrences;
     return Material(
       color: keyboardSelected
-          ? theme.colorScheme.surfaceContainerHighest
+          ? context.colours.surfaceOverlay
           : Colors.transparent,
       child: ListTile(
         key: ValueKey('navigator character ${character.name}'),
@@ -395,8 +404,26 @@ class _SectionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colours = context.colours;
+    // Which of two lists is showing is a *selected state*, so it takes the
+    // accent — but at the strength a filled region gets, not the strength a
+    // primary button gets. `FilledButton.tonal` reads the same
+    // `FilledButtonThemeData` as its filled sibling, so left alone it would
+    // come out as solid an accent block as the "New script" button, and the
+    // accent would be marking two different kinds of thing at once.
     return selected
-        ? FilledButton.tonal(onPressed: onPressed, child: Text('$label $count'))
-        : TextButton(onPressed: onPressed, child: Text('$label $count'));
+        ? FilledButton.tonal(
+            onPressed: onPressed,
+            style: FilledButton.styleFrom(
+              backgroundColor: colours.accentSubtle,
+              foregroundColor: colours.textPrimary,
+            ),
+            child: Text('$label $count'),
+          )
+        : TextButton(
+            onPressed: onPressed,
+            style: TextButton.styleFrom(foregroundColor: colours.textSecondary),
+            child: Text('$label $count'),
+          );
   }
 }
