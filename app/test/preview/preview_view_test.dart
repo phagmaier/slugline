@@ -34,6 +34,16 @@ void main() {
       expect(sheets[1].page.number, 1, reason: 'the screenplay starts at one');
       expect(find.byKey(const Key('preview-title-page')), findsOneWidget);
       expect(find.byKey(const Key('preview-page-1')), findsOneWidget);
+      expect(
+        find.byKey(const Key('preview-page-number-1')),
+        findsOneWidget,
+        reason: 'the paginator-provided page number is visibly rendered',
+      );
+      expect(
+        find.byKey(const Key('preview-page-number-null')),
+        findsNothing,
+        reason: 'the title page remains unnumbered',
+      );
     });
 
     testWidgets('a script with no title page has none in the preview', (

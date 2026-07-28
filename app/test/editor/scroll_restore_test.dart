@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -129,5 +131,53 @@ void main() {
       onScrolled: reported.add,
     );
     expect(_position(tester).pixels, 28 + 30 * 21);
+  });
+
+  testWidgets('the scrollbar thumb can be dragged', (tester) async {
+    final controller = EditorController(_script(100));
+    addTearDown(controller.dispose);
+
+    await _pumpSurface(tester, controller, initialScrollRow: 0);
+    final position = _position(tester);
+    position.jumpTo(1);
+    await tester.pump(const Duration(milliseconds: 300));
+    final scrollbar = tester.getRect(find.byType(Scrollbar));
+    final painter = tester
+        .widgetList<CustomPaint>(
+          find.descendant(
+            of: find.byType(Scrollbar),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+        .map((paint) => paint.foregroundPainter)
+        .whereType<ScrollbarPainter>()
+        .single;
+    Offset? thumb;
+    for (var y = 0.0; y < scrollbar.height && thumb == null; y++) {
+      for (var x = 0.0; x < scrollbar.width; x++) {
+        final candidate = Offset(x, y);
+        if (painter.hitTestOnlyThumbInteractive(
+          candidate,
+          PointerDeviceKind.mouse,
+        )) {
+          thumb = candidate;
+          break;
+        }
+      }
+    }
+    expect(thumb, isNotNull);
+
+    await tester.dragFrom(
+      scrollbar.topLeft + thumb!,
+      const Offset(0, 240),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+
+    expect(
+      position.pixels,
+      greaterThan(position.maxScrollExtent / 4),
+      reason: 'thumb=$thumb scrollbar=$scrollbar',
+    );
   });
 }

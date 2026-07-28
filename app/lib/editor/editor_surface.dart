@@ -104,6 +104,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   /// Left edge of the page's text area, in local coordinates.
   double _pageLeft = _padding;
+  double _viewportWidth = 900;
   double _viewportHeight = 600;
 
   /// The composing region the platform is holding, in offsets into the focused
@@ -554,7 +555,27 @@ class EditorSurfaceState extends State<EditorSurface>
   static const Duration _multiClickWindow = Duration(milliseconds: 400);
   static const double _multiClickSlop = 8;
 
+  /// Whether the current pointer sequence belongs to the scrollbar.
+  ///
+  /// A scrollbar paints in front of its child, but its foreground painter and
+  /// the child are both on the pointer hit-test path. Without this ownership
+  /// check a thumb drag is also interpreted as a selection drag, and keeping
+  /// that accidental caret visible pulls the viewport back under the thumb.
+  bool _scrollbarPointerActive = false;
+
+  bool _isInScrollbarGutter(Offset local) {
+    // Flutter expands a touch thumb to its minimum interactive size around the
+    // painted track, so reserve that whole edge band for the scrollbar.
+    const gutter = kMinInteractiveDimension;
+    return switch (Directionality.of(context)) {
+      TextDirection.ltr => local.dx >= _viewportWidth - gutter,
+      TextDirection.rtl => local.dx <= gutter,
+    };
+  }
+
   void _onPointerDown(PointerDownEvent event) {
+    _scrollbarPointerActive = _isInScrollbarGutter(event.localPosition);
+    if (_scrollbarPointerActive) return;
     if (event.buttons & kSecondaryButton != 0) {
       unawaited(_showSpellingMenu(event));
       return;
@@ -704,12 +725,17 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    if (_scrollbarPointerActive) return;
     if (event.buttons & kPrimaryButton == 0) return;
     // A drag is a fresh selection, not a continuation of the click count.
     _clickCount = 1;
     final (row, column) = _gridAt(event.localPosition);
     _controller.placeCaretAt(row, column, extend: true);
     _autoScroll(event.localPosition);
+  }
+
+  void _onPointerEnd(PointerEvent event) {
+    _scrollbarPointerActive = false;
   }
 
   /// Scrolls while a drag is held against the top or bottom edge.
@@ -894,6 +920,7 @@ class EditorSurfaceState extends State<EditorSurface>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        _viewportWidth = constraints.maxWidth;
         _viewportHeight = constraints.maxHeight;
         _pageLeft = math.max(
           _padding,
@@ -905,11 +932,15 @@ class EditorSurfaceState extends State<EditorSurface>
         return Focus(
           focusNode: _focusNode,
           onKeyEvent: _onKey,
-          child: Listener(
-            onPointerDown: _onPointerDown,
-            onPointerMove: _onPointerMove,
-            child: Scrollbar(
-              controller: _scroll,
+          child: Scrollbar(
+            controller: _scroll,
+            interactive: true,
+            thumbVisibility: true,
+            child: Listener(
+              onPointerDown: _onPointerDown,
+              onPointerMove: _onPointerMove,
+              onPointerUp: _onPointerEnd,
+              onPointerCancel: _onPointerEnd,
               child: SingleChildScrollView(
                 controller: _scroll,
                 child: SizedBox(

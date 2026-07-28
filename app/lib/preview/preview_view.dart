@@ -155,10 +155,45 @@ class _Sheet extends StatelessWidget {
               ),
             ],
           ),
-          child: CustomPaint(
-            painter: _PagePainter(lines: page.lines, geometry: geometry),
-            size: Size(geometry.width, geometry.height),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _PagePainter(lines: page.lines, geometry: geometry),
+                ),
+              ),
+              for (final line in page.lines)
+                if (line.kind == LayoutLineKind.pageNumber)
+                  _PageNumber(
+                    key: Key('preview-page-number-${page.number}'),
+                    line: line,
+                    geometry: geometry,
+                  ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PageNumber extends StatelessWidget {
+  const _PageNumber({required this.line, required this.geometry, super.key});
+
+  final LayoutLineView line;
+  final PreviewGeometry geometry;
+
+  @override
+  Widget build(BuildContext context) {
+    final at = geometry.at(line.row, line.column);
+    return Positioned(
+      left: at.dx,
+      top: at.dy,
+      height: geometry.row,
+      child: ExcludeSemantics(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(line.content, style: _textStyle(geometry)),
         ),
       ),
     );
@@ -173,14 +208,11 @@ class _PagePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final style = TextStyle(
-      fontFamily: 'monospace',
-      fontSize: geometry.fontSize,
-      height: 1.0,
-      color: Colors.black,
-    );
+    final style = _textStyle(geometry);
     for (final line in lines) {
-      if (line.content.isEmpty) continue;
+      if (line.content.isEmpty || line.kind == LayoutLineKind.pageNumber) {
+        continue;
+      }
       final painter = TextPainter(
         text: TextSpan(text: line.content, style: style),
         textDirection: TextDirection.ltr,
@@ -201,3 +233,10 @@ class _PagePainter extends CustomPainter {
       old.geometry.scale != geometry.scale ||
       old.geometry.paper != geometry.paper;
 }
+
+TextStyle _textStyle(PreviewGeometry geometry) => TextStyle(
+  fontFamily: 'monospace',
+  fontSize: geometry.fontSize,
+  height: 1.0,
+  color: Colors.black,
+);
