@@ -11,7 +11,10 @@
 //! outlives every other piece of state is still fully usable, and so is one the
 //! user copies somewhere else. The one extra file is `origin`, which holds the
 //! path the backups came from, so that a directory named after a hash can still
-//! say what it is.
+//! say what it is. It goes through the same atomic save as the copies do — a
+//! half-written path is provenance that lies, which is worse than provenance
+//! that is missing — but failing to write it does not fail the backup. See
+//! [`Written`].
 //!
 //! Retention keeps, in one pass: the newest `keep_versions` copies unconditionally,
 //! plus the newest copy from each of the last `keep_days` UTC days. A day bucket
@@ -58,6 +61,26 @@ impl Backup {
     }
 }
 
+/// What [`write`] managed to do.
+///
+/// Two things happen in one call and they can fail separately, so they are
+/// reported separately. The copy is the point of the exercise; `origin` is the
+/// label on the directory it went into, and a rescue copy without a label is
+/// worth immeasurably more than no copy at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// The copy. Reaching this at all means it is on disk and whole; [`write`]
+    /// returns an `Err` rather than a `Written` when it is not.
+    pub backup: Backup,
+    /// Whether the directory's `origin` file says what these copies came from.
+    ///
+    /// An `Err` is the explicit degraded result: the backup is good, and what
+    /// the user has lost is the ability to tell what a directory named after a
+    /// hash is a backup *of* once the library index — a cache — is gone. The
+    /// next backup into the same directory tries again.
+    pub origin: Result<(), SaveError>,
+}
+
 /// Where one script's copies live.
 pub fn directory(root: &Path, script: &Path) -> PathBuf {
     root.join(script_id(script))
@@ -73,7 +96,7 @@ pub fn write(
     script: &Path,
     contents: &str,
     retention: Retention,
-) -> Result<Backup, SaveError> {
+) -> Result<Written, SaveError> {
     let directory = directory(root, script);
     if let Err(error) = fs::create_dir_all(&directory) {
         return Err(SaveError::Io {
@@ -82,12 +105,12 @@ pub fn write(
         });
     }
 
-    // A directory named after a hash says nothing. This is what makes it
-    // self-describing once the library index — a cache — is gone.
-    let origin = directory.join("origin");
-    if !origin.exists() {
-        let _ = fs::write(&origin, script.to_string_lossy().as_bytes());
-    }
+    // Before the copy, so that a directory exists for as little time as
+    // possible without saying what it is. Its failure is carried, not returned:
+    // every reason the label cannot be written that would also cost us the copy
+    // — a full disk, an unwritable directory — is about to be reported by the
+    // save below, and the reasons that are left are reasons to keep the copy.
+    let origin = record_origin(&directory, script);
 
     let written_millis = now_millis();
     let path = unique_path(&directory, written_millis);
@@ -101,7 +124,28 @@ pub fn write(
     // Pruning is best effort: the copy is written, and failing to delete an old
     // one is not a reason to tell the user the backup did not happen.
     let _ = prune(root, script, retention);
-    Ok(backup)
+    Ok(Written { backup, origin })
+}
+
+/// Writes `origin` unless it already holds exactly the right path.
+///
+/// Atomically, like every other file this project owns: `origin` is small
+/// enough that a torn write is unlikely and not so small that it is impossible,
+/// and a truncated path is a directory claiming to be a backup of somewhere
+/// nobody's script lives.
+///
+/// Rewriting whenever the contents differ is what repairs one a previous
+/// version left truncated. It costs a small read per backup and never fires
+/// spuriously: a directory's name is a hash of the path, so within one
+/// directory that path does not change, and "differs" only ever means
+/// "damaged".
+fn record_origin(directory: &Path, script: &Path) -> Result<(), SaveError> {
+    let path = directory.join("origin");
+    let wanted = script.to_string_lossy();
+    if fs::read(&path).is_ok_and(|found| found == wanted.as_bytes()) {
+        return Ok(());
+    }
+    save_atomically(&path, wanted.as_bytes())
 }
 
 /// Two saves in the same millisecond would otherwise be the same file. The
@@ -181,9 +225,16 @@ pub fn prune(root: &Path, script: &Path, retention: Retention) -> std::io::Resul
 
 /// The script a backup directory came from, as recorded by [`write`].
 pub fn origin(directory: &Path) -> Option<PathBuf> {
-    fs::read_to_string(directory.join("origin"))
-        .ok()
-        .map(|line| PathBuf::from(line.trim_end_matches('\n')))
+    let recorded = fs::read_to_string(directory.join("origin")).ok()?;
+    let recorded = recorded.trim_end_matches('\n');
+    // An empty file is what a non-atomic write could leave behind, and what a
+    // pre-atomic version of this crate did leave behind. It is not a path, and
+    // answering `Some("")` would be a worse answer than admitting we do not
+    // know — the caller would go looking for a script at the root of nothing.
+    if recorded.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(recorded))
 }
 
 fn now_millis() -> u64 {
@@ -212,7 +263,7 @@ mod tests {
     fn a_backup_is_a_whole_readable_copy() {
         let dir = TempDir::new("backup-write");
         let script = Path::new("/home/writer/heat.fountain");
-        let backup = write(
+        let written = write(
             dir.path(),
             script,
             "INT. HOUSE - DAY\n",
@@ -220,18 +271,96 @@ mod tests {
         )
         .expect("the backup is written");
         assert_eq!(
-            fs::read_to_string(&backup.path).unwrap(),
+            fs::read_to_string(&written.backup.path).unwrap(),
             "INT. HOUSE - DAY\n"
         );
-        assert_eq!(backup.bytes, 17);
+        assert_eq!(written.backup.bytes, 17);
     }
 
     #[test]
     fn a_backup_directory_says_what_it_is_a_backup_of() {
         let dir = TempDir::new("backup-origin");
         let script = Path::new("/home/writer/heat.fountain");
-        write(dir.path(), script, "text\n", Retention::default()).unwrap();
+        let written = write(dir.path(), script, "text\n", Retention::default()).unwrap();
+        assert_eq!(written.origin, Ok(()));
         assert_eq!(origin(&directory(dir.path(), script)), Some(script.into()));
+    }
+
+    #[test]
+    fn the_origin_file_is_written_atomically_and_leaves_nothing_behind() {
+        let dir = TempDir::new("backup-origin-atomic");
+        let script = Path::new("/home/writer/heat.fountain");
+        write(dir.path(), script, "text\n", Retention::default()).unwrap();
+
+        // No `.tmp-` sibling from either write, and nothing but the copy and
+        // its label.
+        let directory = directory(dir.path(), script);
+        let mut names: Vec<String> = fs::read_dir(&directory)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(names.contains(&"origin".to_string()), "{names:?}");
+        assert!(
+            !names.iter().any(|name| crate::atomic::is_temp_file(name)),
+            "{names:?}"
+        );
+    }
+
+    #[test]
+    fn an_origin_that_cannot_be_written_does_not_cost_the_backup() {
+        let dir = TempDir::new("backup-origin-blocked");
+        let script = Path::new("/home/writer/heat.fountain");
+        // A directory where the file belongs: `rename(2)` will not put a file
+        // over it, and no amount of privilege changes that, so this is the one
+        // way to fail the label that also fails for root under CI.
+        let directory = directory(dir.path(), script);
+        fs::create_dir_all(directory.join("origin")).unwrap();
+
+        let written = write(
+            dir.path(),
+            script,
+            "INT. HOUSE - DAY\n",
+            Retention::default(),
+        )
+        .expect("the copy is still written");
+        assert!(
+            written.origin.is_err(),
+            "the degraded result has to be explicit"
+        );
+        assert_eq!(
+            fs::read_to_string(&written.backup.path).unwrap(),
+            "INT. HOUSE - DAY\n",
+            "and the copy is whole"
+        );
+        assert_eq!(list(dir.path(), script).len(), 1);
+        assert_eq!(origin(&directory), None, "with nothing to say what it is");
+    }
+
+    #[test]
+    fn a_truncated_origin_is_repaired_by_the_next_backup() {
+        let dir = TempDir::new("backup-origin-repair");
+        let script = Path::new("/home/writer/heat.fountain");
+        let directory = directory(dir.path(), script);
+        fs::create_dir_all(&directory).unwrap();
+        // What a torn `fs::write` leaves: the file exists, so the old code
+        // would never have looked at it again.
+        fs::write(directory.join("origin"), "/home/writ").unwrap();
+        assert_eq!(origin(&directory), Some(PathBuf::from("/home/writ")));
+
+        write(dir.path(), script, "text\n", Retention::default()).unwrap();
+        assert_eq!(origin(&directory), Some(script.into()));
+    }
+
+    #[test]
+    fn an_empty_origin_is_no_answer_rather_than_an_empty_path() {
+        let dir = TempDir::new("backup-origin-empty");
+        let directory = dir.path().join("somehash");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("origin"), "").unwrap();
+        assert_eq!(origin(&directory), None);
     }
 
     #[test]

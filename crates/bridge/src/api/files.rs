@@ -1105,13 +1105,19 @@ async fn write_document(
 
     // §Phase 4's rolling backups. Written after the file, so a backup only ever
     // exists for a state that reached the disk.
+    //
+    // `written.origin` is deliberately not reported. It is the label on the
+    // backup directory, not a copy of anybody's text, and the whole cost of
+    // losing it is that a directory named after a hash cannot say what it is
+    // without the library index; the next backup writes it again. A save that
+    // worked must not grow a warning over that.
     let backup = match (with_backup, &plan.storage) {
         (true, Some((root, retention))) => backup::write(root, &path, &plan.text, *retention)
             .ok()
             .map(|written| BackupView {
-                path: written.path.to_string_lossy().into_owned(),
-                written_millis: written.written_millis,
-                bytes: written.bytes,
+                path: written.backup.path.to_string_lossy().into_owned(),
+                written_millis: written.backup.written_millis,
+                bytes: written.backup.bytes,
             }),
         _ => None,
     };
