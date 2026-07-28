@@ -167,6 +167,12 @@ pub enum EditCommand {
         from: DocPosition,
         to: DocPosition,
     },
+    /// Moves the scene headed by `scene` before another scene, or to the end.
+    /// Rust derives the scene's block span; block ids remain stable.
+    MoveScene {
+        scene: u64,
+        before: Option<u64>,
+    },
     SetDual {
         block: u64,
         dual: bool,
@@ -1272,6 +1278,10 @@ fn to_model_command(
             from: to_model_position(document, from)?,
             to: to_model_position(document, to)?,
         },
+        EditCommand::MoveScene { scene, before } => model::EditCommand::MoveScene {
+            scene: model::BlockId(scene),
+            before: before.map(model::BlockId),
+        },
         EditCommand::SetDual { block, dual } => model::EditCommand::SetDual {
             block: model::BlockId(block),
             dual,
@@ -1947,6 +1957,43 @@ mod tests {
         assert_eq!(indices, [1, 2]);
         assert_eq!(result.inserted[0].block.text, "One.");
         assert_eq!(result.block_count, 7);
+    }
+
+    #[test]
+    fn moving_blocks_reports_a_stable_identity_reorder_and_undoes_it() {
+        let doc = Doc::parse("INT. ONE - DAY\n\nINT. TWO - DAY\n\nINT. THREE - DAY\n");
+        let ids = [doc.id(0), doc.id(1), doc.id(2)];
+        let result = doc.apply(EditCommand::MoveScene {
+            scene: ids[0],
+            before: None,
+        });
+
+        assert_eq!(result.removed, ids);
+        assert_eq!(
+            result
+                .inserted
+                .iter()
+                .map(|inserted| (inserted.index, inserted.block.id))
+                .collect::<Vec<_>>(),
+            [(0, ids[1]), (1, ids[2]), (2, ids[0])]
+        );
+        assert_eq!(
+            doc.blocks()
+                .iter()
+                .map(|block| block.id)
+                .collect::<Vec<_>>(),
+            [ids[1], ids[2], ids[0]]
+        );
+
+        let undo = doc_undo(doc.handle()).expect("the move is one undo step");
+        assert_eq!(undo.removed, ids);
+        assert_eq!(
+            doc.blocks()
+                .iter()
+                .map(|block| block.id)
+                .collect::<Vec<_>>(),
+            ids
+        );
     }
 
     // --- history ---------------------------------------------------------

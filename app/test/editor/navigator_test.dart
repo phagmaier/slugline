@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/navigator_sidebar.dart';
+import 'package:slugline/theme.dart';
 
 import '../support/fake_core.dart';
 
@@ -98,6 +100,106 @@ void main() {
     expect(find.text('BOB'), findsOneWidget);
     expect(find.text('2 occurrences'), findsOneWidget);
   });
+
+  testWidgets('scene rows use the compact hierarchy and subtle selection', (
+    tester,
+  ) async {
+    await _pump(tester, _script());
+
+    final first = find.byKey(const ValueKey('navigator scene 1'));
+    expect(tester.getSize(first).height, 52);
+    expect(tester.widget<Text>(find.text('HOUSE')).style?.fontSize, 13);
+    final meta = tester.widget<Text>(find.text('INT. · DAY'));
+    expect(meta.style?.fontSize, 11);
+    expect(meta.style?.color, SluglineColors.light.textTertiary);
+    expect(find.text('NAVIGATOR'), findsOneWidget);
+
+    final selected = tester.widget<Material>(
+      find.byKey(const ValueKey('navigator scene background 1')),
+    );
+    expect(selected.color, SluglineColors.light.surfaceOverlay);
+    final tile = tester.widget<ListTile>(first);
+    final border = tile.shape! as Border;
+    expect(border.left.width, 2);
+    expect(border.left.color, SluglineColors.light.accent);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('navigator scene 5'))),
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<Material>(
+            find.byKey(const ValueKey('navigator scene background 5')),
+          )
+          .color,
+      isNot(Colors.transparent),
+    );
+  });
+
+  testWidgets(
+    'segmented control, context menu, and drag handle are interactive',
+    (tester) async {
+      final controller = await _pump(tester, _script());
+
+      final indicator = find.byKey(
+        const ValueKey('navigator segment indicator'),
+      );
+      expect(
+        tester
+            .widget<AnimatedAlign>(
+              find.ancestor(
+                of: indicator,
+                matching: find.byType(AnimatedAlign),
+              ),
+            )
+            .alignment,
+        Alignment.centerLeft,
+      );
+      await tester.tap(find.textContaining('Characters'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AnimatedAlign>(
+              find.ancestor(
+                of: indicator,
+                matching: find.byType(AnimatedAlign),
+              ),
+            )
+            .alignment,
+        Alignment.centerRight,
+      );
+
+      await tester.tap(find.textContaining('Scenes'));
+      await tester.pumpAndSettle();
+      final second = find.byKey(const ValueKey('navigator scene 5'));
+      await tester.tapAt(
+        tester.getCenter(second),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Jump to scene'), findsOneWidget);
+      expect(find.text('Copy heading'), findsOneWidget);
+      expect(find.text('Move scene up'), findsOneWidget);
+      await tester.tap(find.text('Move scene up'));
+      await tester.pumpAndSettle();
+      expect(controller.blocks.first.id, 5);
+
+      controller.undo();
+      await tester.pumpAndSettle();
+      expect(controller.blocks.first.id, 1);
+
+      await tester.drag(
+        find.byKey(const ValueKey('drag scene 1')),
+        const Offset(0, 120),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.blocks.first.id, 5);
+    },
+  );
 
   testWidgets('scene and character rows place the caret explicitly', (
     tester,

@@ -36,6 +36,9 @@ pub(crate) enum Inverse {
         remove: usize,
         insert: Vec<Block>,
     },
+    /// Restore the block list to this identity order. Moving blocks does not
+    /// change their contents or provenance, so storing ids is sufficient.
+    Order(Vec<BlockId>),
     TitlePage(Box<TitlePage>),
 }
 
@@ -45,6 +48,7 @@ impl Inverse {
             Inverse::Splice { insert, .. } => {
                 insert.iter().map(|block| block.text().len() + 64).sum()
             }
+            Inverse::Order(ids) => ids.len() * std::mem::size_of::<BlockId>(),
             Inverse::TitlePage(page) => page
                 .entries
                 .iter()

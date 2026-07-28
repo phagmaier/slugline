@@ -257,8 +257,47 @@ class FakeCore implements DocumentCore {
         forced,
       ),
       EditCommand_DeleteRange(:final from, :final to) => _deleteRange(from, to),
+      EditCommand_MoveScene(:final scene, :final before) => _moveScene(
+        scene,
+        before,
+      ),
       _ => _unchanged(),
     };
+  }
+
+  EditOutcome _moveScene(int scene, int? before) {
+    final start = _indexOf(scene);
+    final nextScene = navigatorData.scenes
+        .map((candidate) => candidate.block)
+        .where((block) => _indexOf(block) > start)
+        .firstOrNull;
+    final end = nextScene == null
+        ? _blocks.length - 1
+        : _indexOf(nextScene) - 1;
+    final target = before == null ? _blocks.length : _indexOf(before);
+    if (start > end || (target >= start && target <= end + 1)) {
+      return _unchanged();
+    }
+    final oldOrder = _blocks.map((block) => block.id).toList();
+    final moved = _blocks.sublist(start, end + 1);
+    _blocks.removeRange(start, end + 1);
+    final destination = target > end ? target - moved.length : target;
+    _blocks.insertAll(destination, moved);
+    final newOrder = _blocks.map((block) => block.id).toList();
+    _syncNavigatorOrder();
+    final relocated = [
+      for (var i = 0; i < oldOrder.length; i++)
+        if (oldOrder[i] != newOrder[i]) oldOrder[i],
+    ];
+    final inserted = [
+      for (final id in relocated)
+        InsertedBlock(index: _indexOf(id), block: _blocks[_indexOf(id)]),
+    ]..sort((a, b) => a.index.compareTo(b.index));
+    return _applied(
+      removed: relocated,
+      inserted: inserted,
+      caret: DocPosition(block: scene, offsetUtf16: 0),
+    );
   }
 
   /// Replaces the selection with the text, as one patch — which is the only
@@ -755,19 +794,34 @@ class FakeCore implements DocumentCore {
     _blocks
       ..clear()
       ..addAll(snapshot);
-    final beforeIds = before.map((b) => b.id).toSet();
+    _syncNavigatorOrder();
+    final beforeById = {for (final block in before) block.id: block};
+    final beforeIndex = {
+      for (var i = 0; i < before.length; i++) before[i].id: i,
+    };
+    final moved = {
+      for (var i = 0; i < _blocks.length; i++)
+        if (beforeIndex[_blocks[i].id] case final old? when old != i)
+          _blocks[i].id,
+    };
     return EditResult(
       changed: [
         for (final block in _blocks)
-          if (beforeIds.contains(block.id)) block,
+          if (!moved.contains(block.id) &&
+              beforeById.containsKey(block.id) &&
+              beforeById[block.id] != block)
+            block,
       ],
       removed: [
         for (final block in before)
-          if (!_blocks.any((other) => other.id == block.id)) block.id,
+          if (!_blocks.any((other) => other.id == block.id) ||
+              moved.contains(block.id))
+            block.id,
       ],
       inserted: [
         for (var i = 0; i < _blocks.length; i++)
-          if (!beforeIds.contains(_blocks[i].id))
+          if (!beforeById.containsKey(_blocks[i].id) ||
+              moved.contains(_blocks[i].id))
             InsertedBlock(index: i, block: _blocks[i]),
       ],
       selection: DocSelection(
@@ -775,6 +829,19 @@ class FakeCore implements DocumentCore {
         focus: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
       ),
       blockCount: _blocks.length,
+    );
+  }
+
+  void _syncNavigatorOrder() {
+    final scenes = List<NavigatorScene>.of(navigatorData.scenes)
+      ..sort(
+        (a, b) => _blocks
+            .indexWhere((block) => block.id == a.block)
+            .compareTo(_blocks.indexWhere((block) => block.id == b.block)),
+      );
+    navigatorData = NavigatorView(
+      scenes: scenes,
+      characters: navigatorData.characters,
     );
   }
 

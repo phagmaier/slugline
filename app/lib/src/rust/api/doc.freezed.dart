@@ -55,7 +55,7 @@ extension EditCommandPatterns on EditCommand {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( EditCommand_ReplaceText value)?  replaceText,TResult Function( EditCommand_SplitBlock value)?  splitBlock,TResult Function( EditCommand_MergeBlocks value)?  mergeBlocks,TResult Function( EditCommand_SetKind value)?  setKind,TResult Function( EditCommand_InsertBlocks value)?  insertBlocks,TResult Function( EditCommand_DeleteRange value)?  deleteRange,TResult Function( EditCommand_SetDual value)?  setDual,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( EditCommand_ReplaceText value)?  replaceText,TResult Function( EditCommand_SplitBlock value)?  splitBlock,TResult Function( EditCommand_MergeBlocks value)?  mergeBlocks,TResult Function( EditCommand_SetKind value)?  setKind,TResult Function( EditCommand_InsertBlocks value)?  insertBlocks,TResult Function( EditCommand_DeleteRange value)?  deleteRange,TResult Function( EditCommand_MoveScene value)?  moveScene,TResult Function( EditCommand_SetDual value)?  setDual,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case EditCommand_ReplaceText() when replaceText != null:
@@ -64,7 +64,8 @@ return splitBlock(_that);case EditCommand_MergeBlocks() when mergeBlocks != null
 return mergeBlocks(_that);case EditCommand_SetKind() when setKind != null:
 return setKind(_that);case EditCommand_InsertBlocks() when insertBlocks != null:
 return insertBlocks(_that);case EditCommand_DeleteRange() when deleteRange != null:
-return deleteRange(_that);case EditCommand_SetDual() when setDual != null:
+return deleteRange(_that);case EditCommand_MoveScene() when moveScene != null:
+return moveScene(_that);case EditCommand_SetDual() when setDual != null:
 return setDual(_that);case _:
   return orElse();
 
@@ -83,7 +84,7 @@ return setDual(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( EditCommand_ReplaceText value)  replaceText,required TResult Function( EditCommand_SplitBlock value)  splitBlock,required TResult Function( EditCommand_MergeBlocks value)  mergeBlocks,required TResult Function( EditCommand_SetKind value)  setKind,required TResult Function( EditCommand_InsertBlocks value)  insertBlocks,required TResult Function( EditCommand_DeleteRange value)  deleteRange,required TResult Function( EditCommand_SetDual value)  setDual,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( EditCommand_ReplaceText value)  replaceText,required TResult Function( EditCommand_SplitBlock value)  splitBlock,required TResult Function( EditCommand_MergeBlocks value)  mergeBlocks,required TResult Function( EditCommand_SetKind value)  setKind,required TResult Function( EditCommand_InsertBlocks value)  insertBlocks,required TResult Function( EditCommand_DeleteRange value)  deleteRange,required TResult Function( EditCommand_MoveScene value)  moveScene,required TResult Function( EditCommand_SetDual value)  setDual,}){
 final _that = this;
 switch (_that) {
 case EditCommand_ReplaceText():
@@ -92,7 +93,8 @@ return splitBlock(_that);case EditCommand_MergeBlocks():
 return mergeBlocks(_that);case EditCommand_SetKind():
 return setKind(_that);case EditCommand_InsertBlocks():
 return insertBlocks(_that);case EditCommand_DeleteRange():
-return deleteRange(_that);case EditCommand_SetDual():
+return deleteRange(_that);case EditCommand_MoveScene():
+return moveScene(_that);case EditCommand_SetDual():
 return setDual(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -107,7 +109,7 @@ return setDual(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( EditCommand_ReplaceText value)?  replaceText,TResult? Function( EditCommand_SplitBlock value)?  splitBlock,TResult? Function( EditCommand_MergeBlocks value)?  mergeBlocks,TResult? Function( EditCommand_SetKind value)?  setKind,TResult? Function( EditCommand_InsertBlocks value)?  insertBlocks,TResult? Function( EditCommand_DeleteRange value)?  deleteRange,TResult? Function( EditCommand_SetDual value)?  setDual,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( EditCommand_ReplaceText value)?  replaceText,TResult? Function( EditCommand_SplitBlock value)?  splitBlock,TResult? Function( EditCommand_MergeBlocks value)?  mergeBlocks,TResult? Function( EditCommand_SetKind value)?  setKind,TResult? Function( EditCommand_InsertBlocks value)?  insertBlocks,TResult? Function( EditCommand_DeleteRange value)?  deleteRange,TResult? Function( EditCommand_MoveScene value)?  moveScene,TResult? Function( EditCommand_SetDual value)?  setDual,}){
 final _that = this;
 switch (_that) {
 case EditCommand_ReplaceText() when replaceText != null:
@@ -116,7 +118,8 @@ return splitBlock(_that);case EditCommand_MergeBlocks() when mergeBlocks != null
 return mergeBlocks(_that);case EditCommand_SetKind() when setKind != null:
 return setKind(_that);case EditCommand_InsertBlocks() when insertBlocks != null:
 return insertBlocks(_that);case EditCommand_DeleteRange() when deleteRange != null:
-return deleteRange(_that);case EditCommand_SetDual() when setDual != null:
+return deleteRange(_that);case EditCommand_MoveScene() when moveScene != null:
+return moveScene(_that);case EditCommand_SetDual() when setDual != null:
 return setDual(_that);case _:
   return null;
 
@@ -134,7 +137,7 @@ return setDual(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int block,  int startUtf16,  int endUtf16,  String with_)?  replaceText,TResult Function( int block,  int atUtf16)?  splitBlock,TResult Function( int first)?  mergeBlocks,TResult Function( int block,  BlockKind kind,  int sectionLevel,  bool forced)?  setKind,TResult Function( int? after,  List<NewBlock> blocks)?  insertBlocks,TResult Function( DocPosition from,  DocPosition to)?  deleteRange,TResult Function( int block,  bool dual)?  setDual,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int block,  int startUtf16,  int endUtf16,  String with_)?  replaceText,TResult Function( int block,  int atUtf16)?  splitBlock,TResult Function( int first)?  mergeBlocks,TResult Function( int block,  BlockKind kind,  int sectionLevel,  bool forced)?  setKind,TResult Function( int? after,  List<NewBlock> blocks)?  insertBlocks,TResult Function( DocPosition from,  DocPosition to)?  deleteRange,TResult Function( int scene,  int? before)?  moveScene,TResult Function( int block,  bool dual)?  setDual,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case EditCommand_ReplaceText() when replaceText != null:
 return replaceText(_that.block,_that.startUtf16,_that.endUtf16,_that.with_);case EditCommand_SplitBlock() when splitBlock != null:
@@ -142,7 +145,8 @@ return splitBlock(_that.block,_that.atUtf16);case EditCommand_MergeBlocks() when
 return mergeBlocks(_that.first);case EditCommand_SetKind() when setKind != null:
 return setKind(_that.block,_that.kind,_that.sectionLevel,_that.forced);case EditCommand_InsertBlocks() when insertBlocks != null:
 return insertBlocks(_that.after,_that.blocks);case EditCommand_DeleteRange() when deleteRange != null:
-return deleteRange(_that.from,_that.to);case EditCommand_SetDual() when setDual != null:
+return deleteRange(_that.from,_that.to);case EditCommand_MoveScene() when moveScene != null:
+return moveScene(_that.scene,_that.before);case EditCommand_SetDual() when setDual != null:
 return setDual(_that.block,_that.dual);case _:
   return orElse();
 
@@ -161,7 +165,7 @@ return setDual(_that.block,_that.dual);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int block,  int startUtf16,  int endUtf16,  String with_)  replaceText,required TResult Function( int block,  int atUtf16)  splitBlock,required TResult Function( int first)  mergeBlocks,required TResult Function( int block,  BlockKind kind,  int sectionLevel,  bool forced)  setKind,required TResult Function( int? after,  List<NewBlock> blocks)  insertBlocks,required TResult Function( DocPosition from,  DocPosition to)  deleteRange,required TResult Function( int block,  bool dual)  setDual,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int block,  int startUtf16,  int endUtf16,  String with_)  replaceText,required TResult Function( int block,  int atUtf16)  splitBlock,required TResult Function( int first)  mergeBlocks,required TResult Function( int block,  BlockKind kind,  int sectionLevel,  bool forced)  setKind,required TResult Function( int? after,  List<NewBlock> blocks)  insertBlocks,required TResult Function( DocPosition from,  DocPosition to)  deleteRange,required TResult Function( int scene,  int? before)  moveScene,required TResult Function( int block,  bool dual)  setDual,}) {final _that = this;
 switch (_that) {
 case EditCommand_ReplaceText():
 return replaceText(_that.block,_that.startUtf16,_that.endUtf16,_that.with_);case EditCommand_SplitBlock():
@@ -169,7 +173,8 @@ return splitBlock(_that.block,_that.atUtf16);case EditCommand_MergeBlocks():
 return mergeBlocks(_that.first);case EditCommand_SetKind():
 return setKind(_that.block,_that.kind,_that.sectionLevel,_that.forced);case EditCommand_InsertBlocks():
 return insertBlocks(_that.after,_that.blocks);case EditCommand_DeleteRange():
-return deleteRange(_that.from,_that.to);case EditCommand_SetDual():
+return deleteRange(_that.from,_that.to);case EditCommand_MoveScene():
+return moveScene(_that.scene,_that.before);case EditCommand_SetDual():
 return setDual(_that.block,_that.dual);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -184,7 +189,7 @@ return setDual(_that.block,_that.dual);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int block,  int startUtf16,  int endUtf16,  String with_)?  replaceText,TResult? Function( int block,  int atUtf16)?  splitBlock,TResult? Function( int first)?  mergeBlocks,TResult? Function( int block,  BlockKind kind,  int sectionLevel,  bool forced)?  setKind,TResult? Function( int? after,  List<NewBlock> blocks)?  insertBlocks,TResult? Function( DocPosition from,  DocPosition to)?  deleteRange,TResult? Function( int block,  bool dual)?  setDual,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int block,  int startUtf16,  int endUtf16,  String with_)?  replaceText,TResult? Function( int block,  int atUtf16)?  splitBlock,TResult? Function( int first)?  mergeBlocks,TResult? Function( int block,  BlockKind kind,  int sectionLevel,  bool forced)?  setKind,TResult? Function( int? after,  List<NewBlock> blocks)?  insertBlocks,TResult? Function( DocPosition from,  DocPosition to)?  deleteRange,TResult? Function( int scene,  int? before)?  moveScene,TResult? Function( int block,  bool dual)?  setDual,}) {final _that = this;
 switch (_that) {
 case EditCommand_ReplaceText() when replaceText != null:
 return replaceText(_that.block,_that.startUtf16,_that.endUtf16,_that.with_);case EditCommand_SplitBlock() when splitBlock != null:
@@ -192,7 +197,8 @@ return splitBlock(_that.block,_that.atUtf16);case EditCommand_MergeBlocks() when
 return mergeBlocks(_that.first);case EditCommand_SetKind() when setKind != null:
 return setKind(_that.block,_that.kind,_that.sectionLevel,_that.forced);case EditCommand_InsertBlocks() when insertBlocks != null:
 return insertBlocks(_that.after,_that.blocks);case EditCommand_DeleteRange() when deleteRange != null:
-return deleteRange(_that.from,_that.to);case EditCommand_SetDual() when setDual != null:
+return deleteRange(_that.from,_that.to);case EditCommand_MoveScene() when moveScene != null:
+return moveScene(_that.scene,_that.before);case EditCommand_SetDual() when setDual != null:
 return setDual(_that.block,_that.dual);case _:
   return null;
 
@@ -615,6 +621,74 @@ class _$EditCommand_DeleteRangeCopyWithImpl<$Res>
 from: null == from ? _self.from : from // ignore: cast_nullable_to_non_nullable
 as DocPosition,to: null == to ? _self.to : to // ignore: cast_nullable_to_non_nullable
 as DocPosition,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class EditCommand_MoveScene extends EditCommand {
+  const EditCommand_MoveScene({required this.scene, this.before}): super._();
+  
+
+ final  int scene;
+ final  int? before;
+
+/// Create a copy of EditCommand
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$EditCommand_MoveSceneCopyWith<EditCommand_MoveScene> get copyWith => _$EditCommand_MoveSceneCopyWithImpl<EditCommand_MoveScene>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is EditCommand_MoveScene&&(identical(other.scene, scene) || other.scene == scene)&&(identical(other.before, before) || other.before == before));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,scene,before);
+
+@override
+String toString() {
+  return 'EditCommand.moveScene(scene: $scene, before: $before)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $EditCommand_MoveSceneCopyWith<$Res> implements $EditCommandCopyWith<$Res> {
+  factory $EditCommand_MoveSceneCopyWith(EditCommand_MoveScene value, $Res Function(EditCommand_MoveScene) _then) = _$EditCommand_MoveSceneCopyWithImpl;
+@useResult
+$Res call({
+ int scene, int? before
+});
+
+
+
+
+}
+/// @nodoc
+class _$EditCommand_MoveSceneCopyWithImpl<$Res>
+    implements $EditCommand_MoveSceneCopyWith<$Res> {
+  _$EditCommand_MoveSceneCopyWithImpl(this._self, this._then);
+
+  final EditCommand_MoveScene _self;
+  final $Res Function(EditCommand_MoveScene) _then;
+
+/// Create a copy of EditCommand
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? scene = null,Object? before = freezed,}) {
+  return _then(EditCommand_MoveScene(
+scene: null == scene ? _self.scene : scene // ignore: cast_nullable_to_non_nullable
+as int,before: freezed == before ? _self.before : before // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

@@ -39,7 +39,8 @@ pub struct BlockSnapshot {
 /// Applied in the order the fields are declared — remove, update, insert — which
 /// is the same order §6 requires of Dart when it applies an `EditResult`. The
 /// indices in [`Patch::inserted`] are positions **after** the edit, so they are
-/// only meaningful once the removals have happened.
+/// only meaningful once the removals have happened. A moved block appears in
+/// both `removed` and `inserted`; its stable id is retained.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Patch {
     pub removed: Vec<BlockId>,

@@ -447,6 +447,11 @@ sealed class EditCommand with _$EditCommand {
     required DocPosition from,
     required DocPosition to,
   }) = EditCommand_DeleteRange;
+
+  /// Moves the scene headed by `scene` before another scene, or to the end.
+  /// Rust derives the scene's block span; block ids remain stable.
+  const factory EditCommand.moveScene({required int scene, int? before}) =
+      EditCommand_MoveScene;
   const factory EditCommand.setDual({required int block, required bool dual}) =
       EditCommand_SetDual;
 }

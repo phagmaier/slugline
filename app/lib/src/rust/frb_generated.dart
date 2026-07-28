@@ -2484,6 +2484,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           to: dco_decode_box_autoadd_doc_position(raw[2]),
         );
       case 6:
+        return EditCommand_MoveScene(
+          scene: dco_decode_CastedPrimitive_u_64(raw[1]),
+          before: dco_decode_opt_CastedPrimitive_u_64(raw[2]),
+        );
+      case 7:
         return EditCommand_SetDual(
           block: dco_decode_CastedPrimitive_u_64(raw[1]),
           dual: dco_decode_bool(raw[2]),
@@ -3500,6 +3505,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_to = sse_decode_box_autoadd_doc_position(deserializer);
         return EditCommand_DeleteRange(from: var_from, to: var_to);
       case 6:
+        var var_scene = sse_decode_CastedPrimitive_u_64(deserializer);
+        var var_before = sse_decode_opt_CastedPrimitive_u_64(deserializer);
+        return EditCommand_MoveScene(scene: var_scene, before: var_before);
+      case 7:
         var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
         var var_dual = sse_decode_bool(deserializer);
         return EditCommand_SetDual(block: var_block, dual: var_dual);
@@ -4775,8 +4784,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(5, serializer);
         sse_encode_box_autoadd_doc_position(from, serializer);
         sse_encode_box_autoadd_doc_position(to, serializer);
-      case EditCommand_SetDual(block: final block, dual: final dual):
+      case EditCommand_MoveScene(scene: final scene, before: final before):
         sse_encode_i_32(6, serializer);
+        sse_encode_CastedPrimitive_u_64(scene, serializer);
+        sse_encode_opt_CastedPrimitive_u_64(before, serializer);
+      case EditCommand_SetDual(block: final block, dual: final dual):
+        sse_encode_i_32(7, serializer);
         sse_encode_CastedPrimitive_u_64(block, serializer);
         sse_encode_bool(dual, serializer);
     }

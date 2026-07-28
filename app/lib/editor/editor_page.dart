@@ -235,6 +235,11 @@ class EditorPageState extends State<EditorPage> {
     _editorFocus.requestFocus();
   }
 
+  void _reorderScene(int sceneBlock, int? beforeSceneBlock) {
+    widget.controller.moveScene(sceneBlock, before: beforeSceneBlock);
+    _refreshNavigator();
+  }
+
   void _jumpToCharacter(NavigatorCharacter character) {
     if (character.blocks.isEmpty) return;
     final order = <int, int>{
@@ -589,6 +594,7 @@ class EditorPageState extends State<EditorPage> {
                   data: _navigator,
                   currentSceneBlock: _currentSceneBlock,
                   onSceneSelected: _jumpToScene,
+                  onSceneReordered: _reorderScene,
                   onCharacterSelected: _jumpToCharacter,
                   onCollapse: () => _setNavigatorVisible(false),
                 ),
@@ -884,7 +890,13 @@ class _OverflowMenu extends StatelessWidget {
         _entry(context, 'Previous versions…', '', onBackups),
         const PopupMenuDivider(),
         _entry(context, 'Title page…', '', onTitlePage),
-        _entry(context, 'Spell checking…', '', onSpelling, key: 'spell settings'),
+        _entry(
+          context,
+          'Spell checking…',
+          '',
+          onSpelling,
+          key: 'spell settings',
+        ),
         const PopupMenuDivider(),
         _entry(
           context,
@@ -932,7 +944,6 @@ class _OverflowMenu extends StatelessWidget {
     );
   }
 }
-
 
 /// The two buttons that float over the script itself.
 ///

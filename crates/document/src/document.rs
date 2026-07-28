@@ -382,6 +382,7 @@ impl Document {
             } => self.set_kind(block, kind, forced),
             EditCommand::InsertBlocks { after, blocks } => self.insert_blocks(after, blocks),
             EditCommand::DeleteRange { from, to } => self.delete_range(from, to),
+            EditCommand::MoveScene { scene, before } => self.move_scene(scene, before),
             EditCommand::SetDual { block, dual } => self.set_dual(block, dual),
             EditCommand::SetTitlePage { field, value } => {
                 if self.title_page.get(&field) == (!value.is_empty()).then_some(value.as_str()) {
@@ -438,7 +439,7 @@ impl Document {
             }
         }
         for (_, snapshot) in &patch.inserted {
-            if self.index_of(snapshot.id).is_some() {
+            if self.index_of(snapshot.id).is_some() && !patch.removed.contains(&snapshot.id) {
                 return Err(ReplayError::DuplicateBlock(snapshot.id));
             }
         }
@@ -1210,6 +1211,14 @@ impl Document {
                     });
                     self.blocks.splice(at..end, insert);
                 }
+                Inverse::Order(order) => {
+                    let current: Vec<BlockId> = self.blocks.iter().map(|block| block.id).collect();
+                    let moved = moved_ids(&current, &order);
+                    removed.extend(moved.iter().copied());
+                    inserted.extend(moved);
+                    opposite.inverses.push(Inverse::Order(current));
+                    self.restore_order(&order);
+                }
                 Inverse::TitlePage(page) => {
                     opposite
                         .inverses
@@ -1263,6 +1272,9 @@ impl Document {
                 anchor: *from,
                 focus: *to,
             }),
+            EditCommand::MoveScene { scene, .. } => {
+                Some(DocSelection::caret(DocPosition::new(*scene, 0)))
+            }
             EditCommand::SetTitlePage { .. } => self.caret_at_start(),
         }
     }
@@ -1318,6 +1330,74 @@ impl Document {
         self.history
             .record(inverse, coalesce, before_revision, after_revision);
         self.revision = after_revision;
+    }
+
+    fn move_scene(
+        &mut self,
+        scene: BlockId,
+        before: Option<BlockId>,
+    ) -> Result<EditResult, EditError> {
+        let start = self.index_of(scene).ok_or(EditError::UnknownBlock(scene))?;
+        if self.blocks[start].kind != BlockKind::SceneHeading {
+            return Err(EditError::BadRange);
+        }
+        let end = self.blocks[start + 1..]
+            .iter()
+            .position(|block| block.kind == BlockKind::SceneHeading)
+            .map_or(self.blocks.len() - 1, |offset| start + offset);
+        let target = match before {
+            Some(id) => {
+                let index = self.index_of(id).ok_or(EditError::UnknownBlock(id))?;
+                if self.blocks[index].kind != BlockKind::SceneHeading {
+                    return Err(EditError::BadRange);
+                }
+                index
+            }
+            None => self.blocks.len(),
+        };
+        if (start..=end + 1).contains(&target) {
+            return Ok(EditResult {
+                changed: Vec::new(),
+                removed: Vec::new(),
+                inserted: Vec::new(),
+                selection: Some(DocSelection::caret(DocPosition::new(scene, 0))),
+            });
+        }
+
+        let old_order: Vec<BlockId> = self.blocks.iter().map(|block| block.id).collect();
+        let moved: Vec<Block> = self.blocks.drain(start..=end).collect();
+        let destination = if target > end {
+            target - moved.len()
+        } else {
+            target
+        };
+        self.blocks.splice(destination..destination, moved);
+        let new_order: Vec<BlockId> = self.blocks.iter().map(|block| block.id).collect();
+        let relocated = moved_ids(&old_order, &new_order);
+        self.record(Inverse::Order(old_order), None);
+
+        Ok(EditResult {
+            changed: Vec::new(),
+            removed: relocated.clone(),
+            inserted: relocated,
+            selection: Some(DocSelection::caret(DocPosition::new(scene, 0))),
+        })
+    }
+
+    fn restore_order(&mut self, order: &[BlockId]) {
+        let mut remaining = std::mem::take(&mut self.blocks);
+        self.blocks = order
+            .iter()
+            .filter_map(|id| {
+                let index = remaining.iter().position(|block| block.id == *id)?;
+                Some(remaining.remove(index))
+            })
+            .collect();
+        debug_assert!(remaining.is_empty());
+        // An internal history mismatch must never turn into lost user text in
+        // a release build. The assertion catches it in tests; this preserves
+        // anything an invalid order failed to name.
+        self.blocks.extend(remaining);
     }
 
     /// Records into the transaction the last edit is in, rather than one of its
@@ -1432,7 +1512,17 @@ struct Merged {
 
 impl Merged {
     fn absorb(&mut self, result: EditResult) {
-        for id in result.removed {
+        let relocated: Vec<BlockId> = result
+            .removed
+            .iter()
+            .filter(|id| result.inserted.contains(id))
+            .copied()
+            .collect();
+        for id in result
+            .removed
+            .into_iter()
+            .filter(|id| !relocated.contains(id))
+        {
             if let Some(at) = self.inserted.iter().position(|&other| other == id) {
                 // Created and destroyed within the group: the caller never saw
                 // it, so it is not part of the patch at all.
@@ -1448,8 +1538,18 @@ impl Merged {
             }
             push_unique(&mut self.changed, id);
         }
-        for id in result.inserted {
+        for id in result
+            .inserted
+            .into_iter()
+            .filter(|id| !relocated.contains(id))
+        {
             self.removed.retain(|&other| other != id);
+            push_unique(&mut self.inserted, id);
+        }
+        for id in relocated {
+            if !self.inserted.contains(&id) {
+                push_unique(&mut self.removed, id);
+            }
             push_unique(&mut self.inserted, id);
         }
         if result.selection.is_some() {
@@ -1465,6 +1565,14 @@ impl Merged {
             selection: self.selection,
         }
     }
+}
+
+fn moved_ids(before: &[BlockId], after: &[BlockId]) -> Vec<BlockId> {
+    before
+        .iter()
+        .enumerate()
+        .filter_map(|(index, id)| (after.get(index) != Some(id)).then_some(*id))
+        .collect()
 }
 
 fn push_unique(ids: &mut Vec<BlockId>, id: BlockId) {
@@ -2945,6 +3053,92 @@ mod tests {
         document.replace_all(&editable, "dog", None).unwrap();
         assert_eq!(document.blocks[1].text, "The dog sat.");
         assert!(document.serialise().starts_with("/* cat */\n"));
+    }
+
+    #[test]
+    fn moving_a_scene_preserves_ids_and_is_one_undo_step() {
+        let source =
+            "INT. ONE - DAY\n\nOne.\n\nINT. TWO - DAY\n\nTwo.\n\nINT. THREE - DAY\n\nThree.\n";
+        let mut document = Document::parse(source);
+        let ids: Vec<BlockId> = document.blocks.iter().map(|block| block.id).collect();
+
+        let result = document
+            .apply(EditCommand::MoveScene {
+                scene: ids[2],
+                before: Some(ids[0]),
+            })
+            .unwrap();
+
+        assert_eq!(
+            document
+                .blocks
+                .iter()
+                .map(|block| block.id)
+                .collect::<Vec<_>>(),
+            [ids[2], ids[3], ids[0], ids[1], ids[4], ids[5]]
+        );
+        assert_eq!(result.removed, result.inserted);
+        assert_eq!(
+            document.serialise(),
+            "INT. TWO - DAY\n\nTwo.\n\nINT. ONE - DAY\n\nOne.\n\nINT. THREE - DAY\n\nThree.\n"
+        );
+
+        document.undo().expect("the move is undoable");
+        assert_eq!(
+            document
+                .blocks
+                .iter()
+                .map(|block| block.id)
+                .collect::<Vec<_>>(),
+            ids
+        );
+        document.redo().expect("the move is redoable");
+        assert_eq!(document.blocks[0].id, ids[2]);
+    }
+
+    #[test]
+    fn a_move_patch_replays_with_the_same_block_ids() {
+        let source = "INT. ONE - DAY\n\nINT. TWO - DAY\n\nINT. THREE - DAY\n";
+        let mut moved = Document::parse(source);
+        let ids: Vec<BlockId> = moved.blocks.iter().map(|block| block.id).collect();
+        let result = moved
+            .apply(EditCommand::MoveScene {
+                scene: ids[0],
+                before: None,
+            })
+            .unwrap();
+        let mut inserted: Vec<(u32, BlockSnapshot)> = result
+            .inserted
+            .iter()
+            .map(|id| {
+                (
+                    moved.index_of(*id).unwrap() as u32,
+                    moved.snapshot(*id).unwrap(),
+                )
+            })
+            .collect();
+        inserted.sort_by_key(|(index, _)| *index);
+        let patch = Patch {
+            removed: result.removed,
+            changed: Vec::new(),
+            inserted,
+            title_page: None,
+        };
+
+        let mut replayed = Document::parse(source);
+        replayed.replay(&patch).unwrap();
+        assert_eq!(
+            replayed.serialise(),
+            "INT. TWO - DAY\n\nINT. THREE - DAY\n\nINT. ONE - DAY\n"
+        );
+        assert_eq!(
+            replayed
+                .blocks
+                .iter()
+                .map(|block| block.id)
+                .collect::<Vec<_>>(),
+            [ids[1], ids[2], ids[0]]
+        );
     }
 
     // --- suggestions -----------------------------------------------------

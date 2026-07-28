@@ -99,6 +99,12 @@ pub enum EditCommand {
         from: DocPosition,
         to: DocPosition,
     },
+    /// Moves the scene headed by `scene` immediately before another scene, or
+    /// to the end when `before` is `None`.
+    MoveScene {
+        scene: BlockId,
+        before: Option<BlockId>,
+    },
     SetDual {
         block: BlockId,
         dual: bool,
@@ -122,6 +128,9 @@ impl EditCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditResult {
     pub changed: Vec<BlockId>,
+    /// A move is expressed as the same ids in `removed` and `inserted`.
+    /// Consumers remove first and then insert the snapshots at their new
+    /// positions, preserving block identity without a separate reorder model.
     pub removed: Vec<BlockId>,
     pub inserted: Vec<BlockId>,
     /// The caret/selection after the edit. `None` when the document has no body

@@ -33,7 +33,7 @@
 > - Minimum 40×40 hit targets even though the icon is smaller.
 > - The filename "cross.fountain" should show as the title with the extension in `textTertiary`, plus an unobtrusive saved-state indicator next to it.
 
-- [ ] See below 
+- [x] See below 
 ## 5. Sidebar density and hierarchy
 
 > The scene list rows are too tall and the two lines compete. Tighten it:

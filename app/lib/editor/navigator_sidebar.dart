@@ -4,6 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/theme.dart';
 
+typedef SceneReorderCallback =
+    void Function(int sceneBlock, int? beforeSceneBlock);
+
+const _navigatorRowExtent = 52.0;
+
 /// §Phase 8's scene and character navigator.
 ///
 /// All screenplay semantics in [data] came from Rust. This widget owns only
@@ -14,6 +19,7 @@ class NavigatorSidebar extends StatefulWidget {
     required this.data,
     required this.currentSceneBlock,
     required this.onSceneSelected,
+    required this.onSceneReordered,
     required this.onCharacterSelected,
     required this.onCollapse,
     super.key,
@@ -22,6 +28,7 @@ class NavigatorSidebar extends StatefulWidget {
   final NavigatorView data;
   final int? currentSceneBlock;
   final ValueChanged<int> onSceneSelected;
+  final SceneReorderCallback onSceneReordered;
   final ValueChanged<NavigatorCharacter> onCharacterSelected;
   final VoidCallback onCollapse;
 
@@ -35,6 +42,8 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
   final ScrollController _scroll = ScrollController();
   _NavigatorSection _section = _NavigatorSection.scenes;
   int _selected = 0;
+  int? _hoveredScene;
+  String? _hoveredCharacter;
 
   @override
   void didUpdateWidget(NavigatorSidebar oldWidget) {
@@ -125,7 +134,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
   void _scrollToSelection() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
-      const extent = 64.0;
+      const extent = _navigatorRowExtent;
       final target = _selected * extent;
       final top = _scroll.offset;
       final bottom = top + _scroll.position.viewportDimension - extent;
@@ -150,6 +159,83 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
       case _NavigatorSection.characters:
         widget.onCharacterSelected(_characters[_selected]);
     }
+  }
+
+  void _reorderScenes(int oldIndex, int newIndex) {
+    if (newIndex == oldIndex) return;
+    final scenes = List<NavigatorScene>.of(widget.data.scenes);
+    final moved = scenes.removeAt(oldIndex);
+    scenes.insert(newIndex, moved);
+    final before = newIndex + 1 < scenes.length
+        ? scenes[newIndex + 1].block
+        : null;
+    setState(() => _selected = newIndex);
+    widget.onSceneReordered(moved.block, before);
+  }
+
+  Future<void> _showSceneMenu(
+    NavigatorScene scene,
+    int index,
+    Offset position,
+  ) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final action = await showMenu<_SceneMenuAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem(
+          value: _SceneMenuAction.jump,
+          child: _MenuItem(icon: Icons.arrow_forward, label: 'Jump to scene'),
+        ),
+        const PopupMenuItem(
+          value: _SceneMenuAction.copyHeading,
+          child: _MenuItem(icon: Icons.copy_outlined, label: 'Copy heading'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: _SceneMenuAction.moveUp,
+          enabled: index > 0 && _filter.text.isEmpty,
+          child: const _MenuItem(
+            icon: Icons.keyboard_arrow_up,
+            label: 'Move scene up',
+          ),
+        ),
+        PopupMenuItem(
+          value: _SceneMenuAction.moveDown,
+          enabled:
+              index + 1 < widget.data.scenes.length && _filter.text.isEmpty,
+          child: const _MenuItem(
+            icon: Icons.keyboard_arrow_down,
+            label: 'Move scene down',
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _SceneMenuAction.jump:
+        setState(() => _selected = index);
+        widget.onSceneSelected(scene.block);
+      case _SceneMenuAction.copyHeading:
+        await Clipboard.setData(ClipboardData(text: _headingOf(scene)));
+      case _SceneMenuAction.moveUp:
+        _reorderScenes(index, index - 1);
+      case _SceneMenuAction.moveDown:
+        _reorderScenes(index, index + 1);
+    }
+  }
+
+  String _headingOf(NavigatorScene scene) {
+    final heading = [
+      scene.prefix,
+      scene.location,
+    ].where((part) => part.isNotEmpty).join(' ');
+    final time = scene.timeOfDay;
+    return time != null && time.isNotEmpty ? '$heading - $time' : heading;
   }
 
   @override
@@ -185,39 +271,65 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(
-                height: 48,
+                height: 40,
                 child: Row(
                   children: [
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Navigator',
-                        style: theme.textTheme.titleMedium,
+                        'NAVIGATOR',
+                        style: TextStyle(
+                          color: colours.textTertiary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.4,
+                        ),
                       ),
                     ),
                     IconButton(
                       key: const ValueKey('collapse navigator'),
                       tooltip: 'Hide navigator',
+                      visualDensity: VisualDensity.compact,
                       onPressed: widget.onCollapse,
-                      icon: const Icon(Icons.chevron_left),
+                      icon: const Icon(Icons.chevron_left, size: 18),
                     ),
                   ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                padding: const EdgeInsets.fromLTRB(10, 2, 10, 8),
+                child: _NavigatorSegmentedControl(
+                  section: _section,
+                  sceneCount: widget.data.scenes.length,
+                  characterCount: widget.data.characters.length,
+                  onChanged: _setSection,
+                ),
+              ),
+              Padding(
+                // This remains outside the scrolling child below, so filtering
+                // is always available even deep into a long scene list.
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                 child: TextField(
                   key: const ValueKey('navigator filter'),
                   controller: _filter,
                   focusNode: _filterFocus,
                   onChanged: _filterChanged,
                   onSubmitted: (_) => _activate(),
+                  style: TextStyle(color: colours.textPrimary, fontSize: 13),
                   decoration: InputDecoration(
                     isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     hintText: _section == _NavigatorSection.scenes
                         ? 'Jump to scene…'
                         : 'Find character…',
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: const Icon(Icons.search, size: 16),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 34,
+                    ),
                     suffixIcon: _filter.text.isEmpty
                         ? null
                         : IconButton(
@@ -227,38 +339,18 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
                               _filterChanged('');
                               _filterFocus.requestFocus();
                             },
-                            icon: const Icon(Icons.close),
+                            icon: const Icon(Icons.close, size: 16),
                           ),
-                    border: const OutlineInputBorder(),
+                    suffixIconConstraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 34,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _SectionButton(
-                        label: 'Scenes',
-                        count: widget.data.scenes.length,
-                        selected: _section == _NavigatorSection.scenes,
-                        onPressed: () => _setSection(_NavigatorSection.scenes),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _SectionButton(
-                        label: 'Characters',
-                        count: widget.data.characters.length,
-                        selected: _section == _NavigatorSection.characters,
-                        onPressed: () =>
-                            _setSection(_NavigatorSection.characters),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
               Expanded(child: _list(theme)),
             ],
           ),
@@ -281,12 +373,42 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
         ),
       );
     }
+    if (_section == _NavigatorSection.scenes && _filter.text.isEmpty) {
+      return ReorderableListView.builder(
+        scrollController: _scroll,
+        buildDefaultDragHandles: false,
+        itemExtent: _navigatorRowExtent,
+        itemCount: widget.data.scenes.length,
+        onReorderItem: _reorderScenes,
+        proxyDecorator: (child, _, animation) => AnimatedBuilder(
+          animation: animation,
+          builder: (context, child) => Material(
+            color: context.colours.surfaceOverlay,
+            elevation: 2 * animation.value,
+            child: child,
+          ),
+          child: child,
+        ),
+        itemBuilder: (context, index) {
+          final scene = widget.data.scenes[index];
+          return KeyedSubtree(
+            key: ValueKey('reorder scene ${scene.block}'),
+            child: _sceneRow(theme, scene, index, reorderable: true),
+          );
+        },
+      );
+    }
     return ListView.builder(
       controller: _scroll,
-      itemExtent: 64,
+      itemExtent: _navigatorRowExtent,
       itemCount: _itemCount,
       itemBuilder: (context, index) => switch (_section) {
-        _NavigatorSection.scenes => _sceneRow(theme, _scenes[index], index),
+        _NavigatorSection.scenes => _sceneRow(
+          theme,
+          _scenes[index],
+          index,
+          reorderable: false,
+        ),
         _NavigatorSection.characters => _characterRow(
           theme,
           _characters[index],
@@ -296,50 +418,125 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     );
   }
 
-  Widget _sceneRow(ThemeData theme, NavigatorScene scene, int index) {
+  Widget _sceneRow(
+    ThemeData theme,
+    NavigatorScene scene,
+    int index, {
+    required bool reorderable,
+  }) {
     final current = scene.block == widget.currentSceneBlock;
     final keyboardSelected = index == _selected;
+    final hovered = scene.block == _hoveredScene;
     final subtitle = [
       scene.prefix,
       scene.timeOfDay,
     ].whereType<String>().where((part) => part.isNotEmpty).join(' · ');
     final colours = context.colours;
-    return Material(
-      // Two different states, and only one of them is *selection*: the scene the
-      // caret is in wears the accent, and the row the arrow keys are sitting on
-      // is raised without it. They used to be two saturated blocks a shade
-      // apart, which said the same thing twice and neither clearly.
-      color: current
-          ? colours.accentSubtle
-          : keyboardSelected
-          ? colours.surfaceOverlay
-          : Colors.transparent,
-      child: ListTile(
-        key: ValueKey('navigator scene ${scene.block}'),
-        dense: true,
-        selected: current,
-        leading: scene.sceneNumber == null
-            ? const SizedBox(width: 28)
-            : SizedBox(
-                width: 28,
-                child: Text(
-                  scene.sceneNumber!,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelMedium,
+    final background = current
+        ? colours.surfaceOverlay
+        : hovered || keyboardSelected
+        ? colours.surfaceOverlay.withValues(alpha: 0.58)
+        : Colors.transparent;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredScene = scene.block),
+      onExit: (_) {
+        if (_hoveredScene == scene.block) {
+          setState(() => _hoveredScene = null);
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapDown: (details) {
+          setState(() => _selected = index);
+          _showSceneMenu(scene, index, details.globalPosition);
+        },
+        child: Material(
+          key: ValueKey('navigator scene background ${scene.block}'),
+          color: background,
+          child: ListTile(
+            key: ValueKey('navigator scene ${scene.block}'),
+            dense: true,
+            minTileHeight: _navigatorRowExtent,
+            minVerticalPadding: 8,
+            horizontalTitleGap: 8,
+            contentPadding: const EdgeInsets.fromLTRB(8, 0, 6, 0),
+            selected: current,
+            shape: Border(
+              left: BorderSide(
+                color: current ? colours.accent : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            leading: SizedBox(
+              width: 30,
+              child: Text(
+                scene.sceneNumber ?? '${index + 1}',
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colours.textTertiary,
+                  fontSize: 11,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
-        title: Text(
-          scene.location.isEmpty ? scene.prefix : scene.location,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+            ),
+            title: Text(
+              scene.location.isEmpty ? scene.prefix : scene.location,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colours.textPrimary,
+                fontSize: 13,
+                height: 1.15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            subtitle: subtitle.isEmpty
+                ? null
+                : Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colours.textTertiary,
+                      fontSize: 11,
+                      height: 1.15,
+                    ),
+                  ),
+            trailing: reorderable
+                ? ReorderableDragStartListener(
+                    key: ValueKey('drag scene ${scene.block}'),
+                    index: index,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.grab,
+                      child: Tooltip(
+                        message: 'Drag to reorder',
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.drag_indicator,
+                            size: 16,
+                            color: colours.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : Tooltip(
+                    message: 'Clear search to reorder',
+                    child: Icon(
+                      Icons.drag_indicator,
+                      size: 16,
+                      color: colours.textTertiary.withValues(alpha: 0.45),
+                    ),
+                  ),
+            onTap: () {
+              setState(() => _selected = index);
+              widget.onSceneSelected(scene.block);
+            },
+          ),
         ),
-        subtitle: subtitle.isEmpty
-            ? null
-            : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-        onTap: () {
-          setState(() => _selected = index);
-          widget.onSceneSelected(scene.block);
-        },
       ),
     );
   }
@@ -350,34 +547,54 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     int index,
   ) {
     final keyboardSelected = index == _selected;
+    final hovered = character.name == _hoveredCharacter;
     final count = character.occurrences;
-    return Material(
-      color: keyboardSelected
-          ? context.colours.surfaceOverlay
-          : Colors.transparent,
-      child: ListTile(
-        key: ValueKey('navigator character ${character.name}'),
-        dense: true,
-        leading: const SizedBox(
-          width: 28,
-          child: Icon(Icons.person_outline, size: 20),
+    final colours = context.colours;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredCharacter = character.name),
+      onExit: (_) {
+        if (_hoveredCharacter == character.name) {
+          setState(() => _hoveredCharacter = null);
+        }
+      },
+      child: Material(
+        color: hovered || keyboardSelected
+            ? colours.surfaceOverlay.withValues(alpha: 0.58)
+            : Colors.transparent,
+        child: ListTile(
+          key: ValueKey('navigator character ${character.name}'),
+          dense: true,
+          minTileHeight: _navigatorRowExtent,
+          minVerticalPadding: 8,
+          horizontalTitleGap: 8,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+          leading: const SizedBox(
+            width: 30,
+            child: Icon(Icons.person_outline, size: 16),
+          ),
+          title: Text(
+            character.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: colours.textPrimary, fontSize: 13),
+          ),
+          subtitle: Text(
+            '$count ${count == 1 ? 'occurrence' : 'occurrences'}',
+            style: TextStyle(color: colours.textTertiary, fontSize: 11),
+          ),
+          onTap: () {
+            setState(() => _selected = index);
+            widget.onCharacterSelected(character);
+          },
         ),
-        title: Text(
-          character.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text('$count ${count == 1 ? 'occurrence' : 'occurrences'}'),
-        onTap: () {
-          setState(() => _selected = index);
-          widget.onCharacterSelected(character);
-        },
       ),
     );
   }
 }
 
 enum _NavigatorSection { scenes, characters }
+
+enum _SceneMenuAction { jump, copyHeading, moveUp, moveDown }
 
 class _MoveNavigatorIntent extends Intent {
   const _MoveNavigatorIntent(this.delta);
@@ -389,41 +606,129 @@ class _ActivateNavigatorIntent extends Intent {
   const _ActivateNavigatorIntent();
 }
 
-class _SectionButton extends StatelessWidget {
-  const _SectionButton({
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [Icon(icon, size: 16), const SizedBox(width: 10), Text(label)],
+  );
+}
+
+class _NavigatorSegmentedControl extends StatelessWidget {
+  const _NavigatorSegmentedControl({
+    required this.section,
+    required this.sceneCount,
+    required this.characterCount,
+    required this.onChanged,
+  });
+
+  final _NavigatorSection section;
+  final int sceneCount;
+  final int characterCount;
+  final ValueChanged<_NavigatorSection> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colours = context.colours;
+    const radius = BorderRadius.all(Radius.circular(8));
+    return Semantics(
+      container: true,
+      label: 'Navigator section',
+      child: Container(
+        height: 32,
+        decoration: BoxDecoration(
+          color: colours.surface,
+          borderRadius: radius,
+          border: Border.all(color: colours.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              alignment: section == _NavigatorSection.scenes
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: FractionallySizedBox(
+                widthFactor: 0.5,
+                heightFactor: 1,
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: DecoratedBox(
+                    key: const ValueKey('navigator segment indicator'),
+                    decoration: BoxDecoration(
+                      color: colours.surfaceOverlay,
+                      borderRadius: const BorderRadius.all(Radius.circular(6)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: _Segment(
+                    label: 'Scenes',
+                    count: sceneCount,
+                    selected: section == _NavigatorSection.scenes,
+                    onTap: () => onChanged(_NavigatorSection.scenes),
+                  ),
+                ),
+                Expanded(
+                  child: _Segment(
+                    label: 'Characters',
+                    count: characterCount,
+                    selected: section == _NavigatorSection.characters,
+                    onTap: () => onChanged(_NavigatorSection.characters),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
     required this.label,
     required this.count,
     required this.selected,
-    required this.onPressed,
+    required this.onTap,
   });
 
   final String label;
   final int count;
   final bool selected;
-  final VoidCallback onPressed;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colours = context.colours;
-    // Which of two lists is showing is a *selected state*, so it takes the
-    // accent — but at the strength a filled region gets, not the strength a
-    // primary button gets. `FilledButton.tonal` reads the same
-    // `FilledButtonThemeData` as its filled sibling, so left alone it would
-    // come out as solid an accent block as the "New script" button, and the
-    // accent would be marking two different kinds of thing at once.
-    return selected
-        ? FilledButton.tonal(
-            onPressed: onPressed,
-            style: FilledButton.styleFrom(
-              backgroundColor: colours.accentSubtle,
-              foregroundColor: colours.textPrimary,
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        child: Center(
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 180),
+            style: TextStyle(
+              color: selected ? colours.textPrimary : colours.textTertiary,
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
             ),
-            child: Text('$label $count'),
-          )
-        : TextButton(
-            onPressed: onPressed,
-            style: TextButton.styleFrom(foregroundColor: colours.textSecondary),
-            child: Text('$label $count'),
-          );
+            child: Text('$label  $count'),
+          ),
+        ),
+      ),
+    );
   }
 }

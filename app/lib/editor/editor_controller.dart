@@ -1095,6 +1095,13 @@ class EditorController extends ChangeNotifier {
 
   void redo() => _replay(core.redo());
 
+  /// Moves [scene] before another scene, or to the document end.
+  ///
+  /// Rust derives the block span so screenplay structure never leaks into Dart.
+  void moveScene(int scene, {int? before}) {
+    _apply(EditCommand.moveScene(scene: scene, before: before));
+  }
+
   void _replay(EditResult? result) {
     if (result == null) return;
     lastRejection = null;

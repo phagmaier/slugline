@@ -40,6 +40,7 @@ export 'package:slugline/src/rust/api/doc.dart'
         EditCommand_DeleteRange,
         EditCommand_InsertBlocks,
         EditCommand_MergeBlocks,
+        EditCommand_MoveScene,
         EditCommand_ReplaceText,
         EditCommand_SetDual,
         EditCommand_SetKind,
@@ -498,8 +499,7 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
       files.docReload(handle: _handle, onlyIfClean: onlyIfClean);
 
   @override
-  Future<bool> acceptDiskState() =>
-      files.docAcceptDiskState(handle: _handle);
+  Future<bool> acceptDiskState() => files.docAcceptDiskState(handle: _handle);
 
   @override
   Future<List<files.BackupView>> backups() =>

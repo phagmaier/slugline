@@ -2548,6 +2548,14 @@ impl SseDecode for crate::api::doc::EditCommand {
                 };
             }
             6 => {
+                let mut var_scene = <u64>::sse_decode(deserializer);
+                let mut var_before = <Option<u64>>::sse_decode(deserializer);
+                return crate::api::doc::EditCommand::MoveScene {
+                    scene: var_scene,
+                    before: var_before,
+                };
+            }
+            7 => {
                 let mut var_block = <u64>::sse_decode(deserializer);
                 let mut var_dual = <bool>::sse_decode(deserializer);
                 return crate::api::doc::EditCommand::SetDual {
@@ -3943,8 +3951,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::doc::EditCommand {
                 to.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::doc::EditCommand::SetDual { block, dual } => [
+            crate::api::doc::EditCommand::MoveScene { scene, before } => [
                 6.into_dart(),
+                scene.into_into_dart().into_dart(),
+                before.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::doc::EditCommand::SetDual { block, dual } => [
+                7.into_dart(),
                 block.into_into_dart().into_dart(),
                 dual.into_into_dart().into_dart(),
             ]
@@ -4947,8 +4961,13 @@ impl SseEncode for crate::api::doc::EditCommand {
                 <crate::api::doc::DocPosition>::sse_encode(from, serializer);
                 <crate::api::doc::DocPosition>::sse_encode(to, serializer);
             }
-            crate::api::doc::EditCommand::SetDual { block, dual } => {
+            crate::api::doc::EditCommand::MoveScene { scene, before } => {
                 <i32>::sse_encode(6, serializer);
+                <u64>::sse_encode(scene, serializer);
+                <Option<u64>>::sse_encode(before, serializer);
+            }
+            crate::api::doc::EditCommand::SetDual { block, dual } => {
+                <i32>::sse_encode(7, serializer);
                 <u64>::sse_encode(block, serializer);
                 <bool>::sse_encode(dual, serializer);
             }
