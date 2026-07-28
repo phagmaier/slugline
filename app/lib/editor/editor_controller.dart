@@ -123,6 +123,18 @@ class EditorController extends ChangeNotifier {
     return (block: _blocks[blockIndex].id, sourceLine: sourceLine);
   }
 
+  /// The inverse of [pageAnchorAtRow]: the visual row a block's wrapped line
+  /// sits on.
+  ///
+  /// The line index is clamped, because the caller's copy of it may predate an
+  /// edit that shortened the block — the paginator answers about a snapshot, and
+  /// a row is asked for against the layout as it is now.
+  int rowOfLine(int blockIndex, int sourceLine) {
+    final lines = _layout.linesOf(blockIndex);
+    return _layout.firstRowOf(blockIndex) +
+        sourceLine.clamp(0, lines.isEmpty ? 0 : lines.length - 1);
+  }
+
   /// What the core would write out. Phase 2 saves nothing; this is how a test
   /// asks what the core actually holds.
   String get source => core.source();

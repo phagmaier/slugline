@@ -1,0 +1,236 @@
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/metrics.dart';
+import 'package:slugline/editor/page_geometry.dart';
+import 'package:slugline/editor/page_indicator.dart';
+
+const _metrics = ScreenplayMetrics(advance: 9, lineHeight: 21);
+
+EditorGeometry _geometry({
+  double viewportWidth = 900,
+  int totalRows = 300,
+  List<PageStart> pageStarts = const [],
+  bool pageView = false,
+}) => EditorGeometry(
+  metrics: _metrics,
+  viewportWidth: viewportWidth,
+  totalRows: totalRows,
+  pageStarts: pageStarts,
+  pageView: pageView,
+);
+
+const _starts = [
+  PageStart(row: 54, number: 2),
+  PageStart(row: 110, number: 3),
+];
+
+void main() {
+  group('the measure', () {
+    test('is six inches of text and does not stretch with the viewport', () {
+      // Sixty columns is the whole point: a wider window buys more margin, not
+      // a wider line. A screenplay page holds the same words at any window size.
+      for (final width in [700.0, 900.0, 1600.0, 3840.0]) {
+        expect(_geometry(viewportWidth: width).columnWidth, 60 * 9);
+      }
+    });
+
+    test('is centred in the viewport', () {
+      final geometry = _geometry(viewportWidth: 1600);
+      expect(geometry.columnLeft, (1600 - 540) / 2);
+      expect(geometry.columnRight, geometry.columnLeft + 540);
+    });
+
+    test('stays inside a viewport too narrow to hold it', () {
+      final geometry = _geometry(viewportWidth: 300);
+      expect(geometry.columnLeft, greaterThanOrEqualTo(0));
+      expect(geometry.columnRight, lessThanOrEqualTo(300));
+    });
+
+    test('is capped so a fallback face cannot push it off screen', () {
+      final geometry = EditorGeometry(
+        // A face three times Courier's width, which no grid should honour.
+        metrics: const ScreenplayMetrics(advance: 40, lineHeight: 21),
+        viewportWidth: 4000,
+        totalRows: 10,
+      );
+      expect(geometry.columnWidth, ScreenplayMetrics.maxColumnWidth);
+    });
+  });
+
+  group('continuous scroll', () {
+    test('rows are evenly spaced whatever the pagination says', () {
+      final geometry = _geometry(pageStarts: _starts);
+      expect(geometry.sheeted, isFalse);
+      for (final row in [0, 1, 53, 54, 55, 200]) {
+        expect(
+          geometry.yOfRow(row) - geometry.yOfRow(0),
+          row * 21,
+          reason: 'row $row',
+        );
+      }
+    });
+
+    test('a page break is a rule, and the first page has none above it', () {
+      final rules = _geometry(pageStarts: _starts).rules().toList();
+      expect(rules.map((rule) => rule.number), [2, 3]);
+      expect(rules.first.y, closeTo(_geometry().yOfRow(54) - 10.5, 0.001));
+      expect(_geometry(pageStarts: _starts).sheets(), isEmpty);
+    });
+
+    test('draws nothing at all before the first pagination arrives', () {
+      expect(_geometry().rules(), isEmpty);
+      expect(_geometry().sheets(), isEmpty);
+    });
+  });
+
+  group('page view', () {
+    test('falls back to continuous until there is a pagination to draw', () {
+      final geometry = _geometry(pageView: true);
+      expect(geometry.sheeted, isFalse);
+      expect(geometry.yOfRow(54) - geometry.yOfRow(0), 54 * 21);
+    });
+
+    test('every page break costs exactly one gap', () {
+      final geometry = _geometry(pageStarts: _starts, pageView: true);
+      expect(geometry.sheeted, isTrue);
+      final gap = geometry.pageGap;
+      expect(geometry.yOfRow(53) - geometry.yOfRow(0), 53 * 21);
+      expect(geometry.yOfRow(54) - geometry.yOfRow(0), 54 * 21 + gap);
+      expect(geometry.yOfRow(109) - geometry.yOfRow(0), 109 * 21 + gap);
+      expect(geometry.yOfRow(110) - geometry.yOfRow(0), 110 * 21 + 2 * gap);
+    });
+
+    test('a sheet per page, in order, with the first numbered one', () {
+      final sheets = _geometry(
+        pageStarts: _starts,
+        pageView: true,
+      ).sheets().toList();
+      expect(sheets.map((sheet) => sheet.number), [1, 2, 3]);
+      for (final sheet in sheets) {
+        expect(sheet.bottom, greaterThan(sheet.top));
+      }
+      for (var i = 1; i < sheets.length; i++) {
+        expect(sheets[i].top, greaterThan(sheets[i - 1].bottom));
+      }
+      expect(_geometry(pageStarts: _starts, pageView: true).rules(), isEmpty);
+    });
+  });
+
+  group('the paint band', () {
+    // The regression this group exists for: a viewport edge that lands in the
+    // margin between two sheets is in no row at all, and resolving it as if it
+    // were one put the band's bottom well above the fold. Every row still
+    // visible above that gap went unpainted — text vanished at the bottom of a
+    // page and came back a scroll later.
+    for (final (name, geometry) in [
+      ('continuous', _geometry(totalRows: 200)),
+      ('continuous with breaks', _geometry(totalRows: 200, pageStarts: _starts)),
+      (
+        'page view',
+        _geometry(totalRows: 200, pageStarts: _starts, pageView: true),
+      ),
+    ]) {
+      test('$name covers every row on screen, at every scroll offset', () {
+        const viewportHeight = 600.0;
+        for (var top = 0.0; top < geometry.contentHeight; top += 3) {
+          final bottom = top + viewportHeight;
+          final band = geometry.rowBand(top, bottom);
+          for (var row = 0; row < 200; row++) {
+            final rowTop = geometry.yOfRow(row);
+            if (rowTop + geometry.lineHeight <= top || rowTop >= bottom) {
+              continue;
+            }
+            expect(
+              row,
+              inInclusiveRange(band.first, band.last),
+              reason: 'row $row is on screen at offset $top but outside $band',
+            );
+          }
+        }
+      });
+    }
+
+    test('stays a band and does not become the whole document', () {
+      final geometry = _geometry(
+        totalRows: 5000,
+        pageStarts: [
+          for (var page = 2; page <= 90; page++)
+            PageStart(row: (page - 1) * 54, number: page),
+        ],
+        pageView: true,
+      );
+      final band = geometry.rowBand(20000, 20600);
+      expect(
+        band.last - band.first,
+        lessThan(80),
+        reason: 'a 120-page script must still cost one screen to paint',
+      );
+    });
+  });
+
+  group('rowAtY inverts yOfRow', () {
+    // This is the one that matters: `rowAtY` is what a click becomes, and a
+    // gap between sheets that the forward mapping knows about and the reverse
+    // does not is a caret that lands on the wrong line.
+    for (final (name, geometry) in [
+      ('continuous', _geometry()),
+      ('continuous with breaks', _geometry(pageStarts: _starts)),
+      ('page view', _geometry(pageStarts: _starts, pageView: true)),
+    ]) {
+      test(name, () {
+        for (var row = 0; row < 200; row++) {
+          final top = geometry.yOfRow(row);
+          expect(geometry.rowAtY(top), row, reason: 'top of row $row');
+          expect(geometry.rowAtY(top + 20.9), row, reason: 'end of row $row');
+        }
+      });
+    }
+  });
+
+  group('the element table', () {
+    // The inch measurements §5.2 gives, and the columns they must come to.
+    // `layout::metrics` holds the same numbers in Rust and the corpus-wide
+    // differential test compares the wrapping; this compares the table itself,
+    // so a mistyped inch value fails here rather than as a mysterious wrap.
+    const expected = {
+      BlockKind.sceneHeading: (0, 60),
+      BlockKind.action: (0, 60),
+      BlockKind.character: (22, 33),
+      BlockKind.parenthetical: (16, 26),
+      BlockKind.dialogue: (10, 35),
+      BlockKind.transition: (0, 60),
+      BlockKind.lyric: (10, 35),
+    };
+
+    expected.forEach((kind, columns) {
+      test('$kind sits at ${columns.$1} and is ${columns.$2} wide', () {
+        final metrics = metricsFor(kind);
+        expect((metrics.indent, metrics.width), columns);
+      });
+    });
+
+    test('every element fits inside the six-inch measure', () {
+      for (final metrics in elementMetrics.values) {
+        expect(
+          metrics.indent + metrics.width,
+          lessThanOrEqualTo(ScreenplayMetrics.textColumns),
+          reason: 'an element that overhangs the measure would print off page',
+        );
+      }
+    });
+
+    test('an inch is ten columns and a page is fifty-four rows', () {
+      expect(ScreenplayMetrics.columnsIn(1), 10);
+      expect(ScreenplayMetrics.columnsIn(2.2), 22);
+      expect(ScreenplayMetrics.rowsIn(1), 6);
+      expect(
+        ScreenplayMetrics.textWidthInches,
+        ScreenplayMetrics.textColumns / ScreenplayMetrics.charactersPerInch,
+      );
+      // `layout::metrics::US_LETTER_LINES_PER_PAGE`, derived there from
+      // (11 − 1 − 1) inches at six lines to the inch.
+      expect(ScreenplayMetrics.linesPerPage, 54);
+    });
+  });
+}

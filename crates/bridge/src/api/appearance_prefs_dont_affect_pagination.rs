@@ -44,6 +44,10 @@ fn appearance_preferences_leave_pagination_byte_identical() {
             distraction_free: true,
             ..baseline_preferences.clone()
         },
+        Preferences {
+            page_view: false,
+            ..baseline_preferences.clone()
+        },
     ];
 
     for preferences in variants {

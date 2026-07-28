@@ -324,7 +324,7 @@ void main() {
       );
       final surface = tester.getTopLeft(find.byType(EditorSurface));
 
-      await tester.tapAt(surface + const Offset(20, 60));
+      await tester.tapAt(surface + editorCell(1, 0));
       await tester.pump();
 
       expect(controller.selection.focus.offsetUtf16, 5);
@@ -337,8 +337,8 @@ void main() {
       );
       final surface = tester.getTopLeft(find.byType(EditorSurface));
 
-      final gesture = await tester.startGesture(surface + const Offset(20, 38));
-      await gesture.moveTo(surface + const Offset(20, 60));
+      final gesture = await tester.startGesture(surface + editorCell(0, 0));
+      await gesture.moveTo(surface + editorCell(1, 0));
       await tester.pump();
       await gesture.up();
 

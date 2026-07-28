@@ -8,6 +8,10 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
 
 import '../support/fake_core.dart';
+import '../support/pump_editor.dart';
+
+/// The scroll offset that parks [row] at the top of the viewport.
+double _offsetOfRow(int row) => editorGeometry().yOfRow(row);
 
 BlockView _block(int id) => BlockView(
   id: id,
@@ -67,11 +71,11 @@ void main() {
         focusNode: focusNode,
       );
 
-      expect(_position(tester).pixels, 28 + 42 * 21);
+      expect(_position(tester).pixels, _offsetOfRow(42));
       focusNode.requestFocus();
       await tester.pump();
       expect(focusNode.hasFocus, isTrue);
-      expect(_position(tester).pixels, 28 + 42 * 21);
+      expect(_position(tester).pixels, _offsetOfRow(42));
     },
   );
 
@@ -118,9 +122,9 @@ void main() {
       onScrolled: reported.add,
     );
     final position = _position(tester);
-    expect(position.pixels, 28 + 12 * 21);
+    expect(position.pixels, _offsetOfRow(12));
 
-    position.jumpTo(28 + 30 * 21);
+    position.jumpTo(_offsetOfRow(30));
     await tester.pump();
     expect(reported.last, 30);
 
@@ -130,7 +134,7 @@ void main() {
       initialScrollRow: 12,
       onScrolled: reported.add,
     );
-    expect(_position(tester).pixels, 28 + 30 * 21);
+    expect(_position(tester).pixels, _offsetOfRow(30));
   });
 
   testWidgets('the scrollbar thumb can be dragged', (tester) async {

@@ -151,22 +151,8 @@ void main() {
     await _finishInitialCheck(tester);
 
     final topLeft = tester.getTopLeft(find.byType(EditorSurface));
-    final painter = TextPainter(
-      text: const TextSpan(
-        text: 'MMMMMMMMMM',
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontFamilyFallback: ['Courier New', 'DejaVu Sans Mono'],
-          fontSize: 15,
-          height: 1,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final advance = painter.width / 10;
-    final pageLeft = (900 - 60 * advance) / 2;
     await tester.tapAt(
-      topLeft + Offset(pageLeft + advance * 2, 38),
+      topLeft + editorCell(0, 2),
       buttons: kSecondaryButton,
     );
     await tester.pumpAndSettle();

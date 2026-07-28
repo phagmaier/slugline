@@ -45,6 +45,7 @@ class EditorPage extends StatefulWidget {
     this.navigatorVisible = false,
     this.textSize = 15,
     this.distractionFree = false,
+    this.pageView = true,
     this.initialPageSetup = const PageSetup(
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
@@ -75,6 +76,12 @@ class EditorPage extends StatefulWidget {
   final bool navigatorVisible;
   final double textSize;
   final bool distractionFree;
+
+  /// §Phase 10's `page_view` preference: sheets of paper rather than one
+  /// continuous column, and the default. Display only — it changes nothing the
+  /// paginator is asked, and `appearance_prefs_dont_affect_pagination` holds it
+  /// to that.
+  final bool pageView;
   final PageSetup initialPageSetup;
   final Future<void> Function(bool visible)? onNavigatorVisibilityChanged;
   final Future<void> Function()? onOpenPreferences;
@@ -588,6 +595,8 @@ class EditorPageState extends State<EditorPage> {
                                 child: EditorSurface(
                                   controller: widget.controller,
                                   textSize: widget.textSize,
+                                  pageView: widget.pageView,
+                                  pageIndicator: _pageIndicator,
                                   initialScrollRow: widget.initialScrollRow,
                                   focusNode: _editorFocus,
                                   // The surface has the focus, so it sees these keys first and

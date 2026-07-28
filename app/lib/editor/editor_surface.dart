@@ -11,6 +11,8 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/line_layout.dart';
 import 'package:slugline/editor/metrics.dart';
+import 'package:slugline/editor/page_geometry.dart';
+import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/surface_semantics.dart';
 
 /// One editing surface for the whole document (ADR 0005).
@@ -30,6 +32,8 @@ class EditorSurface extends StatefulWidget {
     required this.controller,
     this.initialScrollRow = 0,
     this.textSize = 15,
+    this.pageView = true,
+    this.pageIndicator,
     this.focusNode,
     this.onOpenPalette,
     this.onOpenFind,
@@ -46,6 +50,20 @@ class EditorSurface extends StatefulWidget {
   /// because a stale row must be clamped against the newly laid-out document.
   final int initialScrollRow;
   final double textSize;
+
+  /// Whether to draw the script as discrete sheets of paper rather than one
+  /// continuous column. On by default (§Phase 10 preference `page_view`), and it
+  /// falls back to continuous until [pageIndicator] has a pagination to draw —
+  /// which is also what a widget test with no core behind it gets.
+  final bool pageView;
+
+  /// Where Rust's paginator put the page breaks.
+  ///
+  /// The surface draws page furniture from this and computes none of it. Null in
+  /// a widget test, and before the first snapshot arrives, and the surface then
+  /// draws a plain column — which is exactly what an unpaginated editor should
+  /// show when it does not yet know where the pages fall.
+  final PageIndicator? pageIndicator;
 
   /// Supplied when something above the surface has to be able to give it the
   /// keyboard back — which the editor page does when it closes a panel. The
@@ -76,13 +94,6 @@ class EditorSurface extends StatefulWidget {
   State<EditorSurface> createState() => EditorSurfaceState();
 }
 
-/// 12 pt Courier at 6 lines per inch is the printed grid (§5.2). On screen the
-/// size is a preference (Phase 10); these are the defaults.
-const double _padding = 28.0;
-
-/// Columns across the printed text area: 1.5" to 7.5" at 10 characters per inch.
-const int _pageColumns = 60;
-
 class EditorSurfaceState extends State<EditorSurface>
     implements TextInputClient {
   late final FocusNode _focusNode = widget.focusNode ?? FocusNode();
@@ -102,10 +113,21 @@ class EditorSurfaceState extends State<EditorSurface>
   /// Width of one character in the monospace font, measured once.
   double _advance = 9.0;
 
-  /// Left edge of the page's text area, in local coordinates.
-  double _pageLeft = _padding;
   double _viewportWidth = 900;
   double _viewportHeight = 600;
+
+  /// Where the grid lands in the viewport, as of right now.
+  ///
+  /// Built rather than cached, so that no call site can work from a row-to-pixel
+  /// mapping that a re-wrap or a fresh pagination has already invalidated. It is
+  /// a handful of field reads and one cached list.
+  EditorGeometry get _geometry => EditorGeometry(
+    metrics: ScreenplayMetrics(advance: _advance, lineHeight: _lineHeight),
+    viewportWidth: _viewportWidth,
+    totalRows: _controller.layout.totalRows,
+    pageStarts: widget.pageIndicator?.pageStarts ?? const [],
+    pageView: widget.pageView,
+  );
 
   /// The composing region the platform is holding, in offsets into the focused
   /// block. Painted with an underline; never interpreted.
@@ -189,7 +211,7 @@ class EditorSurfaceState extends State<EditorSurface>
       }
 
       final row = math.max(0, widget.initialScrollRow);
-      final target = row == 0 ? 0.0 : _padding + row * _lineHeight;
+      final target = row == 0 ? 0.0 : _geometry.yOfRow(row);
       _initialScrollPending = false;
       _scroll.jumpTo(
         target.clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent)),
@@ -230,10 +252,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   void _reportScroll() {
     if (widget.onScrolled == null || !_scroll.hasClients) return;
-    final row = ((_scroll.offset - _padding) / _lineHeight).floor().clamp(
-      0,
-      1 << 30,
-    );
+    final row = _geometry.rowAtY(_scroll.offset).clamp(0, 1 << 30);
     if (row == _reportedRow) return;
     _reportedRow = row;
     widget.onScrolled!(row);
@@ -608,8 +627,9 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 
   Future<void> _showSpellingMenu(PointerDownEvent event) async {
-    if (event.localPosition.dx < _pageLeft ||
-        event.localPosition.dx > _pageLeft + _pageColumns * _advance) {
+    final geometry = _geometry;
+    if (event.localPosition.dx < geometry.columnLeft ||
+        event.localPosition.dx > geometry.columnRight) {
       return;
     }
     final (row, column) = _gridAt(event.localPosition);
@@ -763,8 +783,9 @@ class EditorSurfaceState extends State<EditorSurface>
   /// The grid cell under a point in the viewport.
   (int, int) _gridAt(Offset local) {
     final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
-    final row = ((local.dy + scrolled - _padding) / _lineHeight).floor();
-    final column = ((local.dx - _pageLeft) / _advance).round();
+    final geometry = _geometry;
+    final row = geometry.rowAtY(local.dy + scrolled);
+    final column = ((local.dx - geometry.columnLeft) / _advance).round();
     return (
       row.clamp(0, math.max(0, _controller.layout.totalRows - 1)),
       math.max(0, column),
@@ -777,7 +798,7 @@ class EditorSurfaceState extends State<EditorSurface>
   void _ensureCaretVisible() {
     if (_initialScrollPending || !_scroll.hasClients) return;
     final margin = 3 * _lineHeight;
-    final caretTop = _padding + _controller.caretRow * _lineHeight;
+    final caretTop = _geometry.yOfRow(_controller.caretRow);
     final caretBottom = caretTop + _lineHeight;
     final top = _scroll.offset;
     final bottom = top + _scroll.position.viewportDimension;
@@ -811,14 +832,11 @@ class EditorSurfaceState extends State<EditorSurface>
 
     final layout = _controller.layout;
     final blocks = _controller.blocks;
+    final geometry = _geometry;
     final offset = _scroll.hasClients ? _scroll.offset : 0.0;
-    final firstRow = math.max(
-      0,
-      ((offset - _padding) / _lineHeight).floor() - 1,
-    );
-    final lastRow = math.min(
-      layout.totalRows,
-      ((offset + _viewportHeight - _padding) / _lineHeight).ceil() + 1,
+    final (first: firstRow, last: lastRow) = geometry.rowBand(
+      offset,
+      offset + _viewportHeight,
     );
     if (lastRow <= firstRow || blocks.isEmpty) return const [];
 
@@ -835,9 +853,9 @@ class EditorSurfaceState extends State<EditorSurface>
       final withinOneBlock = selection.anchor.block == selection.focus.block;
       nodes.add(
         Positioned(
-          left: _pageLeft,
-          top: _padding + layout.firstRowOf(index) * _lineHeight,
-          width: _pageColumns * _advance,
+          left: geometry.columnLeft,
+          top: geometry.yOfRow(layout.firstRowOf(index)),
+          width: geometry.columnWidth,
           height: math.max(
             _lineHeight,
             layout.linesOf(index).length * _lineHeight,
@@ -922,12 +940,7 @@ class EditorSurfaceState extends State<EditorSurface>
       builder: (context, constraints) {
         _viewportWidth = constraints.maxWidth;
         _viewportHeight = constraints.maxHeight;
-        _pageLeft = math.max(
-          _padding,
-          (constraints.maxWidth - _pageColumns * _advance) / 2,
-        );
-        final height =
-            _controller.layout.totalRows * _lineHeight + _padding * 2;
+        final geometry = _geometry;
 
         return Focus(
           focusNode: _focusNode,
@@ -944,7 +957,10 @@ class EditorSurfaceState extends State<EditorSurface>
               child: SingleChildScrollView(
                 controller: _scroll,
                 child: SizedBox(
-                  height: math.max(height, constraints.maxHeight),
+                  height: math.max(
+                    geometry.contentHeight,
+                    constraints.maxHeight,
+                  ),
                   width: double.infinity,
                   child: Stack(
                     children: [
@@ -955,13 +971,12 @@ class EditorSurfaceState extends State<EditorSurface>
                             painter: _SurfacePainter(
                               controller: _controller,
                               scroll: _scroll,
-                              advance: _advance,
-                              pageLeft: _pageLeft,
+                              pageIndicator: widget.pageIndicator,
+                              geometry: geometry,
                               showCaret: _focusNode.hasFocus,
                               composing: _composing,
                               colours: _EditorColours.of(context),
                               fontSize: _fontSize,
-                              lineHeight: _lineHeight,
                             ),
                           ),
                         ),
@@ -969,10 +984,8 @@ class EditorSurfaceState extends State<EditorSurface>
                       ..._blockSemantics(),
                       if (_controller.completions.isNotEmpty)
                         Positioned(
-                          left: _pageLeft,
-                          top:
-                              _padding +
-                              (_controller.caretRow + 1) * _lineHeight,
+                          left: geometry.columnLeft,
+                          top: geometry.yOfRow(_controller.caretRow + 1),
                           child: _CompletionPopup(
                             controller: _controller,
                             textSize: _fontSize,
@@ -1096,6 +1109,10 @@ class _EditorColours {
     required this.caret,
     required this.rule,
     required this.spelling,
+    required this.paper,
+    required this.paperEdge,
+    required this.pageBreak,
+    required this.gutter,
   });
 
   factory _EditorColours.of(BuildContext context) {
@@ -1107,6 +1124,17 @@ class _EditorColours {
       caret: scheme.primary,
       rule: scheme.onSurface.withValues(alpha: 0.25),
       spelling: scheme.error,
+      // The sheet is the surface a script is read on, so it is lifted out of the
+      // background rather than tinted: paper white in a light theme, and one
+      // step up from the background in a dark one, which is what the container
+      // roles already mean.
+      paper: scheme.surfaceContainerLowest,
+      paperEdge: scheme.shadow.withValues(alpha: 0.18),
+      // A page break is information, not decoration. It has to be findable at a
+      // glance and invisible while reading, which is what a hairline this faint
+      // buys.
+      pageBreak: scheme.outlineVariant,
+      gutter: scheme.onSurface.withValues(alpha: 0.40),
     );
   }
 
@@ -1116,6 +1144,10 @@ class _EditorColours {
   final Color caret;
   final Color rule;
   final Color spelling;
+  final Color paper;
+  final Color paperEdge;
+  final Color pageBreak;
+  final Color gutter;
 }
 
 /// Paints the rows that are on screen, and nothing else.
@@ -1123,24 +1155,33 @@ class _SurfacePainter extends CustomPainter {
   _SurfacePainter({
     required this.controller,
     required this.scroll,
-    required this.advance,
-    required this.pageLeft,
+    required this.pageIndicator,
+    required this.geometry,
     required this.showCaret,
     required this.composing,
     required this.colours,
     required this.fontSize,
-    required this.lineHeight,
-  }) : super(repaint: Listenable.merge([controller, scroll]));
+  }) : super(
+         repaint: Listenable.merge([
+           controller,
+           scroll,
+           // A fresh pagination moves every rule and every sheet below it.
+           ?pageIndicator,
+         ]),
+       );
 
   final EditorController controller;
   final ScrollController scroll;
-  final double advance;
-  final double pageLeft;
+  final PageIndicator? pageIndicator;
+  final EditorGeometry geometry;
   final bool showCaret;
   final TextRange composing;
   final _EditorColours colours;
   final double fontSize;
-  final double lineHeight;
+
+  double get advance => geometry.advance;
+  double get lineHeight => geometry.lineHeight;
+  double get pageLeft => geometry.columnLeft;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1152,15 +1193,14 @@ class _SurfacePainter extends CustomPainter {
         : size.height;
 
     // The whole performance story: the band, not the document.
-    final firstRow = math.max(
-      0,
-      ((offset - _padding) / lineHeight).floor() - 1,
-    );
-    final lastRow = math.min(
-      layout.totalRows,
-      ((offset + viewport - _padding) / lineHeight).ceil() + 1,
+    final (first: firstRow, last: lastRow) = geometry.rowBand(
+      offset,
+      offset + viewport,
     );
     if (lastRow <= firstRow) return;
+
+    // Under the text, and clipped to the same band for the same reason.
+    _paintPageFurniture(canvas, offset, offset + viewport);
 
     final (from, to) = controller.orderedSelection;
     final fromIndex = blocks.indexWhere((block) => block.id == from.block);
@@ -1187,10 +1227,10 @@ class _SurfacePainter extends CustomPainter {
       final display = displayText(block.kind, block.text);
 
       if (block.kind == BlockKind.pageBreak) {
-        final y = _padding + first * lineHeight + lineHeight / 2;
+        final y = geometry.yOfRow(first) + lineHeight / 2;
         canvas.drawLine(
           Offset(pageLeft, y),
-          Offset(pageLeft + _pageColumns * advance, y),
+          Offset(geometry.columnRight, y),
           rulePaint,
         );
         continue;
@@ -1202,7 +1242,7 @@ class _SurfacePainter extends CustomPainter {
         final line = lines[i];
         final column = layout.columnOf(index, i);
         final x = pageLeft + column * advance;
-        final y = _padding + row * lineHeight;
+        final y = geometry.yOfRow(row);
 
         if (hasSelection) {
           _paintSelection(
@@ -1246,6 +1286,108 @@ class _SurfacePainter extends CustomPainter {
 
     if (showCaret) _paintCaret(canvas);
   }
+
+  /// The sheets, or the rules that stand in for them.
+  ///
+  /// Neither is computed here. `pageStarts` is Rust's pagination re-expressed in
+  /// editor rows, and both branches below are ways of drawing the same list. If
+  /// it is empty — nothing paginated yet, or a test with no core behind it —
+  /// this draws nothing at all, and the surface is the plain centred column it
+  /// has always been.
+  void _paintPageFurniture(Canvas canvas, double top, double bottom) {
+    if (geometry.sheeted) {
+      _paintSheets(canvas, top, bottom);
+    } else {
+      _paintPageRules(canvas, top, bottom);
+    }
+  }
+
+  void _paintSheets(Canvas canvas, double top, double bottom) {
+    final paper = Paint()..color = colours.paper;
+    final edge = Paint()
+      ..color = colours.paperEdge
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    final radius = Radius.circular(advance);
+
+    for (final sheet in geometry.sheets()) {
+      if (sheet.bottom < top) continue;
+      if (sheet.top > bottom) break;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTRB(
+          geometry.sheetLeft,
+          sheet.top,
+          geometry.sheetLeft + geometry.sheetWidth,
+          sheet.bottom,
+        ),
+        radius,
+      );
+      canvas
+        ..drawRRect(rect, paper)
+        ..drawRRect(rect, edge);
+      _paintPageNumber(canvas, sheet.number, sheet.top);
+    }
+  }
+
+  /// §5.2 puts the page number half an inch above the text, right-aligned to the
+  /// measure's right edge. A sheet has the room for it, so it goes where it will
+  /// go on paper.
+  void _paintPageNumber(Canvas canvas, int number, double sheetTop) {
+    final label = _label('$number.', colours.gutter);
+    label.paint(
+      canvas,
+      Offset(
+        geometry.columnRight - label.width,
+        sheetTop +
+            geometry.metrics.down(1) +
+            ScreenplayMetrics.pageNumberRow * lineHeight,
+      ),
+    );
+  }
+
+  /// Continuous view: a hairline where the page turns, and its number set in the
+  /// gutter beside it.
+  ///
+  /// The rule stops short of the text column on both sides so that it reads as
+  /// furniture rather than as a horizontal line in the script — a scripted page
+  /// break paints a rule of its own across the full measure, and the two must
+  /// not be mistakable for each other.
+  void _paintPageRules(Canvas canvas, double top, double bottom) {
+    final line = Paint()
+      ..color = colours.pageBreak
+      ..strokeWidth = 1.0;
+    final inset = geometry.metrics.across(0.2);
+
+    for (final rule in geometry.rules()) {
+      if (rule.y < top) continue;
+      if (rule.y > bottom) break;
+      canvas.drawLine(
+        Offset(pageLeft + inset, rule.y),
+        Offset(geometry.columnRight - inset, rule.y),
+        line,
+      );
+      final label = _label('${rule.number}', colours.gutter);
+      // In the gutter: left of the column, right-aligned against it, so the
+      // numbers form a column of their own down the edge of the script. A
+      // window too narrow to hold one gets the rule and no number rather than a
+      // number over the text.
+      final labelLeft = pageLeft - inset - label.width;
+      if (labelLeft >= 0) {
+        label.paint(canvas, Offset(labelLeft, rule.y - label.height / 2));
+      }
+    }
+  }
+
+  TextPainter _label(String text, Color colour) => TextPainter(
+    text: TextSpan(
+      text: text,
+      style: _textStyle(fontSize).copyWith(
+        color: colour,
+        fontSize: fontSize * 0.8,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
 
   void _paintSpellingUnderlines(
     Canvas canvas,
@@ -1384,7 +1526,7 @@ class _SurfacePainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(
         pageLeft + column * advance,
-        _padding + (layout.firstRowOf(index) + lineIndex) * lineHeight,
+        geometry.yOfRow(layout.firstRowOf(index) + lineIndex),
         2.0,
         lineHeight,
       ),
@@ -1395,10 +1537,8 @@ class _SurfacePainter extends CustomPainter {
   @override
   bool shouldRepaint(_SurfacePainter old) =>
       old.controller != controller ||
-      old.advance != advance ||
-      old.pageLeft != pageLeft ||
+      old.geometry != geometry ||
       old.fontSize != fontSize ||
-      old.lineHeight != lineHeight ||
       old.showCaret != showCaret ||
       old.composing != composing;
 }

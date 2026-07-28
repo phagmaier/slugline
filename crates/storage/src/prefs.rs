@@ -73,6 +73,16 @@ pub struct Preferences {
     pub pdf_font_path: Option<PathBuf>,
     /// Hides application chrome and asks the Linux window to go full-screen.
     pub distraction_free: bool,
+    /// Whether the editor draws discrete paper pages rather than one continuous
+    /// column. Display only: the editor stays fluid and unpaginated either way
+    /// (ADR 0018), and the page boundaries it draws come from the paginator's
+    /// snapshot, never from a second layout pass in the editor.
+    ///
+    /// On by default. A screenplay is written to a page count, so where the
+    /// pages fall is not decoration — it is the thing being written to. The mode
+    /// degrades to continuous on its own until the first pagination arrives, so
+    /// defaulting to it costs no wait.
+    pub page_view: bool,
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
@@ -97,6 +107,7 @@ impl Default for Preferences {
             scene_numbers: SCENE_NUMBERS_OFF.to_owned(),
             pdf_font_path: None,
             distraction_free: false,
+            page_view: true,
             backup_dir: None,
             backup_keep_versions: retention.keep_versions,
             backup_keep_days: retention.keep_days,
@@ -195,6 +206,7 @@ mod tests {
         assert_eq!(prefs.scene_numbers, "off");
         assert!(prefs.pdf_font_path.is_none());
         assert!(!prefs.distraction_free);
+        assert!(prefs.page_view, "page view is the default");
         assert_eq!(prefs.backup_keep_versions, 10);
         assert_eq!(prefs.backup_keep_days, 7);
     }
@@ -210,6 +222,7 @@ mod tests {
             editor_text_size: 18,
             default_paper: PAPER_A4.to_owned(),
             scene_numbers: SCENE_NUMBERS_BOTH.to_owned(),
+            page_view: false,
             pdf_font_path: Some(PathBuf::from("/usr/share/fonts/mono.ttf")),
             backup_dir: Some(PathBuf::from("/mnt/usb/backups")),
             ..Preferences::default()

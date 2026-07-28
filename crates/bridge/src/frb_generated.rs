@@ -3275,6 +3275,7 @@ impl SseDecode for crate::api::files::PreferencesView {
         let mut var_sceneNumbers = <String>::sse_decode(deserializer);
         let mut var_pdfFontPath = <Option<String>>::sse_decode(deserializer);
         let mut var_distractionFree = <bool>::sse_decode(deserializer);
+        let mut var_pageView = <bool>::sse_decode(deserializer);
         let mut var_autosaveIdleMs = <u64>::sse_decode(deserializer);
         let mut var_autosaveIntervalMs = <u64>::sse_decode(deserializer);
         let mut var_backupDir = <Option<String>>::sse_decode(deserializer);
@@ -3292,6 +3293,7 @@ impl SseDecode for crate::api::files::PreferencesView {
             scene_numbers: var_sceneNumbers,
             pdf_font_path: var_pdfFontPath,
             distraction_free: var_distractionFree,
+            page_view: var_pageView,
             autosave_idle_ms: var_autosaveIdleMs,
             autosave_interval_ms: var_autosaveIntervalMs,
             backup_dir: var_backupDir,
@@ -4402,6 +4404,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::PreferencesView {
             self.scene_numbers.into_into_dart().into_dart(),
             self.pdf_font_path.into_into_dart().into_dart(),
             self.distraction_free.into_into_dart().into_dart(),
+            self.page_view.into_into_dart().into_dart(),
             self.autosave_idle_ms.into_into_dart().into_dart(),
             self.autosave_interval_ms.into_into_dart().into_dart(),
             self.backup_dir.into_into_dart().into_dart(),
@@ -5530,6 +5533,7 @@ impl SseEncode for crate::api::files::PreferencesView {
         <String>::sse_encode(self.scene_numbers, serializer);
         <Option<String>>::sse_encode(self.pdf_font_path, serializer);
         <bool>::sse_encode(self.distraction_free, serializer);
+        <bool>::sse_encode(self.page_view, serializer);
         <u64>::sse_encode(self.autosave_idle_ms, serializer);
         <u64>::sse_encode(self.autosave_interval_ms, serializer);
         <Option<String>>::sse_encode(self.backup_dir, serializer);

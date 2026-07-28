@@ -575,6 +575,7 @@ void main() {
       sceneNumbers: 'right',
       pdfFontPath: null,
       distractionFree: false,
+      pageView: false,
       autosaveIdleMs: 750,
       autosaveIntervalMs: 15000,
       backupDir: null,
@@ -584,6 +585,11 @@ void main() {
     expect(await Core.instance.setPreferences(changed), isTrue);
     expect(Core.instance.preferences().autosaveIdleMs, 750);
     expect(Core.instance.preferences().navigatorVisible, isFalse);
+    expect(
+      Core.instance.preferences().pageView,
+      isFalse,
+      reason: 'turning page view off is what has to survive; it is the default',
+    );
     expect(
       File('${root.path}/config/prefs.json').existsSync(),
       isTrue,

@@ -67,7 +67,12 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   back as a patch that is applied in place — never refetch the document (ADR
   0009).
 - `app/lib/editor/metrics.dart` and `line_layout.dart` hold the grid and the
-  editor's own line breaking. The editor is fluid and unpaginated, and its
+  editor's own line breaking. `ScreenplayMetrics` in `metrics.dart` owns the
+  printed sheet in inches and every column is derived from it; `page_geometry.dart`
+  turns that grid into viewport coordinates, and **every** row-to-pixel
+  conversion — painting, hit testing, caret scrolling, semantics — goes through
+  `EditorGeometry`. Add a second one and page view breaks silently.
+  The editor is fluid and unpaginated, and its
   wrapping is on the keystroke path where a bridge round trip does not belong
   (ADR 0018). They are a second implementation of one contract
   (`docs/LINE_BREAKING.md`), and the corpus-wide differential test holds them
@@ -80,6 +85,12 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
 - Every edit that reaches the document goes through `outcome` or `inferring` in
   `crates/bridge/src/api/doc.rs`, and both append to the crash journal. A new
   mutation must end in one of them — never in a bare `document.apply`.
+- **The editor never decides where a page ends.** The `page_view` preference
+  draws sheets instead of one column, but both modes read `PageIndicator`'s
+  `pageStarts`, which is Rust's paginated snapshot re-expressed in editor rows.
+  Before the first snapshot lands there are no page starts and the surface draws
+  a plain column — that is the correct answer, not a gap to fill with an
+  estimate.
 - A block's kind changes only through `SetKind`. Automatic re-classification
   goes through `Document::reinfer`, which the bridge calls after every edit;
   `Ctrl+K` and `Ctrl+F` open panels the editor page owns, so that Escape closes

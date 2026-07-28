@@ -2941,8 +2941,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PreferencesView dco_decode_preferences_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 17)
+      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
     return PreferencesView(
       autosaveEnabled: dco_decode_bool(arr[0]),
       autocompleteEnabled: dco_decode_bool(arr[1]),
@@ -2955,11 +2955,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sceneNumbers: dco_decode_String(arr[8]),
       pdfFontPath: dco_decode_opt_String(arr[9]),
       distractionFree: dco_decode_bool(arr[10]),
-      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[11]),
-      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[12]),
-      backupDir: dco_decode_opt_String(arr[13]),
-      backupKeepVersions: dco_decode_u_32(arr[14]),
-      backupKeepDays: dco_decode_u_32(arr[15]),
+      pageView: dco_decode_bool(arr[11]),
+      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[12]),
+      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[13]),
+      backupDir: dco_decode_opt_String(arr[14]),
+      backupKeepVersions: dco_decode_u_32(arr[15]),
+      backupKeepDays: dco_decode_u_32(arr[16]),
     );
   }
 
@@ -4181,6 +4182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sceneNumbers = sse_decode_String(deserializer);
     var var_pdfFontPath = sse_decode_opt_String(deserializer);
     var var_distractionFree = sse_decode_bool(deserializer);
+    var var_pageView = sse_decode_bool(deserializer);
     var var_autosaveIdleMs = sse_decode_CastedPrimitive_u_64(deserializer);
     var var_autosaveIntervalMs = sse_decode_CastedPrimitive_u_64(deserializer);
     var var_backupDir = sse_decode_opt_String(deserializer);
@@ -4198,6 +4200,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sceneNumbers: var_sceneNumbers,
       pdfFontPath: var_pdfFontPath,
       distractionFree: var_distractionFree,
+      pageView: var_pageView,
       autosaveIdleMs: var_autosaveIdleMs,
       autosaveIntervalMs: var_autosaveIntervalMs,
       backupDir: var_backupDir,
@@ -5370,6 +5373,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.sceneNumbers, serializer);
     sse_encode_opt_String(self.pdfFontPath, serializer);
     sse_encode_bool(self.distractionFree, serializer);
+    sse_encode_bool(self.pageView, serializer);
     sse_encode_CastedPrimitive_u_64(self.autosaveIdleMs, serializer);
     sse_encode_CastedPrimitive_u_64(self.autosaveIntervalMs, serializer);
     sse_encode_opt_String(self.backupDir, serializer);

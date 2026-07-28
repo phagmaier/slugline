@@ -33,6 +33,7 @@ void main() {
     sceneNumbers: 'off',
     pdfFontPath: null,
     distractionFree: false,
+    pageView: false,
     autosaveIdleMs: 2000,
     autosaveIntervalMs: 30000,
     backupDir: null,

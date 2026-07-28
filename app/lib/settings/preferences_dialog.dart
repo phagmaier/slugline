@@ -46,6 +46,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
   late String _paper = widget.preferences.defaultPaper;
   late String _sceneNumbers = widget.preferences.sceneNumbers;
   late bool _distractionFree = widget.preferences.distractionFree;
+  late bool _pageView = widget.preferences.pageView;
 
   late final TextEditingController _idle = TextEditingController(
     text: _seconds(widget.preferences.autosaveIdleMs),
@@ -118,6 +119,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
         sceneNumbers: _sceneNumbers,
         pdfFontPath: font.isEmpty ? null : font,
         distractionFree: _distractionFree,
+        pageView: _pageView,
         autosaveIdleMs: idleMs,
         autosaveIntervalMs: intervalMs,
         backupDir: backup.isEmpty ? null : backup,
@@ -184,6 +186,33 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                     value: _textSize,
                     label: '${_textSize.round()}',
                     onChanged: (value) => setState(() => _textSize = value),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<bool>(
+                    key: const ValueKey('page view preference'),
+                    initialValue: _pageView,
+                    decoration: const InputDecoration(labelText: 'Editor view'),
+                    items: const [
+                      DropdownMenuItem(value: true, child: Text('Page view')),
+                      DropdownMenuItem(
+                        value: false,
+                        child: Text('Continuous scroll'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _pageView = value ?? true),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 4),
+                    child: Text(
+                      _pageView
+                          ? 'The script is drawn as separate sheets of paper. '
+                                'Page boundaries come from the paginator, so '
+                                'they settle a moment after you stop typing.'
+                          : 'One column, with a rule and a page number where '
+                                'each page turns.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
                   SwitchListTile(
                     key: const ValueKey('distraction free preference'),

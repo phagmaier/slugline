@@ -403,6 +403,7 @@ class PreferencesView {
   final String sceneNumbers;
   final String? pdfFontPath;
   final bool distractionFree;
+  final bool pageView;
   final int autosaveIdleMs;
   final int autosaveIntervalMs;
   final String? backupDir;
@@ -421,6 +422,7 @@ class PreferencesView {
     required this.sceneNumbers,
     this.pdfFontPath,
     required this.distractionFree,
+    required this.pageView,
     required this.autosaveIdleMs,
     required this.autosaveIntervalMs,
     this.backupDir,
@@ -441,6 +443,7 @@ class PreferencesView {
       sceneNumbers.hashCode ^
       pdfFontPath.hashCode ^
       distractionFree.hashCode ^
+      pageView.hashCode ^
       autosaveIdleMs.hashCode ^
       autosaveIntervalMs.hashCode ^
       backupDir.hashCode ^
@@ -463,6 +466,7 @@ class PreferencesView {
           sceneNumbers == other.sceneNumbers &&
           pdfFontPath == other.pdfFontPath &&
           distractionFree == other.distractionFree &&
+          pageView == other.pageView &&
           autosaveIdleMs == other.autosaveIdleMs &&
           autosaveIntervalMs == other.autosaveIntervalMs &&
           backupDir == other.backupDir &&

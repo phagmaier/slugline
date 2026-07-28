@@ -209,6 +209,7 @@ pub struct PreferencesView {
     pub scene_numbers: String,
     pub pdf_font_path: Option<String>,
     pub distraction_free: bool,
+    pub page_view: bool,
     pub autosave_idle_ms: u64,
     pub autosave_interval_ms: u64,
     pub backup_dir: Option<String>,
@@ -2061,6 +2062,7 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
             scene_numbers: preferences.scene_numbers,
             pdf_font_path: preferences.pdf_font_path.map(PathBuf::from),
             distraction_free: preferences.distraction_free,
+            page_view: preferences.page_view,
             autosave_idle_ms: preferences.autosave_idle_ms,
             autosave_interval_ms: preferences.autosave_interval_ms,
             backup_dir: preferences.backup_dir.map(PathBuf::from),
@@ -2325,6 +2327,7 @@ fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
         distraction_free: preferences.distraction_free,
+        page_view: preferences.page_view,
         autosave_idle_ms: preferences.autosave_idle_ms,
         autosave_interval_ms: preferences.autosave_interval_ms,
         backup_dir: preferences

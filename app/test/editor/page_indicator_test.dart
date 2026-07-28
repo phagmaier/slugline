@@ -104,6 +104,102 @@ void main() {
     },
   );
 
+  group('page starts', () {
+    PageIndicator indicatorOver(
+      EditorController controller,
+      PaginationView pagination,
+    ) {
+      final indicator = PageIndicator(
+        controller: controller,
+        output: FakeOutput(pagination),
+        setup: const PageSetup(
+          paper: PaperSize.usLetter,
+          sceneNumbers: SceneNumbers.off,
+          debugLinesPerPage: null,
+        ),
+      );
+      addTearDown(indicator.dispose);
+      return indicator;
+    }
+
+    test('are empty until a pagination has arrived', () {
+      final controller = EditorController(FakeCore([_block(1, 80)]));
+      addTearDown(controller.dispose);
+      final indicator = indicatorOver(
+        controller,
+        _pagination([_page(1, 1, 0, 40), _page(2, 1, 40, 80)]),
+      );
+
+      expect(
+        indicator.pageStarts,
+        isEmpty,
+        reason: 'an unpaginated editor draws no page furniture',
+      );
+    });
+
+    test('name the editor row each page opens on, page one excepted', () async {
+      final controller = EditorController(FakeCore([_block(1, 80)]));
+      addTearDown(controller.dispose);
+      final indicator = indicatorOver(
+        controller,
+        _pagination([
+          _page(1, 1, 0, 40),
+          _page(2, 1, 40, 70),
+          _page(3, 1, 70, 80),
+        ]),
+      );
+
+      await indicator.refresh();
+
+      expect(indicator.pageStarts, [
+        // One block, so a wrapped line index is its row: page two's first
+        // printable line is source line 40, and page three's is 70.
+        const PageStart(row: 40, number: 2),
+        const PageStart(row: 70, number: 3),
+      ]);
+    });
+
+    test('count the blocks above the page break', () async {
+      final controller = EditorController(
+        FakeCore([_block(10, 20), _block(20, 40)]),
+      );
+      addTearDown(controller.dispose);
+      final indicator = indicatorOver(
+        controller,
+        _pagination([_page(1, 10, 0, 20), _page(2, 20, 0, 40)]),
+      );
+
+      await indicator.refresh();
+
+      expect(indicator.pageStarts, [
+        PageStart(row: controller.layout.firstRowOf(1), number: 2),
+      ]);
+    });
+
+    test('re-resolve against the layout as it is now, not as it was', () async {
+      final core = FakeCore([_block(10, 20), _block(20, 40)]);
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      final indicator = indicatorOver(
+        controller,
+        _pagination([_page(1, 10, 0, 20), _page(2, 20, 0, 40)]),
+      );
+
+      await indicator.refresh();
+      final before = indicator.pageStarts.single.row;
+
+      // Typing above a page break moves the text under it. The break belongs to
+      // the same line of the same block, so its row has to move with it — the
+      // alternative is a rule that drifts up the page between snapshots.
+      final start = DocPosition(block: 10, offsetUtf16: 0);
+      controller.setSelection(DocSelection(anchor: start, focus: start));
+      controller.insertText('A new opening line.\n\n');
+
+      expect(indicator.pageStarts.single.row, greaterThan(before));
+      expect(indicator.pageStarts.single.number, 2);
+    });
+  });
+
   testWidgets('the writing view displays current and total output pages', (
     tester,
   ) async {
