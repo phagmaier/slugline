@@ -4,6 +4,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/metrics.dart';
+import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/save_status.dart';
 
 /// The bar along the bottom: what element the caret is in, what Tab would do
@@ -14,13 +15,20 @@ import 'package:slugline/editor/save_status.dart';
 /// each entry is there to teach the shortcut, because a writer who uses the menu
 /// twice should never need it a third time.
 class ElementBar extends StatelessWidget {
-  const ElementBar({required this.controller, this.saveStatus, super.key});
+  const ElementBar({
+    required this.controller,
+    this.saveStatus,
+    this.pageIndicator,
+    super.key,
+  });
 
   final EditorController controller;
 
   /// What the save state is, in a few words. Null before Phase 4's persistence
   /// is attached — which is what a widget test driving the bar alone does.
   final SaveStatus? saveStatus;
+
+  final PageIndicator? pageIndicator;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +47,10 @@ class ElementBar extends StatelessWidget {
               child: Row(
                 children: [
                   Flexible(
-                    child: _ElementSelector(controller: controller, block: block),
+                    child: _ElementSelector(
+                      controller: controller,
+                      block: block,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   // The hint takes the slack the `Spacer` used to, so that the
@@ -55,8 +66,9 @@ class ElementBar extends StatelessWidget {
                         rejectionMessage(rejection),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium
-                            ?.copyWith(color: theme.colorScheme.error),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
                       ),
                     ),
                   const SizedBox(width: 16),
@@ -65,10 +77,15 @@ class ElementBar extends StatelessWidget {
                       '${controller.blocks.length} blocks',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium
-                          ?.copyWith(color: theme.disabledColor),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.disabledColor,
+                      ),
                     ),
                   ),
+                  if (pageIndicator case final indicator?) ...[
+                    const SizedBox(width: 12),
+                    _PageIndicatorLabel(indicator: indicator),
+                  ],
                   if (saveStatus case final status?) ...[
                     const SizedBox(width: 12),
                     Flexible(child: _SaveStatusLabel(status: status)),
@@ -77,6 +94,30 @@ class ElementBar extends StatelessWidget {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _PageIndicatorLabel extends StatelessWidget {
+  const _PageIndicatorLabel({required this.indicator});
+
+  final PageIndicator indicator;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AnimatedBuilder(
+      animation: indicator,
+      builder: (context, _) => Text(
+        indicator.label,
+        key: const ValueKey('editor-page-indicator'),
+        maxLines: 1,
+        semanticsLabel: indicator.label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
     );
@@ -113,11 +154,11 @@ class _SaveStatusLabel extends StatelessWidget {
 /// Two of these are ordinary things to try, not bugs, so they get a sentence a
 /// writer can act on. The rest are the core telling us we asked wrongly.
 String rejectionMessage(EditRejection rejection) => switch (rejection) {
-      EditRejection.notEditable =>
-        'That block round-trips verbatim and cannot be edited.',
-      EditRejection.noBlockAfter => 'Nothing to join this to.',
-      _ => 'That edit was refused.',
-    };
+  EditRejection.notEditable =>
+    'That block round-trips verbatim and cannot be edited.',
+  EditRejection.noBlockAfter => 'Nothing to join this to.',
+  _ => 'That edit was refused.',
+};
 
 class _ElementSelector extends StatelessWidget {
   const _ElementSelector({required this.controller, required this.block});
@@ -153,8 +194,9 @@ class _ElementSelector extends StatelessWidget {
                 if (choice.shortcut.isNotEmpty)
                   Text(
                     choice.shortcut,
-                    style: theme.textTheme.labelSmall
-                        ?.copyWith(color: theme.disabledColor),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.disabledColor,
+                    ),
                   ),
               ],
             ),

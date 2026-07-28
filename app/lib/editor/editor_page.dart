@@ -13,6 +13,7 @@ import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/element_bar.dart';
 import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/editor/navigator_sidebar.dart';
+import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/editor/spell_dialog.dart';
@@ -111,6 +112,7 @@ class EditorPageState extends State<EditorPage> {
   int _externalChangesActive = 0;
   Completer<void>? _externalChangesSettled;
   Timer? _navigatorRefresh;
+  PageIndicator? _pageIndicator;
   late NavigatorView _navigator;
   late bool _navigatorVisible;
   int? _currentSceneBlock;
@@ -129,24 +131,32 @@ class EditorPageState extends State<EditorPage> {
     _rebuildSceneMap();
     _currentSceneBlock = _sceneAtBlock[widget.controller.selection.focus.block];
     widget.controller.addListener(_onControllerChanged);
+    _createPageIndicator();
   }
 
   @override
   void didUpdateWidget(EditorPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller == widget.controller) return;
-    oldWidget.controller.removeListener(_onControllerChanged);
-    widget.controller.addListener(_onControllerChanged);
-    _navigatorRefresh?.cancel();
-    _navigator = _core.navigator();
-    _knownDocumentRevision = widget.controller.documentRevision;
-    _rebuildSceneMap();
-    _currentSceneBlock = _sceneAtBlock[widget.controller.selection.focus.block];
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+      _navigatorRefresh?.cancel();
+      _navigator = _core.navigator();
+      _knownDocumentRevision = widget.controller.documentRevision;
+      _rebuildSceneMap();
+      _currentSceneBlock =
+          _sceneAtBlock[widget.controller.selection.focus.block];
+      _pageIndicator?.dispose();
+      _createPageIndicator();
+    } else if (oldWidget.initialPageSetup != widget.initialPageSetup) {
+      _pageIndicator?.updateSetup(widget.initialPageSetup);
+    }
   }
 
   @override
   void dispose() {
     _navigatorRefresh?.cancel();
+    _pageIndicator?.dispose();
     widget.controller.removeListener(_onControllerChanged);
     _editorFocus.dispose();
     super.dispose();
@@ -237,6 +247,7 @@ class EditorPageState extends State<EditorPage> {
 
   void _onScrolled(int row) {
     _core.setScrollRow(row);
+    _pageIndicator?.updateVisibleRow(row);
     if (_ignoreScrollHighlightThisFrame) return;
     final current = _sceneAtBlock[widget.controller.blockAtRow(row).id];
     if (current != _currentSceneBlock && mounted) {
@@ -309,6 +320,18 @@ class EditorPageState extends State<EditorPage> {
   /// command that would open a window with nothing in it is not offered.
   ScreenplayOutput? get _output =>
       _core is ScreenplayOutput ? _core as ScreenplayOutput : null;
+
+  void _createPageIndicator() {
+    if (_output case final output?) {
+      _pageIndicator = PageIndicator(
+        controller: widget.controller,
+        output: output,
+        setup: widget.initialPageSetup,
+        initialRow: widget.initialScrollRow,
+      );
+      unawaited(_pageIndicator!.refresh());
+    }
+  }
 
   Future<void> _showPreview() async {
     if (_output case final output?) {
@@ -649,6 +672,7 @@ class EditorPageState extends State<EditorPage> {
                           ElementBar(
                             controller: widget.controller,
                             saveStatus: widget.saveStatus,
+                            pageIndicator: _pageIndicator,
                           ),
                       ],
                     ),

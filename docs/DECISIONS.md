@@ -2996,3 +2996,40 @@ the fuzz targets are what keep the core from relying on this.
   who wants it back needs an ADR superseding this one, and a different answer for
   what happens to unsaved text when the PDF writer hits an edge case.
 * SPEC §Phase 11's line now reads as satisfied-by-exception, and points here.
+
+---
+
+## ADR 0040 — The fluid editor shows output page position in its status bar
+
+**Status:** Accepted
+**Date:** 2026-07-28
+**Phase:** Post-1.0 refinement
+**Supersedes:** ADR 0018 only where it excludes all page indication
+
+### Context
+
+ADR 0018 correctly kept page geometry out of the keystroke path and made the
+editing surface continuous. In practice, a long-form writer still needs to know
+roughly where the visible text lands in the paginated screenplay without
+opening Preview after every edit. A scroll percentage or a Dart estimate would
+disagree with the PDF precisely where page-break rules matter.
+
+### Decision
+
+The editor remains continuous: it gains no page boxes, breaks, gutters, or
+layout decisions. Its bottom status bar shows `Page current of total`, sourced
+from an asynchronous Rust `PaginationView` using the active output setup.
+
+Dart maps the top visible editor row to the paginator's stable block id and
+wrapped source-line index. The shared line-breaking contract makes that mapping
+exact even when one block spans pages. Non-printing source blocks inherit the
+preceding printable page. Pagination is debounced after document revisions and
+runs on the existing snapshot worker path, never on the keystroke path.
+
+### Consequences
+
+* The writer gets live page orientation while retaining a fluid editor.
+* Preview and PDF remain the only paginated renderings and the only owners of
+  page boundaries and printed page numbers.
+* The indicator can briefly show the last complete snapshot while a new
+  pagination is running, matching Preview's existing stale-snapshot policy.

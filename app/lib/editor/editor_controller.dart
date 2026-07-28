@@ -108,6 +108,21 @@ class EditorController extends ChangeNotifier {
   /// first or last block through [DocumentLayout], like pointer placement does.
   BlockView blockAtRow(int row) => _blocks[_layout.blockAtRow(row)];
 
+  /// The paginated-source row corresponding to an editor visual row.
+  ///
+  /// The editor remains fluid, but its wrapping is pinned to the paginator's
+  /// wrapping contract. That lets the status bar ask which real output page the
+  /// top visible line belongs to without estimating from scroll percentage.
+  ({int block, int sourceLine}) pageAnchorAtRow(int row) {
+    final blockIndex = _layout.blockAtRow(row);
+    final lines = _layout.linesOf(blockIndex);
+    final sourceLine = (row - _layout.firstRowOf(blockIndex)).clamp(
+      0,
+      lines.length - 1,
+    );
+    return (block: _blocks[blockIndex].id, sourceLine: sourceLine);
+  }
+
   /// What the core would write out. Phase 2 saves nothing; this is how a test
   /// asks what the core actually holds.
   String get source => core.source();
