@@ -1140,7 +1140,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slugline_bridge"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "flutter_rust_bridge",
  "slugline_document",
@@ -1152,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "slugline_document"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "proptest",
  "slugline_fountain",
@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "slugline_fountain"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "proptest",
@@ -1168,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "slugline_layout"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "slugline_document",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "slugline_render_pdf"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "slugline_document",
@@ -1186,14 +1186,14 @@ dependencies = [
 
 [[package]]
 name = "slugline_spell"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "spellbook",
 ]
 
 [[package]]
 name = "slugline_storage"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "directories",
  "notify",

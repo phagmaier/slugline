@@ -127,11 +127,67 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
+// `--version` and `--help`, answered here rather than in Dart.
+//
+// By the time `main()` runs in the Dart VM the engine is up and the window is
+// on its way to the screen, so a `--version` handled there would flash a window
+// before printing. These two are the whole of the command line that does not
+// start an editor; everything else — a file to open — is forwarded to Dart
+// untouched.
+//
+// Returns true when it printed something and the process should stop.
+static gboolean handle_information_options(gchar** arguments) {
+  for (gchar** argument = arguments; *argument != nullptr; argument++) {
+    // A `--` ends the options, so a screenplay honestly called `--help.fountain`
+    // is still openable.
+    if (g_strcmp0(*argument, "--") == 0) {
+      return FALSE;
+    }
+    if (g_strcmp0(*argument, "--version") == 0 || g_strcmp0(*argument, "-v") == 0) {
+      g_print("slugline %s\n", SLUGLINE_VERSION);
+      return TRUE;
+    }
+    if (g_strcmp0(*argument, "--help") == 0 || g_strcmp0(*argument, "-h") == 0) {
+      g_print(
+          "slugline %s — a keyboard-driven Fountain screenplay editor\n"
+          "\n"
+          "Usage:\n"
+          "  slugline [FILE]\n"
+          "\n"
+          "Arguments:\n"
+          "  FILE          A Fountain screenplay to open. It is created if it\n"
+          "                does not exist. Without one, the library opens.\n"
+          "\n"
+          "Options:\n"
+          "  -h, --help    Print this and exit.\n"
+          "  -v, --version Print the version and exit.\n"
+          "\n"
+          "Files are plain Fountain and are never written anywhere but where you\n"
+          "put them. Preferences, the library index, the crash journal and the\n"
+          "rolling backups live under $XDG_CONFIG_HOME, $XDG_DATA_HOME and\n"
+          "$XDG_STATE_HOME, all defaulting to their usual places under $HOME.\n"
+          "\n"
+          "slugline makes no network connections of any kind.\n",
+          SLUGLINE_VERSION);
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 // Implements GApplication::local_command_line.
 static gboolean my_application_local_command_line(GApplication* application,
                                                   gchar*** arguments,
                                                   int* exit_status) {
   MyApplication* self = MY_APPLICATION(application);
+
+  // Before registering, so that neither of these starts an engine or contacts a
+  // running instance.
+  if (handle_information_options(*arguments + 1)) {
+    *exit_status = 0;
+    return TRUE;
+  }
+
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
 

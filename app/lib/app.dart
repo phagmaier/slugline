@@ -62,9 +62,18 @@ files.ScriptView? scriptToRestore({
 ///    in it and opening its script would start a session over the top.
 /// 3. **The library**, if neither of those produced a script.
 class SluglineApp extends StatefulWidget {
-  const SluglineApp({required this.core, super.key});
+  const SluglineApp({required this.core, this.initialPath, super.key});
 
   final Core core;
+
+  /// A screenplay named on the command line, already made absolute.
+  ///
+  /// It takes the place of the session restore — someone who typed a file name
+  /// has said which script they want, and reopening yesterday's over the top of
+  /// it would be ignoring them. It does *not* take the place of crash recovery,
+  /// which still comes first: an undecided journal is the only copy of those
+  /// edits whichever script was asked for.
+  final String? initialPath;
 
   @override
   State<SluglineApp> createState() => _SluglineAppState();
@@ -184,6 +193,15 @@ class _SluglineAppState extends State<SluglineApp> {
     }
 
     if (_open != null) return;
+
+    // A file named on the command line wins over the session, but not over a
+    // recovery that has already put a script on screen above.
+    final named = widget.initialPath;
+    if (named != null) {
+      await _openPath(named);
+      return;
+    }
+
     final restored = scriptToRestore(
       session: await widget.core.sessionToRestore(),
       offers: offers,

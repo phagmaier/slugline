@@ -6,7 +6,6 @@
 import 'api/doc.dart';
 import 'api/events.dart';
 import 'api/files.dart';
-import 'api/handshake.dart';
 import 'api/layout.dart';
 import 'api/spell.dart';
 import 'dart:async';
@@ -31,9 +30,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<CoreEvent> dco_decode_StreamSink_core_event_Sse(dynamic raw);
-
-  @protected
-  RustStreamSink<ProofEvent> dco_decode_StreamSink_proof_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -111,12 +107,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CoreEvent dco_decode_core_event(dynamic raw);
 
   @protected
-  CoreInfo dco_decode_core_info(dynamic raw);
-
-  @protected
-  CrateInfo dco_decode_crate_info(dynamic raw);
-
-  @protected
   DocPosition dco_decode_doc_position(dynamic raw);
 
   @protected
@@ -172,9 +162,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Completion> dco_decode_list_completion(dynamic raw);
-
-  @protected
-  List<CrateInfo> dco_decode_list_crate_info(dynamic raw);
 
   @protected
   List<FindMatch> dco_decode_list_find_match(dynamic raw);
@@ -288,9 +275,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PreferencesView dco_decode_preferences_view(dynamic raw);
 
   @protected
-  ProofEvent dco_decode_proof_event(dynamic raw);
-
-  @protected
   (bool, bool) dco_decode_record_bool_bool(dynamic raw);
 
   @protected
@@ -327,9 +311,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SpellStatus dco_decode_spell_status(dynamic raw);
 
   @protected
-  TextMetrics dco_decode_text_metrics(dynamic raw);
-
-  @protected
   TitleEntryView dco_decode_title_entry_view(dynamic raw);
 
   @protected
@@ -355,11 +336,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<CoreEvent> sse_decode_StreamSink_core_event_Sse(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  RustStreamSink<ProofEvent> sse_decode_StreamSink_proof_event_Sse(
     SseDeserializer deserializer,
   );
 
@@ -449,12 +425,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CoreEvent sse_decode_core_event(SseDeserializer deserializer);
 
   @protected
-  CoreInfo sse_decode_core_info(SseDeserializer deserializer);
-
-  @protected
-  CrateInfo sse_decode_crate_info(SseDeserializer deserializer);
-
-  @protected
   DocPosition sse_decode_doc_position(SseDeserializer deserializer);
 
   @protected
@@ -510,9 +480,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Completion> sse_decode_list_completion(SseDeserializer deserializer);
-
-  @protected
-  List<CrateInfo> sse_decode_list_crate_info(SseDeserializer deserializer);
 
   @protected
   List<FindMatch> sse_decode_list_find_match(SseDeserializer deserializer);
@@ -658,9 +625,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PreferencesView sse_decode_preferences_view(SseDeserializer deserializer);
 
   @protected
-  ProofEvent sse_decode_proof_event(SseDeserializer deserializer);
-
-  @protected
   (bool, bool) sse_decode_record_bool_bool(SseDeserializer deserializer);
 
   @protected
@@ -699,9 +663,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SpellStatus sse_decode_spell_status(SseDeserializer deserializer);
 
   @protected
-  TextMetrics sse_decode_text_metrics(SseDeserializer deserializer);
-
-  @protected
   TitleEntryView sse_decode_title_entry_view(SseDeserializer deserializer);
 
   @protected
@@ -731,12 +692,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_StreamSink_core_event_Sse(
     RustStreamSink<CoreEvent> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_StreamSink_proof_event_Sse(
-    RustStreamSink<ProofEvent> self,
     SseSerializer serializer,
   );
 
@@ -867,12 +822,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_core_event(CoreEvent self, SseSerializer serializer);
 
   @protected
-  void sse_encode_core_info(CoreInfo self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_crate_info(CrateInfo self, SseSerializer serializer);
-
-  @protected
   void sse_encode_doc_position(DocPosition self, SseSerializer serializer);
 
   @protected
@@ -950,12 +899,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_completion(
     List<Completion> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_crate_info(
-    List<CrateInfo> self,
     SseSerializer serializer,
   );
 
@@ -1149,9 +1092,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_proof_event(ProofEvent self, SseSerializer serializer);
-
-  @protected
   void sse_encode_record_bool_bool((bool, bool) self, SseSerializer serializer);
 
   @protected
@@ -1195,9 +1135,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_spell_status(SpellStatus self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_text_metrics(TextMetrics self, SseSerializer serializer);
 
   @protected
   void sse_encode_title_entry_view(

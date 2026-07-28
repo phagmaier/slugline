@@ -1269,50 +1269,75 @@ Requirement §14.
 
 ## Phase 11 — Packaging & 1.0
 
-- [ ] `.desktop` entry, icon set, MIME association for `text/x-fountain`
-- [ ] Release build with LTO, `codegen-units = 1`, `panic = "abort"`, stripped symbols
-- [ ] Flatpak manifest (primary distribution)
-- [ ] AppImage (secondary)
-- [ ] Plain tarball with a `README` install note
+- [x] `.desktop` entry, icon set, MIME association for `text/x-fountain`
+      (`packaging/`: the desktop entry, an AppStream metainfo file, the
+      `text/x-fountain` registration and a scalable icon)
+- [x] Release build with LTO, `codegen-units = 1`, stripped symbols. **`panic =
+      "abort"` is withdrawn — see ADR 0039**: FRB's `catch_unwind` is what turns a
+      panic into a Dart exception instead of a dead session holding unsaved text,
+      and `abort` would delete the machinery. Stripping now covers the native
+      runner too (`-s` in `app/linux/CMakeLists.txt`), which was the half that
+      had been missed.
+- [x] Flatpak manifest (primary distribution) — `packaging/flatpak/`, with no
+      `--share=network` in `finish-args` and a comment saying why
+- [x] AppImage (secondary) — `tools/make_appimage.sh`
+- [x] Plain tarball with a `README` install note — `tools/package.sh`, which also
+      stages `install.sh`/`uninstall.sh` and both licence texts
 - [ ] Wayland and X11 both verified, including HiDPI and fractional scaling
+      **— manual, not performed**
 - [ ] Tested on at least two distributions with different GTK versions
-- [ ] `--version`, `--help`, and opening a file passed as `argv[1]`
+      **— manual, not performed**
+- [x] `--version`, `--help`, and opening a file passed as `argv[1]`. The first two
+      are answered in `linux/runner/my_application.cc` before the engine starts,
+      so neither flashes a window; the file name reaches `main()` and is resolved
+      by `scriptFromArguments`
 - [ ] All performance budgets from §1.3 verified in CI on the reference script
-- [ ] Licence compliance: Courier Prime OFL text shipped; `cargo-about` / `cargo-deny`
-      report generated and reviewed
-- [ ] Network-isolation assertion: the release build runs correctly with all network syscalls
-      blocked (`unshare -rn`) — this is the proof of the zero-network claim
-- [ ] `CHANGELOG.md`, tagged release, reproducible build instructions
+      — the keystroke budget is (`keystroke_benchmark_test`); the rest are not
+- [x] Licence compliance: `LICENSE` (GPL-3.0-or-later) at the root, and Courier
+      Prime's OFL text staged into every distribution by `tools/package.sh` —
+      the font is compiled into `crates/render_pdf`, so that copy is what
+      discharges the OFL's requirement that the text travel with it
+- [x] Network-isolation assertion — `tools/check_no_network.sh`, run in CI. Two
+      halves: nothing in the bundle links against curl, TLS or resolver
+      libraries, and the release build starts and answers `--version` inside
+      `unshare -rn`
+- [x] `CHANGELOG.md` and reproducible build instructions (`README.md`). **The
+      tagged release is the remaining step and is the maintainer's to take.**
 
 ### Retiring the Phase 0 scaffolding
 
-Phase 0's handshake surface was written to prove the bridge worked and says in its own
-header that it is deleted once the §6 API lands. It was not, and it still ships in the
-release `.so` and in the app. That is deliberate for now — ADR 0005 keeps the fallback
-evidence alive until the IME gate settles — but it was only ever *implicitly* deferred, and
-an implicit deferral is how scaffolding becomes permanent. Remediation Phase 8 wrote it
-down; these are the tasks.
+Phase 0's handshake surface was written to prove the bridge worked and said in its own
+header that it would be deleted once the §6 API landed. It was not, and it shipped in the
+release `.so` and in the app until 1.0. It was only ever *implicitly* deferred, and an
+implicit deferral is how scaffolding becomes permanent. Remediation Phase 8 wrote it down;
+Phase 11 did it.
 
-- [ ] **`crates/bridge/src/api/handshake.rs`** — delete the module and its entry in
-      `api/mod.rs`, then regenerate the bindings. `core_info`, `echo`, `ping`,
-      `slice_utf16`, `text_metrics` and `proof_events` all go with it; `init_app` is the one
-      thing in the file the application actually needs, so move it before deleting the rest.
-- [ ] **`proofEvents`** — remove the second stream from `app/lib/core/core.dart` (the field,
-      the `asBroadcastStream`, and the `await core.proofEvents.first` in startup), along
-      with `proofText` and `app/test/proof_text_test.dart`. The UTF-16 boundary it proves is
-      covered from Phase 1 onward by `crates/bridge/src/offsets.rs`'s own tests and by
-      `integration_test/ime_test.dart`.
+- [x] **`crates/bridge/src/api/handshake.rs`** — deleted, with its entry in `api/mod.rs`,
+      and the bindings regenerated. `core_info`, `echo`, `ping`, `slice_utf16`,
+      `text_metrics` and `proof_events` went with it. `init_app` was the one thing in the
+      file the application needed and now lives alone in `api/lifecycle.rs`, which is also
+      where the `#[frb(init)]` that makes it automatic is explained.
+- [x] **`proofEvents`** — the second stream is gone from `app/lib/core/core.dart`, along
+      with `proofText`, `Core.info/echo/metrics/slice/ping`, and
+      `app/test/proof_text_test.dart`.
+- [x] **`integration_test/bridge_test.dart`** — kept, and rewritten. Its four assertions
+      were the Phase 0 exit proofs; they are now made against the §6 surface instead of the
+      scaffolding — `blocks` for the nested-struct round trip, `CoreEvent` for the pushed
+      event, a real document for the byte-exact non-ASCII round trip, and `extract` for the
+      UTF-16 offset agreement, including the surrogate-pair refusal. A property worth
+      proving in Phase 0 is worth proving against the real API in 1.0.
 - [ ] **`spike/`** — delete the directory and the ADR 0005 evidence note that points at it.
-      **Blocked on Phase 9A.** ADR 0005 keeps the spike in the tree precisely because
-      `super_editor` is the fallback if the real `ibus` + CJK gate fails, and the fallback
-      is worth nothing without the prototypes. Do not delete it until that gate has been
-      performed and recorded as passed; if it fails, ADR 0005 is superseded and this task is
-      the wrong one.
-- [ ] **Production binary surface** — after the above, confirm what the release build
-      actually exports: no `handshake` symbol survives in
-      `build/linux/x64/release/bundle/lib/libslugline_bridge.so`, `app/lib/src/rust/api/`
-      has no `handshake.dart`, and the app starts without it. A cleanup that leaves the
-      generated bindings behind has removed the source and shipped the surface.
+      **Blocked on Phase 9A, and therefore still here.** ADR 0005 keeps the spike in the
+      tree precisely because `super_editor` is the fallback if the real `ibus` + CJK gate
+      fails, and the fallback is worth nothing without the prototypes. Do not delete it
+      until that gate has been performed and recorded as passed; if it fails, ADR 0005 is
+      superseded and this task is the wrong one. `spike/` is outside the Cargo workspace and
+      is not built, shipped or tested by CI, so it costs the release nothing.
+- [x] **Production binary surface** — confirmed, and now asserted by CI's `package` job:
+      `nm -D` on the release `.so` finds no `handshake` symbol, `app/lib/src/rust/api/` has
+      no `handshake.dart`, and the application starts without it. A cleanup that left the
+      generated bindings behind would have removed the source and shipped the surface;
+      the codegen does not delete orphaned files, so they were removed by hand.
 
 ---
 

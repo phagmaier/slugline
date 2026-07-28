@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.phagmaier.slugline</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Slugline</name>
+  <summary>Write screenplays in plain Fountain files</summary>
+
+  <developer id="com.phagmaier">
+    <name>Parker Hagmaier</name>
+  </developer>
+
+  <url type="homepage">https://github.com/phagmaier/slugline</url>
+  <url type="bugtracker">https://github.com/phagmaier/slugline/issues</url>
+  <url type="vcs-browser">https://github.com/phagmaier/slugline</url>
+
+  <description>
+    <p>
+      Slugline is a keyboard-driven screenplay editor. It reads and writes plain
+      Fountain files — your text, on your disk, in a format any other program can
+      read — and produces submission-quality PDFs in standard screenplay format.
+    </p>
+    <p>
+      An unedited file saves back byte for byte identically, so the editor never
+      reformats work it was only asked to open.
+    </p>
+    <p>Written to lose nothing:</p>
+    <ul>
+      <li>Every keystroke is appended to a crash journal; a session killed outright is offered back on the next launch.</li>
+      <li>Every save is atomic — the file on disk is always either the complete old version or the complete new one.</li>
+      <li>Rolling backups keep the last ten saves plus one per day for a week.</li>
+      <li>Changes made to a file by something else are noticed rather than overwritten.</li>
+    </ul>
+    <p>
+      Elements classify themselves as you type, Tab and Enter move between them
+      the way screenwriting software has always done, and every command has a key.
+    </p>
+    <p>
+      Slugline makes no network connections of any kind. There is no telemetry, no
+      update check, no account and no font download.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.phagmaier.slugline.desktop</launchable>
+
+  <provides>
+    <binary>slugline</binary>
+    <mediatype>text/x-fountain</mediatype>
+  </provides>
+
+  <categories>
+    <category>Office</category>
+    <category>WordProcessor</category>
+  </categories>
+
+  <keywords>
+    <keyword>screenplay</keyword>
+    <keyword>screenwriting</keyword>
+    <keyword>fountain</keyword>
+    <keyword>script</keyword>
+  </keywords>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <recommends>
+    <display_length compare="ge">800</display_length>
+  </recommends>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.0.0" date="2026-07-27">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

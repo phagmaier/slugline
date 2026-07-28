@@ -11,7 +11,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+# The release version is `app/pubspec.yaml`'s — this is the same number written
+# a second time, because Cargo cannot read it from there. `tools/check_version.py`
+# fails the build if the two ever disagree, which is the only thing that makes
+# "one source" true rather than aspirational.
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.82"
 license = "GPL-3.0-or-later"

@@ -2933,3 +2933,66 @@ session, in every state including a failure.
 * A writer who dismisses the external-change prompt without deciding will have
   their next save refused again. That is the intended shape: the refusal stands
   until somebody answers it, and the status line says so meanwhile.
+
+---
+
+## ADR 0039 — The release build unwinds; `panic = "abort"` is superseded
+
+**Status:** Accepted
+**Date:** 2026-07-27
+**Phase:** 11 — Packaging & 1.0
+
+### Context
+
+§Phase 11's release checklist asks for `panic = "abort"`, alongside LTO,
+`codegen-units = 1` and stripped symbols. The other three are in
+`[profile.release]`. The fourth is not, and has not been since the bridge was
+written: `Cargo.toml` says `panic = "unwind"` with a one-line comment.
+
+This was never decided, only done, and a checklist item contradicted by a
+comment is exactly the kind of thing that gets "fixed" by someone tidying up.
+Shipping 1.0 with the divergence undocumented is how a deliberate choice becomes
+an accident.
+
+The reason it is `unwind` is `flutter_rust_bridge`. Every generated wire function
+wraps its call in `catch_unwind` and turns a Rust panic into a Dart exception.
+With `panic = "abort"` there is nothing to catch: the panic aborts the process
+immediately, `catch_unwind` never returns, and the machinery FRB generates for
+the purpose is dead code.
+
+What that costs is specific to this application. The Rust side owns the open
+document, and the crash journal is what makes §1.2's "losing user text is a P0"
+survivable — but the journal is only as good as the chance to *use* it. A panic
+in, say, pagination or the PDF writer, on a worker thread, against a snapshot, is
+not a reason to destroy the session that holds the writer's unsaved text. Under
+`unwind` it becomes an exception on one call, the editor stays up, and the
+writer can save. Under `abort` it is a `SIGABRT` with the document gone from
+memory and recovery deferred to the next launch, which is the outcome the whole
+of Phase 4 exists to avoid.
+
+The usual argument for `abort` is that unwinding past FFI is undefined behaviour.
+It does not apply here: FRB's `catch_unwind` sits *inside* the Rust frame, so no
+panic crosses the boundary. It is caught before it can.
+
+### Decision
+
+**The release profile keeps `panic = "unwind"`, and §Phase 11's checklist item
+is withdrawn rather than deferred.** The other three release settings stand and
+are now all satisfied — the native runner is stripped by `-s` in
+`app/linux/CMakeLists.txt`, which was the half of "stripped symbols" that had
+been missed.
+
+A panic remains a bug, not a control-flow mechanism. `parser_never_panics` and
+the fuzz targets are what keep the core from relying on this.
+
+### Consequences
+
+* A panic in a bridge call surfaces in Dart as an exception on that call and the
+  session survives with its journal intact. The writer can save their work,
+  which is the only outcome §1.2 actually cares about.
+* Binaries carry unwind tables. On this workspace that is a few tens of
+  kilobytes against a 28 MiB bundle, well inside the 60 MiB budget.
+* `abort` cannot be reinstated without breaking FRB's error translation. Anyone
+  who wants it back needs an ADR superseding this one, and a different answer for
+  what happens to unsaved text when the PDF writer hits an edge case.
+* SPEC §Phase 11's line now reads as satisfied-by-exception, and points here.

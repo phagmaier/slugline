@@ -4,10 +4,9 @@
 //! startup with [`core_events`]; everything in the core that has news pushes it
 //! through [`emit`].
 //!
-//! There is a second stream in `handshake.rs`. It is not an application channel
-//! and never becomes one: it is the Phase 0 proof that a `StreamSink` works at
-//! all, in the same file as `echo` and `slice_utf16`, and it goes when that file
-//! does. The application subscribes to this one and only this one.
+//! This is now the only stream. Phase 0's `handshake.rs` carried a second one —
+//! a proof that a `StreamSink` worked at all, alongside `echo` and
+//! `slice_utf16` — and it was retired with that module at Phase 11.
 //!
 //! Nothing here polls. The stream is idle until something happens — a save, a
 //! failed autosave, a file changing under an open document — which is what the

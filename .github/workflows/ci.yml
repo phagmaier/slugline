@@ -73,6 +73,12 @@ jobs:
       - name: The reference feature is current
         run: python3 tools/make_reference.py --check
 
+      # §Phase 11: one release-version source. This is what makes that true
+      # rather than aspirational — Cargo, AppStream and the changelog each hold
+      # a copy of pubspec.yaml's number, and this fails when one drifts.
+      - name: One release version everywhere
+        run: python3 tools/check_version.py
+
   fuzz:
     name: Fuzz — parser and round trip
     runs-on: ubuntu-latest
@@ -223,3 +229,77 @@ jobs:
       - name: Keystroke budget
         working-directory: app
         run: xvfb-run -a flutter test integration_test/keystroke_benchmark_test.dart -d linux
+
+  # §Phase 11. Separate from `flutter` because it wants the release bundle and
+  # nothing else, and because a packaging break should name itself rather than
+  # arrive as "the Flutter job failed".
+  package:
+    name: Package — desktop integration, network isolation, tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            desktop-file-utils appstream
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The metadata is checked before anything is built: it costs seconds, and
+      # a malformed desktop entry is a thing a software centre silently ignores
+      # rather than reports.
+      - name: Desktop entry is valid
+        run: desktop-file-validate packaging/com.phagmaier.slugline.desktop
+
+      - name: AppStream metadata is valid
+        run: appstreamcli validate --no-net packaging/com.phagmaier.slugline.metainfo.xml
+
+      - name: Release build
+        working-directory: app
+        run: flutter build linux --release
+
+      # §Phase 11 asks for stripped symbols. Both halves: the Rust `.so` strips
+      # via [profile.release], the runner via `-s` in linux/CMakeLists.txt. The
+      # runner shipped unstripped until 1.0, so this is here to keep it that way.
+      - name: Both binaries are stripped
+        working-directory: app
+        run: |
+          for binary in build/linux/x64/release/bundle/slugline \
+                        build/linux/x64/release/bundle/lib/libslugline_bridge.so; do
+            file "$binary" | grep -q "not stripped" && {
+              echo "$binary is not stripped"; exit 1; }
+            echo "$binary: stripped"
+          done
+
+      # The command line, which has to work without a display — that is the
+      # whole point of answering it in the runner rather than in Dart.
+      - name: --version and --help need no display
+        working-directory: app/build/linux/x64/release/bundle
+        run: |
+          test "$(./slugline --version)" = "slugline $(sed -n 's/^version: \([0-9.]*\).*/\1/p' ../../../../../pubspec.yaml)"
+          ./slugline --help | grep -q "keyboard-driven Fountain screenplay editor"
+
+      # §1.2's zero-network claim, as something that can fail: nothing in the
+      # bundle links against curl, TLS or a resolver, and the release build runs
+      # inside `unshare -rn`.
+      - name: Network isolation
+        run: ./tools/check_no_network.sh
+
+      - name: Tarball
+        run: ./tools/package.sh --no-build
+
+      - name: The tarball installs and runs
+        run: |
+          ./dist/slugline-*/install.sh "$PWD/dist/prefix"
+          test "$("$PWD/dist/prefix/bin/slugline" --version)" = "$(./app/build/linux/x64/release/bundle/slugline --version)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slugline-linux-x64
+          path: dist/*.tar.gz

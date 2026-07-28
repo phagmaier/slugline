@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Slugline
+GenericName=Screenplay Editor
+Comment=Write screenplays in plain Fountain files
+# One main category only, or the application shows up twice in the menu.
+Categories=Office;WordProcessor;
+Keywords=screenplay;script;fountain;screenwriting;film;
+Exec=slugline %f
+TryExec=slugline
+Icon=com.phagmaier.slugline
+Terminal=false
+StartupNotify=true
+StartupWMClass=slugline
+MimeType=text/x-fountain;
+# %f rather than %F or %U: the editor holds one script at a time (ADR 0005's
+# single editing surface), so accepting a list would promise something the
+# application does not do. No %U — nothing here opens a URL, and this
+# application makes no network connections at all.

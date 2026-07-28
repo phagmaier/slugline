@@ -46,6 +46,23 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_definitions(${TARGET} PRIVATE "$<$<NOT:$<CONFIG:Debug>>:NDEBUG>")
 endfunction()
 
+# The release version, read from the one file that owns it (§Phase 11: "choose
+# one release-version source"). `tools/check_version.py` holds every other copy
+# to this one; the runner needs it compiled in so that `--version` can answer
+# before the Dart VM — and therefore the window — exists.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../pubspec.yaml" SLUGLINE_PUBSPEC)
+string(REGEX MATCH "\nversion: ([0-9]+\\.[0-9]+\\.[0-9]+)" _ "${SLUGLINE_PUBSPEC}")
+set(SLUGLINE_VERSION "${CMAKE_MATCH_1}")
+if(SLUGLINE_VERSION STREQUAL "")
+  message(FATAL_ERROR "No version: line in app/pubspec.yaml")
+endif()
+
+# §Phase 11 asks for stripped symbols in the release build. The Rust `.so`
+# already strips via `[profile.release]`; this is the other half, the native
+# runner, which shipped unstripped until now.
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -s")
+set(CMAKE_EXE_LINKER_FLAGS_PROFILE "${CMAKE_EXE_LINKER_FLAGS_PROFILE} -s")
+
 # Flutter library and tool build rules.
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})

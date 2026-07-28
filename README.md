@@ -3,7 +3,8 @@
 A fast, keyboard-driven screenplay editor that reads and writes plain Fountain
 files and produces submission-quality PDFs. Linux only.
 
-**Status: Phases 0–10 written; Phase 11 (packaging and release) is next.**
+**Status: 1.0.0. Phases 0–11 are written.** What is left before a tagged
+release is manual and named at the bottom of this file.
 `crates/fountain` and `crates/document` read and write Fountain losslessly and hold
 the model, the edit commands and undo. `crates/bridge` is the actor thread and the
 §6 surface, `app/` is the editor, keyboard workflow, autocomplete, library,
@@ -36,12 +37,28 @@ existing file without asking, a silent journal-initialisation failure, external-
 protection that disappeared with the watcher, one production write that bypassed
 the atomic-write invariant (the backups' `origin` file), and this documentation.
 
-**Verification, 2026-07-27:** Rust 550 tests including 2 doc tests, Dart 380 unit
+**Verification, 2026-07-27:** Rust 546 tests including 2 doc tests, Dart 387 unit
 and 56 integration across all seven suites, `flutter analyze` clean, `clippy -D
-warnings` clean, the layering and reference-fixture checks green, and a release
-build of 29,718,353 bytes — inside the 60 MiB budget. Not reproduced locally: the
-real tmpfs ENOSPC path, the fuzz jobs, network isolation, and the manual
-platform and input-method checks.
+warnings` clean, the layering, version and reference-fixture checks green, both
+release binaries stripped, the network-isolation gate passing, and a release
+build inside the 60 MiB budget.
+
+## What is left before tagging 1.0.0
+
+Everything in §Phase 11 is done except the checks that need a person at a
+machine, and one that needs a decision:
+
+- **Wayland and X11, HiDPI and fractional scaling** — not verified.
+- **Two distributions with different GTK versions** — not verified.
+- **The real `ibus` + CJK input check** — ADR 0005's manual gate, never run.
+  `integration_test/ime_test.dart` goes as far as automation reaches and no
+  further. `spike/` stays in the tree until this passes, because it is the
+  evidence for the fallback if it does not.
+- **Printing, and a PDF opened in a browser** — not verified.
+- **Tagging the release** — the maintainer's call, not a script's.
+
+None of these are code changes. Everything they could invalidate is behaviour
+this machine cannot exercise.
 
 ## Requirements
 
@@ -75,14 +92,43 @@ flutter build linux --release        # release; compiles the Rust workspace too
 `flutter build linux` compiles `crates/bridge` via cargokit and bundles
 `libslugline_bridge.so`. There is no separate Rust build step.
 
+The built binary takes one argument:
+
+```sh
+slugline                       # the library
+slugline heat.fountain         # open it, creating it if it is not there
+slugline --version
+slugline --help
+```
+
+## Install
+
+```sh
+./tools/package.sh                          # release build -> dist/slugline-<version>-linux-x64.tar.gz
+./dist/slugline-*/install.sh                # into ~/.local
+sudo ./dist/slugline-*/install.sh /usr/local  # or system-wide
+```
+
+That installs the bundle, the desktop entry, the icon, the `text/x-fountain`
+association and both licence texts, and refreshes the desktop caches. There is
+an `uninstall.sh` beside it taking the same prefix; neither touches your
+scripts, preferences or backups.
+
+`packaging/flatpak/` is the Flatpak manifest — the primary distribution, and the
+place to look if you want to see what the application is allowed to do, since
+`--share=network` is not among the permissions it asks for.
+`tools/make_appimage.sh` builds the AppImage, and needs `appimagetool` on PATH.
+
 ## Test
 
 ```sh
 cargo test --workspace                                    # Rust
 python3 tools/check_layering.py                           # crate layering (§2.5)
+python3 tools/check_version.py                            # one release version everywhere
 python3 tools/make_reference.py --check                   # the 120-page fixture is current
 cd app && flutter test                                    # Dart unit tests
 cd app && xvfb-run -a flutter test integration_test/ -d linux   # needs the .so
+./tools/check_no_network.sh                               # needs the release bundle
 ```
 
 Run the integration tests under `xvfb-run`, as CI does — `xorg-server-xvfb` on

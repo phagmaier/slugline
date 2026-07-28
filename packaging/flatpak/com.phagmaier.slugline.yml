@@ -1,0 +1,77 @@
+# Flatpak manifest — §Phase 11's primary distribution.
+#
+# Build a bundle from a checkout:
+#
+#   flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47
+#   flatpak-builder --force-clean --repo=repo build packaging/flatpak/com.phagmaier.slugline.yml
+#   flatpak build-bundle repo slugline.flatpak com.phagmaier.slugline
+#
+# The Flutter and Rust toolchains are not Flatpak SDK extensions, so this
+# manifest packages an *already built* release bundle rather than compiling in
+# the sandbox: run `tools/package.sh` first and this consumes its output. That
+# is a deliberate trade — a from-source Flatpak build would need a vendored
+# Flutter SDK and an offline Cargo registry, which is a great deal of machinery
+# for a build that would produce the same bytes.
+app-id: com.phagmaier.slugline
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: slugline
+
+finish-args:
+  # A window, on either display server.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+
+  # Printing a PDF, and the file chooser.
+  - --socket=cups
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.FileChooser
+
+  # Screenplays live wherever the writer keeps them. `home` rather than the
+  # documents portal because the library scans directories and watches files for
+  # external changes, neither of which a per-file portal handle supports.
+  - --filesystem=home
+
+  # Hunspell dictionaries from the host, read-only. Spell-check finds nothing
+  # without them and the runtime does not carry them.
+  - --filesystem=/usr/share/hunspell:ro
+  - --filesystem=/usr/share/myspell:ro
+
+  # NOT granted, and the reason this file is worth reading:
+  #   --share=network      this application makes no connections of any kind
+  #   --talk-name=... any telemetry or update service
+  # If a future change needs the network, it needs an ADR superseding §1.2
+  # first, not a line here.
+
+modules:
+  - name: slugline
+    buildsystem: simple
+    build-commands:
+      - install -d /app/lib/slugline
+      - cp -r bundle/. /app/lib/slugline/
+      - install -Dm755 flatpak-launcher /app/bin/slugline
+      - install -Dm644 share/applications/com.phagmaier.slugline.desktop
+          /app/share/applications/com.phagmaier.slugline.desktop
+      - install -Dm644 share/metainfo/com.phagmaier.slugline.metainfo.xml
+          /app/share/metainfo/com.phagmaier.slugline.metainfo.xml
+      - install -Dm644 share/mime/packages/com.phagmaier.slugline.xml
+          /app/share/mime/packages/com.phagmaier.slugline.xml
+      - install -Dm644 share/icons/hicolor/scalable/apps/com.phagmaier.slugline.svg
+          /app/share/icons/hicolor/scalable/apps/com.phagmaier.slugline.svg
+      - install -Dm644 share/licenses/slugline/LICENSE
+          /app/share/licenses/slugline/LICENSE
+      - install -Dm644 share/licenses/slugline/OFL-CourierPrime.txt
+          /app/share/licenses/slugline/OFL-CourierPrime.txt
+    sources:
+      # `tools/package.sh` writes this tree. Point `path` at it after building.
+      - type: dir
+        path: ../../dist/slugline-1.0.0-linux-x64
+      - type: script
+        dest-filename: flatpak-launcher
+        commands:
+          # The executable locates `data/` and `lib/` relative to itself, so it
+          # is started where it lives rather than symlinked into /app/bin.
+          - exec /app/lib/slugline/slugline "$@"

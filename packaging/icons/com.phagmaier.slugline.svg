@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Slugline</title>
+  <!-- A page in the 8.5x11 proportion the layout engine actually uses, with a
+       slug line across the top and dialogue indented under it. The shape is the
+       thing the application is about: a correctly laid-out page. -->
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9e6df"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="24" fill="#1d1f24"/>
+
+  <!-- The page, 8.5:11. -->
+  <rect x="27" y="16" width="74" height="96" rx="4" fill="url(#page)"/>
+
+  <!-- The slug line: full measure, and the only thing here that is emphasised. -->
+  <rect x="37" y="31" width="54" height="6" rx="1.5" fill="#1d1f24"/>
+
+  <!-- Action, to the same left margin. -->
+  <rect x="37" y="46" width="48" height="4" rx="1.5" fill="#9aa0aa"/>
+  <rect x="37" y="55" width="54" height="4" rx="1.5" fill="#9aa0aa"/>
+
+  <!-- A cue, centred over its dialogue, and two lines of speech indented. -->
+  <rect x="56" y="70" width="20" height="4" rx="1.5" fill="#1d1f24"/>
+  <rect x="48" y="80" width="34" height="4" rx="1.5" fill="#9aa0aa"/>
+  <rect x="48" y="89" width="27" height="4" rx="1.5" fill="#9aa0aa"/>
+
+  <!-- The caret, because this is an editor. -->
+  <rect x="77" y="86" width="2.5" height="10" rx="1" fill="#e0562d"/>
+</svg>

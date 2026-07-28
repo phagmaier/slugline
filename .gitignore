@@ -8,5 +8,9 @@
 /fuzz/artifacts/
 /fuzz/coverage/
 
+# Release artefacts: tools/package.sh and tools/make_appimage.sh write here.
+# The recipes are committed; what they produce is not.
+/dist/
+
 # Local tooling
 .direnv/

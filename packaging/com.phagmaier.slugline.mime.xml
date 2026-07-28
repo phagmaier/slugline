@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fountain has no registered IANA media type, so `text/x-fountain` is the
+  conventional one and the `x-` says so honestly.
+
+  The glob is the association that matters. The magic rule below is deliberately
+  weak: a Fountain file is plain UTF-8 text with no signature of any kind, and
+  the only thing that reliably appears near the top is a title-page key. Claiming
+  more than that would make shared-mime-info identify other people's text files
+  as screenplays, which is worse than falling back to the extension.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-fountain">
+    <comment>Fountain screenplay</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.fountain"/>
+    <glob pattern="*.spmd"/>
+    <magic priority="40">
+      <match type="string" value="Title:" offset="0"/>
+    </magic>
+  </mime-type>
+</mime-info>
