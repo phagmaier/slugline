@@ -494,6 +494,12 @@ class EditorPageState extends State<EditorPage> {
       176.0,
       288.0,
     );
+    // The top bar carries the navigator toggle. When there is no top bar — the
+    // editor pumped as the whole application, which is what a widget test gets —
+    // something else has to, or hiding the navigator would hide the only way to
+    // bring it back. Ctrl+J always works; a keystroke nobody can see is not a
+    // way back.
+    final hasTopBar = widget.onClosed != null && !widget.distractionFree;
     return Focus(
       // Above the surface, so the surface still sees every editing key first and
       // only what it ignores reaches here.
@@ -502,8 +508,9 @@ class EditorPageState extends State<EditorPage> {
         appBar: widget.onClosed == null || widget.distractionFree
             ? null
             : AppBar(
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
+                leadingWidth: 44,
+                leading: _BarButton(
+                  icon: Icons.arrow_back,
                   tooltip: 'Back to the library',
                   onPressed: () async {
                     if (await confirmClose() && context.mounted) {
@@ -511,61 +518,65 @@ class EditorPageState extends State<EditorPage> {
                     }
                   },
                 ),
-                title: Text(widget.title ?? 'Untitled'),
+                titleSpacing: 4,
+                title: _ScriptTitle(
+                  name: widget.title ?? 'Untitled',
+                  status: widget.saveStatus,
+                ),
                 actions: [
-                  if (kDebugMode && _output != null)
-                    IconButton(
-                      icon: const Icon(Icons.view_agenda_outlined),
-                      tooltip: 'Pagination debug',
-                      onPressed: () => unawaited(
-                        withModal(
-                          () => PaginationDebugDialog.show(context, _output!),
-                        ),
-                      ),
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.format_list_bulleted),
-                    tooltip: 'Jump to scene (Ctrl+J)',
-                    onPressed: _showNavigatorSearch,
+                  // Three clusters, in the order a writer reaches for them:
+                  // what is in the script, what to do with the script, and
+                  // what the application is set to. Eight buttons in a row of
+                  // identical weight is a row with no shape — the eye has to
+                  // read every tooltip to find anything, which is the same as
+                  // having no toolbar. The hairlines are the shape.
+                  _BarButton(
+                    key: const ValueKey('toggle navigator'),
+                    icon: Icons.format_list_bulleted,
+                    tooltip: _navigatorVisible
+                        ? 'Hide the navigator (Ctrl+J)'
+                        : 'Show the navigator (Ctrl+J)',
+                    selected: _navigatorVisible,
+                    onPressed: () => _setNavigatorVisible(!_navigatorVisible),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.article_outlined),
-                    tooltip: 'Title page',
-                    onPressed: () => unawaited(_showTitlePage()),
+                  _BarButton(
+                    key: const ValueKey('open find'),
+                    icon: Icons.search,
+                    tooltip: 'Find and replace (Ctrl+F)',
+                    selected: _panel == _Panel.find,
+                    onPressed: () => _show(_Panel.find),
                   ),
-                  IconButton(
-                    key: const ValueKey('spell settings'),
-                    icon: const Icon(Icons.spellcheck),
-                    tooltip: 'Spell checking',
-                    onPressed: () => unawaited(_showSpelling()),
-                  ),
+                  const _BarDivider(),
                   if (_output != null)
-                    IconButton(
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                    _BarButton(
+                      key: const ValueKey('open preview'),
+                      icon: Icons.picture_as_pdf_outlined,
                       tooltip: 'Preview and export (Ctrl+P)',
                       onPressed: () => unawaited(_showPreview()),
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.history),
-                    tooltip: 'Previous versions',
-                    onPressed: _showBackups,
+                  _OverflowMenu(
+                    onTitlePage: () => unawaited(_showTitlePage()),
+                    onSpelling: () => unawaited(_showSpelling()),
+                    onBackups: () => unawaited(_showBackups()),
+                    onSave: () => unawaited(save()),
+                    onSaveAs: () => unawaited(save(forcePath: true)),
+                    onShortcuts: widget.onShowShortcuts,
+                    onPaginationDebug: kDebugMode && _output != null
+                        ? () => unawaited(
+                            withModal(
+                              () =>
+                                  PaginationDebugDialog.show(context, _output!),
+                            ),
+                          )
+                        : null,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.save_outlined),
-                    tooltip: 'Save (Ctrl+S)',
-                    onPressed: () => unawaited(save()),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.keyboard_outlined),
-                    tooltip: 'Keyboard shortcuts (F1)',
-                    onPressed: widget.onShowShortcuts,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined),
+                  const _BarDivider(),
+                  _BarButton(
+                    icon: Icons.settings_outlined,
                     tooltip: 'Preferences (Ctrl+,)',
                     onPressed: widget.onOpenPreferences,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                 ],
               ),
         body: Row(
@@ -615,20 +626,6 @@ class EditorPageState extends State<EditorPage> {
                                   onScrolled: _onScrolled,
                                 ),
                               ),
-                              if (!_navigatorVisible && !widget.distractionFree)
-                                Positioned(
-                                  top: 8,
-                                  left: 8,
-                                  child: IconButton.filledTonal(
-                                    key: const ValueKey('show navigator'),
-                                    tooltip: 'Show navigator (Ctrl+J)',
-                                    style: _floatingButton(colours),
-                                    onPressed: () => _setNavigatorVisible(true),
-                                    icon: const Icon(
-                                      Icons.format_list_bulleted,
-                                    ),
-                                  ),
-                                ),
                               if (_panel == _Panel.find)
                                 Positioned(
                                   top: 8,
@@ -659,6 +656,22 @@ class EditorPageState extends State<EditorPage> {
                                     onDismiss: _dismiss,
                                   ),
                                 ),
+                              if (!_navigatorVisible &&
+                                  !widget.distractionFree &&
+                                  !hasTopBar)
+                                Positioned(
+                                  top: 8,
+                                  left: 8,
+                                  child: IconButton.filledTonal(
+                                    key: const ValueKey('show navigator'),
+                                    tooltip: 'Show navigator (Ctrl+J)',
+                                    style: _floatingButton(colours),
+                                    onPressed: () => _setNavigatorVisible(true),
+                                    icon: const Icon(
+                                      Icons.format_list_bulleted,
+                                    ),
+                                  ),
+                                ),
                               if (widget.distractionFree)
                                 Positioned(
                                   top: 8,
@@ -686,6 +699,7 @@ class EditorPageState extends State<EditorPage> {
                             controller: widget.controller,
                             saveStatus: widget.saveStatus,
                             pageIndicator: _pageIndicator,
+                            sceneCount: _navigator.scenes.length,
                           ),
                       ],
                     ),
@@ -701,6 +715,224 @@ class EditorPageState extends State<EditorPage> {
 }
 
 enum _Panel { none, find, palette }
+
+/// One button in the top bar.
+///
+/// Small icon, large target. §Item 4 asks for a 40×40 hit area around an 18–20
+/// pixel glyph, which is the difference between a bar that looks light and a bar
+/// that is hard to hit — those are not the same decision and this is the widget
+/// that keeps them apart.
+///
+/// The colour is the second weight of text at rest and the first under the
+/// pointer, so the row reads as quiet until it is being used. [selected] is for
+/// the two buttons that toggle something on screen — the navigator and the find
+/// panel — and is the accent, because what is showing right now *is* a selected
+/// state (see [SluglineColors.accent]).
+class _BarButton extends StatelessWidget {
+  const _BarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.selected = false,
+    super.key,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colours = context.colours;
+    return IconButton(
+      icon: Icon(icon, size: 19),
+      tooltip: tooltip,
+      onPressed: onPressed,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          if (selected) return colours.accent;
+          if (states.contains(WidgetState.hovered) ||
+              states.contains(WidgetState.focused)) {
+            return colours.textPrimary;
+          }
+          return colours.textSecondary;
+        }),
+      ),
+    );
+  }
+}
+
+/// The hairline between two clusters of buttons, with room either side.
+class _BarDivider extends StatelessWidget {
+  const _BarDivider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 1,
+    height: 18,
+    margin: const EdgeInsets.symmetric(horizontal: 12),
+    color: context.colours.border,
+  );
+}
+
+/// The script's name, and whether the file has it.
+///
+/// The extension is a third weight down: `cross` is what the writer called their
+/// screenplay and `.fountain` is how it is stored, and the two do not deserve
+/// the same emphasis in the one place the script is named.
+///
+/// The dot beside it appears only when there is something unsaved. A permanent
+/// indicator is one nobody looks at; one that is usually absent is one whose
+/// presence means something. The status bar carries the full sentence — this is
+/// the glance.
+class _ScriptTitle extends StatelessWidget {
+  const _ScriptTitle({required this.name, required this.status});
+
+  final String name;
+  final SaveStatus? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colours = context.colours;
+    final theme = Theme.of(context);
+    final dot = name.lastIndexOf('.');
+    final stem = dot <= 0 ? name : name.substring(0, dot);
+    final extension = dot <= 0 ? '' : name.substring(dot);
+    final title = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: stem),
+          if (extension.isNotEmpty)
+            TextSpan(
+              text: extension,
+              style: TextStyle(color: colours.textTertiary),
+            ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.titleMedium?.copyWith(color: colours.textPrimary),
+    );
+    final status = this.status;
+    if (status == null) return title;
+    return AnimatedBuilder(
+      animation: status,
+      builder: (context, _) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: title),
+          if (!status.isPlainSaved)
+            Container(
+              key: const ValueKey('unsaved indicator'),
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.only(left: 8),
+              decoration: BoxDecoration(
+                color: status.isError ? colours.danger : colours.textTertiary,
+                shape: BoxShape.circle,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Everything that is worth a menu entry and not worth a permanent button.
+///
+/// Save is here rather than in the bar on purpose: it has a keystroke everybody
+/// knows, the autosave already runs it, and the status bar says whether it has
+/// happened — three answers to "is my work safe" before a toolbar button is the
+/// fourth. The same reasoning removes history, spell checking, the title page
+/// and the shortcut list from the row, none of which is reached mid-sentence.
+class _OverflowMenu extends StatelessWidget {
+  const _OverflowMenu({
+    required this.onTitlePage,
+    required this.onSpelling,
+    required this.onBackups,
+    required this.onSave,
+    required this.onSaveAs,
+    required this.onShortcuts,
+    required this.onPaginationDebug,
+  });
+
+  final VoidCallback onTitlePage;
+  final VoidCallback onSpelling;
+  final VoidCallback onBackups;
+  final VoidCallback onSave;
+  final VoidCallback onSaveAs;
+  final Future<void> Function()? onShortcuts;
+  final VoidCallback? onPaginationDebug;
+
+  @override
+  Widget build(BuildContext context) {
+    final colours = context.colours;
+    return PopupMenuButton<VoidCallback>(
+      key: const ValueKey('editor overflow'),
+      tooltip: 'More actions',
+      icon: Icon(Icons.more_horiz, size: 19, color: colours.textSecondary),
+      constraints: const BoxConstraints(minWidth: 220),
+      position: PopupMenuPosition.under,
+      onSelected: (action) => action(),
+      itemBuilder: (context) => [
+        _entry(context, 'Save', 'Ctrl+S', onSave),
+        _entry(context, 'Save as…', 'Ctrl+Shift+S', onSaveAs),
+        _entry(context, 'Previous versions…', '', onBackups),
+        const PopupMenuDivider(),
+        _entry(context, 'Title page…', '', onTitlePage),
+        _entry(context, 'Spell checking…', '', onSpelling, key: 'spell settings'),
+        const PopupMenuDivider(),
+        _entry(
+          context,
+          'Keyboard shortcuts',
+          'F1',
+          () => unawaited(onShortcuts?.call()),
+        ),
+        if (onPaginationDebug case final debug?) ...[
+          const PopupMenuDivider(),
+          _entry(context, 'Pagination debug', '', debug),
+        ],
+      ],
+    );
+  }
+
+  /// A label on the left, its keystroke on the right in the third weight.
+  ///
+  /// The shortcut is here for the same reason the element menu carries its
+  /// digits: someone who opens this menu twice for the same thing should come
+  /// away knowing how not to open it a third time.
+  PopupMenuItem<VoidCallback> _entry(
+    BuildContext context,
+    String label,
+    String shortcut,
+    VoidCallback action, {
+    String? key,
+  }) {
+    final colours = context.colours;
+    return PopupMenuItem<VoidCallback>(
+      key: key == null ? null : ValueKey(key),
+      value: action,
+      height: 36,
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          if (shortcut.isNotEmpty)
+            Text(
+              shortcut,
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: colours.textTertiary),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 
 /// The two buttons that float over the script itself.
 ///

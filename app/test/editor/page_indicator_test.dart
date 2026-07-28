@@ -227,7 +227,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('editor-page-indicator')), findsOneWidget);
-    expect(find.text('Page 2 of 2'), findsOneWidget);
+    // The page count shares its line with the scene and word counts now, so it
+    // is looked for inside the label rather than as the whole of it.
+    expect(find.textContaining('Page 2 of 2'), findsOneWidget);
 
     final scrollable = tester.state<ScrollableState>(
       find.descendant(
@@ -237,6 +239,6 @@ void main() {
     );
     scrollable.position.jumpTo(0);
     await tester.pump();
-    expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(find.textContaining('Page 1 of 2'), findsOneWidget);
   });
 }

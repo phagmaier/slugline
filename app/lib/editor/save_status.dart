@@ -71,6 +71,18 @@ class SaveStatus extends ChangeNotifier {
   /// When the file was last written, for the tooltip.
   int get savedAtMillis => _savedAtMillis;
 
+  /// Whether [label] is the unremarkable "saved", and nothing else.
+  ///
+  /// The status bar shows a relative time instead of the label — "saved 2
+  /// minutes ago" — and this is what says it may. Every other state has a
+  /// sentence in it that has to be read rather than summarised: a failure, a
+  /// count of journalled edits, and above all the two that are facts about the
+  /// whole session and go on being said for the rest of it — "recovery record
+  /// unavailable" and "external changes not watched". Replacing one of those
+  /// with a timestamp would be the status line lying by omission, which is the
+  /// specific thing this class exists not to do.
+  bool get isPlainSaved => label == 'saved';
+
   /// Called whenever anything might have changed the answer.
   void refresh() => notifyListeners();
 

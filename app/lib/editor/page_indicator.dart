@@ -73,9 +73,26 @@ class PageIndicator extends ChangeNotifier {
 
   int? _current;
   int? _total;
+  int? _words;
 
   int? get current => _current;
   int? get total => _total;
+
+  /// How many words the script contains, or null before the first pagination.
+  ///
+  /// Counted from the paginated snapshot rather than from the blocks, which is
+  /// what makes it the *script's* word count rather than the document's: what
+  /// reaches a page is Rust's answer about what prints, so notes, synopses,
+  /// sections and the boneyard are already gone, and a scene heading is already
+  /// the line that will be typeset. Dart counts spaces in a list of strings and
+  /// decides nothing (§2.1).
+  ///
+  /// It also lands where it costs nothing. Pagination is already an async job
+  /// against a snapshot, debounced 120 ms behind the keystroke — the one place a
+  /// pass over the whole script is affordable. A count recomputed per keystroke
+  /// would be a second answer to "what is in this document" on exactly the path
+  /// ADR 0018 keeps clear.
+  int? get words => _words;
 
   /// Where each page begins on the editor's grid, in ascending row order.
   ///
@@ -168,6 +185,7 @@ class PageIndicator extends ChangeNotifier {
         _pageAtBlock.clear();
         _firstLineOfPage.clear();
         _pageStarts = null;
+        _words = null;
         _setPosition(null, null);
     }
   }
@@ -206,7 +224,27 @@ class PageIndicator extends ChangeNotifier {
     }
 
     _total = pagination.pageCount;
+    _words = _countWords(pagination);
     _updateCurrent(forceNotify: true);
+  }
+
+  /// Words in the printable lines of a pagination.
+  ///
+  /// Only [LayoutLineKind.content] is counted: a page number, a `(MORE)`, a
+  /// `CONT'D` and a scene number are the paginator talking, not the writer. A
+  /// wrapped paragraph is safe to sum line by line because the line breaker
+  /// breaks at spaces — the halves of a split word never both count.
+  static int _countWords(PaginationView pagination) {
+    var words = 0;
+    for (final page in pagination.pages) {
+      for (final line in page.lines) {
+        if (line.kind != LayoutLineKind.content) continue;
+        for (final piece in line.content.split(' ')) {
+          if (piece.trim().isNotEmpty) words++;
+        }
+      }
+    }
+    return words;
   }
 
   void _updateCurrent({bool forceNotify = false}) {

@@ -348,7 +348,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: SizedBox(width: width, child: ElementBar(controller: controller)),
+            body: SizedBox(
+              width: width,
+              child: ElementBar(controller: controller, sceneCount: 1),
+            ),
           ),
         ),
       );
@@ -366,10 +369,10 @@ void main() {
       }
     });
 
-    testWidgets('keeps the block count, which is the shortest thing on it',
+    testWidgets('keeps the counts, which are the shortest thing on it',
         (tester) async {
       await pumpAt(tester, 480);
-      expect(find.text('1 blocks'), findsOneWidget);
+      expect(find.textContaining('1 scene'), findsOneWidget);
     });
   });
 }

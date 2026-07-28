@@ -22,7 +22,7 @@
 >
 > Right now the sidebar, the editor, and the top bar are all effectively the same near-black, so nothing reads as a distinct region. Give the sidebar a slightly different surface value and separate regions with 1px hairline borders, not shadows. Use the accent color for exactly one thing at a time — selected state and primary buttons only.
 
-- [ ] See below 
+- [x] See below 
 ## 4. Top bar
 
 > The top bar is eight identical-weight icons in a row with no grouping, which reads as unfinished. Restructure it:
@@ -44,7 +44,7 @@
 > - Make the search field sticky at the top of the list and give the "Scenes / Characters" control a proper segmented-control treatment (equal-width segments, same corner radius, sliding indicator).
 > - Panel header "Navigator" should be small, uppercase, letter-spaced, `textTertiary` — a section label, not a heading competing with the script.
 
-- [ ] See below 
+- [x] See below 
 ## 6. Status bar
 
 > "2141 blocks" is internal jargon — no writer thinks in blocks. Replace the status bar contents with: current element type (as a proper dropdown control with a border and chevron, not bare text), page count ("Page 12 of 88"), scene count, word count, and a small dot + relative timestamp for save state. Reduce to 11px `textTertiary`, height ~28px, hairline top border.
