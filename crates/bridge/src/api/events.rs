@@ -44,6 +44,15 @@ pub enum CoreEvent {
     /// The journal stopped working for this document. The writer keeps typing;
     /// what they lose is the cover between one autosave and the next.
     JournalBroken { handle: u64 },
+    /// This document's file could not be watched for external changes: no
+    /// inotify, no watch descriptors left, or a filesystem that does not support
+    /// it.
+    ///
+    /// Nothing is unsafe — the save path checks the file it is replacing whether
+    /// the watcher runs or not (`watch::DiskState`) — but nobody will be told
+    /// that another program wrote this script until a save asks, so the writer is
+    /// told that once and the status line keeps saying it.
+    ExternalWatchUnavailable { handle: u64 },
 }
 
 static EVENTS: OnceLock<Mutex<Option<StreamSink<CoreEvent>>>> = OnceLock::new();

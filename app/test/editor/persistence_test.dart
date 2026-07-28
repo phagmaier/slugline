@@ -329,6 +329,67 @@ void main() {
       await tester.pumpAndSettle();
       expect(choice, ExternalChangeChoice.keepMine);
     });
+
+    /// A save the core refused because the file is not the one it last read
+    /// must not put up the generic failure dialog: the core pushed the same
+    /// `FileChangedOnDisk` the watcher would have, so the external-modification
+    /// prompt — the one with the three answers that fit — is already coming.
+    testWidgets('a refusal over an external edit does not stack a second dialog', (
+      tester,
+    ) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..refuseSaveWith = SaveFailure.changedOnDisk;
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+
+      SaveOutcome? outcome;
+      await pumpWith(
+        tester,
+        (context) => TextButton(
+          onPressed: () async {
+            outcome = await saveWithDialogs(context, core);
+          },
+          child: const Text('save'),
+        ),
+      );
+      await tester.tap(find.text('save'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        (outcome as SaveOutcome_Failed).failure,
+        SaveFailure.changedOnDisk,
+        reason: 'and the caller is told, so the status line can say it',
+      );
+    });
+
+    /// "Keep mine leaves the file alone until you next save" — so the core is
+    /// told the writer has seen this version of the file, and the next save is
+    /// allowed to replace it. Without that the save path, which refuses a file
+    /// it does not recognise, would refuse for ever and there would be no way
+    /// to write the text the writer chose to keep.
+    testWidgets('keeping mine tells the core the file has been decided about', (
+      tester,
+    ) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..onDisk = 'Somebody else wrote this.\n'
+        ..refuseSaveWith = SaveFailure.changedOnDisk;
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+      expect((await core.save()) is SaveOutcome_Failed, isTrue);
+
+      expect(await core.acceptDiskState(), isTrue);
+      expect(core.diskStateAccepted, 1);
+      expect(
+        await core.save(),
+        isA<SaveOutcome_Saved>(),
+        reason: 'the decision is what lets the writer keep their text',
+      );
+    });
   });
 
   group('crash recovery', () {
@@ -529,6 +590,95 @@ void main() {
     testWidgets('a script that has never been saved says so', (tester) async {
       final core = FakeCore.single(BlockKind.action, 'x');
       expect(SaveStatus(core: core).label, 'never saved');
+    });
+
+    /// A session the core could not journal — an unwritable state directory, a
+    /// journal name a pending recovery still holds — is unprotected from the
+    /// moment it opens, with nothing typed and nothing to save. The warning
+    /// used to appear only while there was unsaved text, so the writer heard
+    /// about it after the risk started rather than before, and stopped hearing
+    /// about it every time an autosave landed.
+    testWidgets('a session that is not being recorded says so in every state', (
+      tester,
+    ) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..journalUnavailable = true;
+      final status = SaveStatus(core: core);
+
+      expect(status.label, 'saved · recovery record unavailable');
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+      expect(status.label, 'not saved · recovery record unavailable');
+
+      await core.save();
+      expect(
+        status.label,
+        'saved · recovery record unavailable',
+        reason: 'the save covered the last few seconds, not the next ones',
+      );
+
+      final untitled = FakeCore.single(BlockKind.action, 'x')
+        ..journalUnavailable = true;
+      expect(
+        SaveStatus(core: untitled).label,
+        'never saved · recovery record unavailable',
+      );
+    });
+
+    /// The degraded-safety warning. A machine with no inotify left cannot be
+    /// told when another program writes the script, and the loss used to be
+    /// completely invisible: the watcher's construction went into an `.ok()`
+    /// and every `watch` call into a `let _`. Saving is still safe — the core
+    /// checks the file before replacing it — so the wording is about warning
+    /// rather than about danger.
+    testWidgets('a session whose file cannot be watched says so in every state', (
+      tester,
+    ) async {
+      final core = FakeCore.single(BlockKind.action, 'John enters.')
+        ..filePath = '/scripts/heat.fountain'
+        ..watchUnavailable = true;
+      final status = SaveStatus(core: core);
+
+      expect(status.label, 'saved · external changes not watched');
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+      expect(
+        status.label,
+        'not saved · 1 edits recorded · external changes not watched',
+      );
+
+      await core.save();
+      expect(status.label, 'saved · external changes not watched');
+
+      // And it survives a failure, which outranks everything else it says.
+      core.refuseSaveWith = SaveFailure.noSpace;
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'b'),
+      );
+      status.record(await core.save());
+      expect(status.label, contains('disk is full'));
+      expect(status.label, contains('external changes not watched'));
+    });
+
+    /// The refusal the save path answers with when the file is not the one it
+    /// last read. Short, because the modal that is already on its way says the
+    /// rest — and present, because a writer who dismisses that modal without
+    /// deciding must still see that their text is not on disk.
+    testWidgets('a save refused over an external edit says why', (tester) async {
+      final core = FakeCore.single(BlockKind.action, 'x')
+        ..filePath = '/scripts/heat.fountain'
+        ..refuseSaveWith = SaveFailure.changedOnDisk;
+      final status = SaveStatus(core: core);
+      core.apply(
+        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+      );
+
+      status.record(await core.save());
+      expect(status.isError, isTrue);
+      expect(status.label, 'not saved · the file changed on disk');
     });
   });
 

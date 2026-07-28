@@ -31,7 +31,6 @@
 //! construction: the actor thread blocks on its channel and wakes only when
 //! something happens.
 
-use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
@@ -44,7 +43,7 @@ use slugline_render_pdf as render_pdf;
 use slugline_storage::backup::{self, Retention};
 use slugline_storage::journal::{self, Journal};
 use slugline_storage::library::{Library, ScriptEntry};
-use slugline_storage::watch::{FileWatcher, OwnWrites};
+use slugline_storage::watch::{DiskState, DiskVerdict, FileWatcher, OwnWrites};
 use slugline_storage::{atomic, paths::Paths, prefs, Preferences as CorePreferences};
 
 use crate::actor::actor;
@@ -83,6 +82,17 @@ pub enum SaveFailure {
     /// writing it from outside its own session would leave that session's
     /// journal describing bytes the file no longer holds (ADR 0029).
     ScriptIsOpen,
+    /// The file holds bytes this session has never seen: another program wrote
+    /// it, and replacing it now would destroy that edit without anybody having
+    /// decided to.
+    ///
+    /// A question rather than a fault, like [`SaveFailure::NoPath`] and
+    /// [`SaveFailure::AlreadyExists`] — and the question is §Phase 4's
+    /// external-modification prompt, which is already on its way when this comes
+    /// back: the same `FileChangedOnDisk` the watcher would have pushed is
+    /// emitted with it. "Keep mine" answers it by calling
+    /// [`doc_accept_disk_state`], and the next save writes.
+    ChangedOnDisk,
 }
 
 /// What a save did.
@@ -923,6 +933,26 @@ pub async fn doc_autosave(handle: DocumentHandle) -> SaveOutcome {
 /// revision, or — if the save it queued behind already wrote everything —
 /// nothing, and it says [`SaveOutcome::Unchanged`]. That is the coalescing, and
 /// it falls out of replanning rather than needing a queue.
+///
+/// ## Why it checks the file it is about to replace
+///
+/// §Phase 4's external-modification rule used to live entirely in the watcher:
+/// `notify` reported that somebody else had written the file, Dart asked, and
+/// the writer decided. A save asked nothing. That made the watcher the *only*
+/// thing between an autosave and another program's edit — and the watcher is
+/// allowed not to be there at all (`watch::DiskState` has the list). On a
+/// machine out of inotify descriptors the protection was simply absent, and
+/// absent invisibly.
+///
+/// So the check is here as well, at the one instant that matters: between
+/// knowing what is on disk and replacing it. It costs one cached `stat` when
+/// nothing has happened, which is every save of every ordinary session, and it
+/// makes the watcher what it should be — the thing that asks the question early
+/// rather than the only thing that asks it.
+///
+/// A Save As is exempt: its destination was named by the writer through a
+/// chooser that has already asked about replacing what is there, and refusing a
+/// path somebody just typed would be answering a question with the question.
 async fn write_document(
     handle: DocumentHandle,
     save_as: Option<PathBuf>,
@@ -977,6 +1007,7 @@ async fn write_document(
                 own_writes,
                 snapshot: slugline_layout::ScriptSnapshot::from_document(session.document()),
                 generation,
+                disk: session.disk_state(),
             })
         }
     });
@@ -1006,6 +1037,46 @@ async fn write_document(
         return SaveOutcome::Unchanged;
     }
 
+    // Step one and a half, off the actor: is the file still the one we think we
+    // are replacing? See the header. Only for a save of this session's own file
+    // — a Save As is a destination the writer named — and only when we know what
+    // we last left there.
+    if save_as.is_none() {
+        if let Some(expected) = plan.disk {
+            match expected.compare(&path) {
+                // The ordinary answer, and the cheap one: one `stat`.
+                DiskVerdict::Unchanged => {}
+                // Somebody rewrote the file with the bytes it already had. There
+                // is nothing to decide and nothing to say; the record is left
+                // stale on purpose, because the write below is about to replace
+                // it with a fresh one anyway.
+                DiskVerdict::Restamped(_) => {}
+                // Gone, or no longer text. Nothing here to preserve, and a save
+                // refused for a file that cannot be read is one the writer has
+                // no way to un-refuse.
+                DiskVerdict::Unreadable => {}
+                DiskVerdict::Changed => {
+                    abandon_save(handle.id);
+                    // The same event the watcher would have pushed, so that one
+                    // Dart path handles both — and so that the prompt happens
+                    // even on a machine where the watcher never started, which
+                    // is the whole reason this check exists.
+                    emit(CoreEvent::FileChangedOnDisk {
+                        path: path.to_string_lossy().into_owned(),
+                    });
+                    return failed(
+                        SaveFailure::ChangedOnDisk,
+                        &path,
+                        &format!(
+                            "{} was changed by something else since it was last read here",
+                            path.display()
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
     // Step two, off the actor thread: the disk (§2.3).
     //
     // The write is bracketed by the own-write register, so that the watcher can
@@ -1027,6 +1098,10 @@ async fn write_document(
         };
     }
     own_write.finished();
+    // What the file is now, taken here rather than in the actor closure below:
+    // it is a `stat` and a hash of bytes we already hold, and the actor thread
+    // does no disk work (§2.3).
+    let wrote = DiskState::recorded(&path, &plan.text);
 
     // §Phase 4's rolling backups. Written after the file, so a backup only ever
     // exists for a state that reached the disk.
@@ -1071,6 +1146,13 @@ async fn write_document(
             if moved {
                 let id = journal::script_id(&path);
                 rebind(state, handle.id, path.clone(), id);
+            }
+            // After the rebind, which clears what was known about the file this
+            // session has just left. The next save checks against these bytes,
+            // and an edit that landed while they were being written does not
+            // change what is *on disk* — which is the only thing this describes.
+            if let Some(session) = state.session_mut(handle.id) {
+                session.set_disk_state(Some(wrote));
             }
             // The journal starts again from the bytes now on disk — carrying
             // whatever was typed while they were being written, because those
@@ -1178,6 +1260,9 @@ struct Plan {
     snapshot: slugline_layout::ScriptSnapshot,
     /// Monotonic identity of that snapshot within the open session.
     generation: u64,
+    /// What the session last knew the file to hold, read here so the comparison
+    /// against the disk happens off the actor with the save claim held.
+    disk: Option<DiskState>,
 }
 
 struct SavedPagination {
@@ -1395,11 +1480,23 @@ pub async fn doc_external_change(handle: DocumentHandle) -> Option<(bool, bool)>
         external_change_stall::reached(&plan.path);
         let on_disk = std::fs::read_to_string(&plan.path).ok()?;
         let differs = on_disk != plan.snapshot.serialise();
+        // Only when the file turns out to hold exactly what we have. Then there
+        // is nothing to protect and nothing to ask about, and recording it is
+        // what stops a save being refused for ever over a `touch` — the file was
+        // re-stamped, the bytes are ours, and the next save proceeds.
+        //
+        // The other way round is deliberately *not* done here: a file that
+        // differs stays unacknowledged until the writer has decided, because
+        // this call is only ever the beginning of that decision.
+        let seen = (!differs).then(|| DiskState::recorded(&plan.path, &on_disk));
 
         let validation = actor().run(move |state| {
-            let session = state.session(handle.id)?;
+            let session = state.session_mut(handle.id)?;
             if session.path() != Some(plan.path.as_path()) {
                 return None;
+            }
+            if let Some(seen) = seen {
+                session.set_disk_state(Some(seen));
             }
             Some(
                 (session.document_generation() == plan.generation
@@ -1423,6 +1520,75 @@ struct ExternalChangePlan {
     dirty: bool,
     generation: u64,
     snapshot: model::SerialisationSnapshot,
+}
+
+/// "Keep mine": the writer has been shown what is in the file and has chosen
+/// their own version, so the file stops being news.
+///
+/// This is the one door out of a [`SaveFailure::ChangedOnDisk`] that keeps the
+/// writer's text. Without it the refusal would be permanent — every save from
+/// here would find the same unfamiliar bytes and refuse again — and a save the
+/// writer cannot complete is §1.2's P0 arriving by a different road.
+///
+/// It records what the file holds *now* rather than clearing the record: the
+/// next save is authorised to replace the version the writer was shown, and
+/// nothing else. Somebody writing the file again between this and that save is a
+/// new external change and asks again.
+///
+/// Answers `true` when the session came away with a definite answer, including a
+/// file that has since been deleted — there is nothing left there to protect and
+/// the save may recreate it.
+pub async fn doc_accept_disk_state(handle: DocumentHandle) -> bool {
+    // Behind the save claim, like every other statement about what is on disk:
+    // an autosave already past its timer must not slip between the read below
+    // and the record being kept.
+    let Some(save_lock) =
+        actor().run(move |state| state.session(handle.id).map(|session| session.save_lock()))
+    else {
+        return false;
+    };
+    let _claim = save_lock.lock().unwrap_or_else(PoisonError::into_inner);
+
+    let Some(path) = actor().run(move |state| {
+        state
+            .session(handle.id)
+            .and_then(Session::path)
+            .map(Path::to_path_buf)
+    }) else {
+        return false;
+    };
+    let accepted = std::fs::read_to_string(&path)
+        .ok()
+        .map(|contents| DiskState::recorded(&path, &contents));
+
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return false;
+        };
+        // A session that moved while the file was being read has nothing to
+        // accept: what it was shown was about a file it no longer holds.
+        if session.path() != Some(path.as_path()) {
+            return false;
+        }
+        session.set_disk_state(accepted);
+        true
+    })
+}
+
+/// Whether external changes to this document's file are being watched for
+/// (§Phase 4).
+///
+/// `false` means no notification will arrive when another program writes this
+/// script — not that it could be overwritten unnoticed, which the save path
+/// prevents on its own. The status line says so for the whole session, because
+/// the alternative is a writer relying on a prompt that is never coming.
+#[frb(sync)]
+pub fn doc_watch_state(handle: DocumentHandle) -> bool {
+    actor().run(move |state| {
+        state
+            .session(handle.id)
+            .is_none_or(|session| !session.watch_broken())
+    })
 }
 
 /// "Take Theirs": throws away what is in memory and reads the file again.
@@ -1454,6 +1620,9 @@ pub async fn doc_reload(handle: DocumentHandle, only_if_clean: bool) -> bool {
     let Ok(source) = std::fs::read_to_string(&path) else {
         return false;
     };
+    // Taking theirs is agreeing that what is on disk is the file: from here it
+    // is what the next save checks itself against.
+    let disk = DiskState::recorded(&path, &source);
 
     actor().run(move |state| {
         let Some(session) = state.session_mut(handle.id) else {
@@ -1465,6 +1634,7 @@ pub async fn doc_reload(handle: DocumentHandle, only_if_clean: bool) -> bool {
         {
             return false;
         }
+        session.set_disk_state(Some(disk));
         let document = model::Document::parse(&source);
         session.replace_document(if document.blocks().is_empty() {
             model::Document::blank()
@@ -1589,6 +1759,9 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
         };
     }
     own_write.finished();
+    // The restored bytes are the file now, so they are what the next save
+    // checks itself against — exactly as after an ordinary save.
+    let restored = DiskState::recorded(&path, &contents);
 
     let bytes = contents.len().min(u32::MAX as usize) as u32;
     actor().run({
@@ -1597,6 +1770,7 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
             let Some(session) = state.session_mut(handle.id) else {
                 return;
             };
+            session.set_disk_state(Some(restored));
             let document = model::Document::parse(&contents);
             session.replace_document(if document.blocks().is_empty() {
                 model::Document::blank()
@@ -1762,6 +1936,10 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
     let applied = &recovery.patches[..applied];
 
     let script = recovery.header.script.clone();
+    // `journal::verify` has just answered that the file still holds `source`, so
+    // that is what this session knows about it — and a save of the recovered
+    // document, which arrives dirty, is checked against exactly those bytes.
+    let disk = (!untitled).then(|| DiskState::recorded(&script, &source));
     let handle = actor().run({
         let script = script.clone();
         move |state| {
@@ -1770,13 +1948,14 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
                 let id = journal::script_id(&script);
                 if let Some(session) = state.session_mut(handle) {
                     session.set_file(script.clone(), id.clone());
+                    session.set_disk_state(disk);
                 }
                 if let Some(storage) = state.storage_mut() {
                     storage.library.add(&script);
                     storage.library.opened(&id);
                 }
                 hydrate_pins(state, handle, &id);
-                watch(state, &script);
+                watch(state, handle, &script);
                 save_library(state);
             }
             handle
@@ -1825,10 +2004,12 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
 /// Open, replayed, and not being recorded. Says so rather than looking like a
 /// normal session that happens to be losing keystrokes.
 fn degraded(handle: u64, message: &str) -> RecoveryOutcome {
+    // The dialog says this once, and the status line goes on saying it: a
+    // recovered session whose successor journal could not be written is exactly
+    // as unprotected as one whose journal broke mid-session, and `set_journal`
+    // would have cleared that flag rather than set it.
     actor().run(move |state| {
-        if let Some(session) = state.session_mut(handle) {
-            session.set_journal(None);
-        }
+        unprotected(state, handle);
     });
     RecoveryOutcome::Degraded {
         handle: DocumentHandle { id: handle },
@@ -1901,6 +2082,15 @@ fn open_source(path: PathBuf, source: String, blank_if_empty: bool) -> DocumentH
     };
 
     let id = journal::script_id(&path);
+    // What the file holds, established here off the actor and from the same
+    // bytes the document was parsed from. A save from this session checks
+    // against it before it replaces them.
+    //
+    // `blank_if_empty` and the empty-parse fallback above both leave the
+    // document saying something the file does not; that is a difference between
+    // the document and the disk, which is what `dirty` is for, and it changes
+    // nothing about what is *on* the disk.
+    let disk = DiskState::recorded(&path, &source);
     DocumentHandle {
         id: actor().run(move |state| {
             // The check `library_open` already made, made again where it is
@@ -1916,13 +2106,14 @@ fn open_source(path: PathBuf, source: String, blank_if_empty: bool) -> DocumentH
             let handle = state.open(document);
             if let Some(session) = state.session_mut(handle) {
                 session.set_file(path.clone(), id.clone());
+                session.set_disk_state(Some(disk));
             }
             if let Some(storage) = state.storage_mut() {
                 storage.library.add(&path);
                 storage.library.opened(&id);
             }
             hydrate_pins(state, handle, &id);
-            watch(state, &path);
+            watch(state, handle, &path);
             restart_journal(state, handle, &source, Restart::Fresh);
             save_library(state);
             handle
@@ -1954,7 +2145,7 @@ fn rebind(state: &mut AppState, handle: u64, path: PathBuf, id: String) {
         storage.library.opened(&id);
     }
     hydrate_pins(state, handle, &id);
-    watch(state, &path);
+    watch(state, handle, &path);
 }
 
 fn hydrate_pins(state: &mut AppState, handle: u64, id: &str) {
@@ -1985,13 +2176,27 @@ fn hydrate_pins(state: &mut AppState, handle: u64, id: &str) {
 ///
 /// A session with no file still gets one, keyed by its handle: the script a
 /// crash costs most is the one that has never been saved anywhere.
-fn restart_journal(state: &mut AppState, handle: u64, base: &str, restart: Restart) {
+///
+/// Returns whether the session came away journalled. **Every** way of coming
+/// away without one — no state directory, a name held by a pending recovery, a
+/// journal directory that is full or unwritable — leaves the session marked
+/// unprotected and pushes `JournalBroken`, because they all have the same
+/// consequence for the writer: from here, nothing typed is being recorded. The
+/// failures used to be dropped with an `.ok()`, which left the session looking
+/// ordinary while the crash protection it advertises was not there at all.
+///
+/// A failure never fails the *open*. The editor still works, the file still
+/// saves, and the difference is the last few seconds — which is the writer's to
+/// know about, not the core's to decide by refusing to open their script.
+fn restart_journal(state: &mut AppState, handle: u64, base: &str, restart: Restart) -> bool {
     let Some(storage) = state.storage() else {
-        return;
+        // No state directory at all: `init` never found or was never given one,
+        // so there is nowhere to journal into and there never will be.
+        return unprotected(state, handle);
     };
     let directory = storage.paths.journal_dir();
     let Some(session) = state.session(handle) else {
-        return;
+        return false;
     };
     let (id, script) = match session.path() {
         Some(path) => (journal::script_id(path), path.to_path_buf()),
@@ -2004,21 +2209,32 @@ fn restart_journal(state: &mut AppState, handle: u64, base: &str, restart: Resta
         Restart::Fresh => Journal::create(&directory, &id, &script, base),
         Restart::Rebased => Journal::replace(&directory, &id, &script, base),
     };
-    let taken = matches!(&started, Err(error) if error.kind() == io::ErrorKind::AlreadyExists);
-    if let Some(session) = state.session_mut(handle) {
-        if taken {
-            // Not a normal failure and not silent. The journal name belongs to a
-            // crashed session whose records nobody has decided about yet, so this
-            // session gets none rather than erasing them — and the writer is told
-            // the same way a journal that breaks mid-session tells them, because
-            // the consequence is the same one: from here, nothing is being
-            // recorded.
-            session.set_journal_unavailable();
-            emit(CoreEvent::JournalBroken { handle });
-        } else {
-            session.set_journal(started.ok());
+    match started {
+        Ok(journal) => {
+            if let Some(session) = state.session_mut(handle) {
+                session.set_journal(Some(journal));
+            }
+            true
         }
+        // `AlreadyExists` is the one that is not a fault: the journal name
+        // belongs to a crashed session whose records nobody has decided about
+        // yet, so this session gets none rather than erasing them. The rest are
+        // the disk saying no. They are reported identically because the writer's
+        // question is the same either way.
+        Err(_) => unprotected(state, handle),
     }
+}
+
+/// Marks a session as one that is not being recorded, and tells Dart once.
+///
+/// Always returns `false`, so that it reads as the "no journal" answer at the
+/// call sites that return it.
+fn unprotected(state: &mut AppState, handle: u64) -> bool {
+    if let Some(session) = state.session_mut(handle) {
+        session.set_journal_unavailable();
+        emit(CoreEvent::JournalBroken { handle });
+    }
+    false
 }
 
 /// Whether a restart may take over a journal file that already exists.
@@ -2036,10 +2252,29 @@ enum Restart {
     Rebased,
 }
 
-fn watch(state: &mut AppState, path: &Path) {
-    if let Some(storage) = state.storage_mut() {
-        if let Some(watcher) = storage.watcher.as_mut() {
-            let _ = watcher.watch(path);
+/// Starts reporting external changes to a session's file, and says so when it
+/// cannot.
+///
+/// The two ways it cannot are the same one from the writer's side: `notify`
+/// never started (no inotify, no descriptors left, `init` found no storage), or
+/// this particular directory would not take a watch. Both used to be discarded
+/// — the constructor into an `.ok()` and this call into a `let _` — and the
+/// result was an application that went on offering §Phase 4's
+/// external-modification protection in its documentation and not in its
+/// behaviour, with nothing anywhere saying which of the two you had.
+///
+/// It never fails the open, for [`restart_journal`]'s reason: what has been lost
+/// is a warning, and the writer's script is not worth less without it.
+fn watch(state: &mut AppState, handle: u64, path: &Path) {
+    let watching = state
+        .storage_mut()
+        .and_then(|storage| storage.watcher.as_mut())
+        .is_some_and(|watcher| watcher.watch(path).is_ok());
+    if let Some(session) = state.session_mut(handle) {
+        // News only the first time, so a Save As in an unwatchable directory
+        // does not say it again for every save that follows.
+        if session.set_watching(watching) && !watching {
+            emit(CoreEvent::ExternalWatchUnavailable { handle });
         }
     }
 }
@@ -2256,23 +2491,7 @@ mod tests {
             let script = root.join(format!("{label}.fountain"));
             fs::write(&script, source).expect("the script is written");
 
-            let paths = Paths::under(&root);
-            let library = Library::load(&paths.library_index());
-            let storage_state = Storage {
-                paths,
-                prefs: CorePreferences::default(),
-                library,
-                // No inotify: the watcher's own filtering is proved against real
-                // events in `storage::watch`, and a watch descriptor per test
-                // would be a slow way to find that out again. What these tests
-                // watch instead is the register the watcher asks — which is the
-                // half the save path owns.
-                watcher: None,
-                own_writes: OwnWrites::shared(),
-                page_count_jobs: Default::default(),
-                next_page_count_job: 0,
-            };
-            actor().run(move |state| state.set_storage(storage_state));
+            install_storage(&root);
 
             let handle = block_on(library_open(script.to_string_lossy().into_owned()))
                 .expect("the script opens");
@@ -2475,6 +2694,33 @@ mod tests {
             let handle = self.handle;
             actor().run(move |state| state.close(handle.id));
         }
+    }
+
+    /// Points the core's one `Storage` at a temporary root, with nothing open.
+    /// What a fixture does before it opens a script, and what a test that is
+    /// about the state directory itself needs on its own.
+    ///
+    /// The caller holds [`STORAGE`]: this replaces the storage every other test
+    /// is using.
+    fn install_storage(root: &Path) -> Paths {
+        let paths = Paths::under(root);
+        let library = Library::load(&paths.library_index());
+        let storage_state = Storage {
+            paths: paths.clone(),
+            prefs: CorePreferences::default(),
+            library,
+            // No inotify: the watcher's own filtering is proved against real
+            // events in `storage::watch`, and a watch descriptor per test would
+            // be a slow way to find that out again. What these tests watch
+            // instead is the register the watcher asks — which is the half the
+            // save path owns.
+            watcher: None,
+            own_writes: OwnWrites::shared(),
+            page_count_jobs: Default::default(),
+            next_page_count_job: 0,
+        };
+        actor().run(move |state| state.set_storage(storage_state));
+        paths
     }
 
     fn temp_root(label: &str) -> PathBuf {
@@ -2955,6 +3201,210 @@ mod tests {
         actor().run(move |state| state.close(untitled.id));
     }
 
+    // -----------------------------------------------------------------------
+    // A session that could not be journalled says so
+    // -----------------------------------------------------------------------
+
+    /// Makes a journal directory that will not take a new file, the way one
+    /// owned by another user or on a read-only mount does. What
+    /// `Journal::create` gets back is an ordinary `io::Error`, which is also
+    /// what a full disk gives it, so this one arrangement stands for both.
+    ///
+    /// Returns `false` when the question cannot be asked at all: root ignores
+    /// the mode bits, and a test that carried on would pass without proving
+    /// anything.
+    fn refuse_new_journals(directory: &Path) -> bool {
+        fs::create_dir_all(directory).expect("the journal directory is made");
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o555))
+            .expect("the journal directory is made read-only");
+        if fs::write(directory.join("probe"), "").is_ok() {
+            println!(
+                "SKIPPED: a read-only directory still took a file, so this is running \
+                 as root. Run the suite unprivileged to exercise the unwritable-journal \
+                 path."
+            );
+            allow_new_journals(directory);
+            let _ = fs::remove_file(directory.join("probe"));
+            return false;
+        }
+        true
+    }
+
+    fn allow_new_journals(directory: &Path) {
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o755))
+            .expect("the journal directory is writable again");
+    }
+
+    /// Opening a script whose journal cannot be created is the failure that used
+    /// to be completely silent: `Journal::create`'s error went into an `.ok()`,
+    /// the session kept a `None` journal that looked exactly like a working one
+    /// from the outside, and every keystroke from then on was unprotected
+    /// without a word about it anywhere.
+    ///
+    /// The editor still opens — refusing the script would cost the writer more
+    /// than the missing cover does — but it opens saying what it cannot do.
+    #[test]
+    fn opening_a_script_whose_journal_cannot_be_created_says_it_is_not_being_recorded() {
+        let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+        let root = temp_root("journal-unwritable-open");
+        let script = root.join("heat.fountain");
+        fs::write(&script, SCRIPT).expect("the script is written");
+        let paths = install_storage(&root);
+        let journals = paths.journal_dir();
+        if !refuse_new_journals(&journals) {
+            let _ = fs::remove_dir_all(&root);
+            return;
+        }
+
+        let handle = block_on(library_open(script.to_string_lossy().into_owned()))
+            .expect("the script still opens: a journal is cover, not a precondition");
+
+        let (recorded, broken) = doc_journal_state(handle);
+        assert!(
+            broken,
+            "the session must say it is unprotected, not look like an ordinary one"
+        );
+        assert_eq!(recorded, 0, "and it is honest about holding nothing");
+
+        // Typing still works, and does not quietly recover the claim.
+        let block = doc_blocks(handle, 0, 1)[0].id;
+        let _ = doc_apply(
+            handle,
+            EditCommand::ReplaceText {
+                block,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: "Typed anyway. ".to_owned(),
+            },
+            None,
+        );
+        assert_eq!(doc_source(handle), format!("Typed anyway. {SCRIPT}"));
+        assert_eq!(
+            doc_journal_state(handle),
+            (0, true),
+            "one edit later it is still unprotected and still says nothing is recorded"
+        );
+        assert!(
+            !journals
+                .join(format!("{}.log", journal::script_id(&script)))
+                .exists(),
+            "and nothing was written where the journal would have gone"
+        );
+
+        // The file itself is unaffected: this costs crash cover, not saving.
+        let outcome = block_on(doc_save(handle));
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }), "{outcome:?}");
+        assert_eq!(
+            fs::read_to_string(&script).expect("the script reads"),
+            format!("Typed anyway. {SCRIPT}")
+        );
+
+        actor().run(move |state| state.close(handle.id));
+        allow_new_journals(&journals);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The same for a script created rather than opened. `library_create` writes
+    /// the file first and then opens it through the same door, so the answer has
+    /// to be the same one — and a brand new script is the case where an
+    /// unrecorded session costs the most, because there is nothing on disk to
+    /// fall back to but an empty template.
+    #[test]
+    fn creating_a_script_whose_journal_cannot_be_created_says_it_is_not_being_recorded() {
+        let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+        let root = temp_root("journal-unwritable-create");
+        let script = root.join("The Long Road.fountain");
+        let paths = install_storage(&root);
+        let journals = paths.journal_dir();
+        if !refuse_new_journals(&journals) {
+            let _ = fs::remove_dir_all(&root);
+            return;
+        }
+
+        let handle = block_on(library_create(script.to_string_lossy().into_owned()))
+            .expect("the script is still created");
+        assert!(script.is_file(), "the file is on disk");
+        assert_eq!(
+            doc_journal_state(handle),
+            (0, true),
+            "a new script with nowhere to journal is unprotected, and says so"
+        );
+
+        actor().run(move |state| state.close(handle.id));
+        allow_new_journals(&journals);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The journal directory becomes writable again — a disk that was full is
+    /// emptied, permissions are fixed — and the writer reopens the script. That
+    /// session is journalled: "unprotected" is a fact about a session, not a
+    /// state the core gets stuck in.
+    #[test]
+    fn a_session_opened_after_the_journal_directory_recovers_is_protected_again() {
+        let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+        let root = temp_root("journal-unwritable-recovers");
+        let script = root.join("heat.fountain");
+        fs::write(&script, SCRIPT).expect("the script is written");
+        let paths = install_storage(&root);
+        let journals = paths.journal_dir();
+        if !refuse_new_journals(&journals) {
+            let _ = fs::remove_dir_all(&root);
+            return;
+        }
+
+        let unprotected = block_on(library_open(script.to_string_lossy().into_owned()))
+            .expect("the script opens");
+        assert_eq!(doc_journal_state(unprotected), (0, true));
+        actor().run(move |state| state.close(unprotected.id));
+
+        allow_new_journals(&journals);
+        let handle = block_on(library_open(script.to_string_lossy().into_owned()))
+            .expect("the script opens again");
+        assert_eq!(
+            doc_journal_state(handle),
+            (0, false),
+            "a session that got its journal is not carrying the last one's failure"
+        );
+        let block = doc_blocks(handle, 0, 1)[0].id;
+        let _ = doc_apply(
+            handle,
+            EditCommand::ReplaceText {
+                block,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: "Recorded. ".to_owned(),
+            },
+            None,
+        );
+        assert_eq!(
+            doc_journal_state(handle),
+            (1, false),
+            "and it is recording again"
+        );
+
+        actor().run(move |state| state.close(handle.id));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The backstop under all of the above: a session holding no journal reports
+    /// the first edit as the moment it broke, rather than answering the way a
+    /// successful append does. This is what makes it impossible to add a path
+    /// that opens a session, forgets to journal it, and looks fine.
+    #[test]
+    fn an_edit_recorded_by_a_session_with_no_journal_reports_it_once() {
+        let handle = crate::api::doc::doc_new();
+        let (first, second, broken) = actor().run(move |state| {
+            let session = state.session_mut(handle.id).expect("the session");
+            let first = session.record(model::Patch::default());
+            let second = session.record(model::Patch::default());
+            (first, second, session.journal_broken())
+        });
+        assert!(first, "the first edit is where the writer has to be told");
+        assert!(!second, "and told once, not once per keystroke");
+        assert!(broken, "the session stays marked unprotected");
+        actor().run(move |state| state.close(handle.id));
+    }
+
     /// The same check-then-act the audit found beside F5. Both callers of
     /// `open_source` read the file off the actor first, so both can arrive here
     /// having been told the path was free; the second must still get the first
@@ -3047,6 +3497,297 @@ mod tests {
         assert_eq!(
             block_on(doc_external_change(it.handle)),
             Some((false, true))
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // The save path checks the file it is replacing
+    //
+    // Every fixture here runs with `watcher: None` — a core that never got
+    // inotify, which is the machine the audit is about. Nothing below is told
+    // about the external write by an event; the save finds it itself.
+    // -----------------------------------------------------------------------
+
+    /// The finding, in one test: with no watcher running, an autosave used to
+    /// replace another program's edit and say "Saved".
+    #[test]
+    fn a_save_does_not_replace_an_external_edit_without_being_asked() {
+        let it = Fixture::open("disk-conflict");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+
+        atomic::save_atomically(&it.script, "Somebody else wrote this.\n")
+            .expect("their save works");
+        it.types("More of ours. ");
+        let ours = it.in_memory();
+
+        let outcome = block_on(doc_save(it.handle));
+        assert!(
+            matches!(
+                outcome,
+                SaveOutcome::Failed {
+                    failure: SaveFailure::ChangedOnDisk,
+                    ..
+                }
+            ),
+            "the save went ahead over an external edit: {outcome:?}"
+        );
+        assert_eq!(
+            it.on_disk(),
+            "Somebody else wrote this.\n",
+            "their text was overwritten"
+        );
+        assert_eq!(it.in_memory(), ours, "and ours was not disturbed either");
+        assert!(
+            it.dirty(),
+            "the refused save must not look like a clean one"
+        );
+    }
+
+    /// An autosave is refused the same way and for the same reason — it is the
+    /// one that fires without anybody asking for it, which is what made the
+    /// silent overwrite silent.
+    #[test]
+    fn an_autosave_is_refused_over_an_external_edit_too() {
+        let it = Fixture::open("disk-conflict-autosave");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+
+        atomic::save_atomically(&it.script, "Theirs.\n").expect("their save works");
+        it.types("More. ");
+        assert!(matches!(
+            block_on(doc_autosave(it.handle)),
+            SaveOutcome::Failed {
+                failure: SaveFailure::ChangedOnDisk,
+                ..
+            }
+        ));
+        assert_eq!(it.on_disk(), "Theirs.\n");
+        assert!(
+            !it.is_saving(),
+            "a refused save must not leave the session armed for a checkpoint \
+             that is never coming"
+        );
+    }
+
+    /// The way out that keeps the writer's text: they were shown the file, they
+    /// chose their own version, and the next save writes it. Without this the
+    /// refusal above would be permanent, which is §1.2's P0 by another road.
+    #[test]
+    fn keeping_mine_lets_the_next_save_write() {
+        let it = Fixture::open("disk-keep-mine");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        atomic::save_atomically(&it.script, "Theirs.\n").expect("their save works");
+        it.types("More. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Failed {
+                failure: SaveFailure::ChangedOnDisk,
+                ..
+            }
+        ));
+
+        assert!(block_on(doc_accept_disk_state(it.handle)));
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), it.in_memory());
+        assert!(!it.dirty());
+    }
+
+    /// …and only the version they were shown. Somebody writing the file again
+    /// between the decision and the save is a new external change, and asks
+    /// again rather than being covered by the old answer.
+    #[test]
+    fn accepting_covers_the_version_that_was_shown_and_no_later_one() {
+        let it = Fixture::open("disk-accept-once");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        atomic::save_atomically(&it.script, "Theirs.\n").expect("their save works");
+        assert!(block_on(doc_accept_disk_state(it.handle)));
+
+        atomic::save_atomically(&it.script, "Theirs, again.\n").expect("their second save works");
+        it.types("More. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Failed {
+                failure: SaveFailure::ChangedOnDisk,
+                ..
+            }
+        ));
+        assert_eq!(it.on_disk(), "Theirs, again.\n");
+    }
+
+    /// The check must be invisible to a session nobody else is touching. Our own
+    /// saves produce a new inode and new timestamps every time — the same thing
+    /// an external save produces — so a check that could not tell them apart
+    /// would refuse the second save of every session.
+    #[test]
+    fn our_own_saves_are_never_refused_by_it() {
+        let it = Fixture::open("disk-our-own");
+        for round in 0..5 {
+            it.types(&format!("Line {round}. "));
+            let outcome = block_on(doc_save(it.handle));
+            assert!(
+                matches!(outcome, SaveOutcome::Saved { .. }),
+                "save {round} was refused: {outcome:?}"
+            );
+        }
+        assert_eq!(it.on_disk(), it.in_memory());
+    }
+
+    /// A file rewritten with the bytes it already had is not an edit anybody has
+    /// to decide about. `touch`, a `git checkout` restoring the same text, an
+    /// editor writing back what it read: refusing those would be a prompt with
+    /// nothing behind it, and the writer would learn to dismiss the prompt.
+    #[test]
+    fn a_file_rewritten_with_the_same_bytes_is_not_a_conflict() {
+        let it = Fixture::open("disk-restamped");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+
+        let unchanged = it.on_disk();
+        atomic::save_atomically(&it.script, &unchanged).expect("their identical save works");
+        it.types("More. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), it.in_memory());
+    }
+
+    /// A script deleted under the writer is recreated by their next save. There
+    /// is nothing there to preserve, and a refusal here would be one they could
+    /// not resolve — the prompt that follows a refusal reads the file too.
+    #[test]
+    fn a_deleted_file_is_written_again_rather_than_refused() {
+        let it = Fixture::open("disk-deleted");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+
+        fs::remove_file(&it.script).expect("the file goes");
+        it.types("More. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), it.in_memory());
+    }
+
+    /// Save As names its own destination through a chooser that has already
+    /// asked about replacing what is there (ADR 0029), so it is not refused by a
+    /// record about the file the session is leaving.
+    #[test]
+    fn a_save_as_elsewhere_is_not_refused_by_the_old_files_conflict() {
+        let it = Fixture::open("disk-save-as");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        atomic::save_atomically(&it.script, "Theirs.\n").expect("their save works");
+
+        let elsewhere = it.root.join("moved.fountain");
+        assert!(matches!(
+            block_on(doc_save_as(
+                it.handle,
+                elsewhere.to_string_lossy().into_owned(),
+                false,
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(
+            fs::read_to_string(&elsewhere).expect("the new file reads"),
+            it.in_memory()
+        );
+        assert_eq!(
+            it.on_disk(),
+            "Theirs.\n",
+            "and the file it left is still theirs"
+        );
+
+        // And the session now protects its *new* file, not the one it left.
+        it.types("More. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+    }
+
+    /// Taking theirs is a decision about the file, so the save that follows it
+    /// is not refused for the conflict it just resolved.
+    #[test]
+    fn a_reload_settles_the_conflict_it_read() {
+        let it = Fixture::open("disk-reload");
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        atomic::save_atomically(&it.script, "Theirs.\n").expect("their save works");
+
+        assert!(block_on(doc_reload(it.handle, false)));
+        assert_eq!(it.in_memory(), "Theirs.\n");
+        it.types("Ours again. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), it.in_memory());
+    }
+
+    /// The external-change check reads the file to answer, so when it finds the
+    /// file identical to the document it has learned what is there — and a save
+    /// that follows is not refused over a stat nothing came of. Otherwise one
+    /// `touch` of a clean script would refuse every save it ever made again.
+    #[test]
+    fn a_check_that_found_nothing_leaves_no_conflict_behind() {
+        let it = Fixture::open("disk-checked");
+        let same = it.on_disk();
+        atomic::save_atomically(&it.script, &same).expect("their identical save works");
+
+        assert_eq!(
+            block_on(doc_external_change(it.handle)),
+            Some((false, false)),
+            "the file holds what the document holds"
+        );
+        it.types("Ours. ");
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+    }
+
+    /// The degraded-safety half of the finding: a session whose file cannot be
+    /// watched says so, for the whole session, rather than looking like one that
+    /// is being watched. Every fixture is such a session — `install_storage`
+    /// builds a core with no watcher at all.
+    #[test]
+    fn a_session_that_cannot_be_watched_says_so() {
+        let it = Fixture::open("watch-unavailable");
+        assert!(
+            !doc_watch_state(it.handle),
+            "a session with no watcher behind it reported that it was watched"
         );
     }
 

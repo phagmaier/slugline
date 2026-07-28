@@ -356,6 +356,43 @@ void main() {
     },
   );
 
+  // The other half of the same rule, and the one the watcher cannot be trusted
+  // with: what happens if nobody acts on the event. A machine out of inotify
+  // descriptors never gets one at all, and this is what stands there instead —
+  // proved here through the real bridge, real files and a real save.
+  testWidgets('a save does not replace an edit made by something else', (
+    tester,
+  ) async {
+    final file = path('conflict.fountain');
+    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+    final handle = await files.libraryOpen(path: file);
+    final core = RustDocumentCore.of(handle!);
+    addTearDown(core.close);
+    final controller = await openEditor(tester, core);
+
+    controller.insertText('X');
+    await tester.pump();
+    expect(await core.save(), isA<SaveOutcome_Saved>());
+
+    File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
+    controller.insertText('Y');
+    await tester.pump();
+
+    final refused = await core.save();
+    expect(
+      (refused as SaveOutcome_Failed).failure,
+      SaveFailure.changedOnDisk,
+      reason: "the save replaced another program's edit",
+    );
+    expect(File(file).readAsStringSync(), 'EXT. STREET - NIGHT\n');
+    expect(core.dirty, isTrue, reason: 'and the writer keeps their text');
+
+    // "Keep mine": the writer has seen it and chosen their own version.
+    expect(await core.acceptDiskState(), isTrue);
+    expect(await core.save(), isA<SaveOutcome_Saved>());
+    expect(File(file).readAsStringSync(), core.source());
+  });
+
   // F4, end to end and against real inotify: nothing else in this repository can
   // prove it. The watcher event that a save causes is delivered by `notify`'s
   // own thread, minutes of code away from the save that caused it, and the whole

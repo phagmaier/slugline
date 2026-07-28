@@ -379,6 +379,13 @@ class EditorPageState extends State<EditorPage> {
           // is still conflicted, so no queued save may target it yet.
           continue;
         case ExternalChangeChoice.keepMine:
+          // "Keep mine leaves the file alone until you next save", which is
+          // what the dialog promises — so the core is told that this version of
+          // the file has been seen and decided about. Without that the next
+          // save would refuse it (the save path checks the file it replaces,
+          // watcher or no watcher) and the writer would be answering this same
+          // dialog for ever with no way to write their text.
+          await _core.acceptDiskState();
           widget.saveStatus?.refresh();
           return;
         case null:

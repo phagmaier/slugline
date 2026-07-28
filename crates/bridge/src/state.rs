@@ -13,7 +13,7 @@ use slugline_layout::{LayoutEngine, PageConfig, PaginatedScript};
 use slugline_spell::{Dictionary as SpellDictionary, DictionaryInfo, Misspelling};
 use slugline_storage::journal::Journal;
 use slugline_storage::library::Library;
-use slugline_storage::watch::{FileWatcher, OwnWrites};
+use slugline_storage::watch::{DiskState, FileWatcher, OwnWrites};
 use slugline_storage::{Paths, Preferences};
 
 /// §3.4: consecutive text edits to the same block coalesce into one undo
@@ -49,8 +49,13 @@ pub struct Storage {
     pub prefs: Preferences,
     pub library: Library,
     /// `None` when `notify` could not start — a kernel without inotify, or a
-    /// process out of watch descriptors. External-change detection is a
-    /// convenience; nothing else depends on it, so it fails quietly.
+    /// process out of watch descriptors.
+    ///
+    /// Every session opened under such a core is marked
+    /// [`Session::watch_broken`] and says so in the status line, and the save
+    /// path revalidates the file it is replacing whether this is here or not.
+    /// It used to be neither: the failure went into an `.ok()`, and the loss of
+    /// external-change protection was invisible from both sides.
     pub watcher: Option<FileWatcher>,
     /// The files this process has itself written, so that the watcher can tell
     /// the echo of our own save from another program's edit (F4).
@@ -192,6 +197,23 @@ pub struct Session {
     /// Set once the journal has failed to write. We stop trying rather than
     /// failing on every keystroke, and Dart is told once.
     journal_broken: bool,
+    /// What this session last knew its file to hold, for the save path to check
+    /// before it replaces those bytes (ADR 0038).
+    ///
+    /// `None` for a script with no file, and for one whose file has just moved
+    /// and not yet been written — there is nothing to protect until we know what
+    /// is there. Recorded by every path that establishes the file's contents: an
+    /// open, a save, a reload, a restore, and the external-change check when it
+    /// finds the file identical to what we have.
+    disk: Option<DiskState>,
+    /// Set when this session's file could not be watched for external changes.
+    ///
+    /// Unlike [`Session::journal_broken`] this costs no protection — the save
+    /// path revalidates against `disk` whether the watcher runs or not — but it
+    /// does cost the *promptness*: nobody will be told that another program has
+    /// written this script until the next save asks. The writer is told, because
+    /// a feature that silently is not there is one they will rely on.
+    watch_broken: bool,
     /// Where the writer had scrolled to, for session restore. Dart owns the
     /// scroll (§2.1); this is where it parks the number.
     scroll_row: u32,
@@ -254,6 +276,8 @@ impl Session {
             id: None,
             journal: None,
             journal_broken: false,
+            disk: None,
+            watch_broken: false,
             scroll_row: 0,
             save_lock: Arc::new(Mutex::new(())),
             saving: None,
@@ -358,9 +382,43 @@ impl Session {
             self.spelling.project_loaded_for = None;
             self.spelling.project_words.clear();
             self.spelling.bump();
+            // What we knew about the old file says nothing whatever about this
+            // one, and a record that outlived its path would be a save checking
+            // the wrong file's identity — which is worse than no check at all,
+            // because it would pass.
+            self.disk = None;
         }
         self.path = Some(path);
         self.id = Some(id);
+    }
+
+    /// What this session last knew its file to hold.
+    pub fn disk_state(&self) -> Option<DiskState> {
+        self.disk
+    }
+
+    /// Records it, from a path that has just established what is in the file.
+    ///
+    /// `None` says we no longer know — a file we could not read, so the next
+    /// save has nothing to check against and proceeds. `watch::DiskVerdict` says
+    /// why that is the right way round.
+    pub fn set_disk_state(&mut self, disk: Option<DiskState>) {
+        self.disk = disk;
+    }
+
+    /// Whether external changes to this session's file are being watched for.
+    pub fn watch_broken(&self) -> bool {
+        self.watch_broken
+    }
+
+    /// Records that the watch is in place, or that it could not be.
+    ///
+    /// Returns whether this is news, so that the caller pushes one notification
+    /// for a session rather than one per rebind.
+    pub fn set_watching(&mut self, watching: bool) -> bool {
+        let news = self.watch_broken == watching;
+        self.watch_broken = !watching;
+        news
     }
 
     pub fn spelling(&self) -> &SessionSpelling {
@@ -383,12 +441,17 @@ impl Session {
 
     /// Starts a session that will not be journalled, and says so.
     ///
-    /// The one caller is a journal name already held by a crashed session whose
-    /// records nobody has decided about yet. Those records are the only copy of
-    /// their edits, so this session does not take the name — and it reports the
-    /// consequence rather than looking like an ordinary session, because the
-    /// consequence is the one [`Session::journal_broken`] already describes:
-    /// nothing typed here is being recorded.
+    /// The callers are the reasons a session can fail to get a journal at all:
+    /// a name already held by a crashed session whose records nobody has decided
+    /// about yet, a state directory the core never found, and a journal
+    /// directory that will not take the file. The first of those is a refusal
+    /// rather than a fault — those records are the only copy of their edits, so
+    /// this session does not take the name — and the rest are ordinary I/O
+    /// failures, but all three end in one state, so they get one word for it.
+    ///
+    /// It reports the consequence rather than looking like an ordinary session,
+    /// because the consequence is the one [`Session::journal_broken`] already
+    /// describes: nothing typed here is being recorded.
     pub fn set_journal_unavailable(&mut self) {
         self.journal = None;
         self.journal_broken = true;
@@ -419,6 +482,14 @@ impl Session {
     /// never fails the edit: the edit is in the document, and refusing it
     /// afterwards would be losing text to protect against losing text.
     ///
+    /// A session with **no** journal counts as broken here, and says so the
+    /// first time an edit reaches it. It used to answer the way a successful
+    /// append does, which made "this edit is on disk" and "there is nowhere to
+    /// put it" the same value — so a session that never got a journal typed on
+    /// in silence. Every path that opens a session now marks it unprotected
+    /// itself (`restart_journal` in `api::files`); this is the backstop that
+    /// makes the invariant impossible to break by adding a path that forgets.
+    ///
     /// Takes the patch by value: the only other thing that wants it is
     /// [`Session::saving`], and moving it there costs nothing where cloning it
     /// on every keystroke would.
@@ -427,7 +498,8 @@ impl Session {
             return false;
         }
         let Some(journal) = self.journal.as_mut() else {
-            return false;
+            self.journal_broken = true;
+            return true;
         };
         if journal.append(&patch).is_err() {
             self.journal_broken = true;

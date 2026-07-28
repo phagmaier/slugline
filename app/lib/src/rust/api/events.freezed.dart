@@ -55,7 +55,7 @@ extension CoreEventPatterns on CoreEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CoreEvent_SaveStateChanged value)?  saveStateChanged,TResult Function( CoreEvent_AutosaveFailed value)?  autosaveFailed,TResult Function( CoreEvent_FileChangedOnDisk value)?  fileChangedOnDisk,TResult Function( CoreEvent_BackupWritten value)?  backupWritten,TResult Function( CoreEvent_EntityIndexUpdated value)?  entityIndexUpdated,TResult Function( CoreEvent_JournalBroken value)?  journalBroken,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CoreEvent_SaveStateChanged value)?  saveStateChanged,TResult Function( CoreEvent_AutosaveFailed value)?  autosaveFailed,TResult Function( CoreEvent_FileChangedOnDisk value)?  fileChangedOnDisk,TResult Function( CoreEvent_BackupWritten value)?  backupWritten,TResult Function( CoreEvent_EntityIndexUpdated value)?  entityIndexUpdated,TResult Function( CoreEvent_JournalBroken value)?  journalBroken,TResult Function( CoreEvent_ExternalWatchUnavailable value)?  externalWatchUnavailable,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case CoreEvent_SaveStateChanged() when saveStateChanged != null:
@@ -64,7 +64,8 @@ return autosaveFailed(_that);case CoreEvent_FileChangedOnDisk() when fileChanged
 return fileChangedOnDisk(_that);case CoreEvent_BackupWritten() when backupWritten != null:
 return backupWritten(_that);case CoreEvent_EntityIndexUpdated() when entityIndexUpdated != null:
 return entityIndexUpdated(_that);case CoreEvent_JournalBroken() when journalBroken != null:
-return journalBroken(_that);case _:
+return journalBroken(_that);case CoreEvent_ExternalWatchUnavailable() when externalWatchUnavailable != null:
+return externalWatchUnavailable(_that);case _:
   return orElse();
 
 }
@@ -82,7 +83,7 @@ return journalBroken(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CoreEvent_SaveStateChanged value)  saveStateChanged,required TResult Function( CoreEvent_AutosaveFailed value)  autosaveFailed,required TResult Function( CoreEvent_FileChangedOnDisk value)  fileChangedOnDisk,required TResult Function( CoreEvent_BackupWritten value)  backupWritten,required TResult Function( CoreEvent_EntityIndexUpdated value)  entityIndexUpdated,required TResult Function( CoreEvent_JournalBroken value)  journalBroken,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CoreEvent_SaveStateChanged value)  saveStateChanged,required TResult Function( CoreEvent_AutosaveFailed value)  autosaveFailed,required TResult Function( CoreEvent_FileChangedOnDisk value)  fileChangedOnDisk,required TResult Function( CoreEvent_BackupWritten value)  backupWritten,required TResult Function( CoreEvent_EntityIndexUpdated value)  entityIndexUpdated,required TResult Function( CoreEvent_JournalBroken value)  journalBroken,required TResult Function( CoreEvent_ExternalWatchUnavailable value)  externalWatchUnavailable,}){
 final _that = this;
 switch (_that) {
 case CoreEvent_SaveStateChanged():
@@ -91,7 +92,8 @@ return autosaveFailed(_that);case CoreEvent_FileChangedOnDisk():
 return fileChangedOnDisk(_that);case CoreEvent_BackupWritten():
 return backupWritten(_that);case CoreEvent_EntityIndexUpdated():
 return entityIndexUpdated(_that);case CoreEvent_JournalBroken():
-return journalBroken(_that);}
+return journalBroken(_that);case CoreEvent_ExternalWatchUnavailable():
+return externalWatchUnavailable(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -105,7 +107,7 @@ return journalBroken(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CoreEvent_SaveStateChanged value)?  saveStateChanged,TResult? Function( CoreEvent_AutosaveFailed value)?  autosaveFailed,TResult? Function( CoreEvent_FileChangedOnDisk value)?  fileChangedOnDisk,TResult? Function( CoreEvent_BackupWritten value)?  backupWritten,TResult? Function( CoreEvent_EntityIndexUpdated value)?  entityIndexUpdated,TResult? Function( CoreEvent_JournalBroken value)?  journalBroken,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CoreEvent_SaveStateChanged value)?  saveStateChanged,TResult? Function( CoreEvent_AutosaveFailed value)?  autosaveFailed,TResult? Function( CoreEvent_FileChangedOnDisk value)?  fileChangedOnDisk,TResult? Function( CoreEvent_BackupWritten value)?  backupWritten,TResult? Function( CoreEvent_EntityIndexUpdated value)?  entityIndexUpdated,TResult? Function( CoreEvent_JournalBroken value)?  journalBroken,TResult? Function( CoreEvent_ExternalWatchUnavailable value)?  externalWatchUnavailable,}){
 final _that = this;
 switch (_that) {
 case CoreEvent_SaveStateChanged() when saveStateChanged != null:
@@ -114,7 +116,8 @@ return autosaveFailed(_that);case CoreEvent_FileChangedOnDisk() when fileChanged
 return fileChangedOnDisk(_that);case CoreEvent_BackupWritten() when backupWritten != null:
 return backupWritten(_that);case CoreEvent_EntityIndexUpdated() when entityIndexUpdated != null:
 return entityIndexUpdated(_that);case CoreEvent_JournalBroken() when journalBroken != null:
-return journalBroken(_that);case _:
+return journalBroken(_that);case CoreEvent_ExternalWatchUnavailable() when externalWatchUnavailable != null:
+return externalWatchUnavailable(_that);case _:
   return null;
 
 }
@@ -131,7 +134,7 @@ return journalBroken(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int handle,  bool dirty)?  saveStateChanged,TResult Function( int handle,  SaveFailure failure,  String message)?  autosaveFailed,TResult Function( String path)?  fileChangedOnDisk,TResult Function( int handle,  String path)?  backupWritten,TResult Function( int handle)?  entityIndexUpdated,TResult Function( int handle)?  journalBroken,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int handle,  bool dirty)?  saveStateChanged,TResult Function( int handle,  SaveFailure failure,  String message)?  autosaveFailed,TResult Function( String path)?  fileChangedOnDisk,TResult Function( int handle,  String path)?  backupWritten,TResult Function( int handle)?  entityIndexUpdated,TResult Function( int handle)?  journalBroken,TResult Function( int handle)?  externalWatchUnavailable,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case CoreEvent_SaveStateChanged() when saveStateChanged != null:
 return saveStateChanged(_that.handle,_that.dirty);case CoreEvent_AutosaveFailed() when autosaveFailed != null:
@@ -139,7 +142,8 @@ return autosaveFailed(_that.handle,_that.failure,_that.message);case CoreEvent_F
 return fileChangedOnDisk(_that.path);case CoreEvent_BackupWritten() when backupWritten != null:
 return backupWritten(_that.handle,_that.path);case CoreEvent_EntityIndexUpdated() when entityIndexUpdated != null:
 return entityIndexUpdated(_that.handle);case CoreEvent_JournalBroken() when journalBroken != null:
-return journalBroken(_that.handle);case _:
+return journalBroken(_that.handle);case CoreEvent_ExternalWatchUnavailable() when externalWatchUnavailable != null:
+return externalWatchUnavailable(_that.handle);case _:
   return orElse();
 
 }
@@ -157,7 +161,7 @@ return journalBroken(_that.handle);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int handle,  bool dirty)  saveStateChanged,required TResult Function( int handle,  SaveFailure failure,  String message)  autosaveFailed,required TResult Function( String path)  fileChangedOnDisk,required TResult Function( int handle,  String path)  backupWritten,required TResult Function( int handle)  entityIndexUpdated,required TResult Function( int handle)  journalBroken,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int handle,  bool dirty)  saveStateChanged,required TResult Function( int handle,  SaveFailure failure,  String message)  autosaveFailed,required TResult Function( String path)  fileChangedOnDisk,required TResult Function( int handle,  String path)  backupWritten,required TResult Function( int handle)  entityIndexUpdated,required TResult Function( int handle)  journalBroken,required TResult Function( int handle)  externalWatchUnavailable,}) {final _that = this;
 switch (_that) {
 case CoreEvent_SaveStateChanged():
 return saveStateChanged(_that.handle,_that.dirty);case CoreEvent_AutosaveFailed():
@@ -165,7 +169,8 @@ return autosaveFailed(_that.handle,_that.failure,_that.message);case CoreEvent_F
 return fileChangedOnDisk(_that.path);case CoreEvent_BackupWritten():
 return backupWritten(_that.handle,_that.path);case CoreEvent_EntityIndexUpdated():
 return entityIndexUpdated(_that.handle);case CoreEvent_JournalBroken():
-return journalBroken(_that.handle);}
+return journalBroken(_that.handle);case CoreEvent_ExternalWatchUnavailable():
+return externalWatchUnavailable(_that.handle);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -179,7 +184,7 @@ return journalBroken(_that.handle);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int handle,  bool dirty)?  saveStateChanged,TResult? Function( int handle,  SaveFailure failure,  String message)?  autosaveFailed,TResult? Function( String path)?  fileChangedOnDisk,TResult? Function( int handle,  String path)?  backupWritten,TResult? Function( int handle)?  entityIndexUpdated,TResult? Function( int handle)?  journalBroken,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int handle,  bool dirty)?  saveStateChanged,TResult? Function( int handle,  SaveFailure failure,  String message)?  autosaveFailed,TResult? Function( String path)?  fileChangedOnDisk,TResult? Function( int handle,  String path)?  backupWritten,TResult? Function( int handle)?  entityIndexUpdated,TResult? Function( int handle)?  journalBroken,TResult? Function( int handle)?  externalWatchUnavailable,}) {final _that = this;
 switch (_that) {
 case CoreEvent_SaveStateChanged() when saveStateChanged != null:
 return saveStateChanged(_that.handle,_that.dirty);case CoreEvent_AutosaveFailed() when autosaveFailed != null:
@@ -187,7 +192,8 @@ return autosaveFailed(_that.handle,_that.failure,_that.message);case CoreEvent_F
 return fileChangedOnDisk(_that.path);case CoreEvent_BackupWritten() when backupWritten != null:
 return backupWritten(_that.handle,_that.path);case CoreEvent_EntityIndexUpdated() when entityIndexUpdated != null:
 return entityIndexUpdated(_that.handle);case CoreEvent_JournalBroken() when journalBroken != null:
-return journalBroken(_that.handle);case _:
+return journalBroken(_that.handle);case CoreEvent_ExternalWatchUnavailable() when externalWatchUnavailable != null:
+return externalWatchUnavailable(_that.handle);case _:
   return null;
 
 }
@@ -591,6 +597,72 @@ class _$CoreEvent_JournalBrokenCopyWithImpl<$Res>
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? handle = null,}) {
   return _then(CoreEvent_JournalBroken(
+handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class CoreEvent_ExternalWatchUnavailable extends CoreEvent {
+  const CoreEvent_ExternalWatchUnavailable({required this.handle}): super._();
+  
+
+ final  int handle;
+
+/// Create a copy of CoreEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CoreEvent_ExternalWatchUnavailableCopyWith<CoreEvent_ExternalWatchUnavailable> get copyWith => _$CoreEvent_ExternalWatchUnavailableCopyWithImpl<CoreEvent_ExternalWatchUnavailable>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CoreEvent_ExternalWatchUnavailable&&(identical(other.handle, handle) || other.handle == handle));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,handle);
+
+@override
+String toString() {
+  return 'CoreEvent.externalWatchUnavailable(handle: $handle)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CoreEvent_ExternalWatchUnavailableCopyWith<$Res> implements $CoreEventCopyWith<$Res> {
+  factory $CoreEvent_ExternalWatchUnavailableCopyWith(CoreEvent_ExternalWatchUnavailable value, $Res Function(CoreEvent_ExternalWatchUnavailable) _then) = _$CoreEvent_ExternalWatchUnavailableCopyWithImpl;
+@useResult
+$Res call({
+ int handle
+});
+
+
+
+
+}
+/// @nodoc
+class _$CoreEvent_ExternalWatchUnavailableCopyWithImpl<$Res>
+    implements $CoreEvent_ExternalWatchUnavailableCopyWith<$Res> {
+  _$CoreEvent_ExternalWatchUnavailableCopyWithImpl(this._self, this._then);
+
+  final CoreEvent_ExternalWatchUnavailable _self;
+  final $Res Function(CoreEvent_ExternalWatchUnavailable) _then;
+
+/// Create a copy of CoreEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? handle = null,}) {
+  return _then(CoreEvent_ExternalWatchUnavailable(
 handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
 as int,
   ));

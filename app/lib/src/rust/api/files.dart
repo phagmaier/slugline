@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `load_preferences`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `load_preferences`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `unprotected`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `Restart`, `SavedPagination`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -251,6 +251,35 @@ Future<SaveOutcome> docAutosave({required DocumentHandle handle}) =>
 /// it is not — and the two facts that decision needs are exactly the two here.
 Future<(bool, bool)?> docExternalChange({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiFilesDocExternalChange(handle: handle);
+
+/// "Keep mine": the writer has been shown what is in the file and has chosen
+/// their own version, so the file stops being news.
+///
+/// This is the one door out of a [`SaveFailure::ChangedOnDisk`] that keeps the
+/// writer's text. Without it the refusal would be permanent — every save from
+/// here would find the same unfamiliar bytes and refuse again — and a save the
+/// writer cannot complete is §1.2's P0 arriving by a different road.
+///
+/// It records what the file holds *now* rather than clearing the record: the
+/// next save is authorised to replace the version the writer was shown, and
+/// nothing else. Somebody writing the file again between this and that save is a
+/// new external change and asks again.
+///
+/// Answers `true` when the session came away with a definite answer, including a
+/// file that has since been deleted — there is nothing left there to protect and
+/// the save may recreate it.
+Future<bool> docAcceptDiskState({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiFilesDocAcceptDiskState(handle: handle);
+
+/// Whether external changes to this document's file are being watched for
+/// (§Phase 4).
+///
+/// `false` means no notification will arrive when another program writes this
+/// script — not that it could be overwritten unnoticed, which the save path
+/// prevents on its own. The status line says so for the whole session, because
+/// the alternative is a writer relying on a prompt that is never coming.
+bool docWatchState({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiFilesDocWatchState(handle: handle);
 
 /// "Take Theirs": throws away what is in memory and reads the file again.
 ///
@@ -555,6 +584,18 @@ enum SaveFailure {
   /// writing it from outside its own session would leave that session's
   /// journal describing bytes the file no longer holds (ADR 0029).
   scriptIsOpen,
+
+  /// The file holds bytes this session has never seen: another program wrote
+  /// it, and replacing it now would destroy that edit without anybody having
+  /// decided to.
+  ///
+  /// A question rather than a fault, like [`SaveFailure::NoPath`] and
+  /// [`SaveFailure::AlreadyExists`] — and the question is §Phase 4's
+  /// external-modification prompt, which is already on its way when this comes
+  /// back: the same `FileChangedOnDisk` the watcher would have pushed is
+  /// emitted with it. "Keep mine" answers it by calling
+  /// [`doc_accept_disk_state`], and the next save writes.
+  changedOnDisk,
 }
 
 @freezed

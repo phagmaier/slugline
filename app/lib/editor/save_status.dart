@@ -9,9 +9,12 @@ import 'package:slugline/core/document_core.dart';
 /// from Rust — and threading three callbacks through the widget tree to reach
 /// one line of text is how a status line ends up lying.
 ///
-/// It says one of five things, and the order below is the order they take
+/// It says one of six things, and the order below is the order they take
 /// precedence in. A failure outranks everything: a writer whose disk is full
-/// must not see "saved" because an earlier save succeeded.
+/// must not see "saved" because an earlier save succeeded. A session that is not
+/// being recorded says so in every one of the remaining states, because that is
+/// a fact about the session rather than about the last write — and so, for the
+/// same reason, does one whose file nobody is watching.
 class SaveStatus extends ChangeNotifier {
   SaveStatus({required this.core});
 
@@ -25,11 +28,37 @@ class SaveStatus extends ChangeNotifier {
   bool get isError => _failure != null;
 
   String get label {
+    final state = _state;
+    // Said in every state including a failure, because it is a fact about the
+    // session rather than about the last write: on a machine with no inotify
+    // left, nothing will interrupt the writer when another program edits their
+    // script — the next save will refuse to overwrite it, which is protection,
+    // but it is not a warning, and a writer who expects to be told will not
+    // check.
+    if (!core.watched) return '$state · external changes not watched';
+    return state;
+  }
+
+  String get _state {
     if (_failure case final message?) return message;
     if (_saving) return 'saving…';
+    final (edits, broken) = core.journalState;
+    // Said whether or not there is anything unsaved, because what it describes
+    // is the *next* few seconds rather than the last ones: a session with no
+    // crash record is one an autosave has only just made safe, and it goes on
+    // being that after every save. A session that never got a journal at all —
+    // an unwritable state directory, a name a pending recovery still holds —
+    // is in exactly this state from the moment it opens, and used to say
+    // nothing at all until something was typed.
+    if (broken) {
+      final state = switch ((core.dirty, core.path)) {
+        (true, _) => 'not saved',
+        (false, null) => 'never saved',
+        (false, _) => 'saved',
+      };
+      return '$state · recovery record unavailable';
+    }
     if (core.dirty) {
-      final (edits, broken) = core.journalState;
-      if (broken) return 'not saved · recovery record unavailable';
       if (core.path == null) return 'never saved';
       // The journal count is the honest answer to "what happens if this dies
       // right now": those edits are on disk, in a file recovery can read.
@@ -83,6 +112,10 @@ class SaveStatus extends ChangeNotifier {
         // said nothing would be worse than one that says something short.
         SaveFailure.alreadyExists => 'there is a file there already',
         SaveFailure.scriptIsOpen => 'that script is open here',
+        // The prompt that is already on its way says the rest of it. This line
+        // is what the writer sees behind it, and what they go on seeing if they
+        // dismiss it without deciding.
+        SaveFailure.changedOnDisk => 'the file changed on disk',
         SaveFailure.io => 'the write failed',
       };
 }

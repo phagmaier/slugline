@@ -27,8 +27,20 @@
 //! and §Phase 4 makes the decision turn entirely on that.
 //!
 //! It does decide one thing: whether the change was **ours**. See [`OwnWrites`].
+//!
+//! ## And what it is not allowed to be
+//!
+//! Everything above can fail to run at all, and on somebody's machine it does:
+//! a kernel without inotify, a filesystem it cannot watch, a process that has
+//! reached `max_user_watches`. The paragraph above about NFS says the same thing
+//! from the other side. So this is a **prompt** mechanism, not a correctness
+//! boundary — the thing that makes overwriting somebody else's edits impossible
+//! is [`DiskState`], which the save path consults on the way to the disk whether
+//! there is a watcher or not.
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -219,7 +231,7 @@ struct OwnWrite {
     generation: u64,
     /// The file as our write left it. `None` while the write is still at the
     /// disk.
-    wrote: Option<Fingerprint>,
+    wrote: Option<FileFingerprint>,
 }
 
 /// Enough of a file's identity to say "this is still exactly the file we wrote,
@@ -229,8 +241,12 @@ struct OwnWrite {
 /// editing it, so anybody else's save changes them; the length and the
 /// modification time because an in-place write does not. Linux timestamps are
 /// nanosecond-resolution, so two distinct writes cannot share one.
+///
+/// It answers "has anything happened here", never "are the bytes different" — a
+/// file rewritten with the bytes it already had has a new fingerprint and the
+/// same contents. That is why [`DiskState`] carries a second half.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Fingerprint {
+pub struct FileFingerprint {
     device: u64,
     inode: u64,
     len: u64,
@@ -238,13 +254,13 @@ struct Fingerprint {
     modified_nanos: i64,
 }
 
-impl Fingerprint {
+impl FileFingerprint {
     /// One `stat`. This runs on `notify`'s thread, where blocking is forbidden,
     /// and only for a path this process has itself just written — so the inode
     /// is in the kernel's cache and this is not a disk read.
-    fn of(path: &Path) -> Option<Fingerprint> {
+    pub fn of(path: &Path) -> Option<FileFingerprint> {
         let metadata = std::fs::metadata(path).ok()?;
-        Some(Fingerprint {
+        Some(FileFingerprint {
             device: metadata.dev(),
             inode: metadata.ino(),
             len: metadata.len(),
@@ -252,6 +268,109 @@ impl Fingerprint {
             modified_nanos: metadata.mtime_nsec(),
         })
     }
+}
+
+/// What a file held when this application last read or wrote it — the record a
+/// save checks before it replaces those bytes with something else.
+///
+/// ## Why the save path needs its own answer
+///
+/// The watcher above is how the writer finds out *promptly* that another program
+/// has been in their script, and §Phase 4's whole external-modification rule
+/// hangs off it. But it is a convenience that a machine is entitled not to
+/// provide (see the module comment), and until this existed a save path with no
+/// watcher behind it would replace an external edit without a word — the
+/// protection would be missing exactly where nobody could see it was missing.
+///
+/// So the check moved to where the overwrite happens. A save compares this
+/// against the file it is about to replace, and a file that is not what we left
+/// there is not overwritten until somebody has decided about it. The watcher
+/// becomes what it should always have been: the thing that asks the question
+/// early, rather than the only thing that asks it.
+///
+/// ## The two halves
+///
+/// The `stat` is the cheap half and is asked first: unchanged means the file has
+/// not been touched at all since we left it, which is the answer on every save
+/// of every session where nothing is wrong, and it costs one cached `stat`.
+///
+/// The content hash is the half that decides, and it is only ever consulted when
+/// the `stat` says something happened. `touch`, a `git checkout` that restored
+/// the same text, another editor writing back what it read: all of those change
+/// a file's identity without changing a screenplay, and prompting about them
+/// would train the writer to dismiss the prompt that matters.
+///
+/// A 64-bit hash rather than the bytes themselves, because the alternative is
+/// holding a second copy of every open script in memory for a comparison that
+/// happens once per save. It is never persisted and never crosses a process
+/// boundary, so it needs no stability beyond this run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct DiskState {
+    /// `None` when the file could not be stat'ed when the record was made —
+    /// which forces the content read below rather than skipping the check.
+    stat: Option<FileFingerprint>,
+    contents: u64,
+}
+
+/// What [`DiskState::compare`] found at the path.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DiskVerdict {
+    /// Nothing has happened to the file since we last wrote or read it.
+    Unchanged,
+    /// Something rewrote it with the bytes it already had. There is nothing to
+    /// decide, and the refreshed record is here so the next save can go back to
+    /// answering with one `stat`.
+    Restamped(DiskState),
+    /// The file holds bytes we have never seen. A save must not replace them
+    /// until somebody has been asked.
+    Changed,
+    /// The file cannot be read now: deleted, or replaced by something that is
+    /// not text.
+    ///
+    /// **Not** a refusal. A save refused here would be a save refused with no
+    /// way for the writer to resolve it — the prompt that follows a refusal
+    /// reads the file too — and the certain cost of that is the writer's text
+    /// staying in memory, against a suspicion about bytes that are already gone.
+    Unreadable,
+}
+
+impl DiskState {
+    /// What we know about `path` having just written or read `contents` there.
+    ///
+    /// The `stat` happens after the bytes, deliberately: it describes the file
+    /// as it is now, not as the write intended it.
+    pub fn recorded(path: &Path, contents: &str) -> DiskState {
+        DiskState {
+            stat: FileFingerprint::of(path),
+            contents: hash_of(contents),
+        }
+    }
+
+    /// Whether `path` still holds what this record says it does.
+    ///
+    /// Off the actor thread: the second branch reads the whole file.
+    pub fn compare(&self, path: &Path) -> DiskVerdict {
+        let now = FileFingerprint::of(path);
+        if now.is_some() && now == self.stat {
+            return DiskVerdict::Unchanged;
+        }
+        let Ok(contents) = std::fs::read_to_string(path) else {
+            return DiskVerdict::Unreadable;
+        };
+        if hash_of(&contents) != self.contents {
+            return DiskVerdict::Changed;
+        }
+        DiskVerdict::Restamped(DiskState {
+            stat: now,
+            contents: self.contents,
+        })
+    }
+}
+
+fn hash_of(contents: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    contents.as_bytes().hash(&mut hasher);
+    hasher.finish()
 }
 
 impl OwnWrites {
@@ -286,7 +405,7 @@ impl OwnWrites {
         if write.generation != generation {
             return;
         }
-        match Fingerprint::of(path) {
+        match FileFingerprint::of(path) {
             Some(fingerprint) => write.wrote = Some(fingerprint),
             None => {
                 writes.remove(path);
@@ -323,7 +442,7 @@ impl OwnWrites {
             // whatever this event is, the file is about to be ours.
             return true;
         };
-        if Fingerprint::of(path) == Some(ours) {
+        if FileFingerprint::of(path) == Some(ours) {
             return true;
         }
         // Somebody else has written since we did. The record describes a version
@@ -725,6 +844,85 @@ mod tests {
         assert_eq!(watcher.directories[dir.path()], 1);
         watcher.unwatch(&two).unwrap();
         assert!(watcher.directories.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // The half that does not depend on inotify running at all
+    // -----------------------------------------------------------------------
+
+    /// The ordinary answer, and the one every save of every quiet session gets:
+    /// one `stat`, and the file is the one we left.
+    #[test]
+    fn a_file_nobody_touched_is_unchanged() {
+        let dir = TempDir::new("disk-quiet");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "ours\n").unwrap();
+
+        let known = DiskState::recorded(&script, "ours\n");
+        assert_eq!(known.compare(&script), DiskVerdict::Unchanged);
+    }
+
+    /// The one that matters: another program's save, seen by a save path with no
+    /// watcher behind it at all.
+    #[test]
+    fn somebody_elses_bytes_are_a_change() {
+        let dir = TempDir::new("disk-theirs");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "ours\n").unwrap();
+        let known = DiskState::recorded(&script, "ours\n");
+
+        crate::atomic::save_atomically(&script, "theirs\n").unwrap();
+        assert_eq!(known.compare(&script), DiskVerdict::Changed);
+    }
+
+    /// `touch`, a `git checkout` that restored the same text, another editor
+    /// writing back what it read. The file's identity is new and the screenplay
+    /// is not, and prompting about it would train the writer to dismiss the
+    /// prompt that matters.
+    #[test]
+    fn the_same_bytes_written_again_are_not_a_change() {
+        let dir = TempDir::new("disk-restamp");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "ours\n").unwrap();
+        let known = DiskState::recorded(&script, "ours\n");
+
+        // Through the atomic sequence, so the inode and the timestamps are all
+        // new — everything the cheap half of the check looks at.
+        crate::atomic::save_atomically(&script, "ours\n").unwrap();
+        let DiskVerdict::Restamped(refreshed) = known.compare(&script) else {
+            panic!("identical bytes were reported as somebody else's edit");
+        };
+        assert_eq!(
+            refreshed.compare(&script),
+            DiskVerdict::Unchanged,
+            "the refreshed record must cost one stat next time, not another read"
+        );
+    }
+
+    /// A file that is gone cannot be compared — and must not be a refusal, or a
+    /// writer whose script was deleted under them could not save it anywhere.
+    #[test]
+    fn a_file_that_is_gone_is_unreadable_rather_than_changed() {
+        let dir = TempDir::new("disk-deleted");
+        let script = dir.path().join("heat.fountain");
+        std::fs::write(&script, "ours\n").unwrap();
+        let known = DiskState::recorded(&script, "ours\n");
+
+        std::fs::remove_file(&script).unwrap();
+        assert_eq!(known.compare(&script), DiskVerdict::Unreadable);
+    }
+
+    /// A record made when there was nothing there still knows what it expects,
+    /// so the file appearing underneath us is a change rather than a `stat` that
+    /// happens to match.
+    #[test]
+    fn a_record_of_a_file_that_did_not_exist_still_compares() {
+        let dir = TempDir::new("disk-absent");
+        let script = dir.path().join("heat.fountain");
+        let known = DiskState::recorded(&script, "ours\n");
+
+        std::fs::write(&script, "theirs\n").unwrap();
+        assert_eq!(known.compare(&script), DiskVerdict::Changed);
     }
 
     #[test]

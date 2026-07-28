@@ -65,4 +65,15 @@ sealed class CoreEvent with _$CoreEvent {
   /// what they lose is the cover between one autosave and the next.
   const factory CoreEvent.journalBroken({required int handle}) =
       CoreEvent_JournalBroken;
+
+  /// This document's file could not be watched for external changes: no
+  /// inotify, no watch descriptors left, or a filesystem that does not support
+  /// it.
+  ///
+  /// Nothing is unsafe — the save path checks the file it is replacing whether
+  /// the watcher runs or not (`watch::DiskState`) — but nobody will be told
+  /// that another program wrote this script until a save asks, so the writer is
+  /// told that once and the status line keeps saying it.
+  const factory CoreEvent.externalWatchUnavailable({required int handle}) =
+      CoreEvent_ExternalWatchUnavailable;
 }

@@ -222,6 +222,16 @@ abstract class DocumentCore {
   /// broken)`. The status bar shows both.
   (int, bool) get journalState;
 
+  /// Whether another program writing this file would be noticed *promptly*.
+  ///
+  /// False on a machine where the watch could not be placed — no inotify, no
+  /// watch descriptors left, a filesystem that cannot be watched. It is not a
+  /// statement about safety: a save checks the file it is replacing either way,
+  /// and refuses one it does not recognise. It is a statement about warning, and
+  /// the status bar says it for the whole session because a writer who thinks
+  /// they will be told will not go looking.
+  bool get watched;
+
   /// Writes the file. Never throws: a failure comes back as
   /// [files.SaveOutcome_Failed] with the reason, because §Phase 4 wants
   /// read-only, full-disk and permission-denied each handled with their own
@@ -262,6 +272,16 @@ abstract class DocumentCore {
   /// reads the file again. [onlyIfClean] makes an automatic reload refuse an
   /// edit that landed after its external-change check.
   Future<bool> reload({bool onlyIfClean = false});
+
+  /// "Keep mine": the writer has seen what is in the file and chosen their own
+  /// version, so the next save may replace it.
+  ///
+  /// A save refuses a file it does not recognise
+  /// ([SaveFailure.changedOnDisk]), which is what keeps an autosave off
+  /// somebody else's edit on a machine with no watcher. This is the answer to
+  /// that refusal, and the only one that keeps both the writer's text and their
+  /// ability to save it.
+  Future<bool> acceptDiskState();
 
   /// Every rolling backup of this script, newest first.
   Future<List<files.BackupView>> backups();
@@ -447,6 +467,9 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   (int, bool) get journalState => files.docJournalState(handle: _handle);
 
   @override
+  bool get watched => files.docWatchState(handle: _handle);
+
+  @override
   Future<files.SaveOutcome> save() => files.docSave(handle: _handle);
 
   @override
@@ -473,6 +496,10 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   @override
   Future<bool> reload({bool onlyIfClean = false}) =>
       files.docReload(handle: _handle, onlyIfClean: onlyIfClean);
+
+  @override
+  Future<bool> acceptDiskState() =>
+      files.docAcceptDiskState(handle: _handle);
 
   @override
   Future<List<files.BackupView>> backups() =>

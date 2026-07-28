@@ -12,6 +12,7 @@ export 'package:slugline/src/rust/api/events.dart'
         CoreEvent_AutosaveFailed,
         CoreEvent_BackupWritten,
         CoreEvent_EntityIndexUpdated,
+        CoreEvent_ExternalWatchUnavailable,
         CoreEvent_FileChangedOnDisk,
         CoreEvent_JournalBroken,
         CoreEvent_SaveStateChanged;
@@ -42,6 +43,23 @@ export 'package:slugline/src/rust/api/spell.dart'
 /// Both sides hardcode it — see `crates/bridge/src/api/handshake.rs` — so it
 /// lives beside the client rather than in whatever widget happens to show it.
 const proofText = 'café 日本 🎬';
+
+/// The core came up without the storage everything else stands on.
+///
+/// Thrown by [Core.init], and caught in `main`, which shows [message] instead of
+/// an editor. It is a distinct type rather than a `StateError` because it is not
+/// a programming mistake: it is the machine saying no, and the one thing to do
+/// about it is to tell the writer *before* they type a page into a session that
+/// cannot journal, save or list it.
+class CoreUnavailable implements Exception {
+  const CoreUnavailable(this.message);
+
+  /// Plain language, for the writer. Shown as-is.
+  final String message;
+
+  @override
+  String toString() => 'CoreUnavailable: $message';
+}
 
 /// The Dart-side handle on the Rust core.
 ///
@@ -95,7 +113,25 @@ class Core {
     // and anything `init` itself causes.
     unawaited(core.events.first);
     unawaited(core.proofEvents.first);
-    await files.init(configDir: configDir, dataDir: dataDir, stateDir: stateDir);
+    final ready = await files.init(
+      configDir: configDir,
+      dataDir: dataDir,
+      stateDir: stateDir,
+    );
+    if (!ready) {
+      // The core has no directories: with empty arguments there was no home
+      // directory to derive them from (ADR 0006). Everything §Phase 4 promises
+      // — the crash journal, the atomic save, the rolling backups, the library
+      // index — is downstream of that, so a core without storage is an editor
+      // that cannot keep anything. This answer used to be discarded, and the
+      // app started anyway; §1.2 makes losing user text a P0, and starting
+      // knowing that nothing can be kept is the version of it that looks fine.
+      throw const CoreUnavailable(
+        'Slugline could not work out where to keep your scripts. It needs a '
+        'home directory (or XDG_CONFIG_HOME, XDG_DATA_HOME and XDG_STATE_HOME) '
+        'to put the library, the crash journal and the backups in.',
+      );
+    }
     return _instance = core;
   }
 

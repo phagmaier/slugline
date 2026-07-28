@@ -547,6 +547,21 @@ class FakeCore implements DocumentCore {
   /// Set to make the next save fail, the way a full disk would.
   SaveFailure? refuseSaveWith;
 
+  /// Set for a session the core is not journalling: one whose journal broke
+  /// mid-session, or one that never got a journal at all because the state
+  /// directory would not take it. The core reports both the same way, and so
+  /// does this.
+  bool journalUnavailable = false;
+
+  /// Set for a session whose file could not be watched — no inotify, no watch
+  /// descriptors left. The save path still checks the file it replaces, so this
+  /// costs the warning and not the protection, and the status line says so.
+  bool watchUnavailable = false;
+
+  /// How many times the editor has said "keep mine" — the answer to a save the
+  /// core refused because the file was not the one it last read.
+  int diskStateAccepted = 0;
+
   /// Set to hold the next write open between planning its bytes and committing
   /// them, and cleared as soon as that write takes it.
   ///
@@ -579,7 +594,11 @@ class FakeCore implements DocumentCore {
   String? get path => filePath;
 
   @override
-  (int, bool) get journalState => (_journalled, false);
+  (int, bool) get journalState =>
+      journalUnavailable ? (0, true) : (_journalled, false);
+
+  @override
+  bool get watched => !watchUnavailable;
 
   @override
   Future<SaveOutcome> save() async => _write(filePath, autosave: false);
@@ -705,6 +724,17 @@ class FakeCore implements DocumentCore {
     if (filePath == null || (onlyIfClean && _dirty)) return false;
     _dirty = false;
     _journalled = 0;
+    return true;
+  }
+
+  @override
+  Future<bool> acceptDiskState() async {
+    if (filePath == null) return false;
+    diskStateAccepted += 1;
+    // What the core does with it: the file the writer was shown is the one the
+    // next save may replace. Here that is enough to stop [refuseSaveWith] from
+    // standing in the way of a test that goes on to save.
+    if (refuseSaveWith == SaveFailure.changedOnDisk) refuseSaveWith = null;
     return true;
   }
 

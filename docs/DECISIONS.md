@@ -2854,3 +2854,82 @@ to disagree.
   including blocking failure dialogs that remain non-click-away.
 * No dependency was added, and the zero-network packaging proof remains
   straightforward.
+
+## ADR 0038 — The save path checks the file it is replacing; the watcher only asks early
+
+**Status:** Accepted
+**Date:** 2026-07-27
+**Phase:** Post-Phase 10 refinement
+
+### Context
+
+§Phase 4's external-modification rule was implemented entirely around the file
+watcher: `notify` reported that another program had written an open script, Dart
+asked `doc_external_change`, and the writer chose. A save asked nothing at all —
+it serialised the document and renamed it over whatever was there.
+
+That made the watcher the only thing standing between an autosave and somebody
+else's edit, and the watcher is allowed not to be there. `FileWatcher::new` was
+reduced to `.ok()` in `api::files::init` and every per-file `watcher.watch` to a
+`let _`, so a kernel without inotify, an exhausted `max_user_watches`, or a
+filesystem the backend cannot watch all produced a core that looked exactly like
+a working one and silently replaced external edits. The NFS caveat in
+`storage::watch` was the same hole, already written down and not treated as one.
+ADR 0024 and ADR 0028 had made the watcher *precise* about its own writes;
+neither made it *present*.
+
+### Decision
+
+The check moves to where the overwrite happens, and the watcher keeps only the
+job it can actually do.
+
+`storage::watch::DiskState` records what a file held when this application last
+read or wrote it: one `stat` fingerprint and a 64-bit hash of the contents.
+Every path that establishes a session's file records it — open, save, Save As,
+reload, restore from backup, accepted recovery, and the external-change check
+when it finds the file identical to the document. `write_document` compares it
+against the file immediately before replacing it, off the actor and under the
+session's save claim.
+
+The comparison has four answers. `Unchanged` is one cached `stat` and is what
+every save of every quiet session costs. `Restamped` — new inode or timestamps,
+identical bytes — proceeds silently, because `touch` and a `git checkout` that
+restored the same text are not edits anybody has to decide about. `Unreadable`
+proceeds too: a deleted file has nothing to preserve, and a refusal there would
+be one the writer could not resolve, since the prompt that follows a refusal
+reads the file as well. `Changed` refuses with `SaveFailure::ChangedOnDisk` and
+emits the same `CoreEvent::FileChangedOnDisk` the watcher would have pushed, so
+one Dart path handles both sources.
+
+"Keep mine" answers that refusal through a new `doc_accept_disk_state`, which
+records what the file holds *now*. The writer's next save may replace the
+version they were shown and nothing later than it.
+
+A Save As is exempt. Its destination was named through a chooser that has
+already asked about replacing what is there (ADR 0029), and refusing a path
+somebody just typed would answer a question with the question.
+
+The watch failure itself is no longer discarded. `watch` marks the session
+`watch_broken` and pushes `CoreEvent::ExternalWatchUnavailable` once, exactly as
+`restart_journal` reports a journal it could not start; `doc_watch_state` exposes
+it and the status line says "external changes not watched" for the rest of the
+session, in every state including a failure.
+
+### Consequences
+
+* External-change protection no longer depends on a feature the machine is
+  entitled not to provide. On a core with no watcher at all, an autosave over
+  somebody else's edit is refused rather than silently performed — which is what
+  `crates/bridge/src/api/files.rs`'s new tests run against, since the bridge test
+  fixture has always installed `watcher: None`.
+* The watcher is now what it should have been: promptness. Losing it costs a
+  warning, not a guarantee, and the writer is told which one they have.
+* One `stat` per save in the ordinary case, and one whole-file read only when
+  something really did touch the file since we wrote it.
+* The content hash is 64-bit and never persisted, so a comparison can in
+  principle collide and let an external edit be overwritten. Holding a second
+  copy of every open script to avoid that costs half a megabyte per session for
+  a probability far below the disk errors the atomic save already accepts.
+* A writer who dismisses the external-change prompt without deciding will have
+  their next save refused again. That is the intended shape: the refusal stands
+  until somebody answers it, and the status line says so meanwhile.

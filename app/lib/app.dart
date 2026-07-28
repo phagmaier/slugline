@@ -345,6 +345,18 @@ class _SluglineAppState extends State<SluglineApp> {
           'The crash-recovery record for this script stopped working. '
           'Saving still works; save more often until you can restart.',
         );
+      case CoreEvent_ExternalWatchUnavailable():
+        // Not a loss of protection — a save still refuses to replace a file it
+        // does not recognise — but a loss of *warning*, and the writer is the
+        // one who has to know that nothing will interrupt them if another
+        // program edits this script. The status line goes on saying it; this is
+        // the once.
+        _open?.status.refresh();
+        _say(
+          'This script cannot be watched for changes by other programs. '
+          'Saving still checks the file before replacing it, but nothing will '
+          'tell you at the time.',
+        );
     }
   }
 
@@ -405,6 +417,63 @@ class _SluglineAppState extends State<SluglineApp> {
             ),
     );
   }
+}
+
+/// What runs instead of the editor when the core came up without storage.
+///
+/// There is no library to list, no journal to record into and nowhere to save,
+/// so there is nothing an editor here could honestly offer. It says what is
+/// wrong and stops — which is the whole point: the alternative, and what used to
+/// happen, is a window that looks like a working editor until the writer finds
+/// out otherwise.
+class StorageUnavailableApp extends StatelessWidget {
+  const StorageUnavailableApp({required this.message, super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Slugline',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF3B6EA5),
+        brightness: Brightness.light,
+      ),
+      useMaterial3: true,
+    ),
+    darkTheme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF6F9FD2),
+        brightness: Brightness.dark,
+      ),
+      useMaterial3: true,
+    ),
+    home: Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline, size: 40),
+                const SizedBox(height: 16),
+                Text(
+                  'Slugline cannot start',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 12),
+                Text(message, style: Theme.of(context).textTheme.bodyMedium),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 ThemeMode _themeMode(String appearance) => switch (appearance) {

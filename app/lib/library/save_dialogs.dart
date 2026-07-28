@@ -84,6 +84,7 @@ String _headline(SaveFailure failure) => switch (failure) {
       SaveFailure.noSuchDocument => 'That script is not open',
       SaveFailure.alreadyExists => 'There is already a file there',
       SaveFailure.scriptIsOpen => 'That script is open here',
+      SaveFailure.changedOnDisk => 'That file changed on disk',
       SaveFailure.io => 'The file could not be written',
     };
 
@@ -110,6 +111,13 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
         '$path is already there, and Slugline did not replace it.',
       SaveFailure.scriptIsOpen =>
         '$path is open here. Save that script rather than writing this one over it.',
+      // Normally never seen: [saveWithDialogs] returns this one to the caller
+      // because the external-modification prompt is already coming. The
+      // sentence is here for the same reason the two above are — the enum is
+      // one enum, and a dialog that had nothing to say would be worse.
+      SaveFailure.changedOnDisk =>
+        'Something else has written to $path since it was last read here, so '
+            'Slugline did not replace it.',
       SaveFailure.io => 'The operating system refused to write $path.',
     };
 
@@ -229,6 +237,13 @@ Future<SaveOutcome> saveWithDialogs(
     // that reaches this without having asked already is the first line above.
     // Asking again would be a dialog that will not take no for an answer.
     if (outcome.failure == SaveFailure.noPath) return outcome;
+    // Nor `changedOnDisk`. The core refused because the file is not the one it
+    // last read, and it pushed the same `FileChangedOnDisk` the watcher would
+    // have — so §Phase 4's external-modification prompt is already on its way,
+    // with the three answers that fit ("keep mine", "take theirs", "save as").
+    // A second dialog here would ask a worse version of the same question over
+    // the top of it.
+    if (outcome.failure == SaveFailure.changedOnDisk) return outcome;
     if (!context.mounted) return outcome;
     final choice = await showSaveFailure(context, outcome);
     if (choice == SaveFailureChoice.cancel) return outcome;
