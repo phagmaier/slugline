@@ -14,6 +14,7 @@ import 'package:slugline/editor/metrics.dart';
 import 'package:slugline/editor/page_geometry.dart';
 import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/surface_semantics.dart';
+import 'package:slugline/typography.dart';
 
 /// One editing surface for the whole document (ADR 0005).
 ///
@@ -110,9 +111,6 @@ class EditorSurfaceState extends State<EditorSurface>
 
   TextInputConnection? _connection;
 
-  /// Width of one character in the monospace font, measured once.
-  double _advance = 9.0;
-
   double _viewportWidth = 900;
   double _viewportHeight = 600;
 
@@ -122,7 +120,7 @@ class EditorSurfaceState extends State<EditorSurface>
   /// mapping that a re-wrap or a fresh pagination has already invalidated. It is
   /// a handful of field reads and one cached list.
   EditorGeometry get _geometry => EditorGeometry(
-    metrics: ScreenplayMetrics(advance: _advance, lineHeight: _lineHeight),
+    metrics: _metrics,
     viewportWidth: _viewportWidth,
     totalRows: _controller.layout.totalRows,
     pageStarts: widget.pageIndicator?.pageStarts ?? const [],
@@ -143,13 +141,28 @@ class EditorSurfaceState extends State<EditorSurface>
   int? _sessionBlock;
 
   EditorController get _controller => widget.controller;
-  double get _fontSize => widget.textSize.clamp(12, 24).toDouble();
-  double get _lineHeight => _fontSize * 1.4;
+
+  /// The grid, as of the viewport this surface was last laid out into.
+  ///
+  /// Derived rather than measured and rather than cached: the text-size
+  /// preference is the size the writer asked for, and what comes back is that
+  /// size or the largest one whose page fits across the window, so the script
+  /// gets smaller when the window does instead of running off the edge of a
+  /// column that has been clamped out from under it.
+  ScreenplayMetrics get _metrics => ScreenplayMetrics.forFontSize(_fontSize);
+
+  double get _fontSize => ScreenplayMetrics.fittedFontSize(
+    preferredFontSize: widget.textSize.clamp(12, 24).toDouble(),
+    viewportWidth: _viewportWidth,
+    pageView: widget.pageView,
+  );
+
+  double get _advance => _metrics.advance;
+  double get _lineHeight => _metrics.lineHeight;
 
   @override
   void initState() {
     super.initState();
-    _measureAdvance();
     _controller.addListener(_onDocumentChanged);
     _focusNode.addListener(_onFocusChanged);
     _scroll.addListener(_refreshSemantics);
@@ -161,7 +174,6 @@ class EditorSurfaceState extends State<EditorSurface>
   void didUpdateWidget(EditorSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.textSize != widget.textSize) {
-      _measureAdvance();
       _reportedRow = -1;
     }
     if (oldWidget.controller != widget.controller) {
@@ -183,14 +195,6 @@ class EditorSurfaceState extends State<EditorSurface>
     if (_ownsFocusNode) _focusNode.dispose();
     _scroll.dispose();
     super.dispose();
-  }
-
-  void _measureAdvance() {
-    final painter = TextPainter(
-      text: TextSpan(text: 'MMMMMMMMMM', style: _textStyle(_fontSize)),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    _advance = painter.width / 10;
   }
 
   void _onDocumentChanged() {
@@ -1079,10 +1083,13 @@ class _CompletionPopup extends StatelessWidget {
             Container(
               key: const ValueKey('completion-hint'),
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+              // The candidates above are script — they are the writer's own
+              // text — but the gestures are the application talking, so the
+              // footer is chrome and stays the chrome's size whatever the
+              // script is set at.
               child: Text(
                 'Tab accepts · ↑↓ then Enter · Esc dismisses',
-                style: _textStyle(textSize).copyWith(
-                  fontSize: textSize * 0.75,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: colours.onSurfaceVariant,
                 ),
               ),
@@ -1094,9 +1101,13 @@ class _CompletionPopup extends StatelessWidget {
   }
 }
 
+/// The script, in the face the PDF prints it in.
+///
+/// No `fontFamilyFallback`: the face is bundled, so there is nothing to fall
+/// back to and nothing that would silently change the advance the grid is
+/// derived from ([ScreenplayMetrics.advanceRatio]).
 TextStyle _textStyle(double fontSize) => TextStyle(
-  fontFamily: 'monospace',
-  fontFamilyFallback: const ['Courier New', 'DejaVu Sans Mono'],
+  fontFamily: scriptFontFamily,
   fontSize: fontSize,
   height: 1.0,
 );
@@ -1378,14 +1389,11 @@ class _SurfacePainter extends CustomPainter {
     }
   }
 
+  /// A page number down the gutter. Chrome, not script: it is the application
+  /// counting pages, so it is set in the chrome's sans at the chrome's size and
+  /// does not grow with the text-size preference the way the script does.
   TextPainter _label(String text, Color colour) => TextPainter(
-    text: TextSpan(
-      text: text,
-      style: _textStyle(fontSize).copyWith(
-        color: colour,
-        fontSize: fontSize * 0.8,
-      ),
-    ),
+    text: TextSpan(text: text, style: chromeLabelStyle(colour)),
     textDirection: TextDirection.ltr,
   )..layout();
 

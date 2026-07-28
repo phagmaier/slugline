@@ -52,11 +52,12 @@ Future<SaveFailureChoice> showSaveFailure(
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
+          // The core's own words about what went wrong. Chrome, so the chrome's
+          // face: it used to be set in a monospace it had no need for, which
+          // read as script and made a one-line error look like a stack trace.
           SelectableText(
             failure.message,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                ),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),

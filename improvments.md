@@ -1,3 +1,4 @@
+- [x] See below 
 ## 1. Page geometry and element indentation (do this first)
 
 > Refactor the editor so the script renders inside a fixed-measure page column, not full-width. Model it on US Letter at 12pt Courier (10 chars/inch, 60 characters per line):
@@ -8,16 +9,20 @@
 >
 > Add a user setting for page view (visible page breaks / paper-like surface) vs. continuous scroll, defaulting to continuous with a subtle page-break rule and page number in the gutter.
 
+
+- [ ] See below 
 ## 2. Typography split
 
 > Establish two type systems and stop mixing them. Script body: Courier Prime (bundle the font, don't rely on system fallback) at a size that makes 60 characters fit the 6" column exactly — derive size from column width rather than hardcoding. UI chrome: a single sans (Inter or the platform default) at 13–14px, never Courier. The script font is currently too large relative to its container; sizing it off the column width fixes this automatically.
 
+- [ ] See below 
 ## 3. Design tokens and elevation
 
 > Replace all hardcoded colors with a token set in a single theme file, wired through `ThemeData`/`ColorScheme`. Define at least: `surface` (app background), `surfaceRaised` (sidebar, bars), `surfaceOverlay` (menus, dialogs), `border` (a low-contrast hairline, ~8–12% white), `textPrimary`, `textSecondary`, `textTertiary`, and one `accent`.
 >
 > Right now the sidebar, the editor, and the top bar are all effectively the same near-black, so nothing reads as a distinct region. Give the sidebar a slightly different surface value and separate regions with 1px hairline borders, not shadows. Use the accent color for exactly one thing at a time — selected state and primary buttons only.
 
+- [ ] See below 
 ## 4. Top bar
 
 > The top bar is eight identical-weight icons in a row with no grouping, which reads as unfinished. Restructure it:
@@ -28,6 +33,7 @@
 > - Minimum 40×40 hit targets even though the icon is smaller.
 > - The filename "cross.fountain" should show as the title with the extension in `textTertiary`, plus an unobtrusive saved-state indicator next to it.
 
+- [ ] See below 
 ## 5. Sidebar density and hierarchy
 
 > The scene list rows are too tall and the two lines compete. Tighten it:
@@ -38,10 +44,12 @@
 > - Make the search field sticky at the top of the list and give the "Scenes / Characters" control a proper segmented-control treatment (equal-width segments, same corner radius, sliding indicator).
 > - Panel header "Navigator" should be small, uppercase, letter-spaced, `textTertiary` — a section label, not a heading competing with the script.
 
+- [ ] See below 
 ## 6. Status bar
 
 > "2141 blocks" is internal jargon — no writer thinks in blocks. Replace the status bar contents with: current element type (as a proper dropdown control with a border and chevron, not bare text), page count ("Page 12 of 88"), scene count, word count, and a small dot + relative timestamp for save state. Reduce to 11px `textTertiary`, height ~28px, hairline top border.
 
+- [ ] See below 
 ## 7. Opening screen
 
 > The opening screen is 95% empty space with one row floating at the top left. Rework it:
@@ -51,6 +59,8 @@
 > - Design a real empty state for when there are no scripts: centered icon, one-line explanation, and the "New script" button as the focal point.
 > - "New script" and "Open" are currently competing — make "New script" the filled accent button and "Open" a plain text button.
 
+
+- [ ] See below 
 ## 8. Interaction polish
 
 > Add: 120–180ms ease-out transitions on hover/selection (no bounce, no scale), a visible focus ring on keyboard navigation, a typewriter/focus mode that keeps the caret vertically centered and dims non-active paragraphs, and a caret that's 2px and accent-colored so it's findable in a wall of monospace.

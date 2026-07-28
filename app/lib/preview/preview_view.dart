@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart' hide PageView;
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/typography.dart';
 
 /// The paginated preview (§Phase 7).
 ///
@@ -218,8 +219,8 @@ class _PagePainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
       final at = geometry.at(line.row, line.column);
-      // Centred within the row's box, so that a preview row sits where the
-      // printed one does even though the screen font is not Courier Prime.
+      // Centred within the row's box, so that a preview row sits on the
+      // baseline grid the printed one does.
       painter.paint(
         canvas,
         Offset(at.dx, at.dy + (geometry.row - painter.height) / 2),
@@ -234,8 +235,11 @@ class _PagePainter extends CustomPainter {
       old.geometry.paper != geometry.paper;
 }
 
+/// The preview is a picture of the printed page, so it is set in the face that
+/// prints it. Before the face was bundled this was the system's monospace and
+/// the preview was only approximately the PDF; now the two agree.
 TextStyle _textStyle(PreviewGeometry geometry) => TextStyle(
-  fontFamily: 'monospace',
+  fontFamily: scriptFontFamily,
   fontSize: geometry.fontSize,
   height: 1.0,
   color: Colors.black,

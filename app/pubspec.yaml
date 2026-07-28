@@ -37,6 +37,21 @@ dev_dependencies:
 flutter:
   # Material icons are used throughout the editor chrome.
   uses-material-design: true
-  # No assets and no bundled fonts: the one face this project ships is Courier
-  # Prime, and it is compiled into `crates/render_pdf` rather than bundled here
-  # (ADR 0032). The editor draws with the system monospace face.
+  # The one face this project ships is Courier Prime, and the screen has to draw
+  # the script in the same face the PDF prints it in — a system monospace
+  # fallback is a different set of advances and a different colour on the page.
+  # The files below are **symlinks into `crates/render_pdf/fonts/`**, not copies:
+  # `render_pdf` compiles those same bytes in (ADR 0032), and two copies of a
+  # font face is exactly the drift the PDF goldens are pinned against. There is
+  # no download here and never may be; the bytes are in the repository.
+  fonts:
+    - family: Courier Prime
+      fonts:
+        - asset: fonts/CourierPrime-Regular.ttf
+        - asset: fonts/CourierPrime-Bold.ttf
+          weight: 700
+        - asset: fonts/CourierPrime-Italic.ttf
+          style: italic
+        - asset: fonts/CourierPrime-BoldItalic.ttf
+          weight: 700
+          style: italic

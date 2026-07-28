@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:slugline/core/document_core.dart';
 
 /// The printed page, as the editor has to draw it.
@@ -15,14 +17,104 @@ import 'package:slugline/core/document_core.dart';
 /// table. The derived columns are the same numbers `layout::metrics` holds in
 /// Rust, and `test/editor/line_break_differential_test.dart` is what keeps the
 /// two copies honest — see ADR 0018 for why there are two.
+///
+/// **The size follows the measure, not the other way round.** The advance used
+/// to be measured off whatever face the system resolved `monospace` to, and the
+/// column was then sixty of those wide — so the width of the script was a
+/// consequence of a font nobody had chosen, and on a window too narrow to hold
+/// the result the column was clamped while the text went on being drawn at its
+/// old size and ran off the edge. Now the script face is bundled and its advance
+/// is a known fraction of the size ([advanceRatio]), so the arithmetic runs the
+/// other way: [fittedFontSize] picks the largest size whose measure fits the
+/// viewport, and [ScreenplayMetrics.forColumnWidth] turns a width into the grid
+/// that spans it exactly.
 class ScreenplayMetrics {
   const ScreenplayMetrics({required this.advance, required this.lineHeight});
+
+  /// The grid the script face draws at [fontSize].
+  ScreenplayMetrics.forFontSize(double fontSize)
+      : advance = fontSize * advanceRatio,
+        lineHeight = fontSize * lineHeightRatio;
+
+  /// The grid whose measure — sixty characters — is exactly [columnWidth] wide.
+  ScreenplayMetrics.forColumnWidth(double columnWidth)
+      : this.forFontSize(fontSizeForColumn(columnWidth));
 
   /// The width of one character cell, measured from the editor's own font.
   final double advance;
 
   /// The height of one grid row on screen.
   final double lineHeight;
+
+  // --- the script face -----------------------------------------------------
+
+  /// The width of one character in the script face, as a fraction of its size.
+  ///
+  /// Courier Prime advances 1228 units of its 2048-unit em, so a character is
+  /// 0.5996 of the point size and the sixty-column measure is 35.977 times it.
+  /// `render_pdf` *declares* 600/1000 instead and scales the glyphs onto it,
+  /// because a PDF viewer positions text by the widths in the font dictionary
+  /// and §5.2 asks for exactly ten characters to the inch on paper. On screen
+  /// there is no such indirection — Flutter advances by what the file says — so
+  /// this is the file's own number, and `test/editor/script_font_test.dart`
+  /// reads it back out of the bundled TTF rather than trusting this line.
+  static const double advanceRatio = 1228 / 2048;
+
+  /// Rows to size: the script is set with four tenths of a line of leading.
+  static const double lineHeightRatio = 1.4;
+
+  /// The size below which the script stops shrinking to fit.
+  ///
+  /// A window narrow enough to need this is narrower than the editor is usable
+  /// at, and the honest answer there is a column that overflows — which
+  /// `EditorGeometry.columnWidth` still clamps — rather than a script nobody
+  /// can read.
+  static const double minimumFontSize = 9;
+
+  /// The size at which sixty characters span [columnWidth] exactly.
+  static double fontSizeForColumn(double columnWidth) =>
+      columnWidth / (textColumns * advanceRatio);
+
+  /// The inverse: the measure sixty characters span at [fontSize].
+  static double columnWidthForFontSize(double fontSize) =>
+      textColumns * advanceRatio * fontSize;
+
+  /// The size the script is drawn at in a viewport [viewportWidth] wide.
+  ///
+  /// [preferredFontSize] is the text-size preference — the largest the writer
+  /// asked for. What comes back is that size or the largest one whose page still
+  /// fits across the viewport, whichever is smaller, so the size is never a
+  /// number that draws the script wider than the window it is in.
+  ///
+  /// What has to fit is the whole sheet in page view and the measure alone
+  /// otherwise, plus [airInches] of margin on each side in both cases — the
+  /// column is centred, and a measure that ends exactly at the window edge reads
+  /// as clipped whether or not it is.
+  ///
+  /// [pageView] is the *preference*, not `EditorGeometry.sheeted`. Sheets do not
+  /// appear until Rust's first paginated snapshot lands, and keying the size on
+  /// that would resize the whole script a moment after the file opened. Page
+  /// view reserves the sheet's width from the first frame and the sheets arrive
+  /// into a page already the right size.
+  static double fittedFontSize({
+    required double preferredFontSize,
+    required double viewportWidth,
+    required bool pageView,
+  }) {
+    // Counted in whole cells, not in inches then rounded once at the end: the
+    // air is `EditorGeometry.minimumSideMargin`, which is itself a whole number
+    // of columns, and a fit computed off 6.5 inches would leave the column half
+    // a cell wider than that margin allows for.
+    final across =
+        columnsIn(pageView ? paperWidthInches : textWidthInches) +
+        2 * columnsIn(airInches);
+    final fits = viewportWidth / (across * advanceRatio);
+    return math.max(minimumFontSize, math.min(preferredFontSize, fits));
+  }
+
+  /// The air kept beside the script before it starts shrinking. A quarter inch,
+  /// the same measure `EditorGeometry.minimumSideMargin` leaves it.
+  static const double airInches = 0.25;
 
   // --- the grid ------------------------------------------------------------
 
@@ -81,6 +173,11 @@ class ScreenplayMetrics {
   /// The content column: 6.0 inches of text, and nothing wider.
   double get textWidth => textColumns * advance;
 
+  /// The size the script face has to be drawn at for [advance] to be its
+  /// advance. The inverse of [ScreenplayMetrics.forFontSize], and what every
+  /// painter on the surface asks for rather than keeping its own copy.
+  double get fontSize => advance / advanceRatio;
+
   /// The whole sheet, for the paper surface page view draws.
   double get paperWidth => paperWidthInches * charactersPerInch * advance;
   double get paperHeight => paperHeightInches * linesPerInch * lineHeight;
@@ -99,11 +196,14 @@ class ScreenplayMetrics {
 
   /// The widest the content column is ever allowed to become.
   ///
-  /// The measure is already fixed — 60 cells of a monospace face — so this is
-  /// not what stops the text stretching on a wide monitor; the grid is. It is a
-  /// backstop for the other direction: a font whose fallback resolves to
-  /// something much wider than Courier would otherwise push the column past the
-  /// viewport and take the caret arithmetic off screen with it.
+  /// The measure is already fixed — 60 cells of the script face — so this is not
+  /// what stops the text stretching on a wide monitor; the grid is. Nor is it
+  /// any longer the backstop against a fallback face wider than Courier, which
+  /// is what it was written for: the face is bundled now and [fittedFontSize] is
+  /// what keeps the column inside the window. It stays as the last clamp in
+  /// `EditorGeometry`, so that a caller which builds metrics by hand — a test,
+  /// or a future call site that skips the fit — still cannot take the caret
+  /// arithmetic off screen.
   static const double maxColumnWidth = 1100;
 
   @override

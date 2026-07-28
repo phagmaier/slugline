@@ -23,7 +23,9 @@ subsystem. For rationale behind a choice, read the relevant ADR in
   per-block fingerprint hints.
 - **`crates/render_pdf`** — writes PDF bytes itself: TrueType subsetter, sfnt
   writer, PDF object writer, SHA-256. No dependency outside the workspace (ADR
-  0032). Courier Prime is vendored in `crates/render_pdf/fonts/`.
+  0032). Courier Prime is vendored in `crates/render_pdf/fonts/`, and
+  `app/fonts/` symlinks the same four files so the editor and the preview draw
+  the script in the face the PDF prints it in. Replace a face and both change.
 - **`crates/spell`** — pure Hunspell-compatible checker; bridge checks immutable
   block snapshots, editor paints results. No automatic correction; only Replace
   sends an `EditCommand` (ADR 0036).
@@ -68,7 +70,15 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   0009).
 - `app/lib/editor/metrics.dart` and `line_layout.dart` hold the grid and the
   editor's own line breaking. `ScreenplayMetrics` in `metrics.dart` owns the
-  printed sheet in inches and every column is derived from it; `page_geometry.dart`
+  printed sheet in inches and every column is derived from it — **including the
+  script's size**. The bundled face's advance is `advanceRatio` (pinned to the
+  TTF by `test/editor/script_font_test.dart`), `fittedFontSize` returns the
+  largest size whose page still crosses the viewport, and the text-size
+  preference is the ceiling on that rather than a pixel count. Never measure a
+  font to get an advance and never hard-code a script size.
+  `app/lib/typography.dart` holds the other half of that split: the script is
+  `scriptFontFamily` sized off the grid, the chrome is the platform sans through
+  `chromeTextTheme`, and nothing is both. `page_geometry.dart`
   turns that grid into viewport coordinates, and **every** row-to-pixel
   conversion — painting, hit testing, caret scrolling, semantics — goes through
   `EditorGeometry`. Add a second one and page view breaks silently.

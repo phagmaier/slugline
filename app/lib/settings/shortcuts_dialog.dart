@@ -80,10 +80,12 @@ class _ShortcutRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 190,
+            // The fixed-width column is what lines the keys up; the face does
+            // not have to, and a monospace one here is the script's type system
+            // leaking into a dialog.
             child: Text(
               keys,
-              style: const TextStyle(
-                fontFamily: 'monospace',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),

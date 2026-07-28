@@ -9,7 +9,12 @@ import 'package:slugline/editor/metrics.dart';
 import 'package:slugline/editor/page_geometry.dart';
 
 /// The viewport every helper here pumps the editor into.
-const double editorViewportWidth = 900;
+///
+/// It is the test view's own size, and it has to be: the surface derives the
+/// script's size from the width it is laid out into, so a helper that asked for
+/// a wider box than the view can give — as this one used to ask for 900 — would
+/// compute its pixels against a viewport the surface never saw.
+const double editorViewportWidth = 800;
 const double editorViewportHeight = 600;
 
 /// The surface's own geometry, for a test that has to name a pixel.
@@ -22,27 +27,26 @@ EditorGeometry editorGeometry({
   double textSize = 15,
   double viewportWidth = editorViewportWidth,
   int totalRows = 1 << 20,
+  // `EditorSurface.pageView` defaults to true, and the fit is wider in page
+  // view — the sheet has to cross the viewport, not just the measure — so this
+  // default has to match the widget's or every pixel here is off by the
+  // difference between 6 inches and 8.5.
+  bool pageView = true,
 }) {
-  final fontSize = textSize.clamp(12, 24).toDouble();
-  final painter = TextPainter(
-    text: TextSpan(
-      text: 'MMMMMMMMMM',
-      style: TextStyle(
-        fontFamily: 'monospace',
-        fontFamilyFallback: const ['Courier New', 'DejaVu Sans Mono'],
-        fontSize: fontSize,
-        height: 1,
-      ),
-    ),
-    textDirection: TextDirection.ltr,
-  )..layout();
+  // The same derivation the surface runs, and deliberately not a second copy of
+  // it: the size follows the viewport, so a helper that measured a font — as
+  // this one used to — would name a pixel the surface never drew at.
   return EditorGeometry(
-    metrics: ScreenplayMetrics(
-      advance: painter.width / 10,
-      lineHeight: fontSize * 1.4,
+    metrics: ScreenplayMetrics.forFontSize(
+      ScreenplayMetrics.fittedFontSize(
+        preferredFontSize: textSize.clamp(12, 24).toDouble(),
+        viewportWidth: viewportWidth,
+        pageView: pageView,
+      ),
     ),
     viewportWidth: viewportWidth,
     totalRows: totalRows,
+    pageView: pageView,
   );
 }
 
@@ -63,8 +67,8 @@ Future<EditorController> pumpEditor(WidgetTester tester, DocumentCore core) asyn
     MaterialApp(
       home: Scaffold(
         body: SizedBox(
-          width: 900,
-          height: 600,
+          width: editorViewportWidth,
+          height: editorViewportHeight,
           child: EditorSurface(controller: controller),
         ),
       ),
@@ -84,8 +88,8 @@ Future<EditorController> pumpEditorPage(WidgetTester tester, DocumentCore core) 
   await tester.pumpWidget(
     MaterialApp(
       home: SizedBox(
-        width: 900,
-        height: 600,
+        width: editorViewportWidth,
+        height: editorViewportHeight,
         child: EditorPage(controller: controller),
       ),
     ),

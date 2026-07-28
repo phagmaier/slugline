@@ -40,8 +40,8 @@ Future<void> _pumpSurface(
     MaterialApp(
       home: Scaffold(
         body: SizedBox(
-          width: 900,
-          height: 600,
+          width: editorViewportWidth,
+          height: editorViewportHeight,
           child: EditorSurface(
             controller: controller,
             initialScrollRow: initialScrollRow,

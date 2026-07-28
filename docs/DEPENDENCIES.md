@@ -27,7 +27,7 @@ Phase 7 reached it — see below.
 
 | Asset | Version | Used by | Justification |
 | --- | --- | --- | --- |
-| Courier Prime — Regular, Bold, Italic, Bold Italic | 1.203 | `render_pdf` | §Phase 7: "Courier Prime vendored and embedded, with the OFL licence file shipped in the bundle". Taken unmodified from the upstream release and `include_bytes!`d, because §1.2 rules out font downloads and a screenplay that renders differently because a system font moved is not one you can send anyone. 305 KB in the repository; a subset of about 30 KB in each export. |
+| Courier Prime — Regular, Bold, Italic, Bold Italic | 1.203 | `render_pdf`, `app` | §Phase 7: "Courier Prime vendored and embedded, with the OFL licence file shipped in the bundle". Taken unmodified from the upstream release and `include_bytes!`d, because §1.2 rules out font downloads and a screenplay that renders differently because a system font moved is not one you can send anyone. 305 KB in the repository; a subset of about 30 KB in each export. The editor and the preview draw the script in the same four faces, declared in `app/pubspec.yaml` — `app/fonts/` holds **symlinks** into `crates/render_pdf/fonts/`, never copies, so the screen and the PDF cannot come to disagree about the face and the PDF goldens stay the one thing pinning it. No second download and no second 305 KB. |
 | `OFL.txt` | SIL OFL 1.1 | `render_pdf` | The licence those four faces are under. `include_str!`d as well as shipped, so it cannot be dropped from a package without breaking the build. |
 
 `tempfile` is deliberately absent: `storage`'s tests want `mkdir` and `rm -r`,
