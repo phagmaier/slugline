@@ -47,6 +47,7 @@ EditorGeometry editorGeometry({
     viewportWidth: viewportWidth,
     totalRows: totalRows,
     pageView: pageView,
+    scrollbarWidth: kMinInteractiveDimension,
   );
 }
 

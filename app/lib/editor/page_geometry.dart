@@ -22,6 +22,7 @@ class EditorGeometry {
     required this.totalRows,
     this.pageStarts = const [],
     this.pageView = false,
+    this.scrollbarWidth = 0,
   });
 
   final ScreenplayMetrics metrics;
@@ -37,6 +38,11 @@ class EditorGeometry {
   /// Whether to draw discrete sheets. Continuous scroll is the default and is
   /// the mode this geometry degrades to when there are no [pageStarts].
   final bool pageView;
+
+  /// The width of the scrollbar that overlays the right edge. The column is
+  /// centered within the viewport less this strip, so it stays visually
+  /// centered regardless of whether the scrollbar is painted.
+  final double scrollbarWidth;
 
   double get advance => metrics.advance;
   double get lineHeight => metrics.lineHeight;
@@ -61,9 +67,13 @@ class EditorGeometry {
   /// start shrinking. A quarter of an inch of page.
   double get minimumSideMargin => metrics.across(0.25);
 
-  /// The left edge of the text column, centred in the viewport.
-  double get columnLeft => ((viewportWidth - columnWidth) / 2)
-      .clamp(0.0, math.max(0.0, viewportWidth - columnWidth));
+  /// The left edge of the text column, centred in the viewport less the
+  /// scrollbar strip so the column looks centred regardless of the bar.
+  double get columnLeft {
+    final usable = viewportWidth - scrollbarWidth;
+    return ((usable - columnWidth) / 2)
+        .clamp(0.0, math.max(0.0, usable - columnWidth));
+  }
 
   /// The right edge of the text column — the 6.0-inch mark.
   double get columnRight => columnLeft + columnWidth;

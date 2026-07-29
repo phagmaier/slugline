@@ -108,13 +108,13 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 > apart at wide window sizes. Wrap the recent list in a centered column with a max width of
 > ~960px, matching the horizontal rhythm of the "RECENT" label.
 
-### [ ] 10. Fix the editor gutters
+### [x] 10. Fix the editor gutters
 
 > The content column is not truly centered: there is roughly 278px of space to its left and 210px
 > to its right. Center the column within the space between the navigator panel edge and the
 > scrollbar, accounting for scrollbar width so it doesn't shift when the bar appears.
 
-### [ ] 11. Bold scene headings
+### [x] 11. Bold scene headings
 
 > Render scene headings in bold within the editor. This is conventional formatting and makes
 > vertical scanning of the script substantially faster. Keep them uppercase and at the 0" indent.

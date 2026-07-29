@@ -126,6 +126,7 @@ class EditorSurfaceState extends State<EditorSurface>
     totalRows: _controller.layout.totalRows,
     pageStarts: widget.pageIndicator?.pageStarts ?? const [],
     pageView: widget.pageView,
+    scrollbarWidth: kMinInteractiveDimension,
   );
 
   /// The composing region the platform is holding, in offsets into the focused
@@ -1287,6 +1288,9 @@ class _SurfacePainter extends CustomPainter {
                 style: _textStyle(fontSize).copyWith(
                   color: _isMuted(block.kind) ? colours.dim : colours.text,
                   fontStyle: _isMuted(block.kind) ? FontStyle.italic : null,
+                  fontWeight: block.kind == BlockKind.sceneHeading
+                      ? FontWeight.bold
+                      : null,
                 ),
               ),
               textDirection: TextDirection.ltr,

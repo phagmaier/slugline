@@ -822,14 +822,9 @@ class _BarDivider extends StatelessWidget {
 
 /// The script's name, and whether the file has it.
 ///
-/// The extension is a third weight down: `cross` is what the writer called their
-/// screenplay and `.fountain` is how it is stored, and the two do not deserve
-/// the same emphasis in the one place the script is named.
-///
-/// The dot beside it appears only when there is something unsaved. A permanent
-/// indicator is one nobody looks at; one that is usually absent is one whose
-/// presence means something. The status bar carries the full sentence — this is
-/// the glance.
+/// The `.fountain` extension is omitted: it is how the script is stored, not
+/// what it is called. Other extensions are still shown, faded. The dot beside
+/// the title appears only when there is something unsaved.
 class _ScriptTitle extends StatelessWidget {
   const _ScriptTitle({required this.name, required this.status});
 
@@ -842,7 +837,8 @@ class _ScriptTitle extends StatelessWidget {
     final theme = Theme.of(context);
     final dot = name.lastIndexOf('.');
     final stem = dot <= 0 ? name : name.substring(0, dot);
-    final extension = dot <= 0 ? '' : name.substring(dot);
+    final ext = dot <= 0 ? '' : name.substring(dot);
+    final extension = ext == '.fountain' ? '' : ext;
     final title = Text.rich(
       TextSpan(
         children: [
