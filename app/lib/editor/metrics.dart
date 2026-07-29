@@ -60,8 +60,27 @@ class ScreenplayMetrics {
   /// reads it back out of the bundled TTF rather than trusting this line.
   static const double advanceRatio = 1228 / 2048;
 
-  /// Rows to size: the script is set with four tenths of a line of leading.
-  static const double lineHeightRatio = 1.4;
+  /// Rows to size: one grid row, and not a pixel more.
+  ///
+  /// This is derived, not chosen. A row is a sixth of an inch and a column is a
+  /// tenth, so a row measures ten sixths of a column — and a column is
+  /// [advanceRatio] of the size. That is the whole of it: 10/6 × 1228/2048 =
+  /// 0.9993, a script set solid. Courier Prime carries a typewriter face's own
+  /// leading in its metrics, and a grid row *is* that leading rather than room
+  /// to add more on top of it.
+  ///
+  /// **The number used to be 1.4, and that was not a matter of taste.** Four
+  /// tenths of a line added here stretched the sheet: a page is 8.5 × 11 inches
+  /// only while a row and a column measure the same inch, and at 1.4 the editor
+  /// drew a page half again as tall as the paper it stands for. Everything
+  /// downstream inherited it, because everything downstream is [down] — the one
+  /// blank line §5.2 puts above an element read as nearly two, and
+  /// `PreviewGeometry`, which has always taken a row as ten sixths of a column,
+  /// disagreed with the editor about the size of the same page.
+  /// `metrics_test.dart` holds the derivation to the sheet rather than to this
+  /// line.
+  static const double lineHeightRatio =
+      advanceRatio * charactersPerInch / linesPerInch;
 
   /// The size below which the script stops shrinking to fit.
   ///

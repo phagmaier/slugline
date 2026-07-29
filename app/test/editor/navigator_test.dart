@@ -29,7 +29,14 @@ FakeCore _script() {
     _block(3, BlockKind.character, 'BOB'),
     _block(4, BlockKind.dialogue, 'Hello.'),
     _block(5, BlockKind.sceneHeading, 'EXT. STREET - NIGHT #12A#'),
-    _block(6, BlockKind.action, List.filled(40, 'Night action.').join('\n')),
+    // The second scene runs long on purpose. The restored-scroll test below
+    // scrolls until scene two is the top row, and a scrollable will not move
+    // past its last line — so the tail has to be deeper than the viewport or
+    // the scroll clamps short and the test measures the clamp instead of the
+    // highlight. It is sized off the rows, not off pixels: the script grid is
+    // `ScreenplayMetrics.lineHeightRatio` tall and this fixture is not the
+    // place to encode that.
+    _block(6, BlockKind.action, List.filled(80, 'Night action.').join('\n')),
     _block(7, BlockKind.character, 'BOB (V.O.)'),
     _block(8, BlockKind.dialogue, 'Again.'),
   ]);
