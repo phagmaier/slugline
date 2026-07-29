@@ -121,6 +121,16 @@ void main() {
     expect(meta.style?.color, SluglineColors.light.textTertiary);
     expect(find.text('NAVIGATOR'), findsOneWidget);
 
+    final titleRow = tester.widget<Row>(
+      find.ancestor(of: find.text('HOUSE'), matching: find.byType(Row)).first,
+    );
+    expect(titleRow.crossAxisAlignment, CrossAxisAlignment.baseline);
+    expect(titleRow.textBaseline, TextBaseline.alphabetic);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('scene number column 1'))).width,
+      30,
+    );
+
     final selected = tester.widget<Material>(
       find.byKey(const ValueKey('navigator scene background 1')),
     );
@@ -145,6 +155,35 @@ void main() {
           .color,
       isNot(Colors.transparent),
     );
+  });
+
+  testWidgets('drag handles appear on row hover and keyboard focus', (
+    tester,
+  ) async {
+    await _pump(tester, _script());
+
+    final first = find.byKey(const ValueKey('navigator scene 1'));
+    final visibility = find.byKey(const ValueKey('drag scene 1 visibility'));
+    final titleX = tester.getTopLeft(find.text('HOUSE')).dx;
+    expect(tester.widget<AnimatedOpacity>(visibility).opacity, 0);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(first));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(visibility).opacity, 1);
+    expect(tester.getTopLeft(find.text('HOUSE')).dx, titleX);
+
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('navigator filter'))),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(visibility).opacity, 0);
+
+    tester.widget<ListTile>(first).onFocusChange!(true);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(visibility).opacity, 1);
   });
 
   testWidgets(
@@ -199,6 +238,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.blocks.first.id, 1);
 
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer();
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('drag scene 1'))),
+      );
+      await tester.pumpAndSettle();
       await tester.drag(
         find.byKey(const ValueKey('drag scene 1')),
         const Offset(0, 120),

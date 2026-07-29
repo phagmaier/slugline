@@ -43,6 +43,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
   _NavigatorSection _section = _NavigatorSection.scenes;
   int _selected = 0;
   int? _hoveredScene;
+  int? _focusedScene;
   String? _hoveredCharacter;
 
   @override
@@ -449,6 +450,8 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     final current = scene.block == widget.currentSceneBlock;
     final keyboardSelected = index == _selected;
     final hovered = scene.block == _hoveredScene;
+    final focused = scene.block == _focusedScene;
+    final showDragHandle = hovered || focused;
     final subtitle = [
       scene.prefix,
       scene.timeOfDay,
@@ -459,6 +462,33 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
         : hovered || keyboardSelected
         ? colours.surfaceOverlay.withValues(alpha: 0.58)
         : Colors.transparent;
+    final dragHandle = reorderable
+        ? ReorderableDragStartListener(
+            key: ValueKey('drag scene ${scene.block}'),
+            index: index,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: Tooltip(
+                message: 'Drag to reorder',
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.drag_indicator,
+                    size: 16,
+                    color: colours.textTertiary,
+                  ),
+                ),
+              ),
+            ),
+          )
+        : Tooltip(
+            message: 'Clear search to reorder',
+            child: Icon(
+              Icons.drag_indicator,
+              size: 16,
+              color: colours.textTertiary.withValues(alpha: 0.45),
+            ),
+          );
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredScene = scene.block),
       onExit: (_) {
@@ -482,6 +512,15 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
             minVerticalPadding: 8,
             horizontalTitleGap: 8,
             contentPadding: const EdgeInsets.fromLTRB(8, 0, 6, 0),
+            onFocusChange: (hasFocus) {
+              setState(() {
+                if (hasFocus) {
+                  _focusedScene = scene.block;
+                } else if (_focusedScene == scene.block) {
+                  _focusedScene = null;
+                }
+              });
+            },
             selected: current,
             shape: Border(
               left: BorderSide(
@@ -489,70 +528,73 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
                 width: 2,
               ),
             ),
-            leading: SizedBox(
-              width: 30,
-              child: Text(
-                scene.sceneNumber ?? '${index + 1}',
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: colours.textTertiary,
-                  fontSize: 11,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ),
-            title: Text(
-              scene.location.isEmpty ? scene.prefix : scene.location,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colours.textPrimary,
-                fontSize: 13,
-                height: 1.15,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            subtitle: subtitle.isEmpty
-                ? null
-                : Text(
-                    subtitle,
+            title: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                SizedBox(
+                  key: ValueKey('scene number column ${scene.block}'),
+                  width: 30,
+                  child: Text(
+                    scene.sceneNumber ?? '${index + 1}',
+                    textAlign: TextAlign.right,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: colours.textTertiary,
                       fontSize: 11,
-                      height: 1.15,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
-            trailing: reorderable
-                ? ReorderableDragStartListener(
-                    key: ValueKey('drag scene ${scene.block}'),
-                    index: index,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.grab,
-                      child: Tooltip(
-                        message: 'Drag to reorder',
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.drag_indicator,
-                            size: 16,
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Text(
+                    scene.location.isEmpty ? scene.prefix : scene.location,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colours.textPrimary,
+                      fontSize: 13,
+                      height: 1.15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            subtitle: subtitle.isEmpty
+                ? null
+                : Row(
+                    children: [
+                      const SizedBox(width: 48),
+                      Expanded(
+                        child: Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
                             color: colours.textTertiary,
+                            fontSize: 11,
+                            height: 1.15,
                           ),
                         ),
                       ),
-                    ),
-                  )
-                : Tooltip(
-                    message: 'Clear search to reorder',
-                    child: Icon(
-                      Icons.drag_indicator,
-                      size: 16,
-                      color: colours.textTertiary.withValues(alpha: 0.45),
-                    ),
+                    ],
                   ),
+            trailing: IgnorePointer(
+              ignoring: !showDragHandle,
+              child: ExcludeSemantics(
+                excluding: !showDragHandle,
+                child: AnimatedOpacity(
+                  key: ValueKey('drag scene ${scene.block} visibility'),
+                  opacity: showDragHandle ? 1 : 0,
+                  duration: const Duration(milliseconds: 120),
+                  curve: Curves.easeOut,
+                  child: dragHandle,
+                ),
+              ),
+            ),
             onTap: () {
               setState(() => _selected = index);
               widget.onSceneSelected(scene.block);
