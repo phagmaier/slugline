@@ -322,7 +322,11 @@ fn one_more_action_line_overflows_to_page_two() {
     let lines: String = (1..=55).map(|i| format!("Line {i}.\n")).collect();
     let document = Document::parse(&lines);
     let output = paginate(&document, &PageConfig::us_letter());
-    assert_eq!(output.pages.len(), 2, "55 action rows do not fit on one page");
+    assert_eq!(
+        output.pages.len(),
+        2,
+        "55 action rows do not fit on one page"
+    );
     let action = document.blocks()[0].id();
     for page in output.pages.iter() {
         let count = page
