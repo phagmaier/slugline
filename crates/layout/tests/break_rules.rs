@@ -1,5 +1,5 @@
 use slugline_document::{BlockKind, Document};
-use slugline_layout::{paginate, LayoutLineKind, PageConfig, SceneNumberGutters};
+use slugline_layout::{break_lines, paginate, LayoutLineKind, PageConfig, SceneNumberGutters};
 
 fn tiny(lines: u16) -> PageConfig {
     PageConfig::us_letter().with_line_capacity(lines)
@@ -300,4 +300,63 @@ fn nonprinting_blocks_do_not_reach_output() {
     assert!(!dump.contains("private"));
     assert!(!dump.contains("old"));
     assert!(dump.contains("Visible  action  remains."));
+}
+
+#[test]
+fn one_action_block_fills_exactly_one_us_letter_page() {
+    let lines: String = (1..=54).map(|i| format!("Line {i}.\n")).collect();
+    let document = Document::parse(&lines);
+    let output = paginate(&document, &PageConfig::us_letter());
+    assert_eq!(output.pages.len(), 1);
+    let action = document.blocks()[0].id();
+    let content: Vec<_> = output.pages[0]
+        .lines
+        .iter()
+        .filter(|line| line.block == Some(action) && line.kind == LayoutLineKind::Content)
+        .collect();
+    assert_eq!(content.len(), 54);
+}
+
+#[test]
+fn one_more_action_line_overflows_to_page_two() {
+    let lines: String = (1..=55).map(|i| format!("Line {i}.\n")).collect();
+    let document = Document::parse(&lines);
+    let output = paginate(&document, &PageConfig::us_letter());
+    assert_eq!(output.pages.len(), 2, "55 action rows do not fit on one page");
+    let action = document.blocks()[0].id();
+    for page in output.pages.iter() {
+        let count = page
+            .lines
+            .iter()
+            .filter(|line| line.block == Some(action) && line.kind == LayoutLineKind::Content)
+            .count();
+        assert!(
+            count >= 2,
+            "action orphan rule left {count} fragment(s) on a page"
+        );
+    }
+}
+
+#[test]
+fn dialogue_wraps_at_thirty_five_character_width() {
+    let text = "A dialogue line deliberately long enough to wrap multiple times across the thirty-five character dialogue width.";
+    let expected = break_lines(text, 35);
+    let document = Document::parse(&format!("MARTHA\n{text}\n"));
+    let output = paginate(&document, &PageConfig::us_letter());
+    let dialogue = document
+        .blocks()
+        .iter()
+        .find(|block| block.kind() == BlockKind::Dialogue)
+        .expect("dialogue block")
+        .id();
+    let wrapped: Vec<_> = output.pages[0]
+        .lines
+        .iter()
+        .filter(|line| line.block == Some(dialogue) && line.kind == LayoutLineKind::Content)
+        .collect();
+    assert_eq!(wrapped.len(), expected.len());
+    assert!(
+        wrapped.len() > 1,
+        "dialogue text is short enough to not wrap"
+    );
 }

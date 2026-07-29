@@ -41,7 +41,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 > line height — not a hardcoded pixel value, and not an extra `\n` in the document model. Check
 > that padding on the paragraph widget isn't stacking on top of that margin.
 
-### [ ] 3. Add a pagination validation test
+### [x] 3. Add a pagination validation test
 
 > Write a widget test that renders 55 single lines of action text using the standard metrics and
 > asserts the rendered height equals exactly one page height. Add a second test asserting that a
