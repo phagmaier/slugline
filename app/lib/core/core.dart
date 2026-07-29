@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:slugline/identity.dart';
 import 'package:slugline/src/rust/api/events.dart' as bus;
 import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/src/rust/api/spell.dart' as spelling;
@@ -127,7 +128,7 @@ class Core implements LibraryCore {
       // app started anyway; §1.2 makes losing user text a P0, and starting
       // knowing that nothing can be kept is the version of it that looks fine.
       throw const CoreUnavailable(
-        'Slugline could not work out where to keep your scripts. It needs a '
+        '$applicationName could not work out where to keep your scripts. It needs a '
         'home directory (or XDG_CONFIG_HOME, XDG_DATA_HOME and XDG_STATE_HOME) '
         'to put the library, the crash journal and the backups in.',
       );

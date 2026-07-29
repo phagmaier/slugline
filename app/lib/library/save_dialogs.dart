@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/identity.dart';
 import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/widgets/escape_dismissible.dart';
 
@@ -91,7 +92,7 @@ String _headline(SaveFailure failure) => switch (failure) {
 
 String _explanation(SaveFailure failure, String path) => switch (failure) {
       SaveFailure.readOnly =>
-        '$path is marked read-only, so Slugline did not overwrite it.',
+        '$path is marked read-only, so $applicationName did not overwrite it.',
       SaveFailure.permissionDenied =>
         'The folder holding $path will not accept a new file from this account.',
       SaveFailure.noSpace =>
@@ -109,7 +110,7 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
       // it ever gets here; this sentence is what a writer sees if they declined
       // and the failure came back up.
       SaveFailure.alreadyExists =>
-        '$path is already there, and Slugline did not replace it.',
+        '$path is already there, and $applicationName did not replace it.',
       SaveFailure.scriptIsOpen =>
         '$path is open here. Save that script rather than writing this one over it.',
       // Normally never seen: [saveWithDialogs] returns this one to the caller
@@ -118,7 +119,7 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
       // one enum, and a dialog that had nothing to say would be worse.
       SaveFailure.changedOnDisk =>
         'Something else has written to $path since it was last read here, so '
-            'Slugline did not replace it.',
+            '$applicationName did not replace it.',
       SaveFailure.io => 'The operating system refused to write $path.',
     };
 

@@ -57,6 +57,15 @@ if(SLUGLINE_VERSION STREQUAL "")
   message(FATAL_ERROR "No version: line in app/pubspec.yaml")
 endif()
 
+# The Dart constant also owns the native title-bar spelling. Read it at build
+# time so the product name cannot drift between Flutter and GTK chrome.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../lib/identity.dart" SLUGLINE_IDENTITY)
+string(REGEX MATCH "const applicationName = '([^']+)'" _ "${SLUGLINE_IDENTITY}")
+set(SLUGLINE_APP_NAME "${CMAKE_MATCH_1}")
+if(SLUGLINE_APP_NAME STREQUAL "")
+  message(FATAL_ERROR "No applicationName constant in app/lib/identity.dart")
+endif()
+
 # §Phase 11 asks for stripped symbols in the release build. The Rust `.so`
 # already strips via `[profile.release]`; this is the other half, the native
 # runner, which shipped unstripped until now.

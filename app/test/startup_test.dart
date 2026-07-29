@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/app.dart';
 import 'package:slugline/core/core.dart';
+import 'package:slugline/identity.dart';
 
 void main() {
   testWidgets('the failure screen says what is wrong and offers no editor', (
@@ -26,7 +27,11 @@ void main() {
 
     await tester.pumpWidget(StorageUnavailableApp(message: failure.message));
 
-    expect(find.text('Slugline cannot start'), findsOneWidget);
+    expect(find.text('$applicationName cannot start'), findsOneWidget);
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).title,
+      applicationName,
+    );
     expect(find.text(failure.message), findsOneWidget);
     expect(
       find.byType(TextField),

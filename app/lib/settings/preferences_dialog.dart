@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/core.dart';
+import 'package:slugline/identity.dart';
 import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/theme.dart';
 
@@ -391,7 +392,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         'Warning: non-standard fonts can break screenplay grid '
-                        'fidelity. Slugline keeps the fixed grid, but the chosen '
+                        'fidelity. $applicationName keeps the fixed grid, but the chosen '
                         'face may not fit it.',
                         key: const ValueKey('font fidelity warning'),
                         style: TextStyle(
@@ -406,7 +407,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                     controller: _backup,
                     decoration: InputDecoration(
                       labelText: 'Backup location',
-                      hintText: 'Default Slugline state directory',
+                      hintText: 'Default $applicationName state directory',
                       suffixIcon: IconButton(
                         tooltip: 'Choose backup folder',
                         onPressed: _chooseBackupDirectory,

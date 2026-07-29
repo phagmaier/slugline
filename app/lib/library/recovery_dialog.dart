@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/core.dart';
+import 'package:slugline/identity.dart';
 import 'package:slugline/theme.dart';
 import 'package:slugline/widgets/escape_dismissible.dart';
 
@@ -51,8 +52,8 @@ class RecoveryDialog extends StatelessWidget {
       icon: const Icon(Icons.restore_page_outlined),
       title: Text(
         offers.length == 1
-            ? 'Slugline closed unexpectedly'
-            : 'Slugline closed unexpectedly with ${offers.length} scripts open',
+            ? '$applicationName closed unexpectedly'
+            : '$applicationName closed unexpectedly with ${offers.length} scripts open',
       ),
       content: SizedBox(
         width: 520,
@@ -180,7 +181,7 @@ Future<void> showRecoveryNotJournalled(
           Text(message, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 12),
           Text(
-            'Save this script somewhere writable, or restart Slugline — the '
+            'Save this script somewhere writable, or restart $applicationName — the '
             'recovery will be offered again.',
             style: Theme.of(context).textTheme.bodySmall,
           ),

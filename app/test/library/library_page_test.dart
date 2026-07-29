@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/core.dart';
+import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/theme.dart';
 
@@ -82,7 +83,8 @@ void main() {
     final header = tester.widget<Text>(find.text('RECENT'));
     expect(header.style?.fontSize, 10);
     expect(header.style?.color, SluglineColors.light.textTertiary);
-    expect(tester.getTopLeft(find.text('RECENT')).dy, greaterThan(120));
+    expect(tester.getTopLeft(find.text('RECENT')).dy, lessThan(120));
+    expect(find.text(applicationName), findsNothing);
 
     final title = tester.widget<Text>(
       find.byKey(const ValueKey('library-title-heat')),

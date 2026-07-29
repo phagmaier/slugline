@@ -167,7 +167,6 @@ class _LibraryPageState extends State<LibraryPage> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Slugline'),
           actions: [
             IconButton(
               tooltip: 'Keyboard shortcuts (F1)',
@@ -243,7 +242,7 @@ class _LibraryPageState extends State<LibraryPage> {
   );
 
   Widget _recentScripts(List<ScriptView> scripts) => Padding(
-    padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
+    padding: const EdgeInsets.fromLTRB(32, 32, 32, 32),
     child: Center(
       child: ConstrainedBox(
         key: const ValueKey('library-content'),

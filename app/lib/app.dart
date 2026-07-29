@@ -9,6 +9,7 @@ import 'package:slugline/editor/autosave.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/save_status.dart';
+import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/library/recovery_dialog.dart';
 import 'package:slugline/settings/preferences_dialog.dart';
@@ -392,7 +393,7 @@ class _SluglineAppState extends State<SluglineApp> {
     final open = _open;
     return MaterialApp(
       navigatorKey: _navigator,
-      title: 'Slugline',
+      title: applicationName,
       debugShowCheckedModeBanner: false,
       theme: sluglineTheme(Brightness.light),
       darkTheme: sluglineTheme(Brightness.dark),
@@ -441,7 +442,7 @@ class StorageUnavailableApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Slugline',
+    title: applicationName,
     debugShowCheckedModeBanner: false,
     theme: sluglineTheme(Brightness.light),
     darkTheme: sluglineTheme(Brightness.dark),
@@ -458,7 +459,7 @@ class StorageUnavailableApp extends StatelessWidget {
                 const Icon(Icons.error_outline, size: 40),
                 const SizedBox(height: 16),
                 Text(
-                  'Slugline cannot start',
+                  '$applicationName cannot start',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 12),

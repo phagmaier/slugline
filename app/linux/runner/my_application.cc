@@ -15,6 +15,84 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+static gboolean is_window_control(const gchar* button) {
+  return g_strcmp0(button, "minimize") == 0 ||
+         g_strcmp0(button, "maximize") == 0 ||
+         g_strcmp0(button, "close") == 0;
+}
+
+static gboolean has_window_control(const gchar* layout) {
+  gchar** buttons = g_strsplit(layout, ",", -1);
+  gboolean found = FALSE;
+  for (gchar** button = buttons; *button != nullptr; button++) {
+    if (is_window_control(*button)) {
+      found = TRUE;
+      break;
+    }
+  }
+  g_strfreev(buttons);
+  return found;
+}
+
+// Add the complete control group without disturbing menu/icon placement. GTK's
+// decoration setting chooses the side; the order within that side follows the
+// platform convention.
+static gchar* decoration_side_with_controls(const gchar* layout,
+                                            gboolean add_controls,
+                                            gboolean controls_on_left) {
+  gchar** buttons = g_strsplit(layout, ",", -1);
+  GString* result = g_string_new(nullptr);
+  gboolean controls_added = FALSE;
+  const gchar* controls = controls_on_left
+                              ? "close,minimize,maximize"
+                              : "minimize,maximize,close";
+
+  for (gchar** button = buttons; *button != nullptr; button++) {
+    const gchar* value = *button;
+    if (is_window_control(value)) {
+      if (add_controls && !controls_added) {
+        if (result->len > 0) g_string_append_c(result, ',');
+        g_string_append(result, controls);
+        controls_added = TRUE;
+      }
+      continue;
+    }
+    if (*value == '\0') continue;
+    if (result->len > 0) g_string_append_c(result, ',');
+    g_string_append(result, value);
+  }
+  if (add_controls && !controls_added) {
+    if (result->len > 0) g_string_append_c(result, ',');
+    g_string_append(result, controls);
+  }
+
+  g_strfreev(buttons);
+  return g_string_free(result, FALSE);
+}
+
+static gchar* decoration_layout_with_window_controls(GtkWidget* header_bar) {
+  gchar* preferred = nullptr;
+  g_object_get(gtk_widget_get_settings(header_bar), "gtk-decoration-layout",
+               &preferred, nullptr);
+  gchar** sides = g_strsplit(preferred == nullptr ? "" : preferred, ":", 2);
+  const gchar* left = sides[0] == nullptr ? "" : sides[0];
+  const gchar* right = sides[1] == nullptr ? "" : sides[1];
+  const gboolean controls_on_left = has_window_control(left);
+
+  gchar* decorated_left =
+      decoration_side_with_controls(left, controls_on_left, TRUE);
+  gchar* decorated_right =
+      decoration_side_with_controls(right, !controls_on_left, FALSE);
+  gchar* decorated =
+      g_strdup_printf("%s:%s", decorated_left, decorated_right);
+
+  g_free(decorated_left);
+  g_free(decorated_right);
+  g_strfreev(sides);
+  g_free(preferred);
+  return decorated;
+}
+
 // Phase 10's distraction-free mode. Dart owns the preference and editing UI;
 // GTK owns the actual Linux window state.
 static void window_method_call_cb(FlMethodChannel* channel,
@@ -74,14 +152,19 @@ static void my_application_activate(GApplication* application) {
     }
   }
 #endif
+  gtk_window_set_title(window, SLUGLINE_APP_NAME);
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "slugline");
+    gtk_header_bar_set_title(header_bar, SLUGLINE_APP_NAME);
+    gchar* decoration_layout =
+        decoration_layout_with_window_controls(GTK_WIDGET(header_bar));
+    gtk_header_bar_set_decoration_layout(header_bar, decoration_layout);
+    g_free(decoration_layout);
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
+    // As the window's titlebar, GTK makes the blank area draggable and applies
+    // the platform's gtk-titlebar-double-click action (normally maximize).
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "slugline");
   }
 
   gtk_window_set_default_size(window, 1280, 720);
