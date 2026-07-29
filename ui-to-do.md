@@ -50,7 +50,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 > This turns "does the spacing look right" into something checkable so it can't silently drift
 > again.
 
-### [ ] 4. Confirm editor and exporter agree on pagination
+### [x] 4. Confirm editor and exporter agree on pagination
 
 > Verify that the PDF/export pipeline and the editor's on-screen page counter derive page breaks
 > from the same metrics source. If they compute independently, unify them so a change to

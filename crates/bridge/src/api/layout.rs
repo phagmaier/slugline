@@ -984,4 +984,36 @@ mod tests {
             PaginationOutcome::NoSuchDocument
         );
     }
+
+    /// The editor status bar and the PDF export path must agree on page count,
+    /// because both derive it from `PaginatedScript.pages.len()`. The test
+    /// paginates the same fixture through `doc_paginate` (the editor's §6
+    /// endpoint) and through `layout::paginate` (what `doc_export_pdf` calls
+    /// internally), asserting the two counts are identical and also match the
+    /// length of `PaginationView.pages` — the list the preview and PDF renderer
+    /// actually iterate.
+    #[test]
+    fn editor_and_export_page_counts_agree() {
+        let doc = Doc::parse(&long_script(100));
+        let config = page_config(&letter());
+
+        let editor = doc.current();
+        let editor_count = editor.page_count;
+
+        let (pagination, current) =
+            paginate(doc.handle().id, &config).expect("the document is open");
+        assert!(current, "the export pagination is current");
+
+        let export_count = pagination.script.pages.len() as u32;
+
+        assert_eq!(
+            editor_count, export_count,
+            "the editor status bar and the PDF export agree on page count"
+        );
+        assert_eq!(
+            editor_count,
+            editor.pages.len() as u32,
+            "page_count matches pages.len() in PaginationView"
+        );
+    }
 }
