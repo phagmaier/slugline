@@ -536,6 +536,20 @@ fn content(
 ) -> Vec<u8> {
     use std::fmt::Write as _;
 
+    // Parse the custom font face once for underline metrics, rather than
+    // re-parsing it for every underlined run. Vendored faces are parsed
+    // per-style on first use and cached — the four Courier Prime variants may
+    // have small metric differences.
+    let custom_underline = custom_font.map(|bytes| {
+        let face = Face::parse(bytes);
+        let scale = BODY_FONT_POINTS / f64::from(face.units_per_em);
+        (
+            f64::from(face.underline_position) * scale,
+            f64::from(face.underline_thickness) * scale,
+        )
+    });
+    let mut vendored_underline: BTreeMap<Style, (f64, f64)> = BTreeMap::new();
+
     let mut text = String::from("BT\n");
     let mut rules = String::new();
     let mut current: Option<Style> = None;
@@ -585,10 +599,18 @@ fn content(
             // Under the baseline by the amount the face itself specifies, so
             // that the rule sits where the type designer put it rather than
             // where the renderer guessed.
-            let face = Face::parse(custom_font.unwrap_or(placed.style.face().bytes));
-            let scale = BODY_FONT_POINTS / f64::from(face.units_per_em);
-            let offset = f64::from(face.underline_position) * scale;
-            let thickness = f64::from(face.underline_thickness) * scale;
+            let (offset, thickness) = if let Some(ref metrics) = custom_underline {
+                *metrics
+            } else {
+                *vendored_underline.entry(placed.style).or_insert_with(|| {
+                    let face = Face::parse(placed.style.face().bytes);
+                    let scale = BODY_FONT_POINTS / f64::from(face.units_per_em);
+                    (
+                        f64::from(face.underline_position) * scale,
+                        f64::from(face.underline_thickness) * scale,
+                    )
+                })
+            };
             let end = x + placed.text.chars().count() as f64 * geometry.column;
             let _ = writeln!(
                 rules,

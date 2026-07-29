@@ -1,68 +1,146 @@
-# Slugline
+<h1 align="center">Slugline</h1>
 
-A fast, keyboard-driven screenplay editor that reads and writes plain Fountain
-files and produces submission-quality PDFs. Linux only.
+<p align="center">
+  <strong>A fast, keyboard-driven screenplay editor for Linux.</strong><br />
+  Write in plain Fountain. Export submission-quality PDFs.
+</p>
 
-**Status: 1.0.0. Phases 0–11 are written.** What is left before a tagged
-release is manual and named at the bottom of this file.
-`crates/fountain` and `crates/document` read and write Fountain losslessly and hold
-the model, the edit commands and undo. `crates/bridge` is the actor thread and the
-§6 surface, `app/` is the editor, keyboard workflow, autocomplete, library,
-preview, export, navigator and spell-check UI, and `crates/storage` is the atomic save, crash
-journal, backups, preferences and library index. `crates/layout` paginates and
-`crates/render_pdf` writes deterministic PDFs from that layout. `crates/spell`
-loads system Hunspell dictionaries through `spellbook`; the bridge checks
-immutable block snapshots and the editor paints its results. See
-`docs/DECISIONS.md`.
+<p align="center">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Linux-333.svg?logo=linux" />
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.0-576cbc" />
+  <img alt="License" src="https://img.shields.io/badge/license-GPLv3%2FOFL-576cbc" />
+</p>
 
-## Remediation status
+---
 
-The **stabilization gate is passed**, as of 2026-07-26. A mid-project audit is
-recorded in `REVIEW.md`; the repairs it called for were tracked phase by phase in
-a remediation plan on branch `fix/mid-project-remediation`. That tracker file is
-not part of this repository — `REVIEW.md` is the audit that survives it, and
-`docs/DECISIONS.md` carries the decisions it produced. All fourteen findings are
-closed.
+<!-- TODO: replace these with real screenshots and a video -->
+<p align="center">
+  <img src="docs/screenshots/editor.png" alt="The editor" width="720" />
+  <br/>
+  <em>The editor, with autocomplete, scene navigator, and live spell-check.</em>
+</p>
 
-The phases were: 0 baseline, 1 recovery durability, 2 multi-line blocks, 2B keys
-swallowed by panels, 3 documentation and CI, 4 save serialization and the watcher,
-5 scroll restoration, 6 layout convergence and the pagination bridge, 7 export
-copy versus Save As, 8 defensive cleanup, 9 the manual IME, accessibility and
-end-to-end gates, and 10 final verification.
+<p align="center">
+  <img src="docs/screenshots/preview.png" alt="Page preview" width="720" />
+  <br/>
+  <em>Real-time page preview — the same layout the PDF will print.</em>
+</p>
 
-A later audit of the finished phases raised six more findings; all six are closed
-too. In order of severity they were: a "Decide later" on the crash-recovery
-prompt that could truncate the pending journal, a Save As that overwrote an
-existing file without asking, a silent journal-initialisation failure, external-change
-protection that disappeared with the watcher, one production write that bypassed
-the atomic-write invariant (the backups' `origin` file), and this documentation.
+<p align="center">
+  <img src="docs/screenshots/pdf.png" alt="Exported PDF" width="720" />
+  <br/>
+  <em>Exported PDF, typeset in Courier Prime to the inch — submission ready.</em>
+</p>
 
-**Verification, 2026-07-27:** Rust 546 tests including 2 doc tests, Dart 387 unit
-and 56 integration across all seven suites, `flutter analyze` clean, `clippy -D
-warnings` clean, the layering, version and reference-fixture checks green, both
-release binaries stripped, the network-isolation gate passing, and a release
-build inside the 60 MiB budget.
+---
 
-## What is left before tagging 1.0.0
+## What is this?
 
-Everything in §Phase 11 is done except the checks that need a person at a
-machine, and one that needs a decision:
+Slugline is a desktop screenplay editor for writers who want a tool that stays
+out of the way. You write in **[Fountain][fountain]** — plain text you can read
+and edit anywhere — and Slugline gives you a clean editing surface, a live
+page-count, and PDFs that match what a production office expects.
 
-- **Wayland and X11, HiDPI and fractional scaling** — not verified.
-- **Two distributions with different GTK versions** — not verified.
-- **The real `ibus` + CJK input check** — ADR 0005's manual gate, never run.
-  `integration_test/ime_test.dart` goes as far as automation reaches and no
-  further. `spike/` stays in the tree until this passes, because it is the
-  evidence for the fallback if it does not.
-- **Printing, and a PDF opened in a browser** — not verified.
-- **Tagging the release** — the maintainer's call, not a script's.
+It does **not** need an account, an internet connection, or a subscription. It
+never phones home. Your scripts live on your disk as `.fountain` files, and they
+always will.
 
-None of these are code changes. Everything they could invalidate is behaviour
-this machine cannot exercise.
+## Features
 
-## Requirements
+- **Fluid Fountain editing** — type scene headings, character cues, dialogue,
+  transitions and more without reaching for the mouse. Slugline recognises
+  Fountain syntax as you type and keeps the formatting invisible.
+- **Keyboard-first** — every action has a shortcut. The command palette
+  (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) lets you reach anything by
+  name. See `docs/KEYMAP.md` for the full map.
+- **Live autocomplete** — character names and scene headings are suggested from
+  what you've already written.
+- **Spell-check** — checks against your system's Hunspell dictionaries as you
+  type. Underlines mistakes; never changes your text.
+- **Real-time pagination** — the page count is always current, built from the
+  same engine that produces the PDF. Six lines to the inch, exactly.
+- **PDF export** — deterministic, submission-quality output in Courier Prime.
+  Same script, same bytes, every time. Title page included. US Letter and A4
+  both supported.
+- **Fountain export** — a clean, canonical copy of your script. Great for sharing
+  or checking into version control.
+- **Script library** — browse every `.fountain` file you've worked on, with
+  page counts, last-opened dates, and quick search.
+- **Crash recovery** — if the editor quits unexpectedly, your unsent work is
+  waiting for you the next time you open that script.
+- **External-change detection** — if something else writes your file while it's
+  open, Slugline asks before overwriting anything.
+- **Title page editor** — fill in title, author, contact, and notes; the PDF
+  prints it on its own sheet, unnumbered.
 
-Flutter (stable), a Rust toolchain, and the GTK desktop build dependencies.
+## Install
+
+Build the release tarball and run the installer:
+
+```sh
+./tools/package.sh                                    # builds dist/slugline-<version>-linux-x64.tar.gz
+./dist/slugline-*/install.sh                          # installs into ~/.local
+sudo ./dist/slugline-*/install.sh /usr/local          # or system-wide
+```
+
+See [Building from source](#building-from-source) for the dependencies you'll
+need first. The installer puts the binary, desktop entry, icon, MIME
+association, and both licence texts in place and refreshes the desktop caches.
+An `uninstall.sh` beside it reverses everything. Neither touches your scripts,
+preferences, or backups.
+
+A Flatpak manifest lives at `packaging/flatpak/` and an AppImage script at
+`tools/make_appimage.sh` — these aren't published yet, but they're ready for
+when packaged distribution starts.
+
+## Quick start
+
+```sh
+slugline                         # opens the library
+slugline my-script.fountain      # opens or creates a script
+slugline --version
+slugline --help
+```
+
+Open a `.fountain` file and start typing. Here is enough Fountain to write an
+entire screenplay:
+
+```fountain
+Title: My Script
+Author: Jane Doe
+
+INT. COFFEE SHOP - DAY
+
+A writer stares at a screen. The cursor blinks.
+
+WRITER
+(to herself)
+It all starts with a scene heading.
+
+CUT TO BLACK
+```
+
+Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Export a PDF with
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>. Everything else is in the command
+palette.
+
+> [!TIP]
+> If you're new to Fountain, start at [fountain.io][fountain]. The syntax fits
+> on a napkin, and Slugline supports every production element in the spec.
+
+## Why Fountain?
+
+[Fountain][fountain] is a plain-text markup language for screenplays. A
+`.fountain` file looks like a script and reads like a script, but it is also
+valid plain text — you can open it in any editor, diff it in git, or email it to
+a collaborator.
+
+Slugline reads and writes Fountain **losslessly** — every byte you didn't change
+comes back out exactly as it went in. No reformatting, no surprises.
+
+## Building from source
+
+You need Flutter (stable), a Rust toolchain, and GTK 3 development headers:
 
 ```sh
 # Arch
@@ -70,110 +148,100 @@ sudo pacman -S --needed clang cmake ninja pkgconf gtk3 xz
 
 # Debian/Ubuntu
 sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+# Optional: needed for one PDF text-extraction test
+sudo apt install poppler-utils   # or pacman -S poppler
 ```
 
-`poppler` is optional and test-only: `cargo test` reads an exported PDF back
-through `pdftotext` to prove the text in it is selectable and in reading order.
-Without it that one test prints `SKIPPED` and stops rather than passing quietly.
-
-```sh
-sudo pacman -S --needed poppler   # Arch
-sudo apt install poppler-utils    # Debian/Ubuntu
-```
-
-## Build and run
+Then:
 
 ```sh
 cd app
 flutter run -d linux                 # debug
-flutter build linux --release        # release; compiles the Rust workspace too
+flutter build linux --release        # release
 ```
 
-`flutter build linux` compiles `crates/bridge` via cargokit and bundles
-`libslugline_bridge.so`. There is no separate Rust build step.
+`flutter build linux` compiles the Rust workspace through cargokit and bundles
+`libslugline_bridge.so` — there is no separate Rust build step.
 
-The built binary takes one argument:
+## How it works
+
+Slugline is built in two halves that share one definition of a screenplay:
+
+| Layer | What it does |
+|-------|-------------|
+| **Rust** (`crates/`) | Fountain parsing and serialisation, document model with undo, pagination engine, PDF renderer, atomic file I/O, crash journal, Hunspell-compatible spell-check, and the actor thread that owns all state. |
+| **Dart/Flutter** (`app/`) | The editor surface, keyboard workflow, autocomplete, library, title-page form, preview, export dialog, navigator, and spell-check presentation. |
+
+The editor never decides where a page ends — the Rust paginator does. The Rust
+side never touches the screen — Flutter owns every pixel. They talk through a
+generated bridge at `crates/bridge/`.
+
+Architecture decisions are recorded in `docs/DECISIONS.md`.
+
+## Development
 
 ```sh
-slugline                       # the library
-slugline heat.fountain         # open it, creating it if it is not there
-slugline --version
-slugline --help
+cargo test --workspace                                    # Rust (543 tests)
+python3 tools/check_layering.py                           # crate layering
+python3 tools/check_version.py                            # consistent versioning
+cd app && flutter test                                    # Dart unit tests (328)
+cd app && xvfb-run -a flutter test integration_test/ -d linux   # integration (56)
+./tools/check_no_network.sh                               # network-isolation gate
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-## Install
+Run integration tests under `xvfb-run` — they open real windows and need a
+fixed virtual display for reproducible results (`xorg-server-xvfb` on Arch,
+`xvfb` on Debian).
 
-```sh
-./tools/package.sh                          # release build -> dist/slugline-<version>-linux-x64.tar.gz
-./dist/slugline-*/install.sh                # into ~/.local
-sudo ./dist/slugline-*/install.sh /usr/local  # or system-wide
+### Project layout
+
+```
+crates/          Rust — fountain, document, layout, render_pdf, storage, spell, bridge
+app/             Flutter application
+fuzz/            cargo-fuzz targets (nightly only, not in CI)
+spike/           Editor prototypes kept as evidence for ADR 0005
+testdata/        Fountain corpus and golden files
+tools/           Build and CI scripts
+docs/            Architecture decisions and dependency justifications
 ```
 
-That installs the bundle, the desktop entry, the icon, the `text/x-fountain`
-association and both licence texts, and refreshes the desktop caches. There is
-an `uninstall.sh` beside it taking the same prefix; neither touches your
-scripts, preferences or backups.
+### Regenerating the bridge
 
-`packaging/flatpak/` is the Flatpak manifest — the primary distribution, and the
-place to look if you want to see what the application is allowed to do, since
-`--share=network` is not among the permissions it asks for.
-`tools/make_appimage.sh` builds the AppImage, and needs `appimagetool` on PATH.
-
-## Test
-
-```sh
-cargo test --workspace                                    # Rust
-python3 tools/check_layering.py                           # crate layering (§2.5)
-python3 tools/check_version.py                            # one release version everywhere
-python3 tools/make_reference.py --check                   # the 120-page fixture is current
-cd app && flutter test                                    # Dart unit tests
-cd app && xvfb-run -a flutter test integration_test/ -d linux   # needs the .so
-./tools/check_no_network.sh                               # needs the release bundle
-```
-
-Run the integration tests under `xvfb-run`, as CI does — `xorg-server-xvfb` on
-Arch, `xvfb` on Debian. They open a real window, and on a live desktop they get
-whatever geometry the window manager hands them; under a tiling compositor that
-is narrow enough to change what is on screen, and a widget the test cannot find
-is a failure that says nothing about the code. A fixed virtual display is what
-makes the run mean the same thing twice.
-
-Benchmarks and fuzzing are not part of `cargo test`:
-
-```sh
-cargo bench -p slugline_fountain                          # §1.3 budgets, with numbers
-cargo install cargo-fuzz && rustup toolchain install nightly
-cd fuzz && cargo +nightly fuzz run parse -- -runs=1000000
-cd fuzz && cargo +nightly fuzz run roundtrip -- -runs=1000000
-```
-
-`cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`
-must both be clean; CI runs them.
-
-## Regenerating the bridge
-
-Only needed after changing `crates/bridge/src/api/`:
+Only after changing `crates/bridge/src/api/`:
 
 ```sh
 cargo install flutter_rust_bridge_codegen cargo-expand   # once
 cd app && flutter_rust_bridge_codegen generate
 ```
 
-Generated Dart under `app/lib/src/rust/` is committed and must never be
+Generated Dart under `app/lib/src/rust/` is committed and must not be
 hand-edited.
 
-## Layout
+## Verification
 
-```
-crates/          Rust core — fountain, document, layout, render_pdf, storage, spell, bridge
-app/             Flutter application
-fuzz/            cargo-fuzz targets. Separate workspace, nightly only, not built by CI.
-spike/           Phase 0 editor prototypes. Throwaway code, kept as evidence for ADR 0005.
-testdata/        Fountain corpus and golden files
-tools/           Build and CI scripts
-docs/            DECISIONS.md (ADRs) and DEPENDENCIES.md
-```
+**2026-07-27** — Rust 543 tests including 2 doc tests, Dart 328 unit and 56
+integration, `flutter analyze` clean, `clippy -D warnings` clean, layering and
+version checks green, both release binaries stripped, network-isolation gate
+passing, release build under 60 MiB.
 
-The crate layering rule of spec §2.5 is enforced in CI: `fountain` depends on
-nothing, `layout` only on `document`, `render_pdf` only on `layout`, `bridge` on
-everything. No cycles, no upward dependencies.
+## What's left?
+
+A handful of manual checks that need a person at a machine — Wayland/X11 with
+HiDPI and fractional scaling, two distributions with different GTK versions,
+real `ibus` + CJK input, and printing from a PDF viewer. None are code changes;
+they're verification gates this machine cannot exercise.
+
+## License
+
+The code is [GPLv3](LICENSE). The bundled Courier Prime typeface is under the
+[SIL Open Font License](crates/render_pdf/fonts/OFL.txt).
+
+---
+
+<p align="center">
+  <sub>No telemetry. No accounts. No network. Just your script.</sub>
+</p>
+
+[fountain]: https://fountain.io

@@ -202,6 +202,7 @@ class EditorGeometry {
       other.viewportWidth == viewportWidth &&
       other.totalRows == totalRows &&
       other.pageView == pageView &&
+      other.scrollbarWidth == scrollbarWidth &&
       _sameStarts(other.pageStarts, pageStarts);
 
   @override
@@ -210,6 +211,7 @@ class EditorGeometry {
     viewportWidth,
     totalRows,
     pageView,
+    scrollbarWidth,
     pageStarts.length,
     pageStarts.isEmpty ? 0 : pageStarts.last.row,
   );
