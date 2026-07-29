@@ -205,6 +205,15 @@ void main() {
             .alignment,
         Alignment.centerLeft,
       );
+      final scenesLabel = tester.widget<AnimatedDefaultTextStyle>(
+        find.byKey(const ValueKey('navigator Scenes label style')),
+      );
+      final scenesCount = tester.widget<AnimatedDefaultTextStyle>(
+        find.byKey(const ValueKey('navigator Scenes count style')),
+      );
+      expect(scenesLabel.style.fontSize, 11);
+      expect(scenesCount.style.fontSize, 10);
+      expect(scenesCount.style.color, SluglineColors.light.textTertiary);
       await tester.tap(find.textContaining('Characters'));
       await tester.pumpAndSettle();
       expect(

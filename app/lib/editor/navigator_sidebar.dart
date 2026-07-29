@@ -782,14 +782,33 @@ class _Segment extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Center(
-          child: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 180),
-            style: TextStyle(
-              color: selected ? colours.textPrimary : colours.textTertiary,
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            ),
-            child: Text('$label  $count'),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              AnimatedDefaultTextStyle(
+                key: ValueKey('navigator $label label style'),
+                duration: const Duration(milliseconds: 180),
+                style: TextStyle(
+                  color: selected ? colours.textPrimary : colours.textTertiary,
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+                child: Text(label),
+              ),
+              const SizedBox(width: 5),
+              AnimatedDefaultTextStyle(
+                key: ValueKey('navigator $label count style'),
+                duration: const Duration(milliseconds: 180),
+                style: TextStyle(
+                  color: colours.textTertiary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w400,
+                ),
+                child: Text('$count'),
+              ),
+            ],
           ),
         ),
       ),
