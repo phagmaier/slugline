@@ -82,7 +82,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 >
 > This is what makes the page count useful while writing rather than only at export time.
 
-### [ ] 7. Empty state for the opening screen
+### [x] 7. Empty state for the opening screen
 
 > When there are no recent scripts, the screen is currently blank. Add a centered empty state
 > within the content column: a document icon in `textTertiary`, a one-line explanation, and the
@@ -92,7 +92,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 
 ## Priority 3 — Layout and polish
 
-### [ ] 8. Fix file paths on the opening screen
+### [x] 8. Fix file paths on the opening screen
 
 > Three bugs in the recent-files path line:
 > - `home/phagmaier/cross.fountain/` is missing its leading slash and has a spurious trailing
@@ -102,7 +102,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 >   Truncate from the middle, always preserving the filename, and show the full path in a tooltip
 >   on hover.
 
-### [ ] 9. Constrain the opening screen content column
+### [x] 9. Constrain the opening screen content column
 
 > Rows currently stretch nearly the full window width, leaving the title and the overflow menu far
 > apart at wide window sizes. Wrap the recent list in a centered column with a max width of
@@ -118,16 +118,6 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 
 > Render scene headings in bold within the editor. This is conventional formatting and makes
 > vertical scanning of the script substantially faster. Keep them uppercase and at the 0" indent.
-
-### [ ] 12. Audit spacing before scene headings
-
-> The gap before `EXT. VAL'S BACKYARD - LATER` is visibly larger than other paragraph gaps. Find
-> out whether that's a double blank line in the source document or an extra top margin on the
-> scene heading element.
->
-> Extra space before a slug is defensible — but make it an explicit, consistent rule in
-> `ScreenplayMetrics` (e.g. slug top margin = 2 line heights) applied to every scene heading,
-> rather than an artifact of one document's source text.
 
 ### [ ] 13. Reveal drag handles on hover
 

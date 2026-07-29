@@ -142,11 +142,16 @@ class _FileChooserState extends State<FileChooser> {
     if (widget.selectDirectory) return _directory;
     var name = _name.text.trim();
     if (name.isEmpty) return '';
-    if (name.startsWith('/')) return name;
-    // A screenplay is a `.fountain` file (§1.1). Typing "heat" should not
-    // produce a file no editor will recognise.
+    if (name.startsWith('/')) return _cleanPath(name);
     if (!widget.mustExist && !name.contains('.')) name = '$name.fountain';
-    return '$_directory/$name';
+    var dir = _directory;
+    while (dir.endsWith('/') && dir.length > 1) {
+      dir = dir.substring(0, dir.length - 1);
+    }
+    while (name.startsWith('/')) {
+      name = name.substring(1);
+    }
+    return _cleanPath('$dir/$name');
   }
 
   void _confirm() {
@@ -274,4 +279,13 @@ class _ConfirmIntent extends Intent {
 String _basename(String path) {
   final slash = path.lastIndexOf('/');
   return slash < 0 ? path : path.substring(slash + 1);
+}
+
+String _cleanPath(String path) {
+  // Collapse repeated slashes and strip a trailing slash (unless root).
+  var result = path.replaceAll(RegExp(r'/+'), '/');
+  if (result.length > 1 && result.endsWith('/')) {
+    result = result.substring(0, result.length - 1);
+  }
+  return result;
 }

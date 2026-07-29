@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -201,7 +202,7 @@ class _LibraryPageState extends State<LibraryPage> {
     child: Padding(
       padding: const EdgeInsets.all(32),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
+        constraints: const BoxConstraints(maxWidth: 960),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -246,7 +247,7 @@ class _LibraryPageState extends State<LibraryPage> {
     child: Center(
       child: ConstrainedBox(
         key: const ValueKey('library-content'),
-        constraints: const BoxConstraints(maxWidth: 900),
+        constraints: const BoxConstraints(maxWidth: 960),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -337,16 +338,14 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ],
                         _metadataSeparator(metadataStyle),
-                        Expanded(
+                        Flexible(
                           child: Tooltip(
                             message: script.path,
                             child: Text(
-                              script.path,
+                              _displayPath(script.path),
                               key: ValueKey('library-path-${script.id}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              textDirection: TextDirection.rtl,
-                              textAlign: TextAlign.left,
                               style: metadataStyle,
                             ),
                           ),
@@ -397,6 +396,22 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Widget _metadataSeparator(TextStyle? style) => Text('  ·  ', style: style);
+
+  String _displayPath(String path) {
+    final home = Platform.environment['HOME'] ?? '';
+    var display = path;
+    if (home.isNotEmpty && path.startsWith(home)) {
+      display = '~${path.substring(home.length)}';
+    }
+    if (display.length <= 48) return display;
+    final basename = _basename(display);
+    final dir = display.substring(0, display.length - basename.length);
+    final keep = 48 - basename.length - 3;
+    if (keep <= 0) return '...$basename';
+    final start = (keep * 0.6).ceil();
+    final end = keep - start;
+    return '${dir.substring(0, start)}...${dir.substring(dir.length - end)}$basename';
+  }
 }
 
 enum _Action { rename, duplicate, remove, delete }

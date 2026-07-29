@@ -76,7 +76,7 @@ void main() {
     final opened = await _pump(tester, [script]);
 
     final content = find.byKey(const ValueKey('library-content'));
-    expect(tester.getSize(content).width, 900);
+    expect(tester.getSize(content).width, 960);
     expect(tester.getCenter(content).dx, 600);
 
     final header = tester.widget<Text>(find.text('RECENT'));
@@ -94,8 +94,6 @@ void main() {
     final path = tester.widget<Text>(
       find.byKey(const ValueKey('library-path-heat')),
     );
-    expect(path.textDirection, TextDirection.rtl);
-    expect(path.textAlign, TextAlign.left);
     expect(path.overflow, TextOverflow.ellipsis);
     expect(path.style?.color, SluglineColors.light.textTertiary);
 
