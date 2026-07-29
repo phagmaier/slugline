@@ -98,7 +98,10 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byTooltip('Pagination debug'));
+    await tester.tap(find.byKey(const ValueKey('editor overflow')));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pagination debug'));
     await tester.pump();
     await tester.pumpAndSettle();
 
