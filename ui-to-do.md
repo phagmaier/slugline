@@ -29,7 +29,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 > Verification: the line "Okay so this is one of my favorites." should fit on a single dialogue
 > line after the fix.
 
-### [ ] 2. Line height and element spacing
+### [x] 2. Line height and element spacing
 
 *(finish this, then run the validation test in task 3.)*
 

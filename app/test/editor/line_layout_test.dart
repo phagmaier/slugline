@@ -293,7 +293,7 @@ void main() {
       expect(metricsFor(BlockKind.character).blankLinesBefore, 1);
       expect(metricsFor(BlockKind.dialogue).blankLinesBefore, 0);
       expect(metricsFor(BlockKind.parenthetical).blankLinesBefore, 0);
-      expect(metricsFor(BlockKind.sceneHeading).blankLinesBefore, 2);
+      expect(metricsFor(BlockKind.sceneHeading).blankLinesBefore, 1);
     });
 
     test('headings, cues and transitions are shown in capitals', () {
@@ -345,10 +345,10 @@ void main() {
       ]);
 
       expect(layout.firstRowOf(0), 0, reason: 'nothing above the first block');
-      expect(layout.firstRowOf(1), 3, reason: '1 row of action + 2 blank');
-      expect(layout.firstRowOf(2), 5, reason: '+1 heading row +1 blank');
-      expect(layout.firstRowOf(3), 6, reason: 'dialogue follows its cue');
-      expect(layout.totalRows, 7);
+      expect(layout.firstRowOf(1), 2, reason: '1 row of action + 1 blank');
+      expect(layout.firstRowOf(2), 4, reason: '+1 heading row +1 blank');
+      expect(layout.firstRowOf(3), 5, reason: 'dialogue follows its cue');
+      expect(layout.totalRows, 6);
     });
 
     test('a row maps back to the block that owns it', () {
@@ -357,9 +357,9 @@ void main() {
         block(BlockKind.sceneHeading, 'INT. HOUSE - DAY', id: 2),
       ]);
       expect(layout.blockAtRow(0), 0);
-      // Rows 1 and 2 are the heading's blank rows and belong to it.
+      // Row 1 is the heading's blank row and belongs to it.
       expect(layout.blockAtRow(1), 1);
-      expect(layout.blockAtRow(3), 1);
+      expect(layout.blockAtRow(2), 1);
       expect(layout.blockAtRow(99), 1, reason: 'past the end clamps');
     });
 

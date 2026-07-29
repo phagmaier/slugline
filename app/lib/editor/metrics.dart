@@ -299,22 +299,20 @@ enum ColumnAlignment { left, right, centre }
 /// whole layout is one measure and a set of offsets into it. Column zero is the
 /// left margin (1.5" on the page) and 6.0" is its right edge.
 ///
-/// The blank-line counts are **not** uniform, and the two exceptions are the
-/// point rather than an oversight: dialogue and a parenthetical follow their cue
-/// with no gap, because a blank line there would break the block apart, and a
-/// scene heading takes two so that a scene reads as a new one. Everything else
-/// takes one. `layout::metrics` holds the same counts and the goldens are
-/// pinned to them.
+/// Element separation is exactly one blank line — a bottom margin equal to one
+/// line height, not a hardcoded pixel. Dialogue and a parenthetical follow their
+/// cue with no gap because a blank line there would break the block apart.
+/// `layout::metrics` holds the same counts and the goldens are pinned to them.
 ///
 /// Sections, synopses and notes are not in §5.2 because they are never printed.
 /// They are editor-only, and sit at the left margin so that they read as
 /// scaffolding rather than as script.
 final Map<BlockKind, ElementMetrics> elementMetrics = {
-  // Scene heading — at the margin, the full measure, two blank lines before.
+  // Scene heading — at the margin, the full measure, one blank line before.
   BlockKind.sceneHeading: ElementMetrics.inches(
     indentInches: 0,
     widthInches: ScreenplayMetrics.textWidthInches,
-    blankLinesBefore: 2,
+    blankLinesBefore: 1,
     upperCase: true,
   ),
   // Action — at the margin, the full measure.

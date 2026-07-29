@@ -45,10 +45,10 @@ pub const PAGE_NUMBER_RIGHT_COLUMN: i16 = 60;
 pub const SCENE_HEADING_INDENT: i16 = 0;
 /// SPEC §5.2: scene headings are 60 characters wide.
 pub const SCENE_HEADING_WIDTH: u16 = 60;
-/// SPEC §5.2: scene headings normally have two blank lines before them.
-pub const SCENE_HEADING_BLANKS_BEFORE: u16 = 2;
-/// SPEC §5.2: a scene heading at page top has one blank line before it.
-pub const SCENE_HEADING_BLANKS_AT_PAGE_TOP: u16 = 1;
+/// Scene headings have one blank line before them.
+pub const SCENE_HEADING_BLANKS_BEFORE: u16 = 1;
+/// A scene heading at page top needs no extra blank line.
+pub const SCENE_HEADING_BLANKS_AT_PAGE_TOP: u16 = 0;
 
 /// SPEC §5.2: action begins at the text area's left edge.
 pub const ACTION_INDENT: i16 = 0;

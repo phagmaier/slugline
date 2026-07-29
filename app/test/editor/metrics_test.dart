@@ -127,9 +127,10 @@ void main() {
       expect(secondBegins - firstEnds, closeTo(_metrics.lineHeight, 1e-9));
     });
 
-    test('a scene heading takes two and dialogue takes none', () {
-      // The two exceptions §5.2 makes, in pixels: a scene reads as a new one,
-      // and a cue does not come apart from the line it introduces.
+    test('between elements a scene heading takes one and dialogue takes none', () {
+      // Element separation is exactly one blank line — a bottom margin equal
+      // to one line height. Dialogue and parentheticals carry zero because
+      // a cue must not come apart from the line it introduces.
       final layout = DocumentLayout([
         _block(BlockKind.action, 'She waits.', id: 1),
         _block(BlockKind.sceneHeading, 'INT. HALL - DAY', id: 2),
@@ -142,7 +143,7 @@ void main() {
           geometry.yOfRow(layout.firstRowOf(index)) -
           geometry.yOfRow(layout.endRowOf(index - 1));
 
-      expect(gapAbove(1), closeTo(2 * _metrics.lineHeight, 1e-9));
+      expect(gapAbove(1), closeTo(_metrics.lineHeight, 1e-9));
       expect(gapAbove(2), closeTo(_metrics.lineHeight, 1e-9));
       expect(gapAbove(3), 0);
     });
