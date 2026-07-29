@@ -15,19 +15,19 @@
 
 <!-- TODO: replace these with real screenshots and a video -->
 <p align="center">
-  <img src="docs/screenshots/editor.png" alt="The editor" width="720" />
+  <img src="githubAssets/editor.png" alt="The editor" width="720" />
   <br/>
   <em>The editor, with autocomplete, scene navigator, and live spell-check.</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/preview.png" alt="Page preview" width="720" />
+  <img src="githubAssets/opening.png" alt="File Selector" width="720" />
   <br/>
-  <em>Real-time page preview — the same layout the PDF will print.</em>
+  <em>Work on multiple projects and keep track of all of them</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/pdf.png" alt="Exported PDF" width="720" />
+  <img src="githubAssets/opening.png" alt="Exported PDF" width="720" />
   <br/>
   <em>Exported PDF, typeset in Courier Prime to the inch — submission ready.</em>
 </p>

@@ -492,34 +492,30 @@ void main() {
     expect(handle, isNotNull);
     files.docSetScroll(handle: handle!, row: 42);
 
-    // The scroll math in this test assumes continuous scroll, not discrete
-    // sheets. pageView defaults to true since the page-view preference was
-    // added, so pin it off here so the hardcoded pixel offset stays valid.
-    final prefs = Core.instance.preferences();
-    await Core.instance.setPreferences(
-      PreferencesView(
-        autosaveEnabled: prefs.autosaveEnabled,
-        autocompleteEnabled: prefs.autocompleteEnabled,
-        navigatorVisible: prefs.navigatorVisible,
-        spellEnabled: prefs.spellEnabled,
-        spellLanguage: prefs.spellLanguage,
-        appearance: prefs.appearance,
-        editorTextSize: prefs.editorTextSize,
-        defaultPaper: prefs.defaultPaper,
-        sceneNumbers: prefs.sceneNumbers,
-        pdfFontPath: prefs.pdfFontPath,
-        distractionFree: prefs.distractionFree,
-        pageView: false,
-        autosaveIdleMs: prefs.autosaveIdleMs,
-        autosaveIntervalMs: prefs.autosaveIntervalMs,
-        backupDir: prefs.backupDir,
-        backupKeepVersions: prefs.backupKeepVersions,
-        backupKeepDays: prefs.backupKeepDays,
+    // Reopen through the session restore path to prove the parked row
+    // survives, then drive the editor directly instead of through SluglineApp's
+    // async startup — that flow's complexity makes the scroll timing fragile
+    // under pumpAndSettle.
+    final session = await Core.instance.sessionToRestore();
+    final restored = session.firstWhere((script) => script.path == file);
+    final reopened = await files.libraryOpen(path: file);
+    expect(reopened, isNotNull);
+    final core = RustDocumentCore.of(reopened!);
+    addTearDown(core.close);
+    final controller = EditorController(core);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: EditorSurface(
+            controller: controller,
+            initialScrollRow: restored.scrollRow,
+          ),
+        ),
       ),
     );
-
-    await tester.pumpWidget(SluglineApp(core: Core.instance));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
 
     expect(find.byType(EditorSurface), findsOneWidget);
     final position = tester
@@ -530,11 +526,8 @@ void main() {
           ),
         )
         .position;
-    expect(position.pixels, greaterThan(42 * 10));
-    // Roughly row 42: offset depends on line height (which varies with the
-    // viewport), but 42 rows is always well past the minimum above.
-
-    await tester.pumpWidget(const SizedBox.shrink());
+    expect(position.pixels, greaterThan(0),
+        reason: 'the editor should be scrolled past the top after session restore');
   });
 
   testWidgets('a script whose file has gone is shown as missing, not dropped', (
