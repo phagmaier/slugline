@@ -110,6 +110,16 @@ class EditorSurfaceState extends State<EditorSurface>
   bool _initialScrollPending = true;
   bool _initialScrollScheduled = false;
 
+  /// After the parked position is applied, spell-check results and other
+  /// async notifications must not pull the viewport back to the caret at
+  /// row zero — the session-restored scroll position takes priority until
+  /// the user actually moves the caret or edits the document.
+  bool _restoreInProgress = true;
+
+  /// The focus position at init, so we can tell when the user has moved
+  /// the caret.
+  late final DocPosition _initialFocus;
+
   TextInputConnection? _connection;
 
   double _viewportWidth = 900;
@@ -165,6 +175,7 @@ class EditorSurfaceState extends State<EditorSurface>
   @override
   void initState() {
     super.initState();
+    _initialFocus = _controller.selection.focus;
     _controller.addListener(_onDocumentChanged);
     _focusNode.addListener(_onFocusChanged);
     _scroll.addListener(_refreshSemantics);
@@ -183,6 +194,7 @@ class EditorSurfaceState extends State<EditorSurface>
       widget.controller.addListener(_onDocumentChanged);
       _reportedRow = -1;
       _initialScrollPending = true;
+      _restoreInProgress = true;
       _scheduleInitialScroll();
     }
   }
@@ -201,6 +213,12 @@ class EditorSurfaceState extends State<EditorSurface>
 
   void _onDocumentChanged() {
     _syncEditingState();
+    // Clear the session-restore guard once the user has moved the caret
+    // from its initial position — spell-check results don't change the
+    // selection, so they leave the guard intact.
+    if (_restoreInProgress && _controller.selection.focus != _initialFocus) {
+      _restoreInProgress = false;
+    }
     _ensureCaretVisible();
     _refreshSemantics();
   }
@@ -802,7 +820,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   /// Keeps the caret on screen with a few rows of air around it.
   void _ensureCaretVisible() {
-    if (_initialScrollPending || !_scroll.hasClients) return;
+    if (_initialScrollPending || _restoreInProgress || !_scroll.hasClients) return;
     final margin = 3 * _lineHeight;
     final caretTop = _geometry.yOfRow(_controller.caretRow);
     final caretBottom = caretTop + _lineHeight;
