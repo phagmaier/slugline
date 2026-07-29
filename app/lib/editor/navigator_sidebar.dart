@@ -151,6 +151,28 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     });
   }
 
+  void scrollToSceneBlock(int blockId) {
+    if (_section != _NavigatorSection.scenes || !_scroll.hasClients) return;
+    final scenes = _scenes;
+    final index = scenes.indexWhere((s) => s.block == blockId);
+    if (index < 0) return;
+
+    const extent = _navigatorRowExtent;
+    final target = index * extent;
+    final viewport = _scroll.position.viewportDimension;
+    final top = _scroll.offset;
+    final bottom = top + viewport;
+
+    if (target >= top - extent && target + extent <= bottom + extent) return;
+
+    _scroll.jumpTo(
+      (target - viewport / 2 + extent / 2).clamp(
+        0.0,
+        _scroll.position.maxScrollExtent,
+      ),
+    );
+  }
+
   void _activate() {
     if (_itemCount == 0) return;
     switch (_section) {

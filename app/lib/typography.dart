@@ -80,8 +80,8 @@ TextTheme chromeTextTheme(TextTheme base) => base.copyWith(
 /// The chrome style for text a painter draws itself.
 ///
 /// The canvas has no [Theme] to ask, so the two places that paint chrome onto
-/// the editor surface — the page-break numbers down the gutter — come here
-/// instead of reaching for the script's [scriptFontFamily].
+/// the editor surface — the page-break numbers — come here instead of reaching
+/// for the script's [scriptFontFamily].
 TextStyle chromeLabelStyle(Color colour) => TextStyle(
   fontSize: chromeSmallFontSize,
   color: colour,

@@ -61,7 +61,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 
 ## Priority 2 — Functional gaps
 
-### [ ] 5. Sync the navigator to the cursor position
+### [x] 5. Sync the navigator to the cursor position
 
 > The navigator currently keeps scene 1 selected regardless of where the user is in the script.
 > Make the outline track the reader's position, which is most of what makes an outline pane
@@ -74,7 +74,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 >   editor scroll does not feed back and re-trigger navigator scrolling.
 > - Debounce the scroll handler (~100ms) so this doesn't thrash during fast scrolling.
 
-### [ ] 6. Page break indicators in continuous mode
+### [x] 6. Page break indicators in continuous mode
 
 > The status bar already reports "Page 52 of 89". Show where those breaks actually fall: render a
 > hairline rule (use the `border` token) across the content column at each page boundary, with the

@@ -1364,42 +1364,36 @@ class _SurfacePainter extends CustomPainter {
     );
   }
 
-  /// Continuous view: a hairline where the page turns, and its number set in the
-  /// gutter beside it.
+  /// Continuous view: a hairline where the page turns, and its number in the
+  /// right gutter beside it.
   ///
-  /// The rule stops short of the text column on both sides so that it reads as
-  /// furniture rather than as a horizontal line in the script — a scripted page
-  /// break paints a rule of its own across the full measure, and the two must
-  /// not be mistakable for each other.
+  /// The rule spans the full content column so it reads as a page break the
+  /// layout engine placed, not as a scripted horizontal rule. The number sits
+  /// in the right gutter, outside the column, so the text is never obscured.
   void _paintPageRules(Canvas canvas, double top, double bottom) {
     final line = Paint()
       ..color = colours.pageBreak
       ..strokeWidth = 1.0;
-    final inset = geometry.metrics.across(0.2);
 
     for (final rule in geometry.rules()) {
       if (rule.y < top) continue;
       if (rule.y > bottom) break;
       canvas.drawLine(
-        Offset(pageLeft + inset, rule.y),
-        Offset(geometry.columnRight - inset, rule.y),
+        Offset(geometry.columnLeft, rule.y),
+        Offset(geometry.columnRight, rule.y),
         line,
       );
       final label = _label('${rule.number}', colours.gutter);
-      // In the gutter: left of the column, right-aligned against it, so the
-      // numbers form a column of their own down the edge of the script. A
-      // window too narrow to hold one gets the rule and no number rather than a
-      // number over the text.
-      final labelLeft = pageLeft - inset - label.width;
-      if (labelLeft >= 0) {
-        label.paint(canvas, Offset(labelLeft, rule.y - label.height / 2));
+      final labelX = geometry.columnRight + geometry.metrics.across(0.2);
+      if (labelX + label.width <= geometry.viewportWidth) {
+        label.paint(canvas, Offset(labelX, rule.y - label.height / 2));
       }
     }
   }
 
-  /// A page number down the gutter. Chrome, not script: it is the application
-  /// counting pages, so it is set in the chrome's sans at the chrome's size and
-  /// does not grow with the text-size preference the way the script does.
+  /// A page-break label. Chrome, not script: it is the application counting
+  /// pages, so it is set in the chrome's sans at the chrome's size and does not
+  /// grow with the text-size preference the way the script does.
   TextPainter _label(String text, Color colour) => TextPainter(
     text: TextSpan(text: text, style: chromeLabelStyle(colour)),
     textDirection: TextDirection.ltr,

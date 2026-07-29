@@ -127,6 +127,9 @@ class EditorPageState extends State<EditorPage> {
   int _knownDocumentRevision = 0;
   final Map<int, int?> _sceneAtBlock = {};
   bool _ignoreScrollHighlightThisFrame = false;
+  Timer? _scrollHighlightDebounce;
+  Timer? _navigatorSuppressionTimer;
+  bool _suppressNavigatorScroll = false;
 
   DocumentCore get _core => widget.controller.core;
 
@@ -164,6 +167,8 @@ class EditorPageState extends State<EditorPage> {
   @override
   void dispose() {
     _navigatorRefresh?.cancel();
+    _scrollHighlightDebounce?.cancel();
+    _navigatorSuppressionTimer?.cancel();
     _pageIndicator?.dispose();
     widget.controller.removeListener(_onControllerChanged);
     _editorFocus.dispose();
@@ -188,6 +193,7 @@ class EditorPageState extends State<EditorPage> {
     final current = _sceneAtBlock[widget.controller.selection.focus.block];
     if (current != _currentSceneBlock && mounted) {
       setState(() => _currentSceneBlock = current);
+      _autoScrollNavigatorToCurrentScene();
     }
   }
 
@@ -201,6 +207,7 @@ class EditorPageState extends State<EditorPage> {
       _currentSceneBlock =
           _sceneAtBlock[widget.controller.selection.focus.block];
     });
+    _autoScrollNavigatorToCurrentScene();
   }
 
   void _rebuildSceneMap() {
@@ -220,6 +227,15 @@ class EditorPageState extends State<EditorPage> {
     if (visible) _refreshNavigator();
   }
 
+  void _autoScrollNavigatorToCurrentScene() {
+    if (_suppressNavigatorScroll) return;
+    final scene = _currentSceneBlock;
+    if (scene == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _navigatorKey.currentState?.scrollToSceneBlock(scene);
+    });
+  }
+
   void _showNavigatorSearch() {
     _setNavigatorVisible(true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -228,11 +244,17 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _jumpToScene(int block) {
+    _suppressNavigatorScroll = true;
+    _navigatorSuppressionTimer?.cancel();
     if (!widget.controller.jumpToBlock(block)) {
+      _suppressNavigatorScroll = false;
       _refreshNavigator();
       return;
     }
     _editorFocus.requestFocus();
+    _navigatorSuppressionTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) _suppressNavigatorScroll = false;
+    });
   }
 
   void _reorderScene(int sceneBlock, int? beforeSceneBlock) {
@@ -251,21 +273,34 @@ class EditorPageState extends State<EditorPage> {
       (block) => (order[block] ?? -1) > caretIndex,
       orElse: () => character.blocks.first,
     );
+    _suppressNavigatorScroll = true;
+    _navigatorSuppressionTimer?.cancel();
     if (!widget.controller.jumpToBlock(target)) {
+      _suppressNavigatorScroll = false;
       _refreshNavigator();
       return;
     }
     _editorFocus.requestFocus();
+    _navigatorSuppressionTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) _suppressNavigatorScroll = false;
+    });
   }
 
   void _onScrolled(int row) {
     _core.setScrollRow(row);
     _pageIndicator?.updateVisibleRow(row);
+    _suppressNavigatorScroll = false;
+    _navigatorSuppressionTimer?.cancel();
     if (_ignoreScrollHighlightThisFrame) return;
-    final current = _sceneAtBlock[widget.controller.blockAtRow(row).id];
-    if (current != _currentSceneBlock && mounted) {
-      setState(() => _currentSceneBlock = current);
-    }
+    _scrollHighlightDebounce?.cancel();
+    _scrollHighlightDebounce = Timer(const Duration(milliseconds: 100), () {
+      if (!mounted || _ignoreScrollHighlightThisFrame) return;
+      final current = _sceneAtBlock[widget.controller.blockAtRow(row).id];
+      if (current != null && current != _currentSceneBlock) {
+        setState(() => _currentSceneBlock = current);
+        _autoScrollNavigatorToCurrentScene();
+      }
+    });
   }
 
   void _show(_Panel panel) {
