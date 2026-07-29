@@ -51,13 +51,27 @@ class CoreUnavailable implements Exception {
   String toString() => 'CoreUnavailable: $message';
 }
 
+/// The small part of the core the opening screen needs.
+///
+/// Keeping this seam narrower than [Core] lets the library's presentation be
+/// exercised in widget tests without loading the Rust dynamic library.
+abstract interface class LibraryCore {
+  Future<List<files.ScriptView>> library();
+
+  Future<files.ScriptView?> duplicate(String id);
+
+  Future<files.SaveOutcome> rename(String id, String newPath);
+
+  Future<bool> forget(String id, {required bool deleteFile});
+}
+
 /// The Dart-side handle on the Rust core.
 ///
 /// Everything that crosses the bridge goes through here, so there is one place
 /// to look when an offset is wrong or an event goes missing. Per §2.1, Flutter
 /// asks the core for screenplay semantics rather than deriving them: this class
 /// forwards, it does not interpret.
-class Core {
+class Core implements LibraryCore {
   Core._(this.events);
 
   /// Rust → Dart notifications (§2.3). Subscribed once, at startup; broadcast
@@ -74,7 +88,9 @@ class Core {
   static Core get instance {
     final core = _instance;
     if (core == null) {
-      throw StateError('Core.init() must complete before Core.instance is used');
+      throw StateError(
+        'Core.init() must complete before Core.instance is used',
+      );
     }
     return core;
   }
@@ -126,22 +142,28 @@ class Core {
 
   // --- library ---------------------------------------------------------------
 
+  @override
   Future<List<files.ScriptView>> library() => files.libraryList();
 
   Future<List<files.ScriptView>> sessionToRestore() => files.sessionRestore();
 
-  Future<files.ScriptView?> duplicate(String id) => files.libraryDuplicate(id: id);
+  @override
+  Future<files.ScriptView?> duplicate(String id) =>
+      files.libraryDuplicate(id: id);
 
+  @override
   Future<files.SaveOutcome> rename(String id, String newPath) =>
       files.libraryRename(id: id, newPath: newPath);
 
+  @override
   Future<bool> forget(String id, {required bool deleteFile}) =>
       files.libraryRemove(id: id, deleteFile: deleteFile);
 
   // --- recovery --------------------------------------------------------------
 
   /// Crashed sessions found at startup. Nothing has been applied to anything.
-  Future<List<files.RecoveryOffer>> pendingRecoveries() => files.recoveryPending();
+  Future<List<files.RecoveryOffer>> pendingRecoveries() =>
+      files.recoveryPending();
 
   Future<bool> discardRecovery(String journalPath) =>
       files.recoveryDiscard(journalPath: journalPath);
@@ -159,5 +181,4 @@ class Core {
     required bool enabled,
     String? language,
   }) => spelling.spellConfigure(enabled: enabled, language: language);
-
 }

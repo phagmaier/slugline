@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:slugline/core/core.dart';
-import 'package:slugline/library/backups_dialog.dart'
-    show formatBytes, formatTimestamp;
 import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/theme.dart';
 
@@ -29,7 +27,7 @@ class LibraryPage extends StatefulWidget {
     super.key,
   });
 
-  final Core core;
+  final LibraryCore core;
 
   /// Open a script at this path. The shell above turns it into an editor.
   final Future<void> Function(String path) onOpen;
@@ -180,11 +178,7 @@ class _LibraryPageState extends State<LibraryPage> {
               onPressed: widget.onOpenPreferences,
               icon: const Icon(Icons.settings_outlined),
             ),
-            TextButton.icon(
-              onPressed: _openScript,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('Open'),
-            ),
+            TextButton(onPressed: _openScript, child: const Text('Open')),
             const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: _newScript,
@@ -196,121 +190,213 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
         body: switch (scripts) {
           null => const Center(child: CircularProgressIndicator()),
-          [] => Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.movie_creation_outlined,
-                    size: 64,
-                    color: context.colours.accent,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Write your first screenplay',
-                    style: theme.textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Start with a title page and scene-heading template, or '
-                    'open any ordinary .fountain file. Your work stays in the '
-                    'folder you choose.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      FilledButton.icon(
-                        key: const ValueKey('create first script'),
-                        onPressed: _newScript,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Create first script'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _openScript,
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text('Open existing'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          final found => ListView.separated(
-            itemCount: found.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) => _row(found[index]),
-          ),
+          [] => _emptyState(theme),
+          final found => _recentScripts(found),
         },
       ),
     );
   }
 
+  Widget _emptyState(ThemeData theme) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.movie_creation_outlined,
+              key: const ValueKey('library-empty-icon'),
+              size: 56,
+              color: context.colours.textTertiary,
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'No scripts yet. Create a new script to start writing.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: context.colours.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('create first script'),
+                  onPressed: _newScript,
+                  icon: const Icon(Icons.add),
+                  label: const Text('New script'),
+                ),
+                TextButton(onPressed: _openScript, child: const Text('Open')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _recentScripts(List<ScriptView> scripts) => Padding(
+    padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
+    child: Center(
+      child: ConstrainedBox(
+        key: const ValueKey('library-content'),
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'RECENT',
+              style: TextStyle(
+                color: context.colours.textTertiary,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.separated(
+                itemCount: scripts.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) => _row(scripts[index]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
   Widget _row(ScriptView script) {
     final theme = Theme.of(context);
-    return ListTile(
-      leading: Icon(
-        script.missing ? Icons.help_outline : Icons.description_outlined,
-        color: script.missing ? context.colours.danger : null,
-      ),
-      title: Text(script.title),
-      subtitle: Text(
-        [
-          script.path,
-          if (script.missing)
-            'missing'
-          else ...[
-            formatTimestamp(script.modifiedMillis),
-            formatBytes(script.bytes),
-            // A successful save fills this cache through `layout`; an entry
-            // never processed by a layout-capable build says nothing.
-            if (script.pageCount > 0) '${script.pageCount} pages',
-          ],
-        ].join(' · '),
-        style: theme.textTheme.bodySmall,
-        overflow: TextOverflow.ellipsis,
-      ),
-      onTap: script.missing ? null : () => widget.onOpen(script.path),
-      trailing: PopupMenuButton<_Action>(
-        onSelected: (action) => switch (action) {
-          _Action.rename => _rename(script),
-          _Action.duplicate => _duplicate(script),
-          _Action.remove => _remove(script, deleteFile: false),
-          _Action.delete => _remove(script, deleteFile: true),
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: _Action.rename,
-            enabled: !script.missing,
-            child: const Text('Rename…'),
+    final colours = context.colours;
+    final metadataStyle = theme.textTheme.bodySmall?.copyWith(
+      color: colours.textTertiary,
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('library-row-${script.id}'),
+        onTap: script.missing ? null : () => widget.onOpen(script.path),
+        hoverColor: colours.surfaceRaised,
+        highlightColor: colours.accentSubtle,
+        mouseCursor: script.missing
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
+          child: Row(
+            children: [
+              Icon(
+                script.missing
+                    ? Icons.help_outline
+                    : Icons.description_outlined,
+                size: 22,
+                color: script.missing ? colours.danger : colours.textSecondary,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      script.title,
+                      key: ValueKey('library-title-${script.id}'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge?.copyWith(fontSize: 15),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        if (script.missing) ...[
+                          Text(
+                            'Missing',
+                            style: metadataStyle?.copyWith(
+                              color: colours.danger,
+                            ),
+                          ),
+                          _metadataSeparator(metadataStyle),
+                        ],
+                        Text(
+                          _relativeTime(script.modifiedMillis),
+                          style: metadataStyle,
+                        ),
+                        // Zero is "not paginated yet", not a zero-page script.
+                        if (script.pageCount > 0) ...[
+                          _metadataSeparator(metadataStyle),
+                          Text(
+                            _pageCount(script.pageCount),
+                            style: metadataStyle,
+                          ),
+                        ],
+                        _metadataSeparator(metadataStyle),
+                        Expanded(
+                          child: Tooltip(
+                            message: script.path,
+                            child: Text(
+                              script.path,
+                              key: ValueKey('library-path-${script.id}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textDirection: TextDirection.rtl,
+                              textAlign: TextAlign.left,
+                              style: metadataStyle,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<_Action>(
+                onSelected: (action) => switch (action) {
+                  _Action.rename => _rename(script),
+                  _Action.duplicate => _duplicate(script),
+                  _Action.remove => _remove(script, deleteFile: false),
+                  _Action.delete => _remove(script, deleteFile: true),
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: _Action.rename,
+                    enabled: !script.missing,
+                    child: const Text('Rename…'),
+                  ),
+                  PopupMenuItem(
+                    value: _Action.duplicate,
+                    enabled: !script.missing,
+                    child: const Text('Duplicate'),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: _Action.remove,
+                    child: Text('Remove from library'),
+                  ),
+                  PopupMenuItem(
+                    value: _Action.delete,
+                    enabled: !script.missing,
+                    child: Text(
+                      'Delete file…',
+                      style: TextStyle(color: colours.danger),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          PopupMenuItem(
-            value: _Action.duplicate,
-            enabled: !script.missing,
-            child: const Text('Duplicate'),
-          ),
-          const PopupMenuDivider(),
-          const PopupMenuItem(
-            value: _Action.remove,
-            child: Text('Remove from library'),
-          ),
-          PopupMenuItem(
-            value: _Action.delete,
-            enabled: !script.missing,
-            child: Text(
-              'Delete file…',
-              style: TextStyle(color: context.colours.danger),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+
+  Widget _metadataSeparator(TextStyle? style) => Text('  ·  ', style: style);
 }
 
 enum _Action { rename, duplicate, remove, delete }
@@ -324,3 +410,34 @@ String _basename(String path) {
   final slash = path.lastIndexOf('/');
   return slash < 0 ? path : path.substring(slash + 1);
 }
+
+String _relativeTime(int modifiedMillis) {
+  if (modifiedMillis <= 0) return 'Unknown time';
+  final elapsedMillis = DateTime.now().millisecondsSinceEpoch - modifiedMillis;
+  if (elapsedMillis < const Duration(minutes: 1).inMilliseconds) {
+    return 'Just now';
+  }
+
+  final elapsed = Duration(milliseconds: elapsedMillis);
+  if (elapsed.inHours < 1) {
+    return _ago(elapsed.inMinutes, 'minute');
+  }
+  if (elapsed.inDays < 1) {
+    return _ago(elapsed.inHours, 'hour');
+  }
+  if (elapsed.inDays < 7) {
+    return _ago(elapsed.inDays, 'day');
+  }
+  if (elapsed.inDays < 30) {
+    return _ago(elapsed.inDays ~/ 7, 'week');
+  }
+  if (elapsed.inDays < 365) {
+    return _ago(elapsed.inDays ~/ 30, 'month');
+  }
+  return _ago(elapsed.inDays ~/ 365, 'year');
+}
+
+String _ago(int amount, String unit) =>
+    '$amount $unit${amount == 1 ? '' : 's'} ago';
+
+String _pageCount(int pages) => '$pages ${pages == 1 ? 'page' : 'pages'}';
