@@ -66,8 +66,8 @@ pub const CHARACTER_BLANKS_BEFORE: u16 = 1;
 
 /// SPEC §5.2: parentheticals begin 1.6 inches into the text area.
 pub const PARENTHETICAL_INDENT: i16 = 16;
-/// SPEC §5.2: parentheticals are 26 characters wide.
-pub const PARENTHETICAL_WIDTH: u16 = 26;
+/// SPEC §5.2: parentheticals are 20 characters wide.
+pub const PARENTHETICAL_WIDTH: u16 = 20;
 /// SPEC §5.2: parentheticals follow without a blank line.
 pub const PARENTHETICAL_BLANKS_BEFORE: u16 = 0;
 

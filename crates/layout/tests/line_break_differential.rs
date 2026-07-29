@@ -32,10 +32,10 @@ use slugline_layout::{break_lines, display_text, line_spans};
 
 /// Widths every generated case is wrapped at.
 ///
-/// One and two are the degenerate ends of the contract; 26, 33, 35 and 60 are
+/// One and two are the degenerate ends of the contract; 20, 33, 35 and 60 are
 /// §5.2's element widths, which is what the paginator actually asks for; the
 /// small odd ones put wrap points inside tab expansions and space runs.
-const WIDTHS: [u16; 11] = [1, 2, 3, 4, 5, 7, 10, 26, 33, 35, 60];
+const WIDTHS: [u16; 11] = [1, 2, 3, 4, 5, 7, 10, 20, 33, 35, 60];
 
 /// Widths every corpus block is wrapped at.
 ///
@@ -43,7 +43,7 @@ const WIDTHS: [u16; 11] = [1, 2, 3, 4, 5, 7, 10, 26, 33, 35, 60];
 /// dozen times. The degenerate widths are asked of the generated cases instead,
 /// where the text is short: a hundred-column paragraph at width one is a
 /// hundred rows of fixture that repeat what `edge/one long word` already says.
-const CORPUS_WIDTHS: [u16; 4] = [7, 26, 35, 60];
+const CORPUS_WIDTHS: [u16; 4] = [7, 20, 35, 60];
 
 /// The reference feature is 120 pages of prose; it is carried at the two widths
 /// a screenplay is actually set in rather than at all eleven, because its value

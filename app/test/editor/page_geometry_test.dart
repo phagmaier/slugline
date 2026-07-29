@@ -197,7 +197,7 @@ void main() {
       BlockKind.sceneHeading: (0, 60),
       BlockKind.action: (0, 60),
       BlockKind.character: (22, 33),
-      BlockKind.parenthetical: (16, 26),
+      BlockKind.parenthetical: (16, 20),
       BlockKind.dialogue: (10, 35),
       BlockKind.transition: (0, 60),
       BlockKind.lyric: (10, 35),

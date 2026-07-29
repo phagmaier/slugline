@@ -285,7 +285,7 @@ void main() {
       expect(metricsFor(BlockKind.sceneHeading).width, 60);
       expect(metricsFor(BlockKind.action).width, 60);
       expect(metricsFor(BlockKind.character).width, 33);
-      expect(metricsFor(BlockKind.parenthetical).width, 26);
+      expect(metricsFor(BlockKind.parenthetical).width, 20);
       expect(metricsFor(BlockKind.dialogue).width, 35);
     });
 

@@ -336,10 +336,10 @@ final Map<BlockKind, ElementMetrics> elementMetrics = {
     widthInches: 3.5,
     blankLinesBefore: 0,
   ),
-  // Parenthetical — 1.6" in, 2.6" wide, tucked under the cue with no gap.
+  // Parenthetical — 1.6" in, 2.0" wide, tucked under the cue with no gap.
   BlockKind.parenthetical: ElementMetrics.inches(
     indentInches: 1.6,
-    widthInches: 2.6,
+    widthInches: 2.0,
     blankLinesBefore: 0,
   ),
   // Transition — right-aligned to the measure's 6.0" edge.

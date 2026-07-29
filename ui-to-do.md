@@ -31,7 +31,7 @@ which is the unit of screen time in screenwriting, so they should be fixed and v
 
 ### [ ] 2. Line height and element spacing
 
-*(In progress — finish this, then run the validation test in task 3.)*
+*(finish this, then run the validation test in task 3.)*
 
 > Set the script editor's line height to 1.0–1.1 relative to font size. Courier Prime's natural
 > metrics already include adequate leading — do not add more. Within a paragraph, wrapped lines
