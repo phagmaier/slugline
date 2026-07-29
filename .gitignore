@@ -14,3 +14,11 @@
 
 # Local tooling
 .direnv/
+
+# AUR: makepkg build artefacts. The PKGBUILD and .SRCINFO are committed;
+# what makepkg downloads and produces is not.
+/packaging/aur/*/pkg/
+/packaging/aur/*/src/
+/packaging/aur/*/*.tar.*
+/packaging/aur/*/*.pkg.tar.*
+/packaging/aur/*/dist/
