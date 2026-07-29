@@ -5,8 +5,18 @@ use std::time::{Duration, Instant};
 use slugline_document::Document;
 use slugline_layout::{LayoutEngine, PageConfig, ScriptSnapshot};
 
+// The ADR 0022 budgets are production targets measured in release mode. Debug
+// builds are unoptimised by design and get a looser allowance so that `cargo
+// test` (which CI runs without --release) still gates on a gross regression.
+#[cfg(not(debug_assertions))]
 const FULL_BUDGET: Duration = Duration::from_millis(50);
+#[cfg(debug_assertions)]
+const FULL_BUDGET: Duration = Duration::from_millis(100);
+
+#[cfg(not(debug_assertions))]
 const INCREMENTAL_BUDGET: Duration = Duration::from_millis(5);
+#[cfg(debug_assertions)]
+const INCREMENTAL_BUDGET: Duration = Duration::from_millis(12);
 
 fn reference() -> ScriptSnapshot {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
