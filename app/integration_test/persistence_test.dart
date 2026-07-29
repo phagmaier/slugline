@@ -492,6 +492,32 @@ void main() {
     expect(handle, isNotNull);
     files.docSetScroll(handle: handle!, row: 42);
 
+    // The scroll math in this test assumes continuous scroll, not discrete
+    // sheets. pageView defaults to true since the page-view preference was
+    // added, so pin it off here so the hardcoded pixel offset stays valid.
+    final prefs = Core.instance.preferences();
+    await Core.instance.setPreferences(
+      PreferencesView(
+        autosaveEnabled: prefs.autosaveEnabled,
+        autocompleteEnabled: prefs.autocompleteEnabled,
+        navigatorVisible: prefs.navigatorVisible,
+        spellEnabled: prefs.spellEnabled,
+        spellLanguage: prefs.spellLanguage,
+        appearance: prefs.appearance,
+        editorTextSize: prefs.editorTextSize,
+        defaultPaper: prefs.defaultPaper,
+        sceneNumbers: prefs.sceneNumbers,
+        pdfFontPath: prefs.pdfFontPath,
+        distractionFree: prefs.distractionFree,
+        pageView: false,
+        autosaveIdleMs: prefs.autosaveIdleMs,
+        autosaveIntervalMs: prefs.autosaveIntervalMs,
+        backupDir: prefs.backupDir,
+        backupKeepVersions: prefs.backupKeepVersions,
+        backupKeepDays: prefs.backupKeepDays,
+      ),
+    );
+
     await tester.pumpWidget(SluglineApp(core: Core.instance));
     await tester.pumpAndSettle();
 
