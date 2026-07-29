@@ -18,7 +18,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:slugline/app.dart';
 import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
