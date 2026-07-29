@@ -134,9 +134,10 @@ jobs:
         with:
           workspaces: . -> target
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
+          flutter-version-file: app/pubspec.yaml
           cache: true
 
       - name: Resolve packages
@@ -246,9 +247,10 @@ jobs:
             clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
             desktop-file-utils appstream
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
+          flutter-version-file: app/pubspec.yaml
       - uses: dtolnay/rust-toolchain@stable
 
       # The metadata is checked before anything is built: it costs seconds, and

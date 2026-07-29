@@ -1,111 +1,219 @@
 #!/usr/bin/env bash
-# Builds the release and lays out a distributable tree.
+# Build and stage the versioned Linux x86_64 release tarball.
 #
-#   ./tools/package.sh              # build, then stage and tar
-#   ./tools/package.sh --no-build   # stage from a bundle that is already there
-#
-# Produces `dist/slugline-<version>-linux-x64.tar.gz`, holding the bundle, the
-# desktop entry, the icon, the MIME registration, the licences, and an
-# `install.sh` that puts them where the freedesktop specifications say.
-#
-# This is the plain-tarball leg of §Phase 11. The Flatpak manifest is in
-# `packaging/flatpak/` and is the primary distribution; this is what someone
-# who does not want Flatpak uses, and what an AppImage is assembled from.
+#   ./tools/package.sh
+#   ./tools/package.sh --no-build  # reuse an existing release bundle
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)"
-[ -n "$VERSION" ] || { echo "No version in app/pubspec.yaml" >&2; exit 1; }
+usage() {
+  cat <<'EOF'
+Usage: tools/package.sh [--no-build]
 
-BUNDLE="app/build/linux/x64/release/bundle"
-STAGE="dist/slugline-$VERSION-linux-x64"
+Build (unless --no-build is supplied), stage, and archive the Slugline Linux
+x86_64 release bundle.
+EOF
+}
 
-if [ "${1:-}" != "--no-build" ]; then
+case "${1:-}" in
+  "")
+    BUILD=1
+    ;;
+  --no-build)
+    BUILD=0
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+[ "$#" -le 1 ] || { usage >&2; exit 2; }
+
+[ "$(uname -m)" = "x86_64" ] || {
+  echo "This release process supports Linux x86_64 only." >&2
+  exit 1
+}
+
+VERSION="$("$ROOT/tools/release_version.sh")"
+BUNDLE="$ROOT/app/build/linux/x64/release/bundle"
+DIST="$ROOT/dist"
+STAGE_NAME="slugline-$VERSION-linux-x86_64"
+STAGE="$DIST/$STAGE_NAME"
+TARBALL="$DIST/$STAGE_NAME.tar.gz"
+
+if [ "$BUILD" -eq 1 ]; then
   echo "==> Building the release"
-  (cd app && flutter build linux --release)
+  # Rust panic/location strings must not reveal the checkout path in public
+  # artifacts. Preserve caller flags while remapping this checkout consistently.
+  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$ROOT=/usr/src/slugline --remap-path-prefix=${HOME:?HOME must be set}=/usr/src"
+  (cd "$ROOT/app" && flutter build linux --release)
 fi
-[ -x "$BUNDLE/slugline" ] || { echo "No release bundle at $BUNDLE" >&2; exit 1; }
 
-echo "==> Staging $STAGE"
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
+[ -x "$BUNDLE/slugline" ] || {
+  echo "No release bundle at $BUNDLE" >&2
+  echo "Run tools/package.sh without --no-build first." >&2
+  exit 1
+}
 
-cp -r "$BUNDLE" "$STAGE/bundle"
+for required in \
+  data/icudtl.dat \
+  data/flutter_assets/FontManifest.json \
+  data/flutter_assets/fonts/CourierPrime-Regular.ttf \
+  data/flutter_assets/fonts/CourierPrime-Bold.ttf \
+  data/flutter_assets/fonts/CourierPrime-Italic.ttf \
+  data/flutter_assets/fonts/CourierPrime-BoldItalic.ttf \
+  lib/libapp.so \
+  lib/libflutter_linux_gtk.so \
+  lib/libslugline_bridge.so; do
+  [ -f "$BUNDLE/$required" ] || {
+    echo "Release bundle is missing $required" >&2
+    exit 1
+  }
+done
+
+mkdir -p "$DIST"
+WORK="$(mktemp -d "$DIST/.package.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+NEXT_STAGE="$WORK/$STAGE_NAME"
+
+echo "==> Staging $STAGE_NAME"
+install -d "$NEXT_STAGE/bundle"
+cp -a "$BUNDLE/." "$NEXT_STAGE/bundle/"
 install -Dm644 packaging/com.phagmaier.slugline.desktop \
-  "$STAGE/share/applications/com.phagmaier.slugline.desktop"
+  "$NEXT_STAGE/share/applications/com.phagmaier.slugline.desktop"
 install -Dm644 packaging/com.phagmaier.slugline.metainfo.xml \
-  "$STAGE/share/metainfo/com.phagmaier.slugline.metainfo.xml"
+  "$NEXT_STAGE/share/metainfo/com.phagmaier.slugline.metainfo.xml"
 install -Dm644 packaging/com.phagmaier.slugline.mime.xml \
-  "$STAGE/share/mime/packages/com.phagmaier.slugline.xml"
+  "$NEXT_STAGE/share/mime/packages/com.phagmaier.slugline.xml"
 install -Dm644 packaging/icons/com.phagmaier.slugline.svg \
-  "$STAGE/share/icons/hicolor/scalable/apps/com.phagmaier.slugline.svg"
-
-# Licence compliance: this project's own licence, and the vendored font's. The
-# OFL requires its text to travel with the font, and the font is compiled into
-# the PDF writer rather than shipped as a file — so this is the copy that
-# discharges it.
-install -Dm644 LICENSE "$STAGE/share/licenses/slugline/LICENSE"
+  "$NEXT_STAGE/share/icons/hicolor/scalable/apps/com.phagmaier.slugline.svg"
+install -Dm644 LICENSE "$NEXT_STAGE/share/licenses/slugline/LICENSE"
 install -Dm644 crates/render_pdf/fonts/OFL.txt \
-  "$STAGE/share/licenses/slugline/OFL-CourierPrime.txt"
-install -Dm644 CHANGELOG.md "$STAGE/share/doc/slugline/CHANGELOG.md"
-install -Dm644 README.md "$STAGE/share/doc/slugline/README.md"
+  "$NEXT_STAGE/share/licenses/slugline/OFL-CourierPrime.txt"
+install -Dm644 CHANGELOG.md "$NEXT_STAGE/share/doc/slugline/CHANGELOG.md"
+install -Dm644 README.md "$NEXT_STAGE/share/doc/slugline/README.md"
 
-cat > "$STAGE/install.sh" <<'INSTALL'
+cat > "$NEXT_STAGE/install.sh" <<'INSTALL'
 #!/usr/bin/env bash
-# Installs Slugline. Defaults to a single user; pass a prefix for system-wide:
+# Install Slugline into ~/.local, or into a caller-provided absolute prefix:
 #
-#   ./install.sh                    # ~/.local
-#   sudo ./install.sh /usr/local    # everyone
+#   ./install.sh
+#   ./install.sh /usr/local
 set -euo pipefail
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PREFIX="${1:-$HOME/.local}"
+if [ "$#" -gt 1 ]; then
+  echo "Usage: ./install.sh [PREFIX]" >&2
+  exit 2
+fi
+if [ "$#" -eq 1 ]; then
+  PREFIX="$1"
+else
+  : "${HOME:?HOME must be set when no installation prefix is supplied}"
+  PREFIX="$HOME/.local"
+fi
+case "$PREFIX" in
+  /*) ;;
+  *) echo "Installation prefix must be an absolute path: $PREFIX" >&2; exit 2 ;;
+esac
 
 install -d "$PREFIX/lib/slugline"
-cp -r "$HERE/bundle/." "$PREFIX/lib/slugline/"
+cp -a "$HERE/bundle/." "$PREFIX/lib/slugline/"
 
-# A launcher rather than a symlink: the executable finds its `data/` and `lib/`
-# relative to its own real path, so it has to be started from where it lives.
 install -d "$PREFIX/bin"
-cat > "$PREFIX/bin/slugline" <<LAUNCHER
+cat > "$PREFIX/bin/slugline" <<'LAUNCHER'
 #!/bin/sh
-exec "$PREFIX/lib/slugline/slugline" "\$@"
+set -eu
+bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$bindir/../lib/slugline/slugline" "$@"
 LAUNCHER
 chmod 755 "$PREFIX/bin/slugline"
 
-cp -r "$HERE/share/." "$PREFIX/share/"
+cp -a "$HERE/share/." "$PREFIX/share/"
 
-# Best effort: these only refresh caches, and a missing tool is not a failure.
-update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
-update-mime-database "$PREFIX/share/mime" 2>/dev/null || true
-gtk-update-icon-cache -f -t "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+refresh() {
+  tool="$1"
+  shift
+  if command -v "$tool" >/dev/null 2>&1; then
+    if ! "$tool" "$@"; then
+      printf 'Warning: %s cache refresh failed; installed files are intact.\n' \
+        "$tool" >&2
+    fi
+  fi
+}
+refresh update-desktop-database "$PREFIX/share/applications"
+refresh update-mime-database "$PREFIX/share/mime"
+refresh gtk-update-icon-cache -f -t "$PREFIX/share/icons/hicolor"
 
-echo "Installed to $PREFIX."
-case ":$PATH:" in
+echo "Installed Slugline to $PREFIX."
+case ":${PATH:-}:" in
   *":$PREFIX/bin:"*) ;;
-  *) echo "Note: $PREFIX/bin is not on your PATH." ;;
+  *) echo "Add $PREFIX/bin to PATH to run 'slugline' from a shell." ;;
 esac
 INSTALL
-chmod 755 "$STAGE/install.sh"
+chmod 755 "$NEXT_STAGE/install.sh"
 
-cat > "$STAGE/uninstall.sh" <<'UNINSTALL'
+cat > "$NEXT_STAGE/uninstall.sh" <<'UNINSTALL'
 #!/usr/bin/env bash
 set -euo pipefail
-PREFIX="${1:-$HOME/.local}"
-rm -rf "$PREFIX/lib/slugline" "$PREFIX/bin/slugline"
-rm -f "$PREFIX/share/applications/com.phagmaier.slugline.desktop" \
-      "$PREFIX/share/metainfo/com.phagmaier.slugline.metainfo.xml" \
-      "$PREFIX/share/mime/packages/com.phagmaier.slugline.xml" \
-      "$PREFIX/share/icons/hicolor/scalable/apps/com.phagmaier.slugline.svg"
-rm -rf "$PREFIX/share/licenses/slugline" "$PREFIX/share/doc/slugline"
-echo "Removed from $PREFIX. Your scripts, preferences and backups are untouched."
+
+if [ "$#" -gt 1 ]; then
+  echo "Usage: ./uninstall.sh [PREFIX]" >&2
+  exit 2
+fi
+if [ "$#" -eq 1 ]; then
+  PREFIX="$1"
+else
+  : "${HOME:?HOME must be set when no installation prefix is supplied}"
+  PREFIX="$HOME/.local"
+fi
+case "$PREFIX" in
+  /*) ;;
+  *) echo "Installation prefix must be an absolute path: $PREFIX" >&2; exit 2 ;;
+esac
+
+# These are the package-owned paths and only these paths. Slugline's scripts,
+# preferences, backups, library index, and recovery journal live elsewhere.
+rm -rf -- "$PREFIX/lib/slugline"
+rm -f -- \
+  "$PREFIX/bin/slugline" \
+  "$PREFIX/share/applications/com.phagmaier.slugline.desktop" \
+  "$PREFIX/share/metainfo/com.phagmaier.slugline.metainfo.xml" \
+  "$PREFIX/share/mime/packages/com.phagmaier.slugline.xml" \
+  "$PREFIX/share/icons/hicolor/scalable/apps/com.phagmaier.slugline.svg"
+rm -rf -- \
+  "$PREFIX/share/licenses/slugline" \
+  "$PREFIX/share/doc/slugline"
+
+echo "Removed Slugline from $PREFIX. User scripts and application data were untouched."
 UNINSTALL
-chmod 755 "$STAGE/uninstall.sh"
+chmod 755 "$NEXT_STAGE/uninstall.sh"
 
-echo "==> Tarring"
-TARBALL="dist/slugline-$VERSION-linux-x64.tar.gz"
-rm -f "$TARBALL"
-tar -C dist -czf "$TARBALL" "slugline-$VERSION-linux-x64"
+# Replace only this version's ignored staging directory.
+rm -rf -- "$STAGE"
+mv "$NEXT_STAGE" "$STAGE"
 
-printf '\n%s\n' "$TARBALL  ($(du -h "$TARBALL" | cut -f1))"
+echo "==> Creating $(basename "$TARBALL")"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
+TMP_TARBALL="$WORK/$(basename "$TARBALL")"
+tar \
+  --sort=name \
+  --mtime="@$SOURCE_DATE_EPOCH" \
+  --owner=0 \
+  --group=0 \
+  --numeric-owner \
+  --format=posix \
+  --pax-option=delete=atime,delete=ctime \
+  -C "$DIST" \
+  -cf - \
+  "$STAGE_NAME" |
+  gzip -n > "$TMP_TARBALL"
+mv "$TMP_TARBALL" "$TARBALL"
+
+printf '%s\n' "$TARBALL"

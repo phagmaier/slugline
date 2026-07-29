@@ -10,6 +10,13 @@ this file and the others to it.
 
 First release.
 
+### Distribution
+
+- Versioned Linux x86_64 tarball with user-prefix installer and uninstaller.
+- Self-contained Linux x86_64 AppImage.
+- Tag-gated GitHub Release automation with SHA-256 checksums.
+- Upstream-maintained `slugline-bin` AUR package definition.
+
 ### The editor
 
 - A single custom editing surface for the whole script, not a widget per block,

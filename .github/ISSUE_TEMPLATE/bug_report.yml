@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a reproducible problem in Slugline
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. **Do not attach or paste a private,
+        confidential, or unreleased screenplay.** Reduce the issue to a small
+        invented Fountain file whenever possible.
+  - type: input
+    id: version
+    attributes:
+      label: Slugline version
+      description: Run `slugline --version` or the AppImage with `--version`.
+      placeholder: "slugline 1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: distribution
+    attributes:
+      label: Linux distribution and version
+      placeholder: "Arch Linux, Ubuntu 24.04, Fedora 43, …"
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop environment
+      placeholder: "GNOME 49, KDE Plasma 6, Hyprland, …"
+    validations:
+      required: true
+  - type: dropdown
+    id: display_server
+    attributes:
+      label: Display server
+      options:
+        - Wayland
+        - X11
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: List the smallest reliable sequence from launch to failure.
+      placeholder: |
+        1. Launch Slugline…
+        2. Open…
+        3. Press…
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+      description: Explain what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove personal paths and script text. Do not include private screenplay content.
+      render: shell
+  - type: dropdown
+    id: minimal_file
+    attributes:
+      label: Does it occur with a minimal Fountain file?
+      options:
+        - "Yes"
+        - "No"
+        - "Not tested"
+    validations:
+      required: true
+  - type: textarea
+    id: minimal_details
+    attributes:
+      label: Minimal-file details
+      description: Paste only short, invented Fountain text or describe why a minimal file was not possible.

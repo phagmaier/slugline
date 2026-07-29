@@ -9,6 +9,8 @@ version: 1.0.0+1
 
 environment:
   sdk: ^3.12.2
+  # The Linux release workflow uses this exact supported Flutter toolchain.
+  flutter: 3.44.8
 
 # Every entry here needs a one-line justification in `docs/DEPENDENCIES.md`, in
 # the same change that adds it. §1.2: avoid large transitive trees.

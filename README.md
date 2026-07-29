@@ -13,7 +13,6 @@
 
 ---
 
-<!-- TODO: replace these with real screenshots and a video -->
 <p align="center">
   <img src="githubAssets/editor.png" alt="The editor" width="720" />
   <br/>
@@ -27,7 +26,7 @@
 </p>
 
 <p align="center">
-  <img src="githubAssets/opening.png" alt="Exported PDF" width="720" />
+  <img src="githubAssets/pdf.png" alt="Exported PDF" width="720" />
   <br/>
   <em>Exported PDF, typeset in Courier Prime to the inch — submission ready.</em>
 </p>
@@ -75,23 +74,66 @@ always will.
 
 ## Install
 
-Build the release tarball and run the installer:
+> [!IMPORTANT]
+> The first public release targets **x86_64 Linux only**. Slugline has primarily
+> been tested on Arch Linux; reports from other current desktop distributions
+> are welcome.
+
+Download published builds from the
+**[latest GitHub Release](https://github.com/phagmaier/slugline/releases/latest)**.
+`SHA256SUMS` on that page covers both release artifacts.
+
+### AppImage
+
+Download `Slugline-<version>-x86_64.AppImage`, then:
 
 ```sh
-./tools/package.sh                                    # builds dist/slugline-<version>-linux-x64.tar.gz
-./dist/slugline-*/install.sh                          # installs into ~/.local
-sudo ./dist/slugline-*/install.sh /usr/local          # or system-wide
+chmod +x Slugline-*-x86_64.AppImage
+./Slugline-*-x86_64.AppImage
 ```
 
-See [Building from source](#building-from-source) for the dependencies you'll
-need first. The installer puts the binary, desktop entry, icon, MIME
-association, and both licence texts in place and refreshes the desktop caches.
-An `uninstall.sh` beside it reverses everything. Neither touches your scripts,
-preferences, or backups.
+The AppImage is self-contained and does not install files. Keep it wherever you
+keep applications. On systems where AppImage/FUSE mounting is unavailable, it
+can still be unpacked with `--appimage-extract`.
 
-A Flatpak manifest lives at `packaging/flatpak/` and an AppImage script at
-`tools/make_appimage.sh` — these aren't published yet, but they're ready for
-when packaged distribution starts.
+### Arch Linux (AUR)
+
+Install the prebuilt package with an AUR helper:
+
+```sh
+yay -S slugline-bin
+```
+
+Or use Arch's standard manual AUR flow:
+
+```sh
+git clone https://aur.archlinux.org/slugline-bin.git
+cd slugline-bin
+makepkg -si
+```
+
+### Release tarball
+
+Download `slugline-<version>-linux-x86_64.tar.gz` and `SHA256SUMS` from the same
+release, then extract and install for your user:
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS
+tar -xzf slugline-*-linux-x86_64.tar.gz
+cd slugline-*-linux-x86_64
+./install.sh
+```
+
+The default prefix is `~/.local`; pass an absolute prefix such as `/usr/local`
+to `install.sh` if you are deliberately managing a shared installation. The
+included `uninstall.sh` accepts the same prefix. It removes only packaged files
+and never removes scripts, preferences, backups, or recovery data.
+
+### Building from source
+
+See [source build requirements](#source-build-requirements) below. This route
+is intended for contributors and packagers; ordinary users do not need Flutter
+or Rust.
 
 ## Quick start
 
@@ -138,7 +180,7 @@ a collaborator.
 Slugline reads and writes Fountain **losslessly** — every byte you didn't change
 comes back out exactly as it went in. No reformatting, no surprises.
 
-## Building from source
+## Source build requirements
 
 You need Flutter (stable), a Rust toolchain, and GTK 3 development headers:
 
@@ -185,8 +227,8 @@ Architecture decisions are recorded in `docs/DECISIONS.md`.
 cargo test --workspace                                    # Rust (543 tests)
 python3 tools/check_layering.py                           # crate layering
 python3 tools/check_version.py                            # consistent versioning
-cd app && flutter test                                    # Dart unit tests (328)
-cd app && xvfb-run -a flutter test integration_test/ -d linux   # integration (56)
+cd app && flutter test                                    # Dart unit tests (457)
+./tools/test_linux_integration.sh                         # integration (56)
 ./tools/check_no_network.sh                               # network-isolation gate
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```
@@ -221,17 +263,23 @@ hand-edited.
 
 ## Verification
 
-**2026-07-27** — Rust 543 tests including 2 doc tests, Dart 328 unit and 56
-integration, `flutter analyze` clean, `clippy -D warnings` clean, layering and
-version checks green, both release binaries stripped, network-isolation gate
-passing, release build under 60 MiB.
+Pull requests and `main` run Rust formatting, Clippy and tests; Flutter analysis,
+unit and Xvfb integration tests; version and layering checks; desktop metadata
+validation; a release build; and the network-isolation gate. A version tag must
+pass the same release gates plus tarball and AppImage smoke tests before GitHub
+publishes any assets. See [the release guide](docs/RELEASING.md).
 
 ## What's left?
 
-A handful of manual checks that need a person at a machine — Wayland/X11 with
-HiDPI and fractional scaling, two distributions with different GTK versions,
-real `ibus` + CJK input, and printing from a PDF viewer. None are code changes;
-they're verification gates this machine cannot exercise.
+A handful of checks still need a person at a real desktop: Wayland and X11 with
+HiDPI/fractional scaling, additional distributions and GTK versions, real
+`ibus` plus CJK input, and printing from a PDF viewer.
+
+## Reporting issues
+
+Use the [GitHub issue tracker](https://github.com/phagmaier/slugline/issues).
+Reduce a file to a minimal Fountain example when possible. **Do not upload or
+paste a private, confidential, or unreleased screenplay into an issue or log.**
 
 ## License
 
