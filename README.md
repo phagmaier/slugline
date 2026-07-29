@@ -22,7 +22,7 @@
 <p align="center">
   <img src="githubAssets/opening.png" alt="File Selector" width="720" />
   <br/>
-  <em>Work on multiple projects and keep track of all of them</em>
+  <em>Work on multiple projects and keep track of all of them.</em>
 </p>
 
 <p align="center">
@@ -54,6 +54,10 @@ always will.
   name. See `docs/KEYMAP.md` for the full map.
 - **Live autocomplete** — character names and scene headings are suggested from
   what you've already written.
+- **Scene navigator** — outline sidebar to jump straight to any scene in your
+  screenplay.
+- **Find & replace** — quick search and replace designed specifically for text
+  and Fountain formatting.
 - **Spell-check** — checks against your system's Hunspell dictionaries as you
   type. Underlines mistakes; never changes your text.
 - **Real-time pagination** — the page count is always current, built from the
@@ -95,22 +99,6 @@ chmod +x Slugline-*-x86_64.AppImage
 The AppImage is self-contained and does not install files. Keep it wherever you
 keep applications. On systems where AppImage/FUSE mounting is unavailable, it
 can still be unpacked with `--appimage-extract`.
-
-### Arch Linux (AUR)
-
-Install the prebuilt package with an AUR helper:
-
-```sh
-yay -S slugline-bin
-```
-
-Or use Arch's standard manual AUR flow:
-
-```sh
-git clone https://aur.archlinux.org/slugline-bin.git
-cd slugline-bin
-makepkg -si
-```
 
 ### Release tarball
 
@@ -224,7 +212,7 @@ Architecture decisions are recorded in `docs/DECISIONS.md`.
 ## Development
 
 ```sh
-cargo test --workspace                                    # Rust (543 tests)
+cargo test --workspace                                    # Rust (553 tests)
 python3 tools/check_layering.py                           # crate layering
 python3 tools/check_version.py                            # consistent versioning
 cd app && flutter test                                    # Dart unit tests (457)
