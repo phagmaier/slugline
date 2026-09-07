@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/editor_controller.dart';
 
 import '../support/fake_core.dart';
 import '../support/pump_editor.dart';
@@ -17,6 +18,35 @@ Completion alice() => const Completion(
 );
 
 void main() {
+  for (final operation in ['undo', 'redo', 'reload']) {
+    testWidgets('$operation refreshes completion ranges and acceptance state', (
+      tester,
+    ) async {
+      final core = FakeCore.single(BlockKind.character, 'A');
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      controller.insertText('L');
+      if (operation == 'redo') controller.undo();
+      core.completions = [alice()];
+      controller.setSelection(controller.selection);
+      controller.moveCompletion(1);
+      expect(controller.completions, isNotEmpty);
+      expect(controller.completionWasNavigated, isTrue);
+
+      core.completions = [];
+      switch (operation) {
+        case 'undo':
+          controller.undo();
+        case 'redo':
+          controller.redo();
+        case 'reload':
+          controller.reloadFromCore();
+      }
+      expect(controller.completions, isEmpty);
+      expect(controller.completionWasNavigated, isFalse);
+    });
+  }
+
   testWidgets('a completion never inserts without an explicit acceptance key', (
     tester,
   ) async {

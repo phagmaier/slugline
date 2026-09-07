@@ -241,7 +241,12 @@ class EditorController extends ChangeNotifier {
       focus: DocPosition(block: first.id, offsetUtf16: 0),
     );
     lastRejection = null;
+    _stickyColumn = null;
+    refreshSearch();
+    _refreshCompletions();
+    _spellRun++;
     _misspellings.clear();
+    _pendingSpellBlocks.clear();
     _scheduleSpellCheck(_blocks.map((block) => block.id), immediate: true);
     notifyListeners();
   }
@@ -954,16 +959,30 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> cut() async {
+    if (_disposed) return;
     final text = selectedText();
     if (text == null) return;
+    final selection = _selection;
+    final revision = _documentRevision;
     await Clipboard.setData(ClipboardData(text: text));
+    // The clipboard belongs to another process and may answer after typing,
+    // navigation, a reload, or closing the script. Only delete the text copied.
+    if (_disposed || revision != _documentRevision || selection != _selection) {
+      return;
+    }
     deleteSelection();
   }
 
   /// [plain] is `Ctrl+Shift+V`: the text arrives as Action, with nothing
   /// inferred from it.
   Future<void> paste({bool plain = false}) async {
+    if (_disposed) return;
+    final selection = _selection;
+    final revision = _documentRevision;
     final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (_disposed || revision != _documentRevision || selection != _selection) {
+      return;
+    }
     final text = data?.text;
     if (text == null || text.isEmpty) return;
     _outcome(core.paste(_selection, text, plain: plain));
@@ -1107,6 +1126,8 @@ class EditorController extends ChangeNotifier {
     lastRejection = null;
     _applyResult(result);
     refreshSearch();
+    _refreshCompletions();
+    _stickyColumn = null;
     notifyListeners();
   }
 

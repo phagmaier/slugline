@@ -234,6 +234,83 @@ void main() {
     expect(it.core.saves, isEmpty);
   });
 
+  testWidgets('overlapping modals keep autosave held until both finish', (
+    tester,
+  ) async {
+    final it = setUpDriver();
+    final controller = EditorController(it.core);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: EditorPage(controller: controller, autosave: it.driver),
+    ));
+    final page = tester.state<EditorPageState>(find.byType(EditorPage));
+    final first = Completer<void>();
+    final second = Completer<void>();
+    final firstModal = page.withModal(() => first.future);
+    final secondModal = page.withModal(() => second.future);
+    type(it.core, it.changes, 'a');
+    await tester.pump(const Duration(milliseconds: 40));
+
+    first.complete();
+    await tester.pump();
+    await firstModal;
+    expect(it.driver.suppressed, isTrue);
+    expect(it.core.saves, isEmpty);
+
+    second.complete();
+    await tester.pump();
+    await secondModal;
+    expect(it.driver.suppressed, isFalse);
+    expect(it.core.saves, hasLength(1));
+  });
+
+  testWidgets('a deferred save is forgotten when undo makes the script clean', (
+    tester,
+  ) async {
+    final it = setUpDriver();
+    it.driver.suppress('modal');
+    type(it.core, it.changes, 'a');
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(it.driver.pending, isTrue);
+
+    it.core.markClean();
+    it.changes.tick();
+    expect(it.driver.pending, isFalse);
+    it.driver.release('modal');
+    await tester.pump();
+    expect(it.core.saves, isEmpty);
+  });
+
+  testWidgets('releasing a modal after disposal cannot start an owed save', (
+    tester,
+  ) async {
+    final it = setUpDriver();
+    it.driver.suppress('modal');
+    type(it.core, it.changes, 'a');
+    await tester.pump(const Duration(milliseconds: 40));
+    it.driver.dispose();
+    it.driver.release('modal');
+    await tester.pump();
+    expect(it.core.saves, isEmpty);
+    expect(it.driver.pending, isFalse);
+  });
+
+  testWidgets('an explicit save also stops the automatic interval when clean', (
+    tester,
+  ) async {
+    final it = setUpDriver();
+    type(it.core, it.changes, 'a');
+    await it.core.save();
+    it.core.saves.clear();
+
+    // Explicit saves do not notify the editor controller. The next timer must
+    // notice the clean document and retire both timers without another write.
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(it.core.saves, isEmpty);
+    expect(it.driver.pending, isFalse);
+  });
+
   testWidgets('an undo back to the saved state stops the pending save',
       (tester) async {
     final it = setUpDriver();

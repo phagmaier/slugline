@@ -117,6 +117,7 @@ class EditorPageState extends State<EditorPage> {
       GlobalKey<NavigatorSidebarState>();
 
   int _externalChangeSerial = 0;
+  int _modalSerial = 0;
   int _externalChangesActive = 0;
   Completer<void>? _externalChangesSettled;
   Timer? _navigatorRefresh;
@@ -324,11 +325,14 @@ class EditorPageState extends State<EditorPage> {
   /// writer would experience as their dialog answering a question about a
   /// different document.
   Future<T> withModal<T>(Future<T> Function() action) async {
-    widget.autosave?.suppress('modal');
+    // Each invocation owns its hold, including overlapping save dialogs.
+    final autosave = widget.autosave;
+    final suppression = 'modal-${_modalSerial++}';
+    autosave?.suppress(suppression);
     try {
       return await action();
     } finally {
-      widget.autosave?.release('modal');
+      autosave?.release(suppression);
     }
   }
 
@@ -481,8 +485,10 @@ class EditorPageState extends State<EditorPage> {
       case UnsavedChoice.save:
         final outcome = await withModal(() => saveWithDialogs(context, _core));
         widget.saveStatus?.record(outcome);
-        // A save the writer abandoned is not consent to lose the work.
-        return outcome is SaveOutcome_Saved;
+        // The editor remains usable while the snapshot is written. A successful
+        // save is permission to close only if it includes the latest edits.
+        // A save the writer abandoned is not consent to lose the work either.
+        return outcome is SaveOutcome_Saved && !_core.dirty;
     }
   }
 

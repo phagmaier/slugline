@@ -166,6 +166,7 @@ class AutosaveDriver {
       // The change was an undo back to the saved state, or a caret move. Nothing
       // to write, so nothing should be ticking.
       _cancelTimers();
+      _owed = false;
       return;
     }
     _idleTimer?.cancel();
@@ -188,6 +189,12 @@ class AutosaveDriver {
   }
 
   Future<SaveOutcome> _save() async {
+    if (_disposed) return const SaveOutcome.unchanged();
+    if (!core.dirty) {
+      _cancelTimers();
+      _owed = false;
+      return const SaveOutcome.unchanged();
+    }
     if (_saving) {
       // Owed, not dropped — the same rule as a suppression. The save in flight
       // planned its bytes before this edit existed, so answering "unchanged"
@@ -203,7 +210,10 @@ class AutosaveDriver {
       // file was being written is still unsaved — the core says so, and
       // stopping the timers here would leave it that way until the next
       // keystroke.
-      if (outcome is SaveOutcome_Saved && !core.dirty) _cancelTimers();
+      if (!core.dirty) {
+        _cancelTimers();
+        _owed = false;
+      }
       onOutcome(outcome);
       return outcome;
     } finally {
@@ -224,6 +234,7 @@ class AutosaveDriver {
 
   void dispose() {
     _disposed = true;
+    _owed = false;
     changes.removeListener(_onChanged);
     _cancelTimers();
   }

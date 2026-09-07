@@ -70,6 +70,32 @@ String? count(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('find-match-count'))).data;
 
 void main() {
+  testWidgets('reload refreshes match ranges before Replace can use them', (
+    tester,
+  ) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await tester.enterText(findField(), 'house');
+    await tester.pumpAndSettle();
+    expect(controller.matches, hasLength(2));
+
+    // A disk reload replaces core state without an editor patch.
+    core.apply(EditCommand.replaceText(
+      block: 2,
+      startUtf16: 0,
+      endUtf16: _action.length,
+      with_: 'A completely different action paragraph.',
+    ));
+    controller.reloadFromCore();
+    await tester.pump();
+
+    expect(controller.matches, isEmpty);
+    expect(count(tester), 'No matches');
+    controller.replaceCurrent('cabin');
+    expect(controller.blocks[1].text, 'A completely different action paragraph.');
+  });
+
   testWidgets('Ctrl+F opens the bar; Escape closes it and changes no text',
       (tester) async {
     final core = script();

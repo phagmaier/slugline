@@ -119,14 +119,23 @@ impl FileWatcher {
             }
             watched.push(path.to_path_buf());
         }
-        let count = self.directories.entry(directory.to_path_buf()).or_insert(0);
-        *count += 1;
-        if *count == 1 {
+        if !self.directories.contains_key(directory) {
             // Non-recursive: we care about one directory's own entries, and a
             // recursive watch on a home directory full of scripts would be a
             // descriptor per subdirectory for no benefit.
-            self.watcher.watch(directory, RecursiveMode::NonRecursive)?;
+            if let Err(error) = self.watcher.watch(directory, RecursiveMode::NonRecursive) {
+                // A retry (or another script in this directory) must not claim
+                // a watch the OS never installed. Roll back the path too.
+                self.watched
+                    .lock()
+                    .expect("watch list mutex poisoned")
+                    .retain(|candidate| candidate != path);
+                return Err(error);
+            }
         }
+        // Count only successful registrations. The list lock above is released
+        // before calling the backend, which may be delivering an event itself.
+        *self.directories.entry(directory.to_path_buf()).or_insert(0) += 1;
         Ok(())
     }
 
@@ -508,6 +517,31 @@ mod tests {
     /// absent. The second is the expensive direction, so it is the shorter one.
     const ARRIVES: Duration = Duration::from_secs(5);
     const STAYS_QUIET: Duration = Duration::from_millis(750);
+
+    #[test]
+    fn a_failed_watch_is_not_registered_and_can_be_retried() {
+        let dir = TempDir::new("watch-retry");
+        let missing = dir.path().join("not-created-yet");
+        let first = missing.join("first.fountain");
+        let second = missing.join("second.fountain");
+        let (send, recv) = mpsc::channel();
+        let mut watcher = FileWatcher::new(Arc::new(OwnWrites::default()), move |path| {
+            let _ = send.send(path);
+        })
+        .unwrap();
+
+        assert!(watcher.watch(&first).is_err());
+        assert!(watcher.watching().is_empty());
+        assert!(watcher.watch(&first).is_err(), "a retry must reach the OS");
+        assert!(watcher.watch(&second).is_err(), "no directory watch exists");
+
+        std::fs::create_dir(&missing).unwrap();
+        watcher.watch(&first).unwrap();
+        std::fs::write(&first, "INT. HOUSE - DAY\n").unwrap();
+        assert_eq!(recv.recv_timeout(ARRIVES).unwrap(), first);
+        watcher.unwatch(&first).unwrap();
+        assert!(watcher.watching().is_empty());
+    }
 
     /// Everything a suppression test needs: a watched script, the register the
     /// save path writes into, and the events that got through.
