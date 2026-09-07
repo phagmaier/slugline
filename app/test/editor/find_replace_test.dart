@@ -23,25 +23,25 @@ import '../support/pump_editor.dart';
 const _action = 'John leaves the house and the house is quiet.';
 
 FakeCore script() => FakeCore([
-      const BlockView(
-        id: 1,
-        kind: BlockKind.sceneHeading,
-        sectionLevel: 0,
-        text: 'INT. HOUSE - DAY',
-        forced: false,
-        dual: false,
-        readOnly: false,
-      ),
-      const BlockView(
-        id: 2,
-        kind: BlockKind.action,
-        sectionLevel: 0,
-        text: _action,
-        forced: false,
-        dual: false,
-        readOnly: false,
-      ),
-    ]);
+  const BlockView(
+    id: 1,
+    kind: BlockKind.sceneHeading,
+    sectionLevel: 0,
+    text: 'INT. HOUSE - DAY',
+    forced: false,
+    dual: false,
+    readOnly: false,
+  ),
+  const BlockView(
+    id: 2,
+    kind: BlockKind.action,
+    sectionLevel: 0,
+    text: _action,
+    forced: false,
+    dual: false,
+    readOnly: false,
+  ),
+]);
 
 /// Opens the find bar with the caret at the top of the script.
 ///
@@ -56,20 +56,34 @@ Future<void> openFind(WidgetTester tester, EditorController controller) async {
   await tester.pumpAndSettle();
 }
 
-Finder findField() => find.ancestor(
-      of: find.text('Find'),
-      matching: find.byType(TextField),
-    );
+Finder findField() =>
+    find.ancestor(of: find.text('Find'), matching: find.byType(TextField));
 
 Finder replaceField() => find.ancestor(
-      of: find.text('Replace with'),
-      matching: find.byType(TextField),
-    );
+  of: find.text('Replace with'),
+  matching: find.byType(TextField),
+);
 
 String? count(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('find-match-count'))).data;
 
 void main() {
+  testWidgets('reopening Find preserves its element filter', (tester) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await tester.enterText(findField(), 'house');
+    await tester.tap(find.text('Every element'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dialogue').last);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await openFind(tester, controller);
+    expect(core.queries.last.kinds, [BlockKind.dialogue]);
+    expect(find.text('Dialogue'), findsWidgets);
+  });
+
   testWidgets('reload refreshes match ranges before Replace can use them', (
     tester,
   ) async {
@@ -81,23 +95,29 @@ void main() {
     expect(controller.matches, hasLength(2));
 
     // A disk reload replaces core state without an editor patch.
-    core.apply(EditCommand.replaceText(
-      block: 2,
-      startUtf16: 0,
-      endUtf16: _action.length,
-      with_: 'A completely different action paragraph.',
-    ));
+    core.apply(
+      EditCommand.replaceText(
+        block: 2,
+        startUtf16: 0,
+        endUtf16: _action.length,
+        with_: 'A completely different action paragraph.',
+      ),
+    );
     controller.reloadFromCore();
     await tester.pump();
 
     expect(controller.matches, isEmpty);
     expect(count(tester), 'No matches');
     controller.replaceCurrent('cabin');
-    expect(controller.blocks[1].text, 'A completely different action paragraph.');
+    expect(
+      controller.blocks[1].text,
+      'A completely different action paragraph.',
+    );
   });
 
-  testWidgets('Ctrl+F opens the bar; Escape closes it and changes no text',
-      (tester) async {
+  testWidgets('Ctrl+F opens the bar; Escape closes it and changes no text', (
+    tester,
+  ) async {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
 
@@ -112,8 +132,9 @@ void main() {
     expect(controller.blocks[1].text, _action);
   });
 
-  testWidgets('closing the bar gives the keyboard back to the editor',
-      (tester) async {
+  testWidgets('closing the bar gives the keyboard back to the editor', (
+    tester,
+  ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
     await tester.enterText(findField(), 'house');
@@ -126,8 +147,11 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pump();
 
-    expect(controller.hasSelection, isFalse,
-        reason: 'the surface never got the focus back');
+    expect(
+      controller.hasSelection,
+      isFalse,
+      reason: 'the surface never got the focus back',
+    );
   });
 
   testWidgets('the match count is live', (tester) async {
@@ -178,8 +202,9 @@ void main() {
     expect(controller.matchIndex, 1, reason: 'and wraps backwards');
   });
 
-  testWidgets('Enter and Shift+Enter in the bar step through the matches',
-      (tester) async {
+  testWidgets('Enter and Shift+Enter in the bar step through the matches', (
+    tester,
+  ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
     await tester.enterText(findField(), 'house');
@@ -196,7 +221,9 @@ void main() {
     expect(controller.matchIndex, 0);
   });
 
-  testWidgets('the toggles reach the core as part of the query', (tester) async {
+  testWidgets('the toggles reach the core as part of the query', (
+    tester,
+  ) async {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
@@ -231,7 +258,9 @@ void main() {
     expect(core.queries.last.kinds, [BlockKind.dialogue]);
   });
 
-  testWidgets('Replace changes one match and moves to the next', (tester) async {
+  testWidgets('Replace changes one match and moves to the next', (
+    tester,
+  ) async {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
@@ -277,8 +306,9 @@ void main() {
     expect(controller.blocks[1].text, _action);
   });
 
-  testWidgets('Replace All leaves the caret where the writer left it',
-      (tester) async {
+  testWidgets('Replace All leaves the caret where the writer left it', (
+    tester,
+  ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
     await tester.enterText(findField(), 'house');
@@ -294,8 +324,9 @@ void main() {
     expect(controller.selection.focus.offsetUtf16, 4);
   });
 
-  testWidgets('an edit outside the bar keeps the match list honest',
-      (tester) async {
+  testWidgets('an edit outside the bar keeps the match list honest', (
+    tester,
+  ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
     await tester.enterText(findField(), 'house');
@@ -307,9 +338,15 @@ void main() {
     controller.deleteSelection();
     await tester.pump();
 
-    expect(controller.blocks[1].text, 'John leaves the  and the house is quiet.');
-    expect(controller.matches, hasLength(1),
-        reason: 'the count is stale the moment the text under it changes');
+    expect(
+      controller.blocks[1].text,
+      'John leaves the  and the house is quiet.',
+    );
+    expect(
+      controller.matches,
+      hasLength(1),
+      reason: 'the count is stale the moment the text under it changes',
+    );
     expect(count(tester), '1 of 1');
   });
 

@@ -125,6 +125,13 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     }
   }
 
+  double get _rowExtent =>
+      _navigatorRowExtent +
+      (MediaQuery.textScalerOf(context).scale(26) - 26).clamp(
+        0.0,
+        double.infinity,
+      );
+
   void _move(int delta) {
     final count = _itemCount;
     if (count == 0) return;
@@ -135,7 +142,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
   void _scrollToSelection() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
-      const extent = _navigatorRowExtent;
+      final extent = _rowExtent;
       final target = _selected * extent;
       final top = _scroll.offset;
       final bottom = top + _scroll.position.viewportDimension - extent;
@@ -158,7 +165,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     final index = scenes.indexWhere((s) => s.block == blockId);
     if (index < 0) return;
 
-    const extent = _navigatorRowExtent;
+    final extent = _rowExtent;
     final target = index * extent;
     final viewport = _scroll.position.viewportDimension;
     final top = _scroll.offset;
@@ -400,7 +407,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
       return ReorderableListView.builder(
         scrollController: _scroll,
         buildDefaultDragHandles: false,
-        itemExtent: _navigatorRowExtent,
+        itemExtent: _rowExtent,
         itemCount: widget.data.scenes.length,
         onReorderItem: _reorderScenes,
         proxyDecorator: (child, _, animation) => AnimatedBuilder(
@@ -423,7 +430,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     }
     return ListView.builder(
       controller: _scroll,
-      itemExtent: _navigatorRowExtent,
+      itemExtent: _rowExtent,
       itemCount: _itemCount,
       itemBuilder: (context, index) => switch (_section) {
         _NavigatorSection.scenes => _sceneRow(
@@ -508,7 +515,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
           child: ListTile(
             key: ValueKey('navigator scene ${scene.block}'),
             dense: true,
-            minTileHeight: _navigatorRowExtent,
+            minTileHeight: _rowExtent,
             minVerticalPadding: 8,
             horizontalTitleGap: 8,
             contentPadding: const EdgeInsets.fromLTRB(8, 0, 6, 0),
@@ -628,7 +635,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
         child: ListTile(
           key: ValueKey('navigator character ${character.name}'),
           dense: true,
-          minTileHeight: _navigatorRowExtent,
+          minTileHeight: _rowExtent,
           minVerticalPadding: 8,
           horizontalTitleGap: 8,
           contentPadding: const EdgeInsets.symmetric(horizontal: 10),
@@ -787,15 +794,23 @@ class _Segment extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              AnimatedDefaultTextStyle(
-                key: ValueKey('navigator $label label style'),
-                duration: const Duration(milliseconds: 180),
-                style: TextStyle(
-                  color: selected ? colours.textPrimary : colours.textTertiary,
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              Flexible(
+                child: AnimatedDefaultTextStyle(
+                  key: ValueKey('navigator $label label style'),
+                  duration: const Duration(milliseconds: 180),
+                  style: TextStyle(
+                    color: selected
+                        ? colours.textPrimary
+                        : colours.textTertiary,
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                child: Text(label),
               ),
               const SizedBox(width: 5),
               AnimatedDefaultTextStyle(

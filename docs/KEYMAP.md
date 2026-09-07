@@ -121,7 +121,12 @@ Parenthetical". Enter normally keeps its editing meaning and splits the block;
 after Up/Down explicitly moves through the popup, Enter accepts that chosen item.
 Escape dismisses and suppresses the highlighted item for the rest of the session.
 Merely showing or automatically highlighting an item never changes text (ADR 0017).
-The popup says all of this on itself, in a footer, because none of it was
+Suggestions appear while typing or when explicitly requested with **Ctrl+Space**.
+Opening a script, moving the caret, and undo/redo leave them closed. Cycling
+forward into a character cue offers the cast, including an empty cue. Navigation
+and focus loss dismiss the popup; Shift+Up/Down always extend the selection.
+The list shows up to four candidates at a time and follows the keyboard highlight
+(ADR 0041). The popup says how to accept or dismiss an item in its footer, because none of it was
 guessable from the screen (ADR 0030). It is keyboard-only on purpose: clicking a
 candidate places the caret in the text under the popup, as any other click on the
 page does, and never accepts.
@@ -167,6 +172,7 @@ classification says so.
 | `Ctrl+V` | Paste, as Fountain-aware blocks |
 | `Ctrl+Shift+V` | Paste as plain text — Action blocks, nothing inferred |
 | `Ctrl+A` | Select all |
+| `Ctrl+Space` | Show suggestions at the caret, including the cast in an empty cue |
 | `Backspace` | Delete backwards; at offset 0, join to the block above |
 | `Delete` | Delete forwards; at the end, pull the next block up |
 | `Ctrl+Backspace` | Delete the word before the caret; at offset 0, join to the block above |
@@ -254,6 +260,10 @@ want the focus, and neither question has a good answer.
 Inside the find bar, `Enter` and `Shift+Enter` step through the matches.
 
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
+
+In windows narrower than 900 logical pixels, the navigator opens temporarily
+over the editor and closes when you choose a scene or character. Wider windows
+keep the saved docked-sidebar preference.
 
 Inside the navigator, typing filters the current Scenes or Characters list,
 `↑` and `↓` move the highlight, and `Enter` jumps. Clicking a scene or accepting

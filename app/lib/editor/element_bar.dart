@@ -58,7 +58,7 @@ class ElementBar extends StatelessWidget {
       child: SizedBox(
         // Shorter than it was. A status bar is read at a glance and never
         // typed into, so it gives its height back to the script.
-        height: 28,
+        height: 32 + (MediaQuery.textScalerOf(context).scale(12) - 12),
         child: AnimatedBuilder(
           animation: controller,
           builder: (context, _) {
@@ -132,7 +132,7 @@ class ElementBar extends StatelessWidget {
 /// not. Stating it once here is what keeps the four labels along it from
 /// drifting into four different sizes, which is what they had done.
 TextStyle? _statusStyle(ThemeData theme, Color colour) =>
-    theme.textTheme.labelSmall?.copyWith(fontSize: 11, color: colour);
+    theme.textTheme.bodySmall?.copyWith(color: colour);
 
 /// Pages, scenes and words — the three answers to "how long is this".
 ///
@@ -179,9 +179,10 @@ class _ScriptSize extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       semanticsLabel: parts.join(', '),
-      style: _statusStyle(theme, colours.textTertiary)?.copyWith(
-        fontFeatures: const [FontFeature.tabularFigures()],
-      ),
+      style: _statusStyle(
+        theme,
+        colours.textTertiary,
+      )?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
     );
   }
 }
@@ -305,7 +306,9 @@ String? _ago(int millis) {
       .inSeconds;
   if (seconds < 45) return 'just now';
   final minutes = (seconds / 60).round();
-  if (minutes < 60) return '$minutes ${minutes == 1 ? 'minute' : 'minutes'} ago';
+  if (minutes < 60) {
+    return '$minutes ${minutes == 1 ? 'minute' : 'minutes'} ago';
+  }
   final hours = (minutes / 60).round();
   if (hours < 24) return '$hours ${hours == 1 ? 'hour' : 'hours'} ago';
   final days = (hours / 24).round();
@@ -399,11 +402,7 @@ class _ElementSelector extends StatelessWidget {
                 ),
               ),
             if (!block.readOnly)
-              Icon(
-                Icons.expand_less,
-                size: 14,
-                color: colours.textTertiary,
-              ),
+              Icon(Icons.expand_less, size: 14, color: colours.textTertiary),
           ],
         ),
       ),

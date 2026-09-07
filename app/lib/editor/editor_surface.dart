@@ -296,6 +296,7 @@ class EditorSurfaceState extends State<EditorSurface>
     if (_focusNode.hasFocus) {
       _attachInput();
     } else {
+      _controller.dismissCompletions();
       _connection?.close();
       _connection = null;
       _composing = TextRange.empty;
@@ -485,9 +486,13 @@ class EditorSurfaceState extends State<EditorSurface>
     final control = keys.isControlPressed;
 
     switch (event.logicalKey) {
-      case LogicalKeyboardKey.arrowUp when _controller.completions.isNotEmpty:
+      case LogicalKeyboardKey.space when control:
+        _controller.showCompletions();
+      case LogicalKeyboardKey.arrowUp
+          when !shift && !control && _controller.completions.isNotEmpty:
         _controller.moveCompletion(-1);
-      case LogicalKeyboardKey.arrowDown when _controller.completions.isNotEmpty:
+      case LogicalKeyboardKey.arrowDown
+          when !shift && !control && _controller.completions.isNotEmpty:
         _controller.moveCompletion(1);
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
           when _controller.completions.isNotEmpty &&
@@ -605,6 +610,7 @@ class EditorSurfaceState extends State<EditorSurface>
   /// check a thumb drag is also interpreted as a selection drag, and keeping
   /// that accidental caret visible pulls the viewport back under the thumb.
   bool _scrollbarPointerActive = false;
+  bool _completionPinPointerActive = false;
 
   bool _isInScrollbarGutter(Offset local) {
     // Flutter expands a touch thumb to its minimum interactive size around the
@@ -617,6 +623,7 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    if (_completionPinPointerActive) return;
     _scrollbarPointerActive = _isInScrollbarGutter(event.localPosition);
     if (_scrollbarPointerActive) return;
     if (event.buttons & kSecondaryButton != 0) {
@@ -769,7 +776,7 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    if (_scrollbarPointerActive) return;
+    if (_scrollbarPointerActive || _completionPinPointerActive) return;
     if (event.buttons & kPrimaryButton == 0) return;
     // A drag is a fresh selection, not a continuation of the click count.
     _clickCount = 1;
@@ -780,6 +787,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   void _onPointerEnd(PointerEvent event) {
     _scrollbarPointerActive = false;
+    _completionPinPointerActive = false;
   }
 
   /// Scrolls while a drag is held against the top or bottom edge.
@@ -820,7 +828,9 @@ class EditorSurfaceState extends State<EditorSurface>
 
   /// Keeps the caret on screen with a few rows of air around it.
   void _ensureCaretVisible() {
-    if (_initialScrollPending || _restoreInProgress || !_scroll.hasClients) return;
+    if (_initialScrollPending || _restoreInProgress || !_scroll.hasClients) {
+      return;
+    }
     final margin = 3 * _lineHeight;
     final caretTop = _geometry.yOfRow(_controller.caretRow);
     final caretBottom = caretTop + _lineHeight;
@@ -1006,15 +1016,10 @@ class EditorSurfaceState extends State<EditorSurface>
                         ),
                       ),
                       ..._blockSemantics(),
-                      if (_controller.completions.isNotEmpty)
-                        Positioned(
-                          left: geometry.columnLeft,
-                          top: geometry.yOfRow(_controller.caretRow + 1),
-                          child: _CompletionPopup(
-                            controller: _controller,
-                            textSize: _fontSize,
-                          ),
-                        ),
+                      AnimatedBuilder(
+                        animation: Listenable.merge([_controller, _scroll]),
+                        builder: (context, _) => _completionOverlay(context),
+                      ),
                     ],
                   ),
                 ),
@@ -1023,6 +1028,64 @@ class EditorSurfaceState extends State<EditorSurface>
           ),
         );
       },
+    );
+  }
+
+  Widget _completionOverlay(BuildContext context) {
+    if (!_focusNode.hasFocus || _controller.completions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final scale = MediaQuery.textScalerOf(context);
+    final rowHeight = math.max(30.0, scale.scale(_fontSize) + 10);
+    if (_viewportWidth < 160) return const SizedBox.shrink();
+    final width = math.min(340.0, _viewportWidth - 16);
+    final hint =
+        'Tab accepts · ↑↓ choose\nEnter confirms · Esc closes\n'
+        '${_controller.completionIndex + 1} of ${_controller.completions.length}';
+    final hintStyle = Theme.of(context).textTheme.bodySmall!.copyWith(
+      fontSize: chromeSmallFontSize,
+      height: 1.3,
+      color: context.colours.textSecondary,
+    );
+    // Only chrome is measured here; screenplay columns still come from the grid.
+    final hintPainter = TextPainter(
+      text: TextSpan(text: hint, style: hintStyle),
+      textDirection: Directionality.of(context),
+      textScaler: scale,
+    )..layout(maxWidth: width - 24);
+    final footerHeight = hintPainter.height + 8;
+    hintPainter.dispose();
+    final scroll = _scroll.hasClients ? _scroll.offset : 0.0;
+    final caretTop = _geometry.yOfRow(_controller.caretRow);
+    final caretBottom = _geometry.yOfRow(_controller.caretRow + 1);
+    final below = scroll + _viewportHeight - caretBottom - 8;
+    final above = caretTop - scroll - 8;
+    final desired =
+        math.min(4, _controller.completions.length) * rowHeight + footerHeight;
+    final upwards = below < desired && above > below;
+    final available = upwards ? above : below;
+    final count = math.min(4, ((available - footerHeight) / rowHeight).floor());
+    if (count < 1) return const SizedBox.shrink();
+    final rows = math.min(count, _controller.completions.length);
+    final height = rows * rowHeight + footerHeight;
+    return Positioned(
+      left: _geometry.columnLeft.clamp(8.0, _viewportWidth - width - 8),
+      top: upwards ? caretTop - height : caretBottom,
+      width: width,
+      height: height,
+      child: _CompletionPopup(
+        controller: _controller,
+        textSize: _fontSize,
+        rows: rows,
+        rowHeight: rowHeight,
+        hint: hint,
+        hintStyle: hintStyle,
+        onPinPointerDown: () => _completionPinPointerActive = true,
+        onPin: (candidate) {
+          _controller.toggleCompletionPin(candidate);
+          _focusNode.requestFocus();
+        },
+      ),
     );
   }
 }
@@ -1039,14 +1102,32 @@ class EditorSurfaceState extends State<EditorSurface>
 /// at the page as at a candidate, and the version of it that guesses wrong
 /// writes a scene prefix into the script.
 class _CompletionPopup extends StatelessWidget {
-  const _CompletionPopup({required this.controller, required this.textSize});
+  const _CompletionPopup({
+    required this.controller,
+    required this.textSize,
+    required this.rows,
+    required this.rowHeight,
+    required this.hint,
+    required this.hintStyle,
+    required this.onPinPointerDown,
+    required this.onPin,
+  });
 
   final EditorController controller;
   final double textSize;
+  final int rows;
+  final double rowHeight;
+  final String hint;
+  final TextStyle hintStyle;
+  final VoidCallback onPinPointerDown;
+  final ValueChanged<Completion> onPin;
 
   @override
   Widget build(BuildContext context) {
     final colours = context.colours;
+    final first = (controller.completionIndex - rows + 1)
+        .clamp(0, math.max(0, controller.completions.length - rows))
+        .toInt();
     return Material(
       key: const ValueKey('completion-popup'),
       elevation: 0,
@@ -1056,21 +1137,22 @@ class _CompletionPopup extends StatelessWidget {
         side: hairline(colours),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
+        constraints: const BoxConstraints(maxWidth: 340),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final (index, candidate)
-                in controller.completions.take(8).indexed)
+                in controller.completions.indexed.skip(first).take(rows))
               Container(
+                height: rowHeight,
                 key: ValueKey('completion-${candidate.value}'),
                 color: index == controller.completionIndex
                     ? colours.accentSubtle
                     : null,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 6,
+                  vertical: 0,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1078,6 +1160,8 @@ class _CompletionPopup extends StatelessWidget {
                     Expanded(
                       child: Text(
                         candidate.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: _textStyle(textSize).copyWith(
                           color: index == controller.completionIndex
                               ? colours.textPrimary
@@ -1085,19 +1169,28 @@ class _CompletionPopup extends StatelessWidget {
                         ),
                       ),
                     ),
-                    IconButton(
-                      key: ValueKey('pin-${candidate.value}'),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: candidate.pinned
-                          ? 'Unpin suggestion'
-                          : 'Pin suggestion',
-                      onPressed: () =>
-                          controller.toggleCompletionPin(candidate),
-                      icon: Icon(
-                        candidate.pinned
-                            ? Icons.push_pin
-                            : Icons.push_pin_outlined,
-                        size: 16,
+                    // Claim this pointer before the surface handles caret
+                    // placement. Candidate labels still leave clicks to it.
+                    Listener(
+                      onPointerDown: (_) => onPinPointerDown(),
+                      child: IconButton(
+                        key: ValueKey('pin-${candidate.value}'),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                        tooltip: candidate.pinned
+                            ? 'Unpin suggestion'
+                            : 'Pin suggestion',
+                        onPressed: () => onPin(candidate),
+                        icon: Icon(
+                          candidate.pinned
+                              ? Icons.push_pin
+                              : Icons.push_pin_outlined,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ],
@@ -1110,12 +1203,7 @@ class _CompletionPopup extends StatelessWidget {
               // text — but the gestures are the application talking, so the
               // footer is chrome and stays the chrome's size whatever the
               // script is set at.
-              child: Text(
-                'Tab accepts · ↑↓ then Enter · Esc dismisses',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colours.textTertiary,
-                ),
-              ),
+              child: Text(hint, style: hintStyle),
             ),
           ],
         ),
@@ -1129,11 +1217,8 @@ class _CompletionPopup extends StatelessWidget {
 /// No `fontFamilyFallback`: the face is bundled, so there is nothing to fall
 /// back to and nothing that would silently change the advance the grid is
 /// derived from ([ScreenplayMetrics.advanceRatio]).
-TextStyle _textStyle(double fontSize) => TextStyle(
-  fontFamily: scriptFontFamily,
-  fontSize: fontSize,
-  height: 1.0,
-);
+TextStyle _textStyle(double fontSize) =>
+    TextStyle(fontFamily: scriptFontFamily, fontSize: fontSize, height: 1.0);
 
 class _EditorColours {
   const _EditorColours({

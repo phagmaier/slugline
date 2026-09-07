@@ -15,11 +15,7 @@ import 'package:slugline/theme.dart';
 /// Escape closes the bar and changes no text — that is §Phase 3's requirement and
 /// the reason Escape is handled here rather than left to bubble.
 class FindBar extends StatefulWidget {
-  const FindBar({
-    required this.controller,
-    required this.onDismiss,
-    super.key,
-  });
+  const FindBar({required this.controller, required this.onDismiss, super.key});
 
   final EditorController controller;
   final VoidCallback onDismiss;
@@ -46,8 +42,13 @@ class _FindBarState extends State<FindBar> {
     _find.text = widget.controller.query.text;
     _caseSensitive = widget.controller.query.caseSensitive;
     _wholeWord = widget.controller.query.wholeWord;
+    _only = widget.controller.query.kinds.firstOrNull;
     _findFocus.requestFocus();
-    if (_find.text.isNotEmpty) _search();
+    if (_find.text.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _search();
+      });
+    }
   }
 
   @override
@@ -59,12 +60,14 @@ class _FindBarState extends State<FindBar> {
   }
 
   void _search() {
-    widget.controller.search(FindQuery(
-      text: _find.text,
-      caseSensitive: _caseSensitive,
-      wholeWord: _wholeWord,
-      kinds: _only == null ? const [] : [_only!],
-    ));
+    widget.controller.search(
+      FindQuery(
+        text: _find.text,
+        caseSensitive: _caseSensitive,
+        wholeWord: _wholeWord,
+        kinds: _only == null ? const [] : [_only!],
+      ),
+    );
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -76,7 +79,9 @@ class _FindBarState extends State<FindBar> {
       case LogicalKeyboardKey.escape:
         widget.onDismiss();
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
-        shift ? widget.controller.previousMatch() : widget.controller.nextMatch();
+        shift
+            ? widget.controller.previousMatch()
+            : widget.controller.nextMatch();
       default:
         return KeyEventResult.ignored;
     }
@@ -157,11 +162,13 @@ class _FindBarState extends State<FindBar> {
                       ),
                       const SizedBox(width: 8),
                       TextButton(
-                        onPressed: () => widget.controller.replaceCurrent(_replace.text),
+                        onPressed: () =>
+                            widget.controller.replaceCurrent(_replace.text),
                         child: const Text('Replace'),
                       ),
                       TextButton(
-                        onPressed: () => widget.controller.replaceAll(_replace.text),
+                        onPressed: () =>
+                            widget.controller.replaceAll(_replace.text),
                         child: const Text('All'),
                       ),
                     ],

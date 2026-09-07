@@ -115,6 +115,8 @@ class EditorPageState extends State<EditorPage> {
   final FocusNode _editorFocus = FocusNode(debugLabel: 'editor surface');
   final GlobalKey<NavigatorSidebarState> _navigatorKey =
       GlobalKey<NavigatorSidebarState>();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _compactLayout = false;
 
   int _externalChangeSerial = 0;
   int _modalSerial = 0;
@@ -222,6 +224,15 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _setNavigatorVisible(bool visible) {
+    if (_compactLayout) {
+      if (visible) {
+        _refreshNavigator();
+        _scaffoldKey.currentState?.openDrawer();
+      } else {
+        _scaffoldKey.currentState?.closeDrawer();
+      }
+      return;
+    }
     if (_navigatorVisible == visible) return;
     setState(() => _navigatorVisible = visible);
     unawaited(widget.onNavigatorVisibilityChanged?.call(visible));
@@ -245,6 +256,7 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _jumpToScene(int block) {
+    _scaffoldKey.currentState?.closeDrawer();
     _suppressNavigatorScroll = true;
     _navigatorSuppressionTimer?.cancel();
     if (!widget.controller.jumpToBlock(block)) {
@@ -264,6 +276,7 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _jumpToCharacter(NavigatorCharacter character) {
+    _scaffoldKey.currentState?.closeDrawer();
     if (character.blocks.isEmpty) return;
     final order = <int, int>{
       for (var i = 0; i < widget.controller.blocks.length; i++)
@@ -534,12 +547,13 @@ class EditorPageState extends State<EditorPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      _buildEditor(context, MediaQuery.sizeOf(context).width);
+
+  Widget _buildEditor(BuildContext context, double width) {
+    _compactLayout = width < 900;
     final colours = context.colours;
-    final navigatorWidth = (MediaQuery.sizeOf(context).width * 0.34).clamp(
-      176.0,
-      288.0,
-    );
+    const navigatorWidth = 288.0;
     // The top bar carries the navigator toggle. When there is no top bar — the
     // editor pumped as the whole application, which is what a widget test gets —
     // something else has to, or hiding the navigator would hide the only way to
@@ -551,6 +565,13 @@ class EditorPageState extends State<EditorPage> {
       // only what it ignores reaches here.
       onKeyEvent: (_, event) => _onPageKey(event),
       child: Scaffold(
+        key: _scaffoldKey,
+        drawer: _compactLayout && !widget.distractionFree
+            ? Drawer(width: 288, child: SafeArea(child: _navigatorSidebar()))
+            : null,
+        onDrawerChanged: (open) {
+          if (!open) _editorFocus.requestFocus();
+        },
         appBar: widget.onClosed == null || widget.distractionFree
             ? null
             : AppBar(
@@ -579,11 +600,13 @@ class EditorPageState extends State<EditorPage> {
                   _BarButton(
                     key: const ValueKey('toggle navigator'),
                     icon: Icons.format_list_bulleted,
-                    tooltip: _navigatorVisible
+                    tooltip: !_compactLayout && _navigatorVisible
                         ? 'Hide the navigator (Ctrl+J)'
                         : 'Show the navigator (Ctrl+J)',
-                    selected: _navigatorVisible,
-                    onPressed: () => _setNavigatorVisible(!_navigatorVisible),
+                    selected: !_compactLayout && _navigatorVisible,
+                    onPressed: () => _setNavigatorVisible(
+                      _compactLayout || !_navigatorVisible,
+                    ),
                   ),
                   _BarButton(
                     key: const ValueKey('open find'),
@@ -591,6 +614,12 @@ class EditorPageState extends State<EditorPage> {
                     tooltip: 'Find and replace (Ctrl+F)',
                     selected: _panel == _Panel.find,
                     onPressed: () => _show(_Panel.find),
+                  ),
+                  _BarButton(
+                    key: const ValueKey('open commands'),
+                    icon: Icons.keyboard_command_key,
+                    tooltip: 'Commands (Ctrl+K)',
+                    onPressed: () => _show(_Panel.palette),
                   ),
                   const _BarDivider(),
                   if (_output != null)
@@ -627,19 +656,10 @@ class EditorPageState extends State<EditorPage> {
               ),
         body: Row(
           children: [
-            if (_navigatorVisible && !widget.distractionFree) ...[
-              SizedBox(
-                width: navigatorWidth,
-                child: NavigatorSidebar(
-                  key: _navigatorKey,
-                  data: _navigator,
-                  currentSceneBlock: _currentSceneBlock,
-                  onSceneSelected: _jumpToScene,
-                  onSceneReordered: _reorderScene,
-                  onCharacterSelected: _jumpToCharacter,
-                  onCollapse: () => _setNavigatorVisible(false),
-                ),
-              ),
+            if (!_compactLayout &&
+                _navigatorVisible &&
+                !widget.distractionFree) ...[
+              SizedBox(width: navigatorWidth, child: _navigatorSidebar()),
               const VerticalDivider(width: 1),
             ],
             Expanded(
@@ -677,9 +697,16 @@ class EditorPageState extends State<EditorPage> {
                                 Positioned(
                                   top: 8,
                                   right: 8,
-                                  child: FindBar(
-                                    controller: widget.controller,
-                                    onDismiss: _dismiss,
+                                  left: 8,
+                                  bottom: 8,
+                                  child: Align(
+                                    alignment: Alignment.topRight,
+                                    child: SingleChildScrollView(
+                                      child: FindBar(
+                                        controller: widget.controller,
+                                        onDismiss: _dismiss,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               if (_panel == _Panel.palette)
@@ -703,7 +730,7 @@ class EditorPageState extends State<EditorPage> {
                                     onDismiss: _dismiss,
                                   ),
                                 ),
-                              if (!_navigatorVisible &&
+                              if ((_compactLayout || !_navigatorVisible) &&
                                   !widget.distractionFree &&
                                   !hasTopBar)
                                 Positioned(
@@ -759,6 +786,16 @@ class EditorPageState extends State<EditorPage> {
       ),
     );
   }
+
+  Widget _navigatorSidebar() => NavigatorSidebar(
+    key: _navigatorKey,
+    data: _navigator,
+    currentSceneBlock: _currentSceneBlock,
+    onSceneSelected: _jumpToScene,
+    onSceneReordered: _reorderScene,
+    onCharacterSelected: _jumpToCharacter,
+    onCollapse: () => _setNavigatorVisible(false),
+  );
 }
 
 enum _Panel { none, find, palette }

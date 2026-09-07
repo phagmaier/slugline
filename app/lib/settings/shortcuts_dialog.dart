@@ -85,9 +85,9 @@ class _ShortcutRow extends StatelessWidget {
             // leaking into a dialog.
             child: Text(
               keys,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           Expanded(child: Text(action)),
@@ -118,6 +118,7 @@ const _sections = <(String, List<(String, String)>)>[
       ('Ctrl+X / Ctrl+C / Ctrl+V', 'Cut, copy, and Fountain-aware paste'),
       ('Ctrl+Shift+V', 'Paste as plain Action text'),
       ('Ctrl+A', 'Select all'),
+      ('Ctrl+Space', 'Show suggestions, including the cast in an empty cue'),
       ('Ctrl+Backspace / Ctrl+Delete', 'Delete one word'),
       ('Tab / Shift+Tab', 'Cycle the context-appropriate element'),
       ('Ctrl+1 … Ctrl+0', 'Set screenplay element type'),

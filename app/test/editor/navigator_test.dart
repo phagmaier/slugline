@@ -71,6 +71,10 @@ Future<EditorController> _pump(
   int initialScrollRow = 0,
   Future<void> Function(bool)? onVisibilityChanged,
 }) async {
+  tester.view.physicalSize = const Size(1000, 600);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   final controller = EditorController(core);
   addTearDown(controller.dispose);
   await tester.pumpWidget(

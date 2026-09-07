@@ -94,6 +94,12 @@ List<EditorCommand> editorCommands({
     ),
     EditorCommand(
       group: 'Edit',
+      label: 'Show suggestions',
+      shortcut: 'Ctrl+Space',
+      run: controller.showCompletions,
+    ),
+    EditorCommand(
+      group: 'Edit',
       label: 'Redo',
       shortcut: 'Ctrl+Shift+Z',
       run: controller.redo,

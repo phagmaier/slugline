@@ -18,6 +18,31 @@ Completion alice() => const Completion(
 );
 
 void main() {
+  testWidgets('pinning a suggestion preserves the caret and popup', (
+    tester,
+  ) async {
+    final core = FakeCore.single(BlockKind.character, 'AL')
+      ..completions = [alice()];
+    final controller = await pumpEditor(tester, core);
+    caretAt(controller, 0, 2);
+    final selection = controller.selection;
+    controller.showCompletions();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('pin-ALICE')));
+    await tester.pump();
+
+    expect(controller.blocks.single.text, 'AL');
+    expect(controller.selection, selection);
+    expect(core.commands, isEmpty);
+    expect(controller.completions.single.pinned, isTrue);
+    expect(find.byKey(const ValueKey('completion-popup')), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(controller.blocks.single.text, 'ALICE');
+  });
+
   for (final operation in ['undo', 'redo', 'reload']) {
     testWidgets('$operation refreshes completion ranges and acceptance state', (
       tester,
@@ -29,6 +54,7 @@ void main() {
       if (operation == 'redo') controller.undo();
       core.completions = [alice()];
       controller.setSelection(controller.selection);
+      controller.showCompletions();
       controller.moveCompletion(1);
       expect(controller.completions, isNotEmpty);
       expect(controller.completionWasNavigated, isTrue);
@@ -54,6 +80,7 @@ void main() {
       ..completions = [alice()];
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 2);
+    controller.showCompletions();
     await tester.pump();
 
     expect(find.byKey(const ValueKey('completion-popup')), findsOneWidget);
@@ -79,6 +106,7 @@ void main() {
       ..completions = [alice()];
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 2);
+    controller.showCompletions();
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -101,6 +129,7 @@ void main() {
       ..completions = [alice()];
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 2);
+    controller.showCompletions();
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -119,6 +148,7 @@ void main() {
         ..completions = [alice()];
       final controller = await pumpEditor(tester, core);
       caretAt(controller, 0, 2);
+      controller.showCompletions();
       await tester.pump();
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -142,6 +172,7 @@ void main() {
       ..completions = [alice()];
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 2);
+    controller.showCompletions();
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('completion-ALICE')));
@@ -159,6 +190,7 @@ void main() {
       ..completions = [alice()];
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 2);
+    controller.showCompletions();
     await tester.pump();
 
     expect(find.byKey(const ValueKey('completion-hint')), findsOneWidget);

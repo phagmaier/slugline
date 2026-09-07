@@ -471,6 +471,7 @@ class EditorController extends ChangeNotifier {
       anchor: extend ? _selection.anchor : position,
       focus: position,
     );
+    _refreshCompletions();
     notifyListeners();
   }
 
@@ -725,6 +726,7 @@ class EditorController extends ChangeNotifier {
           endUtf16: end.offsetUtf16,
           with_: text,
         ),
+        suggest: text.isNotEmpty && !text.contains('\n'),
       );
       return;
     }
@@ -776,7 +778,7 @@ class EditorController extends ChangeNotifier {
     )) {
       return;
     }
-    _refreshCompletions();
+    _refreshCompletions(show: true);
     notifyListeners();
   }
 
@@ -906,6 +908,7 @@ class EditorController extends ChangeNotifier {
     if (outcome == null) return;
     _outcome(outcome);
     _restoreCaret(was);
+    if (!reverse && lastRejection == null) showCompletions();
   }
 
   /// The element type Tab would move to from here, for the element bar's hint.
@@ -1133,18 +1136,23 @@ class EditorController extends ChangeNotifier {
 
   // --- applying what the core says -----------------------------------------
 
-  void _apply(EditCommand command) {
-    _outcome(core.apply(command, before: _selection));
+  void _apply(EditCommand command, {bool? suggest}) {
+    _outcome(
+      core.apply(command, before: _selection),
+      suggest:
+          suggest ??
+          (command is EditCommand_ReplaceText && _completions.isNotEmpty),
+    );
   }
 
-  void _outcome(EditOutcome outcome) {
+  void _outcome(EditOutcome outcome, {bool suggest = false}) {
     switch (outcome) {
       case EditOutcome_Applied(:final result):
         lastRejection = null;
         _applyResult(result);
         // Every match offset is an offset into text the edit may have moved.
         refreshSearch();
-        _refreshCompletions();
+        _refreshCompletions(show: suggest);
       case EditOutcome_Rejected(:final reason):
         lastRejection = reason;
     }
@@ -1152,9 +1160,16 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _refreshCompletions() {
+  /// Explicitly offers Rust's suggestions, including the cast in an empty cue.
+  /// Opening a script or moving the caret never opens this popup.
+  void showCompletions() {
+    _refreshCompletions(show: true);
+    notifyListeners();
+  }
+
+  void _refreshCompletions({bool show = false}) {
     _completionWasNavigated = false;
-    if (hasSelection) {
+    if (!show || hasSelection) {
       _completions = const [];
       _completionIndex = 0;
       return;

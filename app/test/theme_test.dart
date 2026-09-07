@@ -50,6 +50,22 @@ void main() {
       expect(colours.border.a, lessThanOrEqualTo(0.14));
     });
 
+    test(
+      '$name: small status and hint text is readable on every chrome surface',
+      () {
+        for (final background in [
+          colours.surface,
+          colours.surfaceRaised,
+          colours.surfaceOverlay,
+        ]) {
+          final a = colours.textTertiary.computeLuminance();
+          final b = background.computeLuminance();
+          final ratio = ((a > b ? a : b) + 0.05) / ((a < b ? a : b) + 0.05);
+          expect(ratio, greaterThanOrEqualTo(4.5));
+        }
+      },
+    );
+
     test('$name: the three text weights descend', () {
       final surface = colours.surface;
       double contrast(Color text) =>

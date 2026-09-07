@@ -3033,3 +3033,56 @@ runs on the existing snapshot worker path, never on the keystroke path.
   page boundaries and printed page numbers.
 * The indicator can briefly show the last complete snapshot while a new
   pagination is running, matching Preview's existing stale-snapshot policy.
+
+
+---
+
+## ADR 0041 — Suggestions follow writing intent, and narrow windows keep the page wide
+
+**Status:** Accepted
+**Date:** 2026-09-06
+**Supersedes:** ADR 0030's popup activation and fixed eight-row presentation;
+ADR 0035's permanently docked navigator presentation on narrow windows.
+
+### Context
+
+Opening a scene heading displayed six prefix suggestions over the first page.
+Moving through a script could leave stale suggestions taking the arrow keys.
+The navigator and a fixed-width Find overlay also competed with the screenplay
+in tiled windows. Small status and hint text was difficult to read.
+
+### Decision
+
+Opening, reloading, undoing and moving the caret leave suggestions closed.
+Typing asks Rust for candidates; Ctrl+Space explicitly requests them, including
+an empty character cue's cast. Cycling forward into an element also asks for
+suggestions, preserving Action → Character → cast completion. Navigation,
+selection and focus loss dismiss the popup. Unmodified Up/Down choose candidates;
+Shift+Up/Down still extend the document selection. Tab accepts and Enter accepts
+only after explicit navigation, as in ADR 0017. Candidate rows remain keyboard
+only; pin controls retain their existing meaning.
+
+The popup shows at most four rows, keeps the highlighted candidate visible,
+and fits above or below the caret within the editor viewport. A separate
+listenable builder updates the popup without rebuilding the editing surface.
+All candidate content and replacement offsets continue to come from Rust.
+
+Below 900 logical pixels the navigator is a temporary drawer, leaving the full
+width available for writing. Opening it in a narrow window does not overwrite
+the saved preference for a docked navigator in a wider window. Choosing a scene
+or character returns focus to the script. Find is constrained to the editor's
+available width and can scroll in short windows. Commands are exposed in the
+toolbar as well as Ctrl+K; Ctrl+Space is listed in the palette and shortcut help.
+
+Small chrome uses the existing 12-point type token, with tertiary text contrast
+of at least 4.5:1 against the three chrome surfaces in both themes. The status
+bar accommodates text scaling. Screenplay font size, layout and pagination
+remain governed by their existing grid contracts.
+
+### Verification
+
+Widget tests cover quiet opening, typing and explicit suggestions, modified
+arrow keys, navigating beyond the visible suggestion rows, retained Find
+filters, and editor tools at 640, 800 and 1280 logical pixels with 100% and 150%
+text scaling. Theme tests cover contrast. Linux integration tests exercise
+actual Rust editing, the keyboard workflow, and the keystroke budget.
