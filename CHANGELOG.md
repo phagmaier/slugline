@@ -6,6 +6,27 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 `app/pubspec.yaml` is the release-version source; `tools/check_version.py` holds
 this file and the others to it.
 
+## 1.0.1 - 2026-09-06
+
+### Improved
+
+- Suggestions stay closed while opening and navigating scripts. Typing or
+  Ctrl+Space opens a compact popup that keeps the selected candidate visible.
+- Narrow windows use a temporary navigator drawer, preserving the preference
+  for a docked navigator in wider windows.
+- Find fits the available window space and remembers the element filter.
+- More readable secondary interface text, better text scaling, and a visible
+  Commands button with updated shortcut help.
+
+### Fixed
+
+- Clipboard operations no longer apply stale selections after asynchronous work.
+- Closing during a save preserves edits made while the save is in progress.
+- Autosave handles lifecycle transitions and modal dialogs consistently.
+- Find results and autocomplete no longer retain stale edit ranges.
+- Suggestion pinning preserves the caret, popup, and keyboard focus.
+- External-change watcher registration handles replaced documents safely.
+
 ## 1.0.0 - 2026-07-27
 
 First release.
