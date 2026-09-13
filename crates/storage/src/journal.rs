@@ -411,6 +411,11 @@ impl Journal {
                 base: checksum(base),
             },
         )?;
+        // The truncated header must reach the disk, or a power loss resurrects
+        // the pre-save records and the next launch re-offers edits that are
+        // already in the file. One fsync per save; the save itself already paid
+        // for two.
+        self.file.sync_all()?;
         self.seq = 0;
         self.records = 0;
         Ok(())

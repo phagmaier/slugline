@@ -113,7 +113,9 @@ impl FileWatcher {
             return Ok(());
         };
         {
-            let mut watched = self.watched.lock().expect("watch list mutex poisoned");
+            // A poisoned lock means a previous holder panicked; the watch list
+            // itself is still usable, and refusing to watch would be worse.
+            let mut watched = self.watched.lock().unwrap_or_else(PoisonError::into_inner);
             if watched.iter().any(|candidate| candidate == path) {
                 return Ok(());
             }
@@ -128,7 +130,7 @@ impl FileWatcher {
                 // a watch the OS never installed. Roll back the path too.
                 self.watched
                     .lock()
-                    .expect("watch list mutex poisoned")
+                    .unwrap_or_else(PoisonError::into_inner)
                     .retain(|candidate| candidate != path);
                 return Err(error);
             }
@@ -146,7 +148,7 @@ impl FileWatcher {
         // suppression is cleared; the other is an event that does not match it.
         self.own.forget(path);
         {
-            let mut watched = self.watched.lock().expect("watch list mutex poisoned");
+            let mut watched = self.watched.lock().unwrap_or_else(PoisonError::into_inner);
             let before = watched.len();
             watched.retain(|candidate| candidate != path);
             if watched.len() == before {

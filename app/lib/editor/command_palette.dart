@@ -43,7 +43,9 @@ class _CommandPaletteState extends State<CommandPalette> {
   @override
   void initState() {
     super.initState();
-    _queryFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _queryFocus.requestFocus();
+    });
   }
 
   @override

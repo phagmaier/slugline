@@ -1241,11 +1241,11 @@ class _EditorColours {
       // Notes, synopses and the boneyard: still there and still meant to be
       // read, plainly not the script. The second weight, not the third.
       dim: colours.textSecondary,
-      // The accent's one job on this surface, in its two forms: what is selected
-      // and where the caret is. A selection is read *through*, so it is the
-      // accent at a strength of its own rather than the subtle fill a row gets.
+      // The selection is the accent's job on this surface; the caret is the
+      // text itself at full strength, so it stays visible inside a selection
+      // rather than dissolving into the same hue.
       selection: colours.accent.withValues(alpha: 0.30),
-      caret: colours.accent,
+      caret: colours.textPrimary,
       rule: colours.border,
       spelling: colours.danger,
       // The sheet is the surface a script is read on, so it is lifted out of the
@@ -1326,8 +1326,11 @@ class _SurfacePainter extends CustomPainter {
     _paintPageFurniture(canvas, offset, offset + viewport);
 
     final (from, to) = controller.orderedSelection;
-    final fromIndex = blocks.indexWhere((block) => block.id == from.block);
-    final toIndex = blocks.indexWhere((block) => block.id == to.block);
+    // Map lookups, not scans: a paint pass must not walk the block list to
+    // resolve two ids. A vanished id sorts to -1 so it paints unselected
+    // rather than aiming at block 0.
+    final fromIndex = controller.indexOf(from.block) ?? -1;
+    final toIndex = controller.indexOf(to.block) ?? -1;
     final hasSelection = controller.hasSelection;
 
     final selectionPaint = Paint()..color = colours.selection;
@@ -1348,6 +1351,14 @@ class _SurfacePainter extends CustomPainter {
       // scalar and never moves an offset, so a row still slices this string by
       // its own model bounds.
       final display = displayText(block.kind, block.text);
+      // One style per block, not one per row: `copyWith` allocates, and a
+      // visible block paints several rows per frame while scrolling.
+      final muted = _isMuted(block.kind);
+      final blockStyle = _textStyle(fontSize).copyWith(
+        color: muted ? colours.dim : colours.text,
+        fontStyle: muted ? FontStyle.italic : null,
+        fontWeight: block.kind == BlockKind.sceneHeading ? FontWeight.bold : null,
+      );
 
       if (block.kind == BlockKind.pageBreak) {
         final y = geometry.yOfRow(first) + lineHeight / 2;
@@ -1386,16 +1397,7 @@ class _SurfacePainter extends CustomPainter {
         if (line.columns > 0) {
           final text = line.textIn(display);
           TextPainter(
-              text: TextSpan(
-                text: text,
-                style: _textStyle(fontSize).copyWith(
-                  color: _isMuted(block.kind) ? colours.dim : colours.text,
-                  fontStyle: _isMuted(block.kind) ? FontStyle.italic : null,
-                  fontWeight: block.kind == BlockKind.sceneHeading
-                      ? FontWeight.bold
-                      : null,
-                ),
-              ),
+              text: TextSpan(text: text, style: blockStyle),
               textDirection: TextDirection.ltr,
             )
             ..layout()
@@ -1408,6 +1410,28 @@ class _SurfacePainter extends CustomPainter {
           _paintComposingUnderline(canvas, line, column, y);
         }
       }
+    }
+
+    // An empty script is a blank sheet with no affordance. Highland and Fade
+    // In both print a hint in the first block; without one a new writer stares
+    // at nothing. Paint-only: it is never part of the document.
+    if (blocks.length == 1 &&
+        blocks.first.text.isEmpty &&
+        firstRow == 0 &&
+        !hasSelection) {
+      final hintStyle = _textStyle(fontSize).copyWith(
+        color: colours.dim.withValues(alpha: 0.6),
+        fontStyle: FontStyle.italic,
+      );
+      TextPainter(
+          text: TextSpan(text: 'Start writing…', style: hintStyle),
+          textDirection: TextDirection.ltr,
+        )
+        ..layout()
+        ..paint(
+          canvas,
+          Offset(pageLeft, geometry.yOfRow(0) + (lineHeight - fontSize) / 2),
+        );
     }
 
     if (showCaret) _paintCaret(canvas);
@@ -1434,7 +1458,9 @@ class _SurfacePainter extends CustomPainter {
       ..color = colours.paperEdge
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
-    final radius = Radius.circular(advance);
+    // Fixed radius: tying corner rounding to the font size turns the sheet
+    // cartoonish at large text sizes.
+    const radius = Radius.circular(4);
 
     for (final sheet in geometry.sheets()) {
       if (sheet.bottom < top) continue;

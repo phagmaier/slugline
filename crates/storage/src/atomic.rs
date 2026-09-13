@@ -160,7 +160,9 @@ pub fn save_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Sa
         // Best effort by specification — "where permitted". Changing ownership
         // needs `CAP_CHOWN` unless the ids already match, and a save must not
         // fail because a script the user copied in belongs to someone else.
-        let _ = fs::set_permissions(&temp, fs::Permissions::from_mode(metadata.mode() & 0o7777));
+        // Mask to 0o777: the temp file must not inherit setuid/setgid/sticky
+        // bits from the original.
+        let _ = fs::set_permissions(&temp, fs::Permissions::from_mode(metadata.mode() & 0o777));
         let _ = std::os::unix::fs::chown(&temp, Some(metadata.uid()), Some(metadata.gid()));
     }
 
@@ -196,16 +198,18 @@ fn write_and_sync(temp: &Path, contents: &[u8]) -> io::Result<()> {
 /// keeps one process saving it twice apart, including across a crash, because a
 /// leftover temp file from a killed process must never be one we would try to
 /// create again. The counter is monotonic within the process and the clock
-/// separates processes that reused a pid.
+/// separates processes that reused a pid. The two are concatenated rather than
+/// XORed: XOR can collide (`c1^t1 == c2^t2` for distinct pairs) and turn two
+/// different saves into the same temp name.
 fn temp_path(path: &Path) -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nonce = COUNTER.fetch_add(1, Ordering::Relaxed)
-        ^ SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|since| since.subsec_nanos() as u64)
-            .unwrap_or(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|since| since.subsec_nanos() as u64)
+        .unwrap_or(0);
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let temp = format!("{name}.tmp-{}-{nonce:x}", std::process::id());
+    let temp = format!("{name}.tmp-{}-{counter:x}-{nanos:x}", std::process::id());
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.join(temp),
         _ => PathBuf::from(temp),
@@ -215,8 +219,29 @@ fn temp_path(path: &Path) -> PathBuf {
 /// Whether a directory entry is one of our temporary files.
 ///
 /// The library scan uses this: a save in flight must not show up as a script.
+/// Matched as `<name>.tmp-<pid>-<hex>(-<hex>)?` so that a script legitimately
+/// named `my.tmp-foo.fountain` is still listed.
 pub fn is_temp_file(name: &str) -> bool {
-    name.contains(".tmp-")
+    let Some(dot_tmp) = name.rfind(".tmp-") else {
+        return false;
+    };
+    let suffix = &name[dot_tmp + ".tmp-".len()..];
+    let mut parts = suffix.split('-');
+    let pid_ok = parts
+        .next()
+        .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()));
+    // One hex part (old `<pid>-<nonce>` names) or two (new
+    // `<pid>-<counter>-<nanos>` names); both are ours.
+    let mut hex_parts = 0;
+    let mut all_hex = true;
+    for part in parts {
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_hexdigit()) {
+            all_hex = false;
+            break;
+        }
+        hex_parts += 1;
+    }
+    pid_ok && all_hex && (hex_parts == 1 || hex_parts == 2)
 }
 
 #[cfg(test)]

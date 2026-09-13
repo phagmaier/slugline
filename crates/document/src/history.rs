@@ -125,10 +125,23 @@ impl History {
     ) {
         match (coalesce, self.coalescing) {
             (Some(key), Some(open)) if key == open => {
-                self.open
-                    .as_mut()
-                    .expect("a coalescing transaction is open")
-                    .after_revision = after_revision;
+                // Defensive: `coalescing` claims a transaction is open. If the
+                // invariant ever breaks, start a fresh transaction rather than
+                // panicking the actor thread that owns this history.
+                let Some(transaction) = self.open.as_mut() else {
+                    debug_assert!(false, "coalescing without an open transaction");
+                    self.coalescing = None;
+                    self.close();
+                    self.coalescing = coalesce;
+                    let transaction = self
+                        .open
+                        .get_or_insert_with(|| Transaction::new(before_revision, after_revision));
+                    transaction.after_revision = after_revision;
+                    transaction.inverses.push(inverse);
+                    self.undone.clear();
+                    return;
+                };
+                transaction.after_revision = after_revision;
                 return;
             }
             (Some(_), _) => self.close(),

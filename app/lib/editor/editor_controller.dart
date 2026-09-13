@@ -170,6 +170,11 @@ class EditorController extends ChangeNotifier {
   /// Nothing falls back to block 0 by accident any more.
   int? _indexOf(int blockId) => _indexById[blockId];
 
+  /// Public index lookup for the painter, so a paint pass does not scan the
+  /// block list to resolve selection ends. Null when the id is gone; callers
+  /// must not fall back to block 0 (see [_indexOf]).
+  int? indexOf(int blockId) => _indexById[blockId];
+
   String? _textOf(int blockId) {
     final index = _indexOf(blockId);
     return index == null ? null : _blocks[index].text;
@@ -446,6 +451,11 @@ class EditorController extends ChangeNotifier {
   // --- selection -----------------------------------------------------------
 
   void setSelection(DocSelection selection, {bool keepStickyColumn = false}) {
+    // Drags and redundant placements call this with the selection already in
+    // force; notifying anyway repaints and re-drives the IME for nothing.
+    if (selection == _selection && (keepStickyColumn || _stickyColumn == null)) {
+      return;
+    }
     if (!keepStickyColumn) _stickyColumn = null;
     _selection = selection;
     _refreshCompletions();

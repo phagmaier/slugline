@@ -148,12 +148,19 @@ class EditorGeometry {
 
   int _breaksBefore(int row) {
     if (!sheeted) return 0;
-    var count = 0;
-    for (final start in pageStarts) {
-      if (start.row > row) break;
-      count++;
+    // Binary search: pageStarts is ascending, up to a few hundred entries,
+    // and this runs per painted row per frame.
+    var low = 0;
+    var high = pageStarts.length;
+    while (low < high) {
+      final mid = low + ((high - low) >> 1);
+      if (pageStarts[mid].row <= row) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
     }
-    return count;
+    return low;
   }
 
   /// The sheets to paint, as `(top, bottom, page number)` in content

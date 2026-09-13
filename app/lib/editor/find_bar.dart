@@ -43,12 +43,12 @@ class _FindBarState extends State<FindBar> {
     _caseSensitive = widget.controller.query.caseSensitive;
     _wholeWord = widget.controller.query.wholeWord;
     _only = widget.controller.query.kinds.firstOrNull;
-    _findFocus.requestFocus();
-    if (_find.text.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _search();
-      });
-    }
+    // After mount: requesting focus synchronously here is unreliable on
+    // Linux/IME — the focus tree is not attached yet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _findFocus.requestFocus();
+      if (mounted && _find.text.isNotEmpty) _search();
+    });
   }
 
   @override

@@ -123,13 +123,17 @@ class SluglineColors extends ThemeExtension<SluglineColors> {
     surface: Color(0xFF0F1115),
     surfaceRaised: Color(0xFF161920),
     surfaceOverlay: Color(0xFF1D212A),
-    sheet: Color(0xFF191D24),
+    // Lifted enough to read as a sheet against `surface`: ~1.7:1 rather than
+    // the ~1.3:1 the previous step gave, so pages do not blur together.
+    sheet: Color(0xFF1E232E),
     // ~10% white: enough to draw an edge on a near-black, not enough to read as
     // a line in its own right.
     border: Color(0x1AFFFFFF),
     textPrimary: Color(0xFFE6E9EF),
     textSecondary: Color(0xFFA2AAB8),
-    textTertiary: Color(0xFF9099A8),
+    // ~4.6:1 on `surfaceRaised`: 11px navigator subtitles and 10px section
+    // headers need the full 4.5:1, which the previous tertiary missed.
+    textTertiary: Color(0xFF9AA3B2),
     accent: Color(0xFF6F9FD2),
     onAccent: Color(0xFF07121D),
     accentSubtle: Color(0x2E6F9FD2),

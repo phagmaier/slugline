@@ -41,7 +41,15 @@ impl Actor {
                 // Ends when the last sender drops, which only happens at
                 // process exit: the channel lives in a `static`.
                 for job in inbox {
-                    job(&mut state);
+                    // A panicking command must not take the whole core down
+                    // with it: without this, one bad closure kills the thread
+                    // and every later `run` blocks on `recv` forever. The
+                    // panicking caller still sees its `recv` fail (its reply
+                    // sender is dropped during unwinding), but the actor lives
+                    // on for the next command.
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        job(&mut state);
+                    }));
                 }
             })
             .expect("the core actor thread must start");

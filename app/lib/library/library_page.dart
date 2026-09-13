@@ -41,6 +41,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   List<ScriptView>? _scripts;
+  Object? _error;
 
   @override
   void initState() {
@@ -49,9 +50,19 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _refresh() async {
-    final scripts = await widget.core.library();
-    if (!mounted) return;
-    setState(() => _scripts = scripts);
+    try {
+      final scripts = await widget.core.library();
+      if (!mounted) return;
+      setState(() {
+        _scripts = scripts;
+        _error = null;
+      });
+    } catch (error) {
+      // Without this the spinner runs forever: `body` switches on `scripts`
+      // alone and null means loading. Surface the failure with a retry.
+      if (!mounted) return;
+      setState(() => _error = error);
+    }
   }
 
   Future<void> _newScript() async {
@@ -188,14 +199,55 @@ class _LibraryPageState extends State<LibraryPage> {
             const SizedBox(width: 12),
           ],
         ),
-        body: switch (scripts) {
-          null => const Center(child: CircularProgressIndicator()),
-          [] => _emptyState(theme),
-          final found => _recentScripts(found),
+        body: switch ((scripts, _error)) {
+          (_, final error?) => _errorState(theme, error),
+          (null, null) => const Center(child: CircularProgressIndicator()),
+          ([], null) => _emptyState(theme),
+          (final found?, null) => _recentScripts(found),
         },
       ),
     );
   }
+
+  Widget _errorState(ThemeData theme, Object error) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 48,
+            color: context.colours.danger,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Could not load the library.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: context.colours.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$error',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: context.colours.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: () {
+              setState(() => _error = null);
+              _refresh();
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _emptyState(ThemeData theme) => Center(
     child: Padding(

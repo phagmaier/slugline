@@ -14,6 +14,10 @@
 
 /// Length of `s` in UTF-16 code units — i.e. what Dart's `String.length` reports.
 pub fn utf16_len(s: &str) -> u32 {
+    // ASCII is the common case in screenplays, and for it bytes == code units.
+    if s.is_ascii() {
+        return clamp_u32(s.len());
+    }
     clamp_u32(s.chars().map(char::len_utf16).sum::<usize>())
 }
 
@@ -23,6 +27,10 @@ pub fn utf16_len(s: &str) -> u32 {
 /// the two halves of a surrogate pair.
 pub fn utf16_to_utf8(s: &str, offset_utf16: u32) -> Option<usize> {
     let target = offset_utf16 as usize;
+    // Fast path: ASCII bytes and UTF-16 units coincide, so only bounds matter.
+    if s.is_ascii() {
+        return (target <= s.len()).then_some(target);
+    }
     let mut seen = 0usize;
     for (byte_idx, ch) in s.char_indices() {
         match seen.cmp(&target) {
@@ -42,6 +50,9 @@ pub fn utf16_to_utf8(s: &str, offset_utf16: u32) -> Option<usize> {
 pub fn utf8_to_utf16(s: &str, offset_utf8: usize) -> Option<u32> {
     if offset_utf8 > s.len() || !s.is_char_boundary(offset_utf8) {
         return None;
+    }
+    if s.is_ascii() {
+        return Some(clamp_u32(offset_utf8));
     }
     Some(utf16_len(&s[..offset_utf8]))
 }
