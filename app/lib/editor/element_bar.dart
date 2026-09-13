@@ -31,6 +31,8 @@ class ElementBar extends StatelessWidget {
     this.saveStatus,
     this.pageIndicator,
     this.sceneCount,
+    this.textSize,
+    this.onTextSizeChanged,
     super.key,
   });
 
@@ -45,6 +47,13 @@ class ElementBar extends StatelessWidget {
   /// How many scenes the navigator found. Null when there is no navigator data
   /// yet, which is not the same as zero and is not shown as one.
   final int? sceneCount;
+
+  /// The preferred script size (12–24, 15 is 100%), and where to send a change.
+  /// Null in a widget test driving the bar alone — and then the zoom cluster
+  /// is not shown at all. The buttons additionally need [onTextSizeChanged];
+  /// without it the percent still reads, but there is nothing to press.
+  final double? textSize;
+  final Future<void> Function(int size)? onTextSizeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +107,11 @@ class ElementBar extends StatelessWidget {
                         style: _statusStyle(theme, colours.danger),
                       ),
                     ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    flex: 2,
+                    child: _CaretPosition(controller: controller),
+                  ),
                   if (pageIndicator != null || sceneCount != null) ...[
                     const SizedBox(width: 16),
                     // Flexible, like everything else along here: a `Row` that
@@ -115,6 +129,16 @@ class ElementBar extends StatelessWidget {
                   if (saveStatus case final status?) ...[
                     const SizedBox(width: 12),
                     Flexible(flex: 2, child: _SaveStatusLabel(status: status)),
+                  ],
+                  if (textSize case final size?) ...[
+                    const SizedBox(width: 4),
+                    Flexible(
+                      flex: 3,
+                      child: _ZoomControl(
+                        size: size,
+                        onChanged: onTextSizeChanged,
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -438,6 +462,108 @@ class _TabHint extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: _statusStyle(theme, colours.textTertiary),
+    );
+  }
+}
+
+/// Where the caret is, in the fluid view's own rows and grid columns.
+///
+/// Every screenwriting application shows this — Final Draft reads
+/// `Page X of Y · Ln C` — and it is the only thing on the bar that answers
+/// "where am I" rather than "what" or "how much". One-based, like an editor,
+/// not zero-based like the layout underneath.
+class _CaretPosition extends StatelessWidget {
+  const _CaretPosition({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = context.colours;
+    final line = controller.caretRow + 1;
+    final column = controller.caretColumn + 1;
+    return Text(
+      'Ln $line, Col $column',
+      key: const Key('caret-position'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      semanticsLabel: 'Line $line, column $column',
+      style: _statusStyle(theme, colours.textTertiary)?.copyWith(
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+  }
+}
+
+/// The script's preferred size, as a percent of the 15-point default.
+///
+/// The keyboard owns this too (`Ctrl+=` / `Ctrl+-`); the bar is where a writer
+/// discovers it exists. The label resets to 100% on tap rather than opening a
+/// menu — one press, one predictable answer.
+class _ZoomControl extends StatelessWidget {
+  const _ZoomControl({required this.size, required this.onChanged});
+
+  /// The preferred size. 15 is the default and reads 100%.
+  final double size;
+  final Future<void> Function(int size)? onChanged;
+
+  static const double _defaultSize = 15;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = context.colours;
+    final percent = (size / _defaultSize * 100).round();
+    final style = _statusStyle(theme, colours.textTertiary)?.copyWith(
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    Widget step(IconData icon, String tooltip, int delta, String key) =>
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: IconButton(
+            key: ValueKey(key),
+            tooltip: tooltip,
+            padding: EdgeInsets.zero,
+            iconSize: 14,
+            onPressed: onChanged == null
+                ? null
+                : () => onChanged!((size.round() + delta).clamp(12, 24)),
+            icon: Icon(icon),
+          ),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Tooltip(
+            message: onChanged == null
+                ? 'Text size $percent%'
+                : 'Text size $percent% — tap to reset to 100% (Ctrl+= / Ctrl+-)',
+            child: TextButton(
+              key: const Key('zoom-label'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onChanged == null
+                  ? null
+                  : () => onChanged!(_defaultSize.toInt()),
+              child: Text(
+                '$percent%',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                semanticsLabel: 'Text size $percent percent',
+                style: style,
+              ),
+            ),
+          ),
+        ),
+        step(Icons.remove, 'Smaller text (Ctrl+-)', -1, 'zoom-out'),
+        step(Icons.add, 'Larger text (Ctrl+=)', 1, 'zoom-in'),
+      ],
     );
   }
 }

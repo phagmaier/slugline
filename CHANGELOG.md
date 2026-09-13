@@ -6,6 +6,27 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 `app/pubspec.yaml` is the release-version source; `tools/check_version.py` holds
 this file and the others to it.
 
+## Unreleased
+
+### Improved
+
+- Smoother scrolling and editing on long scripts: laid-out text is cached
+  across frames in the editor and the preview.
+- The status bar shows the caret position and the text size, with zoom controls.
+- The library gains search and sorting by recent, title, or page count.
+- The export dialog shows the preview size as a percent of actual size, with
+  Fit width and Actual size shortcuts, and shrinks to small windows.
+- Keyboard focus gets its own visible ring on icon buttons.
+- Newer local Flutter toolchains keep working; CI still builds with the exact
+  supported toolchain (3.44.8).
+
+### Fixed
+
+- The element bar no longer crosses the bridge on every caret move.
+- Find waits for a typing pause before scanning the document.
+- A theme switch repaints the editor at once instead of on the next edit.
+- Library load failures show a retry instead of a spinner.
+
 ## 1.0.1 - 2026-09-06
 
 ### Improved

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
@@ -99,6 +101,16 @@ class _ExportDialogState extends State<ExportDialog> {
   late PaperSize _paper;
   late SceneNumbers _sceneNumbers;
   double _scale = 4.2;
+
+  /// 7.2 screen points per column is actual size at 72 dots to the inch
+  /// ([PreviewGeometry.scale]), so this is what the slider's percents are of.
+  static const double _actualSizeScale = 7.2;
+  static const double _minScale = 2.4;
+  static const double _maxScale = 9.6;
+
+  /// The preview pane's width as of the last layout, for Fit Width. Assigned
+  /// during build and read on button presses only — never `setState` from it.
+  double _previewWidth = 0;
 
   late Future<PaginationOutcome> _pagination;
 
@@ -228,10 +240,14 @@ class _ExportDialogState extends State<ExportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // A fixed 940×700 overflows a tiled or small window with the striped
+    // overflow rather than a smaller dialog. Shrink to the window instead;
+    // the sidebar keeps its 300 and the preview takes what is left.
+    final screen = MediaQuery.sizeOf(context);
     return Dialog(
       child: SizedBox(
-        width: 940,
-        height: 700,
+        width: _clamp(screen.width - 80, 480, 940),
+        height: _clamp(screen.height - 80, 480, 700),
         child: Column(
           children: [
             Padding(
@@ -268,6 +284,30 @@ class _ExportDialogState extends State<ExportDialog> {
   }
 
   Widget _preview() {
+    // A LayoutBuilder, so Fit Width knows how wide the pane is. The width is
+    // stashed, not setState, because it is only read when the button is hit.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _previewWidth = constraints.maxWidth;
+        return _previewFor(context);
+      },
+    );
+  }
+
+  /// Fits the sheet across the preview pane: the slider's own range still
+  /// bounds it, so a narrow window lands on the minimum rather than overflowing
+  /// the pane's arithmetic.
+  void _fitWidth() {
+    if (_previewWidth <= 0) return;
+    final columns = PreviewGeometry(paper: _paper, scale: 1).width;
+    setState(() {
+      _scale = _clamp((_previewWidth - 48) / columns, _minScale, _maxScale);
+    });
+  }
+
+  void _actualSize() => setState(() => _scale = _actualSizeScale);
+
+  Widget _previewFor(BuildContext context) {
     return FutureBuilder<PaginationOutcome>(
       future: _pagination,
       builder: (context, snapshot) {
@@ -401,13 +441,44 @@ class _ExportDialogState extends State<ExportDialog> {
           onChanged: (value) => _setSceneNumbers(value ?? SceneNumbers.off),
         ),
         const Divider(),
-        Text('Preview size', style: Theme.of(context).textTheme.labelLarge),
+        Row(
+          children: [
+            Text('Preview size', style: Theme.of(context).textTheme.labelLarge),
+            const Spacer(),
+            Text(
+              '${(_scale / _actualSizeScale * 100).round()}%',
+              key: const Key('preview-scale-percent'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
         Slider(
           key: const Key('preview-scale'),
           value: _scale,
-          min: 2.4,
-          max: 9.6,
+          min: _minScale,
+          max: _maxScale,
           onChanged: (scale) => setState(() => _scale = scale),
+        ),
+        // A Wrap rather than a Row: the sidebar is 300 wide, and two text
+        // buttons at their natural size do not always fit beside each other.
+        // Wrapping to a second line beats the striped overflow.
+        Wrap(
+          spacing: 4,
+          children: [
+            TextButton.icon(
+              key: const Key('preview-fit-width'),
+              onPressed: _fitWidth,
+              icon: const Icon(Icons.fit_screen_outlined, size: 16),
+              label: const Text('Fit width'),
+            ),
+            TextButton(
+              key: const Key('preview-actual-size'),
+              onPressed: _actualSize,
+              child: const Text('Actual size'),
+            ),
+          ],
         ),
         Text(
           'Preview size changes nothing about the pages. The page count, the '
@@ -423,6 +494,9 @@ String _size(int bytes) => bytes < 1024
     ? '$bytes bytes'
     : '${(bytes / 1024).toStringAsFixed(bytes < 1024 * 1024 ? 0 : 1)} '
           '${bytes < 1024 * 1024 ? 'kB' : 'MB'}';
+
+double _clamp(double value, double min, double max) =>
+    math.min(math.max(value, min), max);
 
 String _parent(String path) {
   final slash = path.lastIndexOf('/');

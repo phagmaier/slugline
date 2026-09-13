@@ -43,10 +43,19 @@ class _LibraryPageState extends State<LibraryPage> {
   List<ScriptView>? _scripts;
   Object? _error;
 
+  final TextEditingController _search = TextEditingController();
+  _LibrarySort _sort = _LibrarySort.recent;
+
   @override
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -302,8 +311,10 @@ class _LibraryPageState extends State<LibraryPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _searchSortRow(),
+            const SizedBox(height: 12),
             Text(
-              'RECENT',
+              _sort.header,
               style: TextStyle(
                 color: context.colours.textTertiary,
                 fontSize: 10,
@@ -312,18 +323,126 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: ListView.separated(
-                itemCount: scripts.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) => _row(scripts[index]),
-              ),
-            ),
+            Expanded(child: _scriptList(scripts)),
           ],
         ),
       ),
     ),
   );
+
+  /// Search and sort, on one row. A library is tens of scripts, so filtering
+  /// and sorting run on every build with no memo — the alternative (cached
+  /// lists with an invalidation story) is machinery for a millisecond.
+  Widget _searchSortRow() => Row(
+    children: [
+      Expanded(
+        child: TextField(
+          key: const Key('library-search'),
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: 'Search scripts',
+            prefixIcon: const Icon(Icons.search, size: 18),
+            suffixIcon: _search.text.isEmpty
+                ? null
+                : IconButton(
+                    key: const Key('library-search-clear'),
+                    tooltip: 'Clear search',
+                    iconSize: 16,
+                    onPressed: () => setState(_search.clear),
+                    icon: const Icon(Icons.clear),
+                  ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      PopupMenuButton<_LibrarySort>(
+        key: const Key('library-sort'),
+        tooltip: 'Sort scripts (${_sort.label})',
+        icon: const Icon(Icons.sort_outlined),
+        initialValue: _sort,
+        onSelected: (sort) => setState(() => _sort = sort),
+        itemBuilder: (context) => [
+          for (final sort in _LibrarySort.values)
+            PopupMenuItem(
+              value: sort,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    child: sort == _sort
+                        ? const Icon(Icons.check, size: 15)
+                        : null,
+                  ),
+                  Text(sort.label),
+                ],
+              ),
+            ),
+        ],
+      ),
+    ],
+  );
+
+  Widget _scriptList(List<ScriptView> scripts) {
+    final visible = _visible(scripts);
+    if (visible.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'No scripts match "${_search.text}".',
+              key: const Key('library-no-matches'),
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: context.colours.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              key: const Key('library-clear-search'),
+              onPressed: () => setState(_search.clear),
+              child: const Text('Clear search'),
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.separated(
+      itemCount: visible.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) => _row(visible[index]),
+    );
+  }
+
+  /// The scripts matching the search, in the chosen order. Missing files sort
+  /// with the rest rather than sinking: a drive that is not mounted is not a
+  /// script the writer threw away, and hiding those rows behind a sort would
+  /// be dropping them by another name.
+  List<ScriptView> _visible(List<ScriptView> scripts) {
+    final query = _search.text.trim().toLowerCase();
+    final visible = query.isEmpty
+        ? List<ScriptView>.of(scripts)
+        : scripts
+              .where(
+                (script) =>
+                    script.title.toLowerCase().contains(query) ||
+                    script.path.toLowerCase().contains(query),
+              )
+              .toList();
+    switch (_sort) {
+      case _LibrarySort.recent:
+        visible.sort((a, b) => b.modifiedMillis.compareTo(a.modifiedMillis));
+      case _LibrarySort.name:
+        visible.sort(
+          (a, b) =>
+              a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        );
+      case _LibrarySort.pages:
+        visible.sort((a, b) => b.pageCount.compareTo(a.pageCount));
+    }
+    return visible;
+  }
 
   Widget _row(ScriptView script) {
     final theme = Theme.of(context);
@@ -505,5 +624,19 @@ String _relativeTime(int modifiedMillis) {
 
 String _ago(int amount, String unit) =>
     '$amount $unit${amount == 1 ? '' : 's'} ago';
+
+/// The orders a script list can be read in. Recent first is the default,
+/// because the library answers "what was I working on" far more often than
+/// anything else.
+enum _LibrarySort {
+  recent('Recently modified', 'RECENT'),
+  name('Title', 'BY TITLE'),
+  pages('Page count', 'BY PAGES');
+
+  const _LibrarySort(this.label, this.header);
+
+  final String label;
+  final String header;
+}
 
 String _pageCount(int pages) => '$pages ${pages == 1 ? 'page' : 'pages'}';

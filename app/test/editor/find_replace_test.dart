@@ -59,6 +59,16 @@ Future<void> openFind(WidgetTester tester, EditorController controller) async {
 Finder findField() =>
     find.ancestor(of: find.text('Find'), matching: find.byType(TextField));
 
+/// Types into the find field and waits out the keystroke debounce. Searches
+/// from typing run 150 ms after the last keystroke — a full-document scan per
+/// keystroke janks a feature — so a test that asserts without advancing the
+/// clock asserts on the query from before the typing.
+Future<void> typeFind(WidgetTester tester, String text) async {
+  await tester.enterText(findField(), text);
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+}
+
 Finder replaceField() => find.ancestor(
   of: find.text('Replace with'),
   matching: find.byType(TextField),
@@ -68,11 +78,33 @@ String? count(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('find-match-count'))).data;
 
 void main() {
+  testWidgets('typing waits for a pause before scanning the document', (
+    tester,
+  ) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    final scanned = core.queries.length;
+
+    // A full-document scan per keystroke janks a feature, so keystrokes wait
+    // 150 ms for the next one. Toggles and match navigation search at once.
+    await tester.enterText(findField(), 'house');
+    await tester.pump();
+    expect(
+      core.queries,
+      hasLength(scanned),
+      reason: 'the scan waits out the keystroke',
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(core.queries, hasLength(scanned + 1));
+    expect(controller.matches, hasLength(2));
+  });
+
   testWidgets('reopening Find preserves its element filter', (tester) async {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.tap(find.text('Every element'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dialogue').last);
@@ -90,7 +122,7 @@ void main() {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
     expect(controller.matches, hasLength(2));
 
@@ -137,7 +169,7 @@ void main() {
   ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -159,12 +191,12 @@ void main() {
     await openFind(tester, controller);
     expect(count(tester), isEmpty);
 
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
     expect(controller.matches, hasLength(2));
     expect(count(tester), '1 of 2');
 
-    await tester.enterText(findField(), 'houses');
+    await typeFind(tester, 'houses');
     await tester.pumpAndSettle();
     expect(count(tester), 'No matches');
   });
@@ -172,7 +204,7 @@ void main() {
   testWidgets('a match becomes the selection', (tester) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
 
     final match = controller.matches.first;
@@ -184,7 +216,7 @@ void main() {
   testWidgets('next and previous walk the matches and wrap', (tester) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
     expect(controller.matchIndex, 0);
 
@@ -207,7 +239,7 @@ void main() {
   ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -227,7 +259,7 @@ void main() {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
     expect(core.queries.last.caseSensitive, isFalse);
     expect(core.queries.last.wholeWord, isFalse);
@@ -246,7 +278,7 @@ void main() {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
     expect(core.queries.last.kinds, isEmpty);
 
@@ -264,7 +296,7 @@ void main() {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.enterText(replaceField(), 'cabin');
     await tester.pumpAndSettle();
 
@@ -285,7 +317,7 @@ void main() {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.enterText(replaceField(), 'cabin');
     await tester.pumpAndSettle();
 
@@ -311,7 +343,7 @@ void main() {
   ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.enterText(replaceField(), 'cabin');
     await tester.pumpAndSettle();
     // Finding a match moved the caret; put it back where a writer would have it.
@@ -329,7 +361,7 @@ void main() {
   ) async {
     final controller = await pumpEditorPage(tester, script());
     await openFind(tester, controller);
-    await tester.enterText(findField(), 'house');
+    await typeFind(tester, 'house');
     await tester.pumpAndSettle();
     expect(controller.matches, hasLength(2));
 

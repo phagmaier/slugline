@@ -333,6 +333,75 @@ void main() {
     });
   });
 
+  group('the status readings:', () {
+    testWidgets('the caret position follows the caret', (tester) async {
+      final controller = await pumpEditorPage(
+        tester,
+        oneBlock(BlockKind.action),
+      );
+      caretAt(controller, 0, 5);
+      await tester.pump();
+      expect(find.text('Ln 1, Col 6'), findsOneWidget);
+
+      caretAt(controller, 0, 0);
+      await tester.pump();
+      expect(find.text('Ln 1, Col 1'), findsOneWidget);
+    });
+
+    testWidgets('the zoom control reads and changes the size', (tester) async {
+      final core = oneBlock(BlockKind.action);
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      final sizes = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ElementBar(
+              controller: controller,
+              textSize: 18,
+              onTextSizeChanged: (size) async => sizes.add(size),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('120%'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('zoom-in')));
+      expect(sizes, [19]);
+
+      await tester.tap(find.byKey(const Key('zoom-out')));
+      expect(sizes, [19, 17]);
+
+      await tester.tap(find.byKey(const Key('zoom-label')));
+      expect(sizes, [19, 17, 15]);
+    });
+
+    testWidgets('a narrow window still fits position and zoom', (tester) async {
+      final core = oneBlock(BlockKind.action);
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 320,
+              child: ElementBar(
+                controller: controller,
+                textSize: 15,
+                onTextSizeChanged: (_) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Ln 1, Col 1'), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+    });
+  });
+
   group('a narrow window:', () {
     // The bar is one `Row` holding a refusal sentence and a Tab hint, either of
     // which is wider than a tiled window. It used to overflow, and an

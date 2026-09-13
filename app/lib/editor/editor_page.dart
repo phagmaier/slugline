@@ -774,6 +774,8 @@ class EditorPageState extends State<EditorPage> {
                             saveStatus: widget.saveStatus,
                             pageIndicator: _pageIndicator,
                             sceneCount: _navigator.scenes.length,
+                            textSize: widget.textSize,
+                            onTextSizeChanged: widget.onTextSizeChanged,
                           ),
                       ],
                     ),

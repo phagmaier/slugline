@@ -400,13 +400,25 @@ class FakeCore implements DocumentCore {
   }
 
   @override
-  BlockKind? tabTarget(int block, {required bool shift}) => tabAnswer;
+  BlockKind? tabTarget(int block, {required bool shift}) {
+    tabTargetCalls++;
+    return tabAnswer;
+  }
+
+  /// How many times the editor asked for the Tab hint or the suggestion. The
+  /// controller caches both across caret motion, so a test can prove the bar
+  /// does not cross the bridge on every arrow key.
+  int tabTargetCalls = 0;
+  int suggestionCalls = 0;
 
   /// What [characterSuggestion] answers, for the element bar's hint.
   String? suggestion;
 
   @override
-  String? characterSuggestion(int block) => suggestion;
+  String? characterSuggestion(int block) {
+    suggestionCalls++;
+    return suggestion;
+  }
 
   /// Every query [find] was asked, in order.
   final List<FindQuery> queries = [];

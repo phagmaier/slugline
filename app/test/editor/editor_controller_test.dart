@@ -664,6 +664,70 @@ void main() {
     });
   });
 
+  group('the element bar hint', () {
+    EditorController hinted(FakeCore core) {
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      core.tabTargetCalls = 0;
+      core.suggestionCalls = 0;
+      return controller;
+    }
+
+    test('caret motion does not cross the bridge', () {
+      final core = scene();
+      final controller = hinted(core);
+      caretAt(controller, 2, 0);
+
+      expect(controller.tabTarget(), isNull);
+      expect(controller.characterSuggestion, isNull);
+      final calls = core.tabTargetCalls + core.suggestionCalls;
+      expect(calls, greaterThan(0));
+
+      // Six arrow-key's worth of caret motion inside the same revision.
+      for (var offset = 1; offset <= 6; offset++) {
+        caretAt(controller, 2, offset);
+        expect(controller.tabTarget(), isNull);
+        expect(controller.tabTarget(reverse: true), isNull);
+        expect(controller.characterSuggestion, isNull);
+      }
+      expect(
+        core.tabTargetCalls + core.suggestionCalls,
+        calls,
+        reason: 'neither the block nor the revision moved',
+      );
+    });
+
+    test('an edit re-asks, because the answer may have changed', () {
+      final core = scene();
+      final controller = hinted(core);
+      caretAt(controller, 2, 0);
+      controller.tabTarget();
+      controller.characterSuggestion;
+      final calls = core.tabTargetCalls + core.suggestionCalls;
+
+      controller.insertText('x');
+      controller.tabTarget();
+      controller.characterSuggestion;
+      expect(
+        core.tabTargetCalls + core.suggestionCalls,
+        greaterThan(calls),
+        reason: 'the revision moved, so the cache lets go',
+      );
+    });
+
+    test('moving to another block re-asks for that block', () {
+      final core = scene();
+      final controller = hinted(core);
+      caretAt(controller, 2, 0);
+      controller.tabTarget();
+      final calls = core.tabTargetCalls;
+
+      caretAt(controller, 3, 0);
+      controller.tabTarget();
+      expect(core.tabTargetCalls, calls + 2);
+    });
+  });
+
   group('the session', () {
     test('is closed exactly once when the editor goes away', () {
       final core = scene();

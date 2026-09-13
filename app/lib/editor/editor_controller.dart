@@ -104,6 +104,18 @@ class EditorController extends ChangeNotifier {
   /// The row the caret is on, for scrolling it into view.
   int get caretRow => _layout.rowAt(_focusIndex, _selection.focus.offsetUtf16);
 
+  /// The caret's grid column within its wrapped line, for the status bar's
+  /// `Ln/Col` reading. Tabs count their cells and astral scalars their two
+  /// units, because that is the column the caret is drawn at — not the model
+  /// offset, which is a different number on exactly those lines.
+  int get caretColumn {
+    final index = _focusIndex;
+    final lines = _layout.linesOf(index);
+    final line =
+        lines[_layout.lineIndexAt(index, _selection.focus.offsetUtf16)];
+    return line.columnAtOffset(_selection.focus.offsetUtf16);
+  }
+
   /// The block occupying a visual row. Rows outside the document clamp to its
   /// first or last block through [DocumentLayout], like pointer placement does.
   BlockView blockAtRow(int row) => _blocks[_layout.blockAtRow(row)];
@@ -922,13 +934,41 @@ class EditorController extends ChangeNotifier {
   }
 
   /// The element type Tab would move to from here, for the element bar's hint.
-  BlockKind? tabTarget({bool reverse = false}) =>
-      core.tabTarget(_selection.focus.block, shift: reverse);
+  ///
+  /// Cached, because the bar rebuilds on every caret move and these are bridge
+  /// crossings: pure caret motion changes neither the block nor the revision,
+  /// so it answers from the cache with zero crossings, while an edit that
+  /// could change the answer misses and re-asks. The failure mode of a missed
+  /// bump is a stale hint, never a wrong edit — Tab itself always asks Rust.
+  BlockKind? tabTarget({bool reverse = false}) {
+    _refreshTabHint();
+    return reverse ? _tabHintTargetReverse : _tabHintTarget;
+  }
 
   /// A character cue the script already has whose name the caret's block
-  /// matches. Shown as a hint; only Tab acts on it.
-  String? get characterSuggestion =>
-      core.characterSuggestion(_selection.focus.block);
+  /// matches. Shown as a hint; only Tab acts on it. Cached like [tabTarget].
+  String? get characterSuggestion {
+    _refreshTabHint();
+    return _tabHintSuggestion;
+  }
+
+  int? _tabHintBlock;
+  int _tabHintRevision = -1;
+  BlockKind? _tabHintTarget;
+  BlockKind? _tabHintTargetReverse;
+  String? _tabHintSuggestion;
+
+  void _refreshTabHint() {
+    final block = _selection.focus.block;
+    if (block == _tabHintBlock && _tabHintRevision == _documentRevision) {
+      return;
+    }
+    _tabHintBlock = block;
+    _tabHintRevision = _documentRevision;
+    _tabHintTarget = core.tabTarget(block, shift: false);
+    _tabHintTargetReverse = core.tabTarget(block, shift: true);
+    _tabHintSuggestion = core.characterSuggestion(block);
+  }
 
   /// Puts the caret back where it was after an edit that changed no text.
   ///

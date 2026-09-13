@@ -83,7 +83,8 @@ void main() {
     final header = tester.widget<Text>(find.text('RECENT'));
     expect(header.style?.fontSize, 10);
     expect(header.style?.color, SluglineColors.light.textTertiary);
-    expect(tester.getTopLeft(find.text('RECENT')).dy, lessThan(120));
+    // Below the search/sort row, which sits above the list.
+    expect(tester.getTopLeft(find.text('RECENT')).dy, lessThan(200));
     expect(find.text(applicationName), findsNothing);
 
     final title = tester.widget<Text>(
@@ -133,5 +134,105 @@ void main() {
       reason: 'Open stays visually secondary in both action groups',
     );
     expect(find.byType(OutlinedButton), findsNothing);
+  });
+
+  testWidgets('search filters the list by title or path', (tester) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _pump(tester, [
+      _script(
+        id: 'heat',
+        path: '/scripts/heat.fountain',
+        title: 'Heat',
+        modifiedMillis: now,
+      ),
+      _script(
+        id: 'night',
+        path: '/scripts/city-night.fountain',
+        title: 'City Night',
+        modifiedMillis: now,
+      ),
+    ]);
+    expect(find.byKey(const ValueKey('library-row-heat')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-row-night')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('library-search')),
+      'heat',
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('library-row-heat')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-row-night')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('library-search')),
+      'city-night',
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('library-row-night')),
+      findsOneWidget,
+      reason: 'the path is searched too',
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('library-search')),
+      'nothing called this',
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('library-no-matches')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-clear-search')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('library-row-heat')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-row-night')), findsOneWidget);
+  });
+
+  testWidgets('sort orders the list by title or page count', (tester) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _pump(tester, [
+      _script(
+        id: 'b',
+        path: '/scripts/b.fountain',
+        title: 'Zulu',
+        modifiedMillis: now,
+        pageCount: 40,
+      ),
+      _script(
+        id: 'a',
+        path: '/scripts/a.fountain',
+        title: 'Alpha',
+        modifiedMillis: now,
+        pageCount: 5,
+      ),
+    ]);
+
+    List<String> order() => tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byKey(const ValueKey('library-content')),
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Text &&
+                  (widget.data == 'Zulu' || widget.data == 'Alpha'),
+            ),
+          ),
+        )
+        .map((text) => text.data!)
+        .toList();
+
+    await tester.tap(find.byKey(const Key('library-sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Title').last);
+    await tester.pumpAndSettle();
+    expect(order(), ['Alpha', 'Zulu']);
+    expect(find.text('BY TITLE'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Page count').last);
+    await tester.pumpAndSettle();
+    // Page order disagrees with title order by construction: most pages first.
+    expect(order(), ['Zulu', 'Alpha']);
+    expect(find.text('BY PAGES'), findsOneWidget);
   });
 }

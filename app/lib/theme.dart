@@ -406,9 +406,24 @@ ThemeData sluglineTheme(Brightness brightness) {
       ),
     ),
     iconButtonTheme: IconButtonThemeData(
-      style: IconButton.styleFrom(
-        foregroundColor: colours.textSecondary,
-        disabledForegroundColor: colours.textTertiary,
+      // A raw ButtonStyle rather than `styleFrom`: `styleFrom` takes a plain
+      // `BorderSide` and freezes it across states, while the focus ring below
+      // has to exist in exactly one state.
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.disabled)
+              ? colours.textTertiary
+              : colours.textSecondary,
+        ),
+        // Keyboard focus gets its own outline rather than sharing hover's
+        // colour: a writer tabbing through the chrome with no mouse moving
+        // must be able to tell focused from merely hoverable. Hover stays a
+        // colour change, decided per button; focus adds the ring.
+        side: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.focused)
+              ? BorderSide(color: colours.accent, width: 1.5)
+              : BorderSide.none,
+        ),
       ),
     ),
     snackBarTheme: SnackBarThemeData(

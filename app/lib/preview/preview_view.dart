@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart' hide PageView;
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/line_text_cache.dart';
 import 'package:slugline/theme.dart';
 import 'package:slugline/typography.dart';
 
@@ -28,7 +29,7 @@ import 'package:slugline/typography.dart';
 /// a grid cell on screen and nothing else: the rows, the columns and the page
 /// count are what came back from Rust at every scale, which is what
 /// `test/preview/preview_zoom_test.dart` holds it to.
-class PreviewView extends StatelessWidget {
+class PreviewView extends StatefulWidget {
   const PreviewView({
     required this.pagination,
     required this.paper,
@@ -55,16 +56,39 @@ class PreviewView extends StatelessWidget {
   ];
 
   @override
+  State<PreviewView> createState() => _PreviewViewState();
+}
+
+class _PreviewViewState extends State<PreviewView> {
+  /// One cache for every sheet, not one per sheet: repeated lines (scene
+  /// headings, transitions) share laid-out painters across pages, and the key
+  /// is the content plus the resolved style, so a fresh pagination or a new
+  /// scale misses by construction rather than painting stale.
+  final LineTextCache _lineCache = LineTextCache();
+
+  @override
+  void dispose() {
+    _lineCache.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final sheets = sheetsOf(pagination);
-    final geometry = PreviewGeometry(paper: paper, scale: scale);
+    final sheets = PreviewView.sheetsOf(widget.pagination);
+    final geometry = PreviewGeometry(
+      paper: widget.paper,
+      scale: widget.scale,
+    );
     return ListView.separated(
       key: const Key('preview-sheets'),
       padding: const EdgeInsets.all(24),
       itemCount: sheets.length,
       separatorBuilder: (_, _) => const SizedBox(height: 24),
-      itemBuilder: (context, index) =>
-          _Sheet(sheet: sheets[index], geometry: geometry),
+      itemBuilder: (context, index) => _Sheet(
+        sheet: sheets[index],
+        geometry: geometry,
+        lineCache: _lineCache,
+      ),
     );
   }
 }
@@ -122,10 +146,15 @@ class PreviewGeometry {
 }
 
 class _Sheet extends StatelessWidget {
-  const _Sheet({required this.sheet, required this.geometry});
+  const _Sheet({
+    required this.sheet,
+    required this.geometry,
+    required this.lineCache,
+  });
 
   final PreviewSheet sheet;
   final PreviewGeometry geometry;
+  final LineTextCache lineCache;
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +198,7 @@ class _Sheet extends StatelessWidget {
                     lines: page.lines,
                     geometry: geometry,
                     ink: colours.onPaper,
+                    lineCache: lineCache,
                   ),
                 ),
               ),
@@ -218,6 +248,7 @@ class _PagePainter extends CustomPainter {
     required this.lines,
     required this.geometry,
     required this.ink,
+    required this.lineCache,
   });
 
   final List<LayoutLineView> lines;
@@ -227,6 +258,10 @@ class _PagePainter extends CustomPainter {
   /// painter has no [Theme] to ask.
   final Color ink;
 
+  /// Owned by the [PreviewView] state and shared across sheets. A scroll frame
+  /// repaints the same lines; re-laying them is the frame's whole cost.
+  final LineTextCache lineCache;
+
   @override
   void paint(Canvas canvas, Size size) {
     final style = _textStyle(geometry, ink);
@@ -234,10 +269,7 @@ class _PagePainter extends CustomPainter {
       if (line.content.isEmpty || line.kind == LayoutLineKind.pageNumber) {
         continue;
       }
-      final painter = TextPainter(
-        text: TextSpan(text: line.content, style: style),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final painter = lineCache.line(line.content, style);
       final at = geometry.at(line.row, line.column);
       // Centred within the row's box, so that a preview row sits on the
       // baseline grid the printed one does.

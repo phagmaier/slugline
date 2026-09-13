@@ -137,7 +137,11 @@ jobs:
       - uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
-          flutter-version-file: app/pubspec.yaml
+          # Exact, not `flutter-version-file`: that option requires pubspec's
+          # `environment.flutter` to be one exact version, while pubspec states
+          # the *minimum* supported SDK so newer local toolchains keep working.
+          # This pin is the supported release toolchain; bump it deliberately.
+          flutter-version: "3.44.8"
           cache: true
 
       - name: Resolve packages
@@ -250,7 +254,8 @@ jobs:
       - uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
-          flutter-version-file: app/pubspec.yaml
+          # Exact pin — see the note on the flutter job's setup step.
+          flutter-version: "3.44.8"
       - uses: dtolnay/rust-toolchain@stable
 
       # The metadata is checked before anything is built: it costs seconds, and

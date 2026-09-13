@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -36,6 +38,11 @@ class _FindBarState extends State<FindBar> {
   /// to — §Phase 3's optional element filter.
   BlockKind? _only;
 
+  /// Typing runs a full-document scan per keystroke on the UI thread, which
+  /// janks a feature-length script. Keystrokes wait 150 ms for the next one;
+  /// toggles, Enter and match navigation search at once (see [_searchNow]).
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
@@ -53,13 +60,25 @@ class _FindBarState extends State<FindBar> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _find.dispose();
     _replace.dispose();
     _findFocus.dispose();
     super.dispose();
   }
 
+  /// A keystroke in the find field: wait for the writer to pause.
+  void _searchSoon() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) _search();
+    });
+  }
+
+  /// Anything but a keystroke — a toggle, a filter, Enter, match navigation:
+  /// the pending keystroke (if any) is part of this query, so run it first.
   void _search() {
+    _debounce?.cancel();
     widget.controller.search(
       FindQuery(
         text: _find.text,
@@ -79,13 +98,23 @@ class _FindBarState extends State<FindBar> {
       case LogicalKeyboardKey.escape:
         widget.onDismiss();
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
-        shift
-            ? widget.controller.previousMatch()
-            : widget.controller.nextMatch();
+        shift ? _previous() : _next();
       default:
         return KeyEventResult.ignored;
     }
     return KeyEventResult.handled;
+  }
+
+  /// Navigation always acts on what is typed, not on what the debounce has
+  /// gotten around to searching: flush first, then move.
+  void _previous() {
+    _search();
+    widget.controller.previousMatch();
+  }
+
+  void _next() {
+    _search();
+    widget.controller.nextMatch();
   }
 
   @override
@@ -125,7 +154,7 @@ class _FindBarState extends State<FindBar> {
                             border: OutlineInputBorder(),
                             labelText: 'Find',
                           ),
-                          onChanged: (_) => _search(),
+                          onChanged: (_) => _searchSoon(),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -133,12 +162,12 @@ class _FindBarState extends State<FindBar> {
                       IconButton(
                         tooltip: 'Previous match (Shift+Enter)',
                         icon: const Icon(Icons.keyboard_arrow_up),
-                        onPressed: widget.controller.previousMatch,
+                        onPressed: _previous,
                       ),
                       IconButton(
                         tooltip: 'Next match (Enter)',
                         icon: const Icon(Icons.keyboard_arrow_down),
-                        onPressed: widget.controller.nextMatch,
+                        onPressed: _next,
                       ),
                       IconButton(
                         tooltip: 'Close (Escape)',

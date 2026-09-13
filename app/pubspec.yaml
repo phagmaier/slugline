@@ -9,8 +9,9 @@ version: 1.0.1+2
 
 environment:
   sdk: ^3.12.2
-  # The Linux release workflow uses this Flutter toolchain. Allow newer
-  # SDKs so local analysis/tests run; CI pins its own version.
+  # Minimum supported Flutter: newer local toolchains keep working. CI and the
+  # release workflow pin the exact supported toolchain (3.44.8) in their own
+  # `flutter-version`, because `flutter-version-file` requires an exact version.
   flutter: ">=3.44.8"
 
 # Every entry here needs a one-line justification in `docs/DEPENDENCIES.md`, in

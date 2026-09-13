@@ -203,4 +203,39 @@ void main() {
     await open(tester);
     expect(find.byKey(const Key('preview-page-1')), findsOneWidget);
   });
+
+  testWidgets('the preview size shows a percent of actual size', (
+    tester,
+  ) async {
+    await open(tester);
+    // The default 4.2 points per column against 7.2 at actual size.
+    expect(
+      tester.widget<Text>(find.byKey(const Key('preview-scale-percent'))).data,
+      '58%',
+    );
+  });
+
+  testWidgets('actual size is 100% and fit width fills the pane', (
+    tester,
+  ) async {
+    await open(tester);
+    await tester.tap(find.byKey(const Key('preview-actual-size')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.byKey(const Key('preview-scale-percent'))).data,
+      '100%',
+    );
+
+    await tester.tap(find.byKey(const Key('preview-fit-width')));
+    await tester.pumpAndSettle();
+    // The pane is narrower than an actual-size sheet, so fitting grows the
+    // scale without leaving the slider's range — and the label tracks it.
+    final slider = tester.widget<Slider>(find.byKey(const Key('preview-scale')));
+    expect(slider.value, greaterThan(4.2));
+    expect(slider.value, lessThanOrEqualTo(slider.max));
+    expect(
+      tester.widget<Text>(find.byKey(const Key('preview-scale-percent'))).data,
+      '${(slider.value / 7.2 * 100).round()}%',
+    );
+  });
 }

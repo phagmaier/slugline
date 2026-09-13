@@ -10,6 +10,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 import 'package:slugline/editor/line_layout.dart';
+import 'package:slugline/editor/line_text_cache.dart';
 import 'package:slugline/editor/metrics.dart';
 import 'package:slugline/editor/page_geometry.dart';
 import 'package:slugline/editor/page_indicator.dart';
@@ -104,6 +105,13 @@ class EditorSurfaceState extends State<EditorSurface>
   bool get _ownsFocusNode => widget.focusNode == null;
 
   final ScrollController _scroll = ScrollController();
+
+  /// Laid-out line painters, shared across frames. Owned here rather than by
+  /// the painter delegate so a rebuild — which installs a new delegate without
+  /// the text having changed — keeps hitting. Keyed on the pixels themselves,
+  /// so no rebuild, edit or theme change can read stale (see
+  /// [LineTextCache]).
+  final LineTextCache _lineCache = LineTextCache();
 
   /// Caret notifications must not pull the viewport back to row zero while the
   /// first layout is still waiting to apply the parked position.
@@ -202,6 +210,7 @@ class EditorSurfaceState extends State<EditorSurface>
   @override
   void dispose() {
     _connection?.close();
+    _lineCache.dispose();
     _controller.removeListener(_onDocumentChanged);
     _focusNode.removeListener(_onFocusChanged);
     _scroll.removeListener(_refreshSemantics);
@@ -1011,6 +1020,7 @@ class EditorSurfaceState extends State<EditorSurface>
                               composing: _composing,
                               colours: _EditorColours.of(context),
                               fontSize: _fontSize,
+                              lineCache: _lineCache,
                             ),
                           ),
                         ),
@@ -1271,6 +1281,38 @@ class _EditorColours {
   final Color paperEdge;
   final Color pageBreak;
   final Color gutter;
+
+  // Value equality, so that `shouldRepaint` can tell a theme change (repaint:
+  // every colour moved) from a rebuild that changed nothing painted. Without
+  // this the comparison would be identity, and a dark/light switch would leave
+  // the old colours on screen until the next keystroke or scroll.
+  @override
+  bool operator ==(Object other) =>
+      other is _EditorColours &&
+      other.text == text &&
+      other.dim == dim &&
+      other.selection == selection &&
+      other.caret == caret &&
+      other.rule == rule &&
+      other.spelling == spelling &&
+      other.paper == paper &&
+      other.paperEdge == paperEdge &&
+      other.pageBreak == pageBreak &&
+      other.gutter == gutter;
+
+  @override
+  int get hashCode => Object.hash(
+    text,
+    dim,
+    selection,
+    caret,
+    rule,
+    spelling,
+    paper,
+    paperEdge,
+    pageBreak,
+    gutter,
+  );
 }
 
 /// Paints the rows that are on screen, and nothing else.
@@ -1284,6 +1326,7 @@ class _SurfacePainter extends CustomPainter {
     required this.composing,
     required this.colours,
     required this.fontSize,
+    required this.lineCache,
   }) : super(
          repaint: Listenable.merge([
            controller,
@@ -1301,6 +1344,9 @@ class _SurfacePainter extends CustomPainter {
   final TextRange composing;
   final _EditorColours colours;
   final double fontSize;
+
+  /// Owned by the surface's state, so it outlives any one delegate install.
+  final LineTextCache lineCache;
 
   double get advance => geometry.advance;
   double get lineHeight => geometry.lineHeight;
@@ -1396,12 +1442,14 @@ class _SurfacePainter extends CustomPainter {
 
         if (line.columns > 0) {
           final text = line.textIn(display);
-          TextPainter(
-              text: TextSpan(text: text, style: blockStyle),
-              textDirection: TextDirection.ltr,
-            )
-            ..layout()
-            ..paint(canvas, Offset(x, y + (lineHeight - fontSize) / 2));
+          // Shared laid-out painter: a scroll frame repaints the same strings
+          // it painted last frame, and re-laying them is the frame's whole
+          // cost. The cache key is the text and the resolved style, so an edit
+          // is a miss by construction, never a stale hit.
+          lineCache.line(text, blockStyle).paint(
+            canvas,
+            Offset(x, y + (lineHeight - fontSize) / 2),
+          );
         }
 
         _paintSpellingUnderlines(canvas, block.id, line, x, y);
@@ -1423,15 +1471,10 @@ class _SurfacePainter extends CustomPainter {
         color: colours.dim.withValues(alpha: 0.6),
         fontStyle: FontStyle.italic,
       );
-      TextPainter(
-          text: TextSpan(text: 'Start writing…', style: hintStyle),
-          textDirection: TextDirection.ltr,
-        )
-        ..layout()
-        ..paint(
-          canvas,
-          Offset(pageLeft, geometry.yOfRow(0) + (lineHeight - fontSize) / 2),
-        );
+      lineCache.line('Start writing…', hintStyle).paint(
+        canvas,
+        Offset(pageLeft, geometry.yOfRow(0) + (lineHeight - fontSize) / 2),
+      );
     }
 
     if (showCaret) _paintCaret(canvas);
@@ -1527,10 +1570,10 @@ class _SurfacePainter extends CustomPainter {
   /// A page-break label. Chrome, not script: it is the application counting
   /// pages, so it is set in the chrome's sans at the chrome's size and does not
   /// grow with the text-size preference the way the script does.
-  TextPainter _label(String text, Color colour) => TextPainter(
-    text: TextSpan(text: text, style: chromeLabelStyle(colour)),
-    textDirection: TextDirection.ltr,
-  )..layout();
+  ///
+  /// Shared like the script lines: a scroll frame redraws the same few numbers.
+  TextPainter _label(String text, Color colour) =>
+      lineCache.line(text, chromeLabelStyle(colour));
 
   void _paintSpellingUnderlines(
     Canvas canvas,
@@ -1683,7 +1726,8 @@ class _SurfacePainter extends CustomPainter {
       old.geometry != geometry ||
       old.fontSize != fontSize ||
       old.showCaret != showCaret ||
-      old.composing != composing;
+      old.composing != composing ||
+      old.colours != colours;
 }
 
 sealed class _SpellMenuAction {

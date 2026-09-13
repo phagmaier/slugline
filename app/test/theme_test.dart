@@ -118,6 +118,20 @@ void main() {
       expect(theme.dividerTheme.color, colours.border);
     });
 
+    test('$name: keyboard focus has its own ring, not hover\'s colour', () {
+      // A writer tabbing through the chrome with no mouse moving must see
+      // where they are. The ring is the accent at rest and nothing when it is
+      // not focus — hover stays a foreground change, decided per button.
+      final theme = sluglineTheme(brightness);
+      final side = theme.iconButtonTheme.style?.side;
+      expect(
+        side?.resolve({WidgetState.focused}),
+        BorderSide(color: colours.accent, width: 1.5),
+      );
+      expect(side?.resolve({}), BorderSide.none);
+      expect(side?.resolve({WidgetState.hovered}), BorderSide.none);
+    });
+
     testWidgets('$name: context.colours is the set the theme installed', (
       tester,
     ) async {
