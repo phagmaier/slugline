@@ -53,33 +53,4 @@ tools/smoke_test_appimage.sh
   sha256sum -c SHA256SUMS
 )
 
-(
-  cd packaging/aur/slugline-bin
-  bash -n PKGBUILD
-  if command -v makepkg >/dev/null 2>&1; then
-    diff -u .SRCINFO <(makepkg --printsrcinfo)
-  fi
-)
-
-if command -v makepkg >/dev/null 2>&1; then
-  AUR_WORK="$(mktemp -d)"
-  trap 'rm -rf "$AUR_WORK"' EXIT
-  mkdir -p "$AUR_WORK/build" "$AUR_WORK/packages"
-  (
-    cd packaging/aur/slugline-bin
-    SRCDEST="$ROOT/dist" \
-      BUILDDIR="$AUR_WORK/build" \
-      PKGDEST="$AUR_WORK/packages" \
-      makepkg --force --noconfirm
-  )
-  if command -v namcap >/dev/null 2>&1; then
-    namcap packaging/aur/slugline-bin/PKGBUILD
-    namcap "$AUR_WORK"/packages/slugline-bin-*.pkg.tar.zst
-  else
-    echo "NOTICE: namcap is unavailable locally; run it before the AUR push."
-  fi
-else
-  echo "NOTICE: makepkg is unavailable; AUR build validation requires Arch Linux."
-fi
-
 echo "Release preflight passed for v$VERSION."

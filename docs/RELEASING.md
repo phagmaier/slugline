@@ -1,9 +1,8 @@
 # Releasing Slugline
 
 `app/pubspec.yaml` owns the public release version. `Cargo.toml`, AppStream
-metadata, `CHANGELOG.md`, and the AUR `PKGBUILD` repeat it where their formats
-require a copy. `tools/check_version.py` checks the application copies; the AUR
-copy is updated as part of the release checklist.
+metadata, and `CHANGELOG.md` repeat it where their formats require a copy.
+`tools/check_version.py` checks the application copies.
 
 The supported release target is Linux x86_64. GitHub Actions builds on Ubuntu
 24.04 with Flutter 3.44.8 (pinned as `flutter-version` in the workflows;
@@ -65,14 +64,9 @@ linuxdeploy AppImage's type-2 runtime header so AppImage assembly stays offline.
    ```
 
 2. Update `app/pubspec.yaml`, `Cargo.toml`, the newest release in
-   `packaging/com.phagmaier.slugline.metainfo.xml`, `CHANGELOG.md`, and
-   `packaging/aur/slugline-bin/PKGBUILD`. Reset the AUR `pkgrel` to `1`, then
-   regenerate `.SRCINFO`:
+   `packaging/com.phagmaier.slugline.metainfo.xml`, and `CHANGELOG.md`:
 
    ```sh
-   cd packaging/aur/slugline-bin
-   makepkg --printsrcinfo > .SRCINFO
-   cd ../../..
    python3 tools/check_version.py
    ```
 
@@ -129,25 +123,7 @@ linuxdeploy AppImage's type-2 runtime header so AppImage assembly stays offline.
    "./Slugline-$release_version-x86_64.AppImage" --help
    ```
 
-9. Publish the prepared AUR update from a separate AUR clone:
-
-   ```sh
-   cd packaging/aur/slugline-bin
-   makepkg --verifysource
-   makepkg -sf
-   namcap PKGBUILD
-   namcap slugline-bin-*.pkg.tar.zst
-   makepkg --printsrcinfo | diff -u .SRCINFO -
-   git clone ssh://aur@aur.archlinux.org/slugline-bin.git ../../../../aur-slugline-bin
-   install -m644 PKGBUILD .SRCINFO ../../../../aur-slugline-bin/
-   cd ../../../../aur-slugline-bin
-   git add PKGBUILD .SRCINFO
-   git commit -m "Update to $release_version"
-   git push
-   ```
-
-The GitHub and AUR pushes are the only unavoidable authenticated account-level
-actions.
+The GitHub push is the only unavoidable authenticated account-level action.
 
 ## What a pushed version tag does
 

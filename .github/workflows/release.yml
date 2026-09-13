@@ -89,7 +89,6 @@ jobs:
       - name: Validate shell syntax and style
         run: |
           bash -n tools/*.sh
-          bash -n packaging/aur/slugline-bin/PKGBUILD
           shellcheck tools/*.sh
 
       - name: Validate desktop, AppStream, and MIME metadata
