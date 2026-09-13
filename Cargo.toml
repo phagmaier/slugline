@@ -15,7 +15,7 @@ members = [
 # a second time, because Cargo cannot read it from there. `tools/check_version.py`
 # fails the build if the two ever disagree, which is the only thing that makes
 # "one source" true rather than aspirational.
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 rust-version = "1.82"
 license = "GPL-3.0-or-later"

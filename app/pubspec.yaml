@@ -5,7 +5,7 @@ publish_to: 'none'
 
 # The version the *application* reports. `Cargo.toml` is the other half of this
 # answer and the two are kept in step by hand; see `docs/DEPENDENCIES.md`.
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.12.2

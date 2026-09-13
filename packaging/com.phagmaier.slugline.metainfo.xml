@@ -73,7 +73,14 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
-    <release version="1.0.1" date="2026-09-06">
+    <release version="1.0.2" date="2026-09-13">
+      <description>
+        <p>Faster scrolling on long scripts, caret position and text size in the
+        status bar, library search and sorting, preview sizing controls, and a
+        visible keyboard-focus ring. Fixes element-bar bridge traffic, find
+        scanning while typing, and CI toolchain pinning.</p>
+      </description>
+    </release>    <release version="1.0.1" date="2026-09-06">
       <description>
         <p>Refined writing workflow, compact suggestions, responsive navigation,
         and more readable interface text. Fixes clipboard, saving, autosave,

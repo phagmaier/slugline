@@ -6,7 +6,7 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 `app/pubspec.yaml` is the release-version source; `tools/check_version.py` holds
 this file and the others to it.
 
-## Unreleased
+## 1.0.2 - 2026-09-13
 
 ### Improved
 

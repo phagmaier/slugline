@@ -6,7 +6,8 @@ require a copy. `tools/check_version.py` checks the application copies; the AUR
 copy is updated as part of the release checklist.
 
 The supported release target is Linux x86_64. GitHub Actions builds on Ubuntu
-24.04 with Flutter 3.44.8 (declared in `app/pubspec.yaml`) and stable Rust.
+24.04 with Flutter 3.44.8 (pinned as `flutter-version` in the workflows;
+`app/pubspec.yaml` declares the minimum supported SDK) and stable Rust.
 
 ## One-time repository settings
 
