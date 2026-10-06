@@ -43,7 +43,7 @@ This is the only place boxes are ticked.
 
 - [x] [S1](#s1) A second launch deletes a running session's crash journal
 - [x] [S2](#s2) Autosave never writes a previous version
-- [ ] [S3](#s3) The title-page dialog fuses multi-line fields
+- [x] [S3](#s3) The title-page dialog fuses multi-line fields
 
 **2. Small confirmed bugs**
 
@@ -259,7 +259,13 @@ Title-page edits already go through `doc_set_title_field` and the journal
 (ADR 0033); nothing changes there.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
+change). Reproduced the newline loss in the Contact field, then changed every
+title-page field, including additional keys, to accept newlines and grow from
+one line as needed. The regression widget test preserves a three-line Contact
+after editing; the existing Fountain multi-line canonical round-trip test also
+passes. All seven title-page widget tests passed, including focus-loss and
+dialog-dispose commits.
 
 ---
 

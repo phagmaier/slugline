@@ -112,15 +112,14 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final (key, label, hint) in _fields)
-                _box(key, label, hint, multiline: key == 'Notes'),
+              for (final (key, label, hint) in _fields) _box(key, label, hint),
               if (_extra.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(
                   'Also in this file',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
-                for (final key in _extra) _box(key, key, '', multiline: false),
+                for (final key in _extra) _box(key, key, ''),
               ],
               const SizedBox(height: 12),
               Text(
@@ -142,19 +141,14 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
     );
   }
 
-  Widget _box(
-    String key,
-    String label,
-    String hint, {
-    required bool multiline,
-  }) => Padding(
+  Widget _box(String key, String label, String hint) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 6),
     child: TextField(
       key: Key('title-field-$key'),
       controller: _controllers[key],
       focusNode: _focus[key],
-      minLines: multiline ? 3 : 1,
-      maxLines: multiline ? 6 : 1,
+      minLines: 1,
+      maxLines: null,
       onSubmitted: (_) => _commit(key),
       decoration: InputDecoration(
         labelText: label,

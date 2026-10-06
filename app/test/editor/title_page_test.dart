@@ -70,6 +70,25 @@ void main() {
     );
   });
 
+  testWidgets('editing a multi-line Contact preserves its line breaks', (
+    tester,
+  ) async {
+    const contact =
+        'Next Level Productions\n1588 Mission Dr.\nSolvang, CA 93463';
+    core.title.add(const TitleEntryView(key: 'Contact', value: contact));
+    await open(tester);
+
+    await tester.enterText(box('Contact'), '${contact}0');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(core.titleEdits, contains(('Contact', '${contact}0')));
+    expect(
+      core.titlePage().map((entry) => (entry.key, entry.value)),
+      contains(('Contact', '${contact}0')),
+    );
+  });
+
   testWidgets('clearing a field removes it from the file', (tester) async {
     core.title.add(const TitleEntryView(key: 'Contact', value: 'nobody@here'));
     await open(tester);
