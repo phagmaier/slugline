@@ -1808,8 +1808,8 @@ the mid-project remediation)
 rules. The plan that was to hold its findings (`REMEDIATION_PLAN.md`) is no
 longer in the tree, so whether the review was performed cannot be established
 from the repository. Nothing supersedes this record. One obligation it was meant
-to discharge is still open: ADR 0022 defers a `repaginate`-versus-
-`paginate_snapshot` equivalence test to this review, and
+to discharge is still open, and backlog item F8 now owns it: ADR 0022 defers a
+`repaginate`-versus-`paginate_snapshot` equivalence test to this review, and
 `crates/layout/tests/incremental.rs` has no such test.
 
 ### Context

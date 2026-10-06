@@ -230,7 +230,7 @@ fixed virtual display for reproducible results (`xorg-server-xvfb` on Arch,
 ```
 crates/          Rust — fountain, document, layout, render_pdf, storage, spell, bridge
 app/             Flutter application
-fuzz/            cargo-fuzz targets (nightly only, not in CI)
+fuzz/            cargo-fuzz targets (nightly; CI gives each a two-minute smoke run)
 spike/           Editor prototypes kept as evidence for ADR 0005
 testdata/        Fountain corpus and golden files
 tools/           Build and CI scripts
