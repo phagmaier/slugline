@@ -279,6 +279,11 @@ In windows narrower than 900 logical pixels, the navigator opens temporarily
 over the editor and closes when you choose a scene or character. Wider windows
 keep the saved docked-sidebar preference.
 
+`Ctrl+J` also returns from Characters to Scenes and focuses the scene filter
+after a navigator tab click. Type the scene query, then press `Enter` to jump;
+the query never becomes screenplay text. Modal dialogs retain their own input
+focus rather than activating the editor's page shortcuts.
+
 Inside the navigator, typing filters the current Scenes or Characters list,
 `↑` and `↓` move the highlight, and `Enter` jumps. Clicking a scene or accepting
 one from the keyboard places the caret at its heading; clicking a character

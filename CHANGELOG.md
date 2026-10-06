@@ -35,6 +35,8 @@ this file and the others to it.
   Application navigation is unchanged.
 - Consecutive lyric lines are single-spaced in the editor, preview and PDF,
   with one blank line before each lyric run instead of before every line.
+- Clicking the navigator's Characters tab no longer disables Ctrl+J on Linux.
+  The shortcut returns to scene search without clicking back into the editor.
 
 ## 1.0.2 - 2026-09-13
 

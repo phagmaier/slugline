@@ -561,9 +561,10 @@ class EditorPageState extends State<EditorPage> {
     // bring it back. Ctrl+J always works; a keystroke nobody can see is not a
     // way back.
     final hasTopBar = widget.onClosed != null && !widget.distractionFree;
-    return Focus(
-      // Above the surface, so the surface still sees every editing key first and
-      // only what it ignores reaches here.
+    return FocusScope(
+      // Desktop fields unfocus to their nearest scope. Keep that inside the
+      // page's shortcut boundary; children still see editing keys first.
+      debugLabel: 'editor page',
       onKeyEvent: (_, event) => _onPageKey(event),
       child: Scaffold(
         key: _scaffoldKey,

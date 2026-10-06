@@ -68,10 +68,11 @@ Future<EditorController> _pump(
   WidgetTester tester,
   FakeCore core, {
   bool visible = true,
+  double viewportWidth = 1000,
   int initialScrollRow = 0,
   Future<void> Function(bool)? onVisibilityChanged,
 }) async {
-  tester.view.physicalSize = const Size(1000, 600);
+  tester.view.physicalSize = Size(viewportWidth, 600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -345,6 +346,86 @@ void main() {
       const DocPosition(block: 5, offsetUtf16: 0),
     );
   });
+
+  for (final width in [800.0, 1000.0]) {
+    testWidgets('Ctrl+J returns from Characters to scene search at $width px',
+        (tester) async {
+      final controller = await _pump(
+        tester,
+        _script(),
+        visible: false,
+        viewportWidth: width,
+      );
+      final originalSource = controller.source;
+      await tester.tap(find.byType(EditorSurface));
+      await tester.pump();
+
+      Future<void> quickJump() async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+      }
+
+      await quickJump();
+      await tester.tap(find.textContaining('Characters'));
+      await tester.pumpAndSettle();
+      expect(find.text('BOB'), findsOneWidget);
+
+      await quickJump();
+      tester.testTextInput.enterText('street');
+      await tester.pump();
+      expect(find.text('HOUSE'), findsNothing);
+      expect(find.text('STREET'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        controller.selection.focus,
+        const DocPosition(block: 5, offsetUtf16: 0),
+      );
+      expect(controller.source, originalSource,
+          reason: 'quick-jump input is not a screenplay edit');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+  }
+
+  testWidgets('Ctrl+J does not steal input from a modal dialog', (tester) async {
+    final controller = await _pump(tester, _script(), visible: false);
+    final originalSource = controller.source;
+    await tester.tap(find.byType(EditorSurface));
+    await tester.pump();
+    final dialog = showDialog<void>(
+      context: tester.element(find.byType(EditorPage)),
+      builder: (context) => AlertDialog(
+        content: const TextField(
+          key: ValueKey('modal input'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    tester.testTextInput.enterText('Dialog text');
+    await tester.pump();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(NavigatorSidebar), findsNothing);
+    expect(find.text('Dialog text'), findsOneWidget);
+    expect(controller.source, originalSource);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await dialog;
+  }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
 
   testWidgets('collapse reports the state and leaves a way back', (
     tester,

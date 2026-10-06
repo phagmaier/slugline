@@ -60,6 +60,7 @@ This is the only place boxes are ticked.
 - [x] [B2](#b2) Page-view sheets are off-centre and clip on the left
 - [x] [B3](#b3) README lists the wrong shortcuts and stale test counts
 - [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
+- [ ] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
 
 **3. Fountain and output fidelity**
 
@@ -420,6 +421,34 @@ the journalled keystroke p99 was 2.89 ms, within budget. All 529 Flutter tests,
 17 targeted navigator/responsive-editor tests, Flutter analysis and
 docs/version/layering/formatting checks passed. No application code, existing
 ADR behavior, F3 implementation or output goldens changed.
+
+<a id="b5"></a>
+### B5 — Navigator tab clicks disable the scene quick-jump shortcut
+
+**Problem.** On Linux with a docked navigator, opening it with Ctrl+J, clicking
+Characters, then pressing Ctrl+J again neither switches back to Scenes nor
+focuses the filter. Typing the scene query is ignored.
+
+**Evidence (reproduced during F4 verification and diagnosed separately).**
+The native writing suite failed its `STREET` visibility assertion. A temporary
+real-core diagnostic on this machine's 1280 × 720 viewport observed the filter
+lose focus to the route-level scope after Characters was clicked; the second
+Ctrl+J never reached `EditorPage._onPageKey`. An isolated XDG root behaved the
+same. The installed Flutter 3.44.8 / Dart 3.12.2 match the repository and CI
+pins. Linux-mode widget tests reproduce the docked failure; Android-mode widget
+tests and the compact drawer do not, because their focus behavior differs.
+
+**Change.** Keep child-field unfocus inside an editor-owned focus scope instead
+of the route's scope. Preserve the normal desktop unfocus behavior and child-first
+key handling; do not force focus on tab clicks or bypass modal dialogs.
+
+**Done when.** Ctrl+J returns from Characters to scene search in docked and
+compact layouts; typing `street` filters to STREET and Enter jumps without
+changing screenplay text. Modal-dialog input remains outside page shortcuts.
+The native writing suite and full Linux integration gate pass.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -1235,3 +1264,5 @@ not part of that item.
   This differs from the earlier closed-drawer `HOUSE` failure fixed by B4.
   Recorded the observed failure without changing navigator code or rerunning
   the failed scenario; investigate separately from lyric spacing.
+  Promoted to [B5](#b5) after the owner requested investigation; the docked
+  Linux navigator loses its page-level shortcut focus boundary on tab clicks.
