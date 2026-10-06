@@ -3086,3 +3086,65 @@ arrow keys, navigating beyond the visible suggestion rows, retained Find
 filters, and editor tools at 640, 800 and 1280 logical pixels with 100% and 150%
 text scaling. Theme tests cover contrast. Linux integration tests exercise
 actual Rust editing, the keyboard workflow, and the keystroke budget.
+
+---
+
+## ADR 0042 — Crash journals carry kernel ownership across publication
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Supersedes:** ADR 0016's recovery sequence only where it omits journal ownership;
+its replay, successor-before-removal and never-save-on-recovery rules remain.
+
+### Context
+
+Backlog S1 was reproduced with two release processes using throwaway `/tmp`
+XDG roots: startup removed the first process's empty journal while that process
+continued holding and appending to its unlinked inode. A non-empty journal
+could likewise be offered, accepted or discarded while its writer was live.
+
+### Decision
+
+Every live `Journal` holds an exclusive, nonblocking `flock` on its open file
+description for the session's lifetime. Recovery takes the same lock before
+reading, retains it through cleanup or acceptance, and refuses a live owner.
+Offers hold no long-lived reservation: accept and discard acquire ownership
+again, so a stale dialog cannot act on another process's successor.
+
+Acquisition compares the descriptor's device/inode with the current pathname.
+A descriptor opened before a replacement cannot authorize operations on the
+replacement. Recovery reads its locked descriptor; unlink happens before the
+descriptor and lock are dropped.
+
+Owned reload/rebase and `Journal::rebuild_at` retain the predecessor lock while
+the existing atomic-save machinery writes and locks a successor temporary
+inode. Replacement renames it over the predecessor and returns that exact
+descriptor, already locked, for continued appends. Initial publication uses a
+same-directory hard link followed by temporary-name removal: the complete,
+locked inode becomes visible without clobbering a racing creator. No `.lock`
+file, timer, PID registry or single-instance restriction is added.
+
+Use `libc::flock` rather than `File::try_lock`: std requires Rust 1.89; this
+Linux-only project keeps its Rust 1.82 floor. `libc` is already transitive and
+becomes a documented direct dependency. The unsafe boundary is one syscall
+with an owned descriptor and constant flags; append adds no lock or stat call.
+The [Linux flock contract](https://man7.org/linux/man-pages/man2/flock.2.html)
+releases the lock when the last descriptor for that open file description closes.
+
+### Consequences and verification
+
+- Locks are advisory; older Slugline builds or external tools that ignore them
+  can still modify a journal. Lock errors fail closed. Unsupported hard links
+  or filesystem locking leave the session explicitly unprotected, not silently
+  unlocked. Opening the same script in a second process still reports recovery
+  record unavailable rather than stealing its journal.
+- `/proc/<pid>/fd` may show the removed temporary *name* after initial hard-link
+  publication. That is not a lost journal: the final `.log` and descriptor have
+  the same device/inode and a positive link count. The two-window release smoke
+  verified both final journal paths survived and the first lock remained held.
+- The bridge's real-process regression covers live empty and edited journals,
+  direct/stale accept and discard, reload, save with an edit during the write,
+  locked atomic replacement, and recovery after two successive `SIGKILL`s.
+- Persistence tests serialize simulated session lifetimes around subprocess
+  spawning. A fork can briefly inherit another test's descriptor before exec
+  closes it, keeping its lock alive after the owning test drops its journal.
+  A throwaway fork experiment confirmed this descriptor-lifetime behavior.

@@ -6,6 +6,13 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 `app/pubspec.yaml` is the release-version source; `tools/check_version.py` holds
 this file and the others to it.
 
+## Unreleased
+
+### Fixed
+
+- Launching another window no longer deletes or offers a running session's
+  crash journal. Recovery and atomic journal replacement preserve its lock.
+
 ## 1.0.2 - 2026-09-13
 
 ### Improved

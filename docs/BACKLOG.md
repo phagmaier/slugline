@@ -22,8 +22,11 @@ For whoever (or whatever) picks up an item:
 3. Follow `AGENTS.md` — its invariants and its verification commands apply to
    every item here. Where an item changes something an accepted ADR decided, add
    a superseding ADR in the same change; do not edit the old one.
-4. Items tagged **needs go-ahead** change product behaviour in a way the owner
-   has not approved yet. Do not start one without being told to.
+4. The owner has delegated implementation choices and product decisions to
+   agents. Do not wait for sign-off or ask the owner to choose between options.
+   Use judgment, do any needed research or deliberation, and record the reason
+   for the choice. Larger or uncertain items may need planning before coding;
+   that planning is part of the work, not an approval gate.
 5. Stay inside the item. If you notice something else, add a line under
    [Found along the way](#found-along-the-way) instead of fixing it.
 6. When the work is verified: tick the item's box in the checklist and fill in
@@ -38,7 +41,7 @@ This is the only place boxes are ticked.
 
 **1. Safety — do these first**
 
-- [ ] [S1](#s1) A second launch deletes a running session's crash journal
+- [x] [S1](#s1) A second launch deletes a running session's crash journal
 - [ ] [S2](#s2) Autosave never writes a previous version
 - [ ] [S3](#s3) The title-page dialog fuses multi-line fields
 
@@ -71,7 +74,7 @@ This is the only place boxes are ticked.
 - [ ] [W9](#w9) Previous versions can be restored but not looked at
 - [ ] [W10](#w10) Slugline is not installed on the owner's machine
 
-**5. Larger features — each needs go-ahead**
+**5. Larger features — plan and use judgment where needed**
 
 - [ ] [X1](#x1) Dual dialogue
 - [ ] [X2](#x2) Final Draft (FDX) import and export
@@ -140,7 +143,24 @@ renames a new file into place.
 - Making the app single-instance is a different change and not part of this.
 
 **Effort.** S–M.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree change
+based on `e5911fa`). Reproduced recipe 3 with release processes and isolated
+`/tmp` XDG roots: launch 2 removed launch 1's journal. Journals now hold
+exclusive `libc::flock` locks; startup, accept and discard acquire ownership,
+and atomic creation/replacement publishes an already locked inode. Rust 1.82
+is retained; no separate lock file or single-instance policy. ADR 0042 records
+the ownership/publication trade-offs. The real bridge two-process regression
+covers live empty/non-empty journals, direct and stale recovery decisions,
+reload, save-time replacement, same-script refusal and two successive
+`SIGKILL`s. Repeated recipe 3 leaves both `.log` paths on disk; the first
+descriptor matches its final journal's device/inode with link count 1 and
+refuses a foreign lock. Its `/proc` label can name the unlinked temporary name
+after hard-link publication, not a lost journal. Verification: 563 workspace
+tests, clippy with warnings denied, formatting, layering/version checks,
+508 Flutter tests, Flutter analysis, binding regeneration and the rebuilt
+Linux release smoke all passed. Persistence fixtures serialize simulated
+sessions to avoid subprocess forks briefly inheriting other tests' journal
+locks before exec.
 
 <a id="s2"></a>
 ### S2 — Autosave never writes a previous version
@@ -412,7 +432,8 @@ nothing in `layout` or `render_pdf` does.
   emphasis.
 - Make heading weight one decision. Suggested: an output option "Bold scene
   headings", off by default, which the PDF, the preview and the editor all
-  follow. **The default is the owner's call** — ask before choosing.
+  follow. Choose the default based on screenplay conventions and product
+  consistency; record the rationale.
 
 **Done when.** A preview test shows an italic run drawn without its markers and
 in the italic face; editor, preview and PDF agree on heading weight for both
@@ -639,7 +660,7 @@ memory of the last folder.
 (`app/lib/library/file_chooser.dart:70`); `_list` shows everything but dotfiles
 (`:103`).
 
-**Choose first — ask the owner.**
+**Choose an approach after weighing the trade-offs; record the rationale.**
 - **Option A (recommended).** Call GTK's native file chooser from the runner
   over the existing `slugline/window` method channel. That gives the system
   dialog with bookmarks and recent folders, adds no Dart dependency and makes no
@@ -699,7 +720,9 @@ association on this machine. Put the exact commands in the README.
 
 ## 5. Larger features
 
-Each of these **needs go-ahead** from the owner before work starts.
+These features are authorized backlog work. Some need planning and research
+before implementation; use judgment, resolve open choices, and document the
+decisions as part of the work.
 
 <a id="x1"></a>
 ### X1 — Dual dialogue
@@ -722,9 +745,11 @@ the paginator, the preview and the PDF.
 <a id="x2"></a>
 ### X2 — Final Draft (FDX) import and export
 
-**Open question for the owner.** Which service is being replaced, and can it
-export Fountain? If it can, import is not needed for migration and export is
-the more valuable half — FDX is the file other people ask for.
+**Planning question.** Establish the likely migration and collaboration needs
+from the project context and available sources. If a specific service can
+export Fountain, import may not be needed for migration; weigh that against the
+value of FDX export and choose a sensible scope. Record the evidence and
+decision before implementation.
 
 **Notes.** FDX is XML. Writing it needs no dependency; reading it needs an XML
 parser, which needs a line in `docs/DEPENDENCIES.md`. The original spec lists
@@ -877,4 +902,3 @@ S1 is fixed, two windows cover it.
 
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
-

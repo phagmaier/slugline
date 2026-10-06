@@ -22,6 +22,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard};
 
 use slugline_document::{BlockId, Document, EditCommand, Patch};
 use slugline_storage::atomic::{save_atomically, SaveError};
@@ -31,27 +32,39 @@ use slugline_storage::journal::{self, Journal};
 // A temporary directory. `storage`'s own is `#[cfg(test)]`-private to it.
 // ---------------------------------------------------------------------------
 
-struct TempDir(PathBuf);
+// A spawn in another test can briefly inherit an open journal descriptor before
+// exec closes it. That keeps its flock alive after the owning test drops it.
+// Serialize these session lifetimes so simulated crashes cannot race a fork.
+static SESSIONS: Mutex<()> = Mutex::new(());
+
+struct TempDir {
+    path: PathBuf,
+    _session: MutexGuard<'static, ()>,
+}
 
 impl TempDir {
     fn new(label: &str) -> TempDir {
+        let session = SESSIONS.lock().unwrap_or_else(|error| error.into_inner());
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let unique = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path =
             std::env::temp_dir().join(format!("slugline-{label}-{}-{unique}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("a temporary directory");
-        TempDir(path)
+        TempDir {
+            path,
+            _session: session,
+        }
     }
 
     fn path(&self) -> &Path {
-        &self.0
+        &self.path
     }
 }
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        let _ = fs::remove_dir_all(&self.path);
     }
 }
 
@@ -97,7 +110,8 @@ fn recover(journal_path: &Path) -> (Document, bool) {
 /// subject of the tests below. Note what is missing: the script is not written.
 /// Recovery does not decide for the writer.
 fn accept(journal_path: &Path, dir: &Path) -> io::Result<(Document, Journal)> {
-    let recovery = journal::read(journal_path).expect("the journal reads");
+    let guard = journal::RecoveryGuard::try_open(journal_path)?;
+    let recovery = guard.read().expect("the journal reads");
     let source = journal::verify(&recovery.header).expect("the file is as it was");
     let untitled = journal::is_untitled(&recovery.header);
     let script = recovery.header.script.clone();
@@ -129,10 +143,7 @@ fn accept(journal_path: &Path, dir: &Path) -> io::Result<(Document, Journal)> {
     } else {
         journal::script_id(&script)
     };
-    let successor = Journal::rebuild(dir, &id, &script, &source, &recovery.patches[..applied])?;
-    if successor.path() != journal_path {
-        journal::discard_at(journal_path)?;
-    }
+    let successor = guard.rebuild(dir, &id, &script, &source, &recovery.patches[..applied])?;
     Ok((document, successor))
 }
 

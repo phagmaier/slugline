@@ -13,6 +13,7 @@ slugline_document.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 directories = "6.0.0"
+libc = "0.2"
 # The default feature set adds a polling fallback for filesystems inotify cannot
 # watch. That is a timer in an idle process, which §1.3 budgets at zero, and we
 # only ever watch ordinary files on ordinary filesystems.

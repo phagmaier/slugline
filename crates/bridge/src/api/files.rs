@@ -1180,8 +1180,7 @@ async fn write_document(
                         // already changed the id by now and the journal file
                         // has not moved. Written atomically, so a crash in the
                         // middle leaves the old journal whole.
-                        let at = journal.path().to_path_buf();
-                        if let Ok(successor) = Journal::rebuild_at(&at, &path, &text, &unsaved) {
+                        if let Ok(successor) = journal.rebuild_at(&path, &text, &unsaved) {
                             *journal = successor;
                         }
                         // A failed rebuild leaves the journal exactly as it was:
@@ -1808,6 +1807,8 @@ pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> Save
 /// Reads the journals but applies nothing. §Phase 4 is explicit that recovery
 /// "never auto-applies", and this is where that is enforced: the only thing that
 /// can turn an offer into a document is the user answering the dialog.
+/// Live journals are skipped. Hold the lock through reading and empty-journal
+/// cleanup; a stale offer is checked again by accept and discard.
 pub async fn recovery_pending() -> Vec<RecoveryOffer> {
     let directory = actor().run(|state| state.storage().map(|storage| storage.paths.journal_dir()));
     let Some(directory) = directory else {
@@ -1816,7 +1817,10 @@ pub async fn recovery_pending() -> Vec<RecoveryOffer> {
 
     let mut offers = Vec::new();
     for path in journal::pending(&directory) {
-        let Ok(recovery) = journal::read(&path) else {
+        let Ok(guard) = journal::RecoveryGuard::try_open(&path) else {
+            continue;
+        };
+        let Ok(recovery) = guard.read() else {
             // A journal we cannot read at all is a journal we cannot offer. It
             // is left on disk rather than deleted: it is the user's text, in a
             // form a person could still pick apart by hand.
@@ -1825,7 +1829,7 @@ pub async fn recovery_pending() -> Vec<RecoveryOffer> {
         if recovery.is_empty() {
             // Nothing was typed after the last save. Not a loss, and not worth a
             // dialog — but the file has served its purpose, so it goes.
-            let _ = journal::discard_at(&path);
+            let _ = guard.discard();
             continue;
         }
         let untitled = journal::is_untitled(&recovery.header);
@@ -1866,15 +1870,15 @@ pub async fn recovery_pending() -> Vec<RecoveryOffer> {
 /// around one rule: **that journal does not stop existing until an equivalent
 /// one does.**
 ///
-/// 1. Read and verify the old journal. Verification returns the file's real
-///    bytes, which are still the pre-crash ones.
+/// 1. Lock, read and verify the old journal. Verification returns the file's real
+///    bytes, which are still the pre-crash ones. A live owner refuses the lock.
 /// 2. Replay onto those bytes, remembering exactly which patches applied. A
 ///    patch that does not fit stops the replay, and the ones after it are not in
 ///    the recovered document, so they must not be in its journal either.
 /// 3. Open the document and bind it to its file, library entry and watch.
 /// 4. Write the **successor journal**: same `base` — the file has not changed —
-///    plus the patches that replayed. [`Journal::rebuild`] writes it through the
-///    atomic save, so it either exists whole or does not exist.
+///    plus the patches that replayed. [`journal::RecoveryGuard::rebuild`] locks
+///    the successor before publishing it through the atomic save.
 /// 5. Only now remove the old journal, and only if the successor did not already
 ///    replace it at the same path.
 ///
@@ -1889,7 +1893,15 @@ pub async fn recovery_pending() -> Vec<RecoveryOffer> {
 /// Notice what is *not* here: a save. Recovery still never writes the script.
 pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
     let path = PathBuf::from(&journal_path);
-    let recovery = match journal::read(&path) {
+    let guard = match journal::RecoveryGuard::try_open(&path) {
+        Ok(guard) => guard,
+        Err(why) => {
+            return RecoveryOutcome::Failed {
+                message: why.to_string(),
+            }
+        }
+    };
+    let recovery = match guard.read() {
         Ok(recovery) => recovery,
         Err(why) => {
             return RecoveryOutcome::Failed {
@@ -1980,7 +1992,7 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
     } else {
         journal::script_id(&script)
     };
-    let successor = match Journal::rebuild(&directory, &id, &script, &source, applied) {
+    let successor = match guard.rebuild(&directory, &id, &script, &source, applied) {
         Ok(successor) => successor,
         Err(error) => {
             // The old journal is untouched, so the recovered text is still on
@@ -1992,17 +2004,13 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
         }
     };
 
-    // The recovered edits are now described by two journals, or by one file that
-    // replaced the other. Either way there has not been an instant with none.
-    let successor_path = successor.path().to_path_buf();
+    // The guard kept the old journal locked until a locked successor existed,
+    // then removed it only when the successor was at a different path.
     actor().run(move |state| {
         if let Some(session) = state.session_mut(handle) {
             session.set_journal(Some(successor));
         }
     });
-    if successor_path != path {
-        let _ = journal::discard_at(&path);
-    }
     RecoveryOutcome::Recovered {
         handle: DocumentHandle { id: handle },
     }
@@ -2215,7 +2223,11 @@ fn restart_journal(state: &mut AppState, handle: u64, base: &str, restart: Resta
     };
     let started = match restart {
         Restart::Fresh => Journal::create(&directory, &id, &script, base),
-        Restart::Rebased => Journal::replace(&directory, &id, &script, base),
+        Restart::Rebased => match state.session_mut(handle).and_then(Session::journal_mut) {
+            Some(journal) => journal.replace(&script, base),
+            // An unprotected session has no ownership of an existing journal.
+            None => Journal::create(&directory, &id, &script, base),
+        },
     };
     match started {
         Ok(journal) => {
@@ -4593,6 +4605,367 @@ mod tests {
                 false,
             ))),
             SaveFailure::NoSuchDocument
+        );
+    }
+
+    const RECOVERY_CHILD_ROOT: &str = "SLUGLINE_BRIDGE_RECOVERY_CHILD_ROOT";
+    const RECOVERY_CHILD_MODE: &str = "SLUGLINE_BRIDGE_RECOVERY_CHILD_MODE";
+    const RECOVERY_CHILD_TEST: &str = "api::files::tests::recovery_process_child";
+    const RECOVERY_MESSAGE: &str = "slugline-recovery-process: ";
+    const RECOVERY_EDIT: &str = "Edited. ";
+    const RECOVERY_DURING_SAVE: &str = "During save. ";
+
+    /// Unlike the other fixtures, this root is explicitly under /tmp even when
+    /// the invoking environment has a different TMPDIR.
+    struct RecoveryProcessRoot {
+        _storage: MutexGuard<'static, ()>,
+        root: PathBuf,
+        handles: Vec<DocumentHandle>,
+    }
+
+    impl RecoveryProcessRoot {
+        fn new() -> Self {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+            let root = Path::new("/tmp").join(format!(
+                "slugline-s1-recovery-{}-{}",
+                std::process::id(),
+                COUNTER.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).expect("an isolated /tmp directory");
+            let fixture = Self {
+                _storage: storage,
+                root,
+                handles: Vec::new(),
+            };
+            fs::write(fixture.script(), SCRIPT).expect("the script is written");
+            install_storage(&fixture.root);
+            fixture
+        }
+
+        fn script(&self) -> PathBuf {
+            self.root.join("shared.fountain")
+        }
+
+        fn journal(&self) -> PathBuf {
+            Paths::under(&self.root)
+                .journal_dir()
+                .join(format!("{}.log", journal::script_id(&self.script())))
+        }
+    }
+
+    impl Drop for RecoveryProcessRoot {
+        fn drop(&mut self) {
+            for handle in &self.handles {
+                let handle = *handle;
+                actor().run(move |state| state.close(handle.id));
+            }
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// Installed immediately after spawn, before any fallible pipe setup, so
+    /// assertion failures and handshake timeouts cannot leave an owner running.
+    struct RecoveryChildOwner(std::process::Child);
+
+    impl Drop for RecoveryChildOwner {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    struct RecoveryChild {
+        owner: RecoveryChildOwner,
+        input: std::process::ChildStdin,
+        messages: Receiver<String>,
+        reader: Option<thread::JoinHandle<()>>,
+    }
+
+    impl RecoveryChild {
+        fn spawn(root: &Path, mode: &str) -> Self {
+            use std::io::BufRead;
+            use std::process::{Command, Stdio};
+
+            let mut owner = RecoveryChildOwner(
+                Command::new(std::env::current_exe().expect("the bridge test binary"))
+                    .args(["--exact", RECOVERY_CHILD_TEST, "--nocapture"])
+                    .env(RECOVERY_CHILD_ROOT, root)
+                    .env(RECOVERY_CHILD_MODE, mode)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .expect("the recovery owner starts"),
+            );
+            let input = owner.0.stdin.take().expect("the child's command pipe");
+            let stdout = owner.0.stdout.take().expect("the child's response pipe");
+            let (send, messages) = mpsc::channel();
+            let reader = thread::spawn(move || {
+                for line in std::io::BufReader::new(stdout).lines() {
+                    let Ok(line) = line else {
+                        break;
+                    };
+                    // libtest may print its test name before the child's line.
+                    if let Some((_, message)) = line.split_once(RECOVERY_MESSAGE) {
+                        if send.send(message.to_owned()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            });
+            Self {
+                owner,
+                input,
+                messages,
+                reader: Some(reader),
+            }
+        }
+
+        fn wait_for(&self, expected: &str) {
+            assert_eq!(
+                self.messages
+                    .recv_timeout(PATIENCE)
+                    .expect("the child acknowledges the completed bridge operation"),
+                expected
+            );
+        }
+
+        fn command(&mut self, command: &str, expected: &str) {
+            use std::io::Write;
+            writeln!(self.input, "{command}").expect("the child receives its command");
+            self.input.flush().expect("the command pipe is flushed");
+            self.wait_for(expected);
+        }
+
+        fn kill(&mut self) {
+            use std::os::unix::process::ExitStatusExt;
+            self.owner.0.kill().expect("SIGKILL reaches the live owner");
+            let status = self.owner.0.wait().expect("the owner is reaped");
+            assert_eq!(status.signal(), Some(9), "no clean shutdown ran");
+        }
+    }
+
+    impl Drop for RecoveryChild {
+        fn drop(&mut self) {
+            let _ = self.owner.0.kill();
+            let _ = self.owner.0.wait();
+            if let Some(reader) = self.reader.take() {
+                let _ = reader.join();
+            }
+        }
+    }
+
+    fn recovery_child_message(message: &str) {
+        use std::io::Write;
+        println!("{RECOVERY_MESSAGE}{message}");
+        std::io::stdout()
+            .flush()
+            .expect("the parent receives the acknowledgement");
+    }
+
+    fn recovery_child_types(handle: DocumentHandle, text: &str) {
+        let block = doc_blocks(handle, 0, 1)[0].id;
+        let _ = doc_apply(
+            handle,
+            EditCommand::ReplaceText {
+                block,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: text.to_owned(),
+            },
+            None,
+        );
+    }
+
+    /// Reentered by exact module-qualified name in a genuinely separate process.
+    /// Every operation below uses the production bridge; only scheduling a save
+    /// uses the same test-only gate as the ordinary save regression tests.
+    #[test]
+    fn recovery_process_child() {
+        use std::io::BufRead;
+
+        let Some(root) = std::env::var_os(RECOVERY_CHILD_ROOT) else {
+            return;
+        };
+        let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+        let root = PathBuf::from(root);
+        assert!(root.starts_with("/tmp"));
+        install_storage(&root);
+        let script = root.join("shared.fountain");
+        let mode = std::env::var(RECOVERY_CHILD_MODE).expect("the child's operation");
+        let handle = match mode.as_str() {
+            "open" => {
+                assert!(block_on(recovery_pending()).is_empty());
+                let handle = block_on(library_open(script.to_string_lossy().into_owned()))
+                    .expect("the owner opens the script");
+                assert_eq!(doc_journal_state(handle), (0, false));
+                recovery_child_message("empty");
+                handle
+            }
+            "accept" => {
+                let offers = block_on(recovery_pending());
+                assert_eq!(offers.len(), 1);
+                assert!(offers[0].blocked.is_none());
+                let RecoveryOutcome::Recovered { handle } =
+                    block_on(recovery_accept(offers[0].journal.clone()))
+                else {
+                    panic!("the child must accept with durable successor protection");
+                };
+                assert_eq!(
+                    doc_source(handle),
+                    format!("{RECOVERY_DURING_SAVE}{RECOVERY_EDIT}{SCRIPT}")
+                );
+                assert!(doc_dirty(handle));
+                assert_eq!(doc_journal_state(handle), (1, false));
+                recovery_child_message("recovered");
+                handle
+            }
+            other => panic!("unknown recovery child mode: {other}"),
+        };
+
+        for command in std::io::stdin().lock().lines() {
+            match command
+                .expect("the parent's command pipe remains readable")
+                .as_str()
+            {
+                "edit" => {
+                    assert!(block_on(doc_reload(handle, true)));
+                    recovery_child_types(handle, RECOVERY_EDIT);
+                    assert_eq!(doc_source(handle), format!("{RECOVERY_EDIT}{SCRIPT}"));
+                    assert_eq!(doc_journal_state(handle), (1, false));
+                    recovery_child_message("edited");
+                }
+                "save" => {
+                    let gate = Gate::hold_the_first_write(&script);
+                    let saving = Saving::explicit(handle);
+                    gate.wait();
+                    recovery_child_types(handle, RECOVERY_DURING_SAVE);
+                    gate.release();
+                    assert!(matches!(saving.outcome(), SaveOutcome::Saved { .. }));
+                    stall::forget(&script);
+                    assert_eq!(
+                        fs::read_to_string(&script).unwrap(),
+                        format!("{RECOVERY_EDIT}{SCRIPT}")
+                    );
+                    assert_eq!(
+                        doc_source(handle),
+                        format!("{RECOVERY_DURING_SAVE}{RECOVERY_EDIT}{SCRIPT}")
+                    );
+                    assert!(doc_dirty(handle));
+                    assert_eq!(doc_journal_state(handle), (1, false));
+                    recovery_child_message("rebuilt");
+                }
+                other => panic!("unknown recovery child command: {other}"),
+            }
+        }
+        panic!("a recovery owner must be SIGKILLed, not shut down cleanly");
+    }
+
+    fn assert_live_recovery_is_untouchable(path: &Path) {
+        let bytes = fs::read(path).expect("the live journal exists");
+        assert!(
+            block_on(recovery_pending()).is_empty(),
+            "live edits are not an offer"
+        );
+        assert_eq!(
+            fs::read(path).unwrap(),
+            bytes,
+            "startup scan preserves the journal"
+        );
+        assert!(
+            matches!(
+                block_on(recovery_accept(path.to_string_lossy().into_owned())),
+                RecoveryOutcome::Failed { .. }
+            ),
+            "even a direct or stale offer cannot accept a live journal"
+        );
+        assert_eq!(
+            fs::read(path).unwrap(),
+            bytes,
+            "accept cannot replace the journal"
+        );
+        assert!(!block_on(recovery_discard(
+            path.to_string_lossy().into_owned()
+        )));
+        assert_eq!(
+            fs::read(path).unwrap(),
+            bytes,
+            "discard cannot unlink the journal"
+        );
+    }
+
+    #[test]
+    fn recovery_respects_a_live_process_and_survives_two_sigkills() {
+        use std::os::unix::fs::MetadataExt;
+
+        let mut fixture = RecoveryProcessRoot::new();
+        let script = fixture.script();
+        let path = fixture.journal();
+        let mut owner = RecoveryChild::spawn(&fixture.root, "open");
+        owner.wait_for("empty");
+
+        // The original defect: scanning a live, empty journal unlinked it.
+        let empty = fs::read(&path).expect("the owner has an empty journal");
+        assert!(journal::read(&path).unwrap().patches.is_empty());
+        assert_live_recovery_is_untouchable(&path);
+        assert_eq!(fs::read(&path).unwrap(), empty);
+
+        let second = block_on(library_open(script.to_string_lossy().into_owned()))
+            .expect("a second process may still edit the script");
+        fixture.handles.push(second);
+        assert_eq!(
+            doc_journal_state(second),
+            (0, true),
+            "opening the same script reports journal-unavailable instead of stealing"
+        );
+        assert_eq!(fs::read(&path).unwrap(), empty);
+        actor().run(move |state| state.close(second.id));
+
+        owner.command("edit", "edited");
+        assert_live_recovery_is_untouchable(&path);
+        let before = fs::metadata(&path).unwrap();
+        owner.command("save", "rebuilt");
+        let successor = fs::metadata(&path).unwrap();
+        assert_ne!(
+            (before.dev(), before.ino()),
+            (successor.dev(), successor.ino()),
+            "the actual save published an atomic rebuild_at successor"
+        );
+        assert_live_recovery_is_untouchable(&path);
+
+        owner.kill();
+        let offers = block_on(recovery_pending());
+        assert_eq!(offers.len(), 1, "SIGKILL releases the kernel lock");
+        assert_eq!(offers[0].journal, path.to_string_lossy().into_owned());
+        assert!(offers[0].blocked.is_none());
+        assert_eq!(offers[0].edits, 1);
+        let stale_offer = offers[0].journal.clone();
+
+        // Accept in another process, then try the old offer while its atomically
+        // replaced successor is owned. A second crash must offer the same text.
+        let mut recovered = RecoveryChild::spawn(&fixture.root, "accept");
+        recovered.wait_for("recovered");
+        assert_live_recovery_is_untouchable(Path::new(&stale_offer));
+        recovered.kill();
+        let offers = block_on(recovery_pending());
+        assert_eq!(offers.len(), 1);
+        assert!(offers[0].blocked.is_none());
+        let RecoveryOutcome::Recovered { handle } =
+            block_on(recovery_accept(offers[0].journal.clone()))
+        else {
+            panic!("the second crash must still recover with a working journal");
+        };
+        fixture.handles.push(handle);
+        assert_eq!(
+            doc_source(handle),
+            format!("{RECOVERY_DURING_SAVE}{RECOVERY_EDIT}{SCRIPT}")
+        );
+        assert!(doc_dirty(handle));
+        assert_eq!(doc_journal_state(handle), (1, false));
+        assert_eq!(
+            fs::read_to_string(script).unwrap(),
+            format!("{RECOVERY_EDIT}{SCRIPT}"),
+            "accepting recovery never saves the unsaved edit"
         );
     }
 }

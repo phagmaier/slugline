@@ -50,6 +50,8 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -211,9 +213,9 @@ fn decode_kind(name: &str, level: u8) -> Option<BlockKind> {
 
 /// An open journal for one script.
 ///
-/// The file handle is held open for the session. Reopening per append would be
-/// three syscalls instead of one on the keystroke path, and would race with a
-/// checkpoint truncating the file underneath it.
+/// The file handle and its exclusive kernel lock are held for the session.
+/// Reopening per append would be three syscalls instead of one on the keystroke
+/// path, and would race with a checkpoint truncating the file underneath it.
 pub struct Journal {
     file: File,
     path: PathBuf,
@@ -230,70 +232,49 @@ impl Journal {
     /// names the file, so the caller can keep two untitled sessions apart.
     ///
     /// **Refuses if a journal already exists at that name**, with
-    /// [`io::ErrorKind::AlreadyExists`]. A journal on disk is a session that did
-    /// not end cleanly ([`Journal::discard`] is the only thing that removes one),
-    /// and its records are the only copy of the edits it holds. Opening a script
-    /// is not a decision about them: [`pending`] offers them, and only recovery
-    /// or an explicit discard may take that file away.
+    /// [`io::ErrorKind::AlreadyExists`]. A journal on disk may belong to a live
+    /// session or one that did not end cleanly, and its records may be the only
+    /// copy of the edits it holds. Opening a script is not a decision about
+    /// them: recovery may offer abandoned journals, and only recovery or an
+    /// explicit discard may take that file away.
     ///
     /// That refusal is not theoretical. A session restore that reopened the
     /// script a pending offer names used to land here and truncate the offer to a
     /// header, so declining to decide — Escape, or "Decide later" — destroyed the
     /// edits the dialog had just promised to keep.
     pub fn create(dir: &Path, id: &str, script: &Path, base: &str) -> io::Result<Journal> {
-        Journal::start(dir, id, script, base, true)
-    }
-
-    /// [`Journal::create`], for a session that already owns the journal at that
-    /// name and is redefining what its records mean.
-    ///
-    /// A reload and a restore-from-backup both replace the open document with
-    /// bytes that are on disk *now*. The records the journal holds describe a
-    /// document that no longer exists, and replaying them onto the new base would
-    /// produce text that was never anywhere — so this one really does start the
-    /// file again. Nothing recoverable is lost, because what those records
-    /// described was already discarded in memory by the caller.
-    ///
-    /// Never call this for a journal this session did not already hold.
-    pub fn replace(dir: &Path, id: &str, script: &Path, base: &str) -> io::Result<Journal> {
-        Journal::start(dir, id, script, base, false)
-    }
-
-    fn start(
-        dir: &Path,
-        id: &str,
-        script: &Path,
-        base: &str,
-        exclusive: bool,
-    ) -> io::Result<Journal> {
         fs::create_dir_all(dir)?;
         let path = dir.join(format!("{id}.log"));
-        let mut options = OpenOptions::new();
-        options.write(true);
-        if exclusive {
-            options.create_new(true);
-        } else {
-            options.create(true).truncate(true);
+        match fs::symlink_metadata(&path) {
+            Ok(_) => return Err(io::ErrorKind::AlreadyExists.into()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
         }
-        let mut file = options.open(&path)?;
-        write_header(
-            &mut file,
-            &Header {
-                version: FORMAT_VERSION,
-                script: script.to_path_buf(),
-                base: checksum(base),
-            },
-        )?;
+        let (prepared, seq) = prepare_journal(&path, script, base, &[])?;
+        let file = prepared.publish_new()?;
         Ok(Journal {
             file,
             path,
-            seq: 0,
-            records: 0,
+            seq,
+            records: seq,
         })
+    }
+
+    /// Starts this session's journal over against a new document.
+    ///
+    /// The returned successor is already locked. Install it in place of this
+    /// handle; the old inode stays locked until this handle is dropped, and no
+    /// destructive operation on the old handle can affect the successor.
+    pub fn replace(&self, script: &Path, base: &str) -> io::Result<Journal> {
+        self.rebuild_at(script, base, &[])
     }
 
     /// Rewrites a journal so that it says `patches`, applied to `base`, and
     /// leaves it open for further appends.
+    ///
+    /// A destination that already exists must be abandoned: acquiring its
+    /// recovery lock is required before replacement, and a live owner is
+    /// refused without modifying either inode.
     ///
     /// This is the successor half of accepting a crash recovery, and the reason
     /// it exists is a rule the recovery path has to keep: **the journal
@@ -310,7 +291,7 @@ impl Journal {
     /// A second crash then recovers exactly what the first one did, plus
     /// whatever was typed after.
     ///
-    /// Written through [`crate::atomic::save_atomically`] rather than by
+    /// Written through [`crate::atomic`]'s prepared save rather than by
     /// truncating in place: a crash halfway through rewriting a journal in place
     /// would leave a journal that has lost records, which is the loss this whole
     /// function exists to prevent. The rename either happened or did not.
@@ -322,62 +303,30 @@ impl Journal {
         patches: &[Patch],
     ) -> io::Result<Journal> {
         fs::create_dir_all(dir)?;
-        Journal::rebuild_at(&dir.join(format!("{id}.log")), script, base, patches)
+        let path = dir.join(format!("{id}.log"));
+        match RecoveryGuard::try_open(&path) {
+            Ok(guard) => rebuild_locked(&guard.file, &path, script, base, patches),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let (prepared, seq) = prepare_journal(&path, script, base, patches)?;
+                let file = prepared.publish_new()?;
+                Ok(Journal {
+                    file,
+                    path,
+                    seq,
+                    records: seq,
+                })
+            }
+            Err(error) => Err(error),
+        }
     }
 
-    /// [`Journal::rebuild`], at a journal file that already exists.
+    /// Rebuilds the journal this session owns, returning its locked successor.
     ///
-    /// The second caller is the save path, and it needs the *path* rather than
-    /// an id because a Save As changes the id while the journal file stays where
-    /// it is. Rebuilding by id there would leave the old file behind, and a
-    /// journal nobody owns is a recovery offered for a session that did not
-    /// crash.
-    pub fn rebuild_at(
-        path: &Path,
-        script: &Path,
-        base: &str,
-        patches: &[Patch],
-    ) -> io::Result<Journal> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let path = path.to_path_buf();
-
-        let mut contents = Vec::new();
-        write_line(
-            &mut contents,
-            &Header {
-                version: FORMAT_VERSION,
-                script: script.to_path_buf(),
-                base: checksum(base),
-            },
-        )?;
-        let mut seq = 0;
-        for patch in patches {
-            if patch.is_empty() {
-                continue;
-            }
-            seq += 1;
-            write_line(&mut contents, &record(seq, patch))?;
-        }
-        // Every line is `serde_json` output, so this cannot fail; it is written
-        // as a conversion rather than an `unwrap` because a panic here would be
-        // a panic on the recovery path.
-        let contents = String::from_utf8(contents).map_err(io::Error::other)?;
-        crate::atomic::save_atomically(&path, &contents)
-            .map_err(|error| io::Error::other(error.to_string()))?;
-
-        // Reopened in the same mode `create` uses, positioned at the end, so
-        // that appends and a later `checkpoint` behave identically either way.
-        let mut file = OpenOptions::new().write(true).open(&path)?;
-        use std::io::Seek;
-        file.seek(io::SeekFrom::End(0))?;
-        Ok(Journal {
-            file,
-            path,
-            seq,
-            records: seq,
-        })
+    /// Save As can change the script's id without changing this journal's path.
+    /// The old lock is held through publication; the successor was locked
+    /// before publication and uses the very same descriptor for later appends.
+    pub fn rebuild_at(&self, script: &Path, base: &str, patches: &[Patch]) -> io::Result<Journal> {
+        rebuild_locked(&self.file, &self.path, script, base, patches)
     }
 
     /// Records what one edit did. Nothing is recorded for an edit that changed
@@ -427,11 +376,7 @@ impl Journal {
     /// is the one operation that must happen on a clean close and must not
     /// happen any other time.
     pub fn discard(self) -> io::Result<()> {
-        drop(self.file);
-        match fs::remove_file(&self.path) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            other => other,
-        }
+        remove_locked(&self.file, &self.path)
     }
 
     /// How many edits are recorded since the last checkpoint. This is the
@@ -443,6 +388,164 @@ impl Journal {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Exclusive ownership of an abandoned journal during recovery.
+///
+/// Acquisition is nonblocking. A live session holds the same kernel lock, so
+/// neither recovery inspection nor a destructive decision can take it over.
+pub struct RecoveryGuard {
+    file: File,
+    path: PathBuf,
+}
+
+impl RecoveryGuard {
+    /// Acquires the current inode without waiting for an owner to release it.
+    ///
+    /// `WouldBlock` means either an owner is live or the pathname changed
+    /// before ownership could be validated. All other lock and I/O errors are
+    /// propagated; none authorize reading or mutating an unlocked journal.
+    pub fn try_open(path: &Path) -> io::Result<RecoveryGuard> {
+        let file = OpenOptions::new().read(true).write(true).open(path)?;
+        Self::from_file(file, path)
+    }
+
+    fn from_file(file: File, path: &Path) -> io::Result<RecoveryGuard> {
+        lock_exclusive(&file)?;
+        // An opener can hold the predecessor inode while another owner
+        // publishes a successor. Acquiring that obsolete inode's lock is not
+        // ownership of the file that now lives at this path.
+        validate_current(&file, path)?;
+        Ok(RecoveryGuard {
+            file,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// Reads from the locked descriptor, never reopening the pathname.
+    pub fn read(&self) -> Result<Recovery, JournalError> {
+        let length = self
+            .file
+            .metadata()
+            .ok()
+            .and_then(|metadata| usize::try_from(metadata.len()).ok())
+            .ok_or(JournalError::Unreadable)?;
+        let mut bytes = vec![0; length];
+        self.file
+            .read_exact_at(&mut bytes, 0)
+            .map_err(|_| JournalError::Unreadable)?;
+        read_bytes(&self.path, &bytes)
+    }
+
+    pub fn discard(self) -> io::Result<()> {
+        remove_locked(&self.file, &self.path)
+    }
+
+    /// Publishes a locked successor before removing the guarded predecessor.
+    ///
+    /// When both names are the same, the replacement is a single atomic
+    /// rename. With different names, the destination must itself be acquired
+    /// or created without clobbering before the source is removed.
+    pub fn rebuild(
+        self,
+        dir: &Path,
+        id: &str,
+        script: &Path,
+        base: &str,
+        patches: &[Patch],
+    ) -> io::Result<Journal> {
+        let destination = dir.join(format!("{id}.log"));
+        if destination == self.path {
+            return rebuild_locked(&self.file, &self.path, script, base, patches);
+        }
+        validate_current(&self.file, &self.path)?;
+        let successor = Journal::rebuild(dir, id, script, base, patches)?;
+        self.discard()?;
+        Ok(successor)
+    }
+}
+
+fn lock_exclusive(file: &File) -> io::Result<()> {
+    // SAFETY: `file` owns a valid descriptor for the entire call. The flags
+    // request a nonblocking exclusive lock and have no pointer arguments.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+fn validate_current(file: &File, path: &Path) -> io::Result<()> {
+    let held = file.metadata()?;
+    let current = fs::metadata(path)?;
+    if held.dev() == current.dev() && held.ino() == current.ino() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "the journal path changed while its lock was being acquired",
+        ))
+    }
+}
+
+fn remove_locked(file: &File, path: &Path) -> io::Result<()> {
+    match validate_current(file, path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+        Ok(()) => {}
+    }
+    // The descriptor and its lock are still alive throughout the unlink.
+    match fs::remove_file(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    }
+}
+
+fn prepare_journal<'a>(
+    path: &'a Path,
+    script: &Path,
+    base: &str,
+    patches: &[Patch],
+) -> io::Result<(crate::atomic::PreparedSave<'a>, u64)> {
+    let mut contents = Vec::new();
+    write_line(
+        &mut contents,
+        &Header {
+            version: FORMAT_VERSION,
+            script: script.to_path_buf(),
+            base: checksum(base),
+        },
+    )?;
+    let mut seq = 0;
+    for patch in patches {
+        if patch.is_empty() {
+            continue;
+        }
+        seq += 1;
+        write_line(&mut contents, &record(seq, patch))?;
+    }
+    let prepared = crate::atomic::prepare_save(path, &contents, lock_exclusive)
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok((prepared, seq))
+}
+
+fn rebuild_locked(
+    file: &File,
+    path: &Path,
+    script: &Path,
+    base: &str,
+    patches: &[Patch],
+) -> io::Result<Journal> {
+    validate_current(file, path)?;
+    let (prepared, seq) = prepare_journal(path, script, base, patches)?;
+    validate_current(file, path)?;
+    let file = prepared.publish()?;
+    Ok(Journal {
+        file,
+        path: path.to_path_buf(),
+        seq,
+        records: seq,
+    })
 }
 
 /// `File::set_len` leaves the cursor where it was, which after a truncation is
@@ -566,6 +669,10 @@ impl std::error::Error for JournalError {}
 /// full.
 pub fn read(path: &Path) -> Result<Recovery, JournalError> {
     let bytes = fs::read(path).map_err(|_| JournalError::Unreadable)?;
+    read_bytes(path, &bytes)
+}
+
+fn read_bytes(path: &Path, bytes: &[u8]) -> Result<Recovery, JournalError> {
     let mut lines: Vec<&[u8]> = bytes.split(|byte| *byte == b'\n').collect();
 
     // The tail after the last newline. Empty for a file that ends in one;
@@ -666,11 +773,11 @@ pub fn verify(header: &Header) -> Result<String, JournalError> {
     Ok(source)
 }
 
-/// Every journal left behind in `dir`.
+/// Every candidate journal path in `dir`, including live sessions.
 ///
-/// A journal that exists at startup is a session that did not end cleanly:
-/// [`Journal::discard`] removes the file, and nothing else does. Sorted, so that
-/// two runs of the same recovery offer the same order.
+/// This only enumerates names. Acquire a [`RecoveryGuard`] before deciding
+/// whether a candidate can be offered or removed. Sorted, so that two runs of
+/// the same recovery offer the same order.
 pub fn pending(dir: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = fs::read_dir(dir)
         .into_iter()
@@ -685,9 +792,10 @@ pub fn pending(dir: &Path) -> Vec<PathBuf> {
 
 /// Removes a journal the user declined to recover from.
 pub fn discard_at(path: &Path) -> io::Result<()> {
-    match fs::remove_file(path) {
+    match RecoveryGuard::try_open(path) {
+        Ok(guard) => guard.discard(),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        other => other,
+        Err(error) => Err(error),
     }
 }
 
@@ -1057,15 +1165,225 @@ mod tests {
         let id = script_id(&script);
         let mut journal = Journal::create(dir.path(), &id, &script, "before").unwrap();
         journal.append(&change(1, "a")).unwrap();
-        drop(journal);
-
-        let journal = Journal::replace(dir.path(), &id, &script, "after").unwrap();
+        journal = journal.replace(&script, "after").unwrap();
         let path = journal.path().to_path_buf();
         assert_eq!(journal.records(), 0);
         drop(journal);
         let recovery = read(&path).unwrap();
         assert!(recovery.patches.is_empty());
         assert_eq!(recovery.header.base, checksum("after"));
+    }
+
+    #[test]
+    fn a_live_journal_refuses_foreign_recovery_discard_and_rebuild() {
+        let dir = TempDir::new("journal-live-lock");
+        let script = dir.path().join("x.fountain");
+        let mut journal = Journal::create(dir.path(), "session", &script, "BASE").unwrap();
+        journal.append(&change(1, "unsaved")).unwrap();
+        let path = journal.path().to_path_buf();
+        let before = fs::read(&path).unwrap();
+        let observer = File::open(&path).unwrap();
+
+        assert_eq!(
+            lock_exclusive(&observer).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(
+            RecoveryGuard::try_open(&path).err().unwrap().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(
+            discard_at(&path).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(
+            Journal::rebuild(dir.path(), "session", &script, "NEW", &[])
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        drop(journal);
+
+        let guard = RecoveryGuard::try_open(&path).unwrap();
+        assert_eq!(guard.read().unwrap().patches, vec![change(1, "unsaved")]);
+        guard.discard().unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_prepared_journal_is_locked_before_and_after_no_clobber_publication() {
+        let dir = TempDir::new("journal-prepared-lock");
+        let path = dir.path().join("session.log");
+        let (prepared, _) = prepare_journal(&path, Path::new(""), "", &[]).unwrap();
+        assert!(!path.exists());
+        let observer = File::open(dir.path().join(&dir.entries()[0])).unwrap();
+        let inode = observer.metadata().unwrap().ino();
+        assert_eq!(
+            lock_exclusive(&observer).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+
+        let file = prepared.publish_new().unwrap();
+        assert_eq!(file.metadata().unwrap().ino(), inode);
+        assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
+        assert_eq!(
+            RecoveryGuard::try_open(&path).err().unwrap().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(dir.entries(), vec!["session.log".to_owned()]);
+        drop(file);
+        lock_exclusive(&observer).unwrap();
+    }
+
+    #[test]
+    fn missing_destination_publication_cannot_clobber_a_racing_creator() {
+        let dir = TempDir::new("journal-create-race");
+        let path = dir.path().join("session.log");
+        let (prepared, _) = prepare_journal(&path, Path::new(""), "first", &[]).unwrap();
+        let journal = Journal::create(dir.path(), "session", Path::new(""), "second").unwrap();
+        let before = fs::read(&path).unwrap();
+        assert_eq!(
+            prepared.publish_new().err().unwrap().kind(),
+            io::ErrorKind::AlreadyExists,
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(dir.entries(), vec!["session.log".to_owned()]);
+        assert_eq!(
+            RecoveryGuard::try_open(&path).err().unwrap().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        journal.discard().unwrap();
+    }
+
+    #[test]
+    fn owned_rebuild_keeps_both_inodes_locked_and_stale_discard_is_refused() {
+        let dir = TempDir::new("journal-owned-rebuild");
+        let script = dir.path().join("x.fountain");
+        let journal = Journal::create(dir.path(), "session", &script, "BASE").unwrap();
+        let path = journal.path().to_path_buf();
+        let predecessor = File::open(&path).unwrap();
+        let mut successor = journal
+            .rebuild_at(&script, "BASE", &[change(1, "recovered")])
+            .unwrap();
+        let current = File::open(&path).unwrap();
+        assert_ne!(
+            predecessor.metadata().unwrap().ino(),
+            current.metadata().unwrap().ino(),
+        );
+        assert_eq!(
+            lock_exclusive(&predecessor).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(
+            lock_exclusive(&current).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        let before = fs::read(&path).unwrap();
+        assert_eq!(
+            journal.discard().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        lock_exclusive(&predecessor).unwrap();
+        assert_eq!(
+            lock_exclusive(&current).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        successor.append(&change(1, "continued")).unwrap();
+        assert_eq!(read(&path).unwrap().patches.len(), 2);
+        successor.discard().unwrap();
+    }
+
+    #[test]
+    fn acquiring_a_predecessor_descriptor_cannot_claim_its_successor_path() {
+        let dir = TempDir::new("journal-stale-opener");
+        let journal = Journal::create(dir.path(), "session", Path::new(""), "before").unwrap();
+        let path = journal.path().to_path_buf();
+        let opened_before_publication = File::open(&path).unwrap();
+        let successor = journal.replace(Path::new(""), "after").unwrap();
+        drop(journal);
+        let before = fs::read(&path).unwrap();
+
+        assert_eq!(
+            RecoveryGuard::from_file(opened_before_publication, &path)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(
+            RecoveryGuard::try_open(&path).err().unwrap().kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        successor.discard().unwrap();
+    }
+
+    #[test]
+    fn a_recovery_guard_reads_its_inode_and_will_not_unlink_a_replacement() {
+        let dir = TempDir::new("journal-guard-inode");
+        let mut journal = Journal::create(dir.path(), "session", Path::new(""), "").unwrap();
+        journal.append(&change(1, "original")).unwrap();
+        let path = journal.path().to_path_buf();
+        drop(journal);
+        let guard = RecoveryGuard::try_open(&path).unwrap();
+
+        let moved = dir.path().join("moved.log");
+        fs::rename(&path, &moved).unwrap();
+        let replacement = Journal::create(dir.path(), "session", Path::new(""), "other").unwrap();
+        let before = fs::read(&path).unwrap();
+        assert_eq!(guard.read().unwrap().patches, vec![change(1, "original")]);
+        assert_eq!(
+            guard.discard().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        discard_at(&moved).unwrap();
+        replacement.discard().unwrap();
+    }
+
+    #[test]
+    fn recovery_migration_preserves_source_when_destination_is_live() {
+        let dir = TempDir::new("journal-recovery-migration");
+        let script = dir.path().join("x.fountain");
+        let mut source = Journal::create(dir.path(), "source", &script, "BASE").unwrap();
+        source.append(&change(1, "recovered")).unwrap();
+        let source_path = source.path().to_path_buf();
+        drop(source);
+        let destination = Journal::create(dir.path(), "destination", &script, "BASE").unwrap();
+        let destination_path = destination.path().to_path_buf();
+        let source_bytes = fs::read(&source_path).unwrap();
+        let destination_bytes = fs::read(&destination_path).unwrap();
+        let guard = RecoveryGuard::try_open(&source_path).unwrap();
+        let patches = guard.read().unwrap().patches;
+        assert_eq!(
+            guard
+                .rebuild(dir.path(), "destination", &script, "BASE", &patches)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(fs::read(&source_path).unwrap(), source_bytes);
+        assert_eq!(fs::read(&destination_path).unwrap(), destination_bytes);
+
+        drop(destination);
+        let guard = RecoveryGuard::try_open(&source_path).unwrap();
+        let successor = guard
+            .rebuild(dir.path(), "destination", &script, "BASE", &patches)
+            .unwrap();
+        assert!(!source_path.exists());
+        assert_eq!(read(&destination_path).unwrap().patches, patches);
+        assert_eq!(
+            RecoveryGuard::try_open(&destination_path)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::WouldBlock,
+        );
+        successor.discard().unwrap();
     }
 
     #[test]

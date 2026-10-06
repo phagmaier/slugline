@@ -1196,6 +1196,7 @@ name = "slugline_storage"
 version = "1.0.2"
 dependencies = [
  "directories",
+ "libc",
  "notify",
  "serde",
  "serde_json",

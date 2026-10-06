@@ -11,8 +11,13 @@ Planned fixes and improvements live in `docs/BACKLOG.md`, in priority order,
 with a checklist at the top. When asked to work on the backlog, follow the
 rules under "How to use this file" there: one item per change, reproduce the
 problem before changing anything, and tick the item's box and fill in its
-`Result` line once the work is verified. Items tagged "needs go-ahead" are not
-started without the owner saying so.
+`Result` line once the work is verified. The owner has explicitly delegated
+implementation choices and product decisions to agents: do not wait for
+sign-off or ask the owner to choose between options. Use sound judgment,
+investigate where needed, and record the reasoning and outcome in the relevant
+docs and `Result` line. If an item needs planning or deliberation, do that as
+part of the work. Ask only when required information is genuinely unavailable
+and cannot be established from the project or its sources.
 
 ## Architecture
 

@@ -316,6 +316,8 @@ Future<SaveOutcome> backupRestore({
 /// Reads the journals but applies nothing. §Phase 4 is explicit that recovery
 /// "never auto-applies", and this is where that is enforced: the only thing that
 /// can turn an offer into a document is the user answering the dialog.
+/// Live journals are skipped. Hold the lock through reading and empty-journal
+/// cleanup; a stale offer is checked again by accept and discard.
 Future<List<RecoveryOffer>> recoveryPending() =>
     RustLib.instance.api.crateApiFilesRecoveryPending();
 
@@ -332,15 +334,15 @@ Future<List<RecoveryOffer>> recoveryPending() =>
 /// around one rule: **that journal does not stop existing until an equivalent
 /// one does.**
 ///
-/// 1. Read and verify the old journal. Verification returns the file's real
-///    bytes, which are still the pre-crash ones.
+/// 1. Lock, read and verify the old journal. Verification returns the file's real
+///    bytes, which are still the pre-crash ones. A live owner refuses the lock.
 /// 2. Replay onto those bytes, remembering exactly which patches applied. A
 ///    patch that does not fit stops the replay, and the ones after it are not in
 ///    the recovered document, so they must not be in its journal either.
 /// 3. Open the document and bind it to its file, library entry and watch.
 /// 4. Write the **successor journal**: same `base` — the file has not changed —
-///    plus the patches that replayed. [`Journal::rebuild`] writes it through the
-///    atomic save, so it either exists whole or does not exist.
+///    plus the patches that replayed. [`journal::RecoveryGuard::rebuild`] locks
+///    the successor before publishing it through the atomic save.
 /// 5. Only now remove the old journal, and only if the successor did not already
 ///    replace it at the same path.
 ///

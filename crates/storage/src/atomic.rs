@@ -115,15 +115,22 @@ impl std::error::Error for SaveError {}
 /// disk. On failure the file at `path` is untouched and no temporary file is
 /// left behind.
 pub fn save_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), SaveError> {
-    let contents = contents.as_ref();
-    let directory = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty());
-    let directory = match directory {
-        Some(directory) => directory,
-        None => Path::new("."),
-    };
+    let prepared = prepare_save(path, contents.as_ref(), |_| Ok(()))?;
+    prepared
+        .publish()
+        .map(drop)
+        .map_err(|error| SaveError::from_io(path, &error))
+}
 
+/// Prepares a complete successor while keeping its exact descriptor open.
+///
+/// `prepare` runs before any bytes are written, so a journal can lock the new
+/// inode before it can become visible under its final name.
+pub(crate) fn prepare_save<'a>(
+    path: &'a Path,
+    contents: &[u8],
+    prepare: impl FnOnce(&File) -> io::Result<()>,
+) -> Result<PreparedSave<'a>, SaveError> {
     // The original's mode and ownership, read before anything is written, so
     // that step 5 has something to restore. `None` for a file that does not
     // exist yet, which takes the umask's answer instead.
@@ -143,14 +150,22 @@ pub fn save_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Sa
     }
 
     let temp = temp_path(path);
-
-    // Steps 1 and 2, plus the cleanup that has to happen if either fails: a
-    // temp file left behind after a failed save is litter in the user's own
-    // directory, right next to their script.
-    if let Err(error) = write_and_sync(&temp, contents) {
-        let _ = fs::remove_file(&temp);
-        return Err(SaveError::from_io(path, &error));
-    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .map_err(|error| SaveError::from_io(path, &error))?;
+    let mut prepared = PreparedSave {
+        path,
+        temp,
+        file: Some(file),
+    };
+    let file = prepared.file.as_mut().expect("the prepared file is open");
+    prepare(file)
+        .and_then(|()| file.write_all(contents))
+        .and_then(|()| file.sync_all())
+        .map_err(|error| SaveError::from_io(path, &error))?;
 
     // Step 5, before the rename rather than after: the file that will exist at
     // `path` is the temp file, so it is the one that has to carry the mode. Done
@@ -162,34 +177,59 @@ pub fn save_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Sa
         // fail because a script the user copied in belongs to someone else.
         // Mask to 0o777: the temp file must not inherit setuid/setgid/sticky
         // bits from the original.
-        let _ = fs::set_permissions(&temp, fs::Permissions::from_mode(metadata.mode() & 0o777));
-        let _ = std::os::unix::fs::chown(&temp, Some(metadata.uid()), Some(metadata.gid()));
+        let _ = fs::set_permissions(
+            &prepared.temp,
+            fs::Permissions::from_mode(metadata.mode() & 0o777),
+        );
+        let _ =
+            std::os::unix::fs::chown(&prepared.temp, Some(metadata.uid()), Some(metadata.gid()));
     }
 
-    // Step 3. The instant this returns, the target is the new file.
-    if let Err(error) = fs::rename(&temp, path) {
-        let _ = fs::remove_file(&temp);
-        return Err(SaveError::from_io(path, &error));
+    Ok(prepared)
+}
+
+pub(crate) struct PreparedSave<'a> {
+    path: &'a Path,
+    temp: PathBuf,
+    file: Option<File>,
+}
+
+impl PreparedSave<'_> {
+    /// Atomically replaces an existing destination without reopening the inode.
+    pub(crate) fn publish(mut self) -> io::Result<File> {
+        fs::rename(&self.temp, self.path)?;
+        sync_directory(self.path);
+        Ok(self.file.take().expect("the prepared file is open"))
     }
 
-    // Step 4. A failure here means the rename may not survive a power loss, but
-    // it has already happened as far as every reader is concerned, so there is
-    // nothing to undo and nothing useful to tell the user.
+    /// Publishes a missing destination atomically, refusing any existing entry.
+    ///
+    /// Linking the already prepared inode has `create_new`'s no-clobber
+    /// semantics, without exposing an unlocked or half-written destination.
+    pub(crate) fn publish_new(mut self) -> io::Result<File> {
+        fs::hard_link(&self.temp, self.path)?;
+        let _ = fs::remove_file(&self.temp);
+        sync_directory(self.path);
+        Ok(self.file.take().expect("the prepared file is open"))
+    }
+}
+
+impl Drop for PreparedSave<'_> {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.temp);
+    }
+}
+
+fn sync_directory(path: &Path) {
+    let directory = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    // The publication has already happened. As with ordinary atomic saves, a
+    // directory sync failure cannot be rolled back.
     if let Ok(handle) = File::open(directory) {
         let _ = handle.sync_all();
     }
-
-    Ok(())
-}
-
-/// Steps 1 and 2.
-fn write_and_sync(temp: &Path, contents: &[u8]) -> io::Result<()> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(temp)?;
-    file.write_all(contents)?;
-    // `write_all` reaching the OS is not the same as the bytes reaching the
-    // disk, and `sync_all` is where a full filesystem usually says so.
-    file.sync_all()?;
-    Ok(())
 }
 
 /// `<name>.tmp-<pid>-<nonce>`, beside the target.
