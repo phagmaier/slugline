@@ -30,6 +30,9 @@ this file and the others to it.
   interpretation as PDF export, including runs spanning wrapped rows and pages.
   “Bold scene headings” in Preferences applies to editor, preview and PDF;
   it is off by default. Editor inline markers and wrapping are unchanged.
+- The Linux writing integration test now opens the navigator through Ctrl+J
+  before checking its rows, matching the compact-window drawer behavior.
+  Application navigation is unchanged.
 
 ## 1.0.2 - 2026-09-13
 

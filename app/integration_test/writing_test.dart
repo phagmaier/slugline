@@ -152,6 +152,11 @@ void main() {
       'BOB (O.S.)\nAgain.\n',
     );
 
+    // The saved docked preference does not open the narrow-window drawer.
+    // Use the writer's shortcut, which also works when already docked.
+    await press(tester, LogicalKeyboardKey.keyJ, control: true);
+    await tester.pumpAndSettle();
+
     expect(find.text('HOUSE'), findsOneWidget);
     expect(find.text('INT. · DAY'), findsOneWidget);
     expect(find.text('2A'), findsOneWidget);
@@ -162,9 +167,13 @@ void main() {
     expect(find.text('2 occurrences'), findsOneWidget);
 
     await press(tester, LogicalKeyboardKey.keyJ, control: true);
+    await tester.pumpAndSettle();
     tester.testTextInput.enterText('street');
     await tester.pump();
+    expect(find.text('HOUSE'), findsNothing);
+    expect(find.text('STREET'), findsOneWidget);
     await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
 
     final street = controller.blocks.firstWhere(
       (block) => block.text.contains('STREET'),

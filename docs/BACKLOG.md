@@ -59,6 +59,7 @@ This is the only place boxes are ticked.
 - [x] [B1](#b1) Find's element filter cannot be reset to "Every element"
 - [x] [B2](#b2) Page-view sheets are off-centre and clip on the left
 - [x] [B3](#b3) README lists the wrong shortcuts and stale test counts
+- [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
 
 **3. Fountain and output fidelity**
 
@@ -384,6 +385,41 @@ formatting, layering/version checks and the Linux release build passed.
 Temporary reproduction/native-smoke harnesses were removed. Native smoke used
 the current display because `xvfb-run` is unavailable; the full Linux integration
 suite was not run.
+
+<a id="b4"></a>
+### B4 — The native navigator test assumes a permanently docked sidebar
+
+**Problem.** The full Linux integration gate stops at the navigator assertion
+in `app/integration_test/writing_test.dart`, before reaching its remaining files.
+
+**Evidence (reproduced during F3 verification).** The native test opens an
+`EditorPage` with `navigatorVisible: true` and immediately expects `HOUSE`.
+The narrow window instead uses ADR 0041's temporary, initially closed drawer:
+the saved preference governs docking in wide windows, not opening a drawer.
+The existing responsive widget tests already exercise explicit drawer opening.
+
+**Change.** Open the navigator through Ctrl+J before asserting on its rows.
+Wait for drawer animations, retain the real-core scene/character assertions,
+and check that filtering to `street` removes `HOUSE` before Enter jumps.
+Do not change application navigation to satisfy a stale fixture.
+
+**Done when.** All 12 native writing tests and the full seven-file Linux
+integration gate pass, including the navigator's actual keyboard interaction.
+
+**Effort.** S.
+**Result:** 2026-10-06 — committed as `B4 — the native navigator test opens the
+compact drawer` (this commit), separately from F3. Confirmed the failure was a
+stale fixture: `navigatorVisible` preserves the wide-window docked preference,
+while ADR 0041 requires explicit opening of the narrow-window drawer.
+The test now invokes Ctrl+J, waits for drawer transitions and retains its
+real-core scene/character checks. Filtering to `street` must remove `HOUSE`
+and leave `STREET` before Enter selects the correct block.
+The actual native writing flow passed all 12 tests. The full
+`tools/test_linux_integration.sh` gate passed all 57 tests across seven files;
+the journalled keystroke p99 was 2.89 ms, within budget. All 529 Flutter tests,
+17 targeted navigator/responsive-editor tests, Flutter analysis and
+docs/version/layering/formatting checks passed. No application code, existing
+ADR behavior, F3 implementation or output goldens changed.
 
 ---
 
@@ -1168,6 +1204,8 @@ not part of that item.
   navigator” expects visible `HOUSE` immediately after opening. The test's
   native narrow window instead uses ADR 0041's closed navigator drawer below
   900 px (`EditorPage._buildEditor`). The fixture needs to open that drawer or
-  establish a wide viewport before asserting on its rows. Left unchanged:
-  navigator presentation is outside F3; the remaining integration files were
-  run separately.
+  establish a wide viewport before asserting on its rows. Left unchanged in F3:
+  navigator presentation was outside that item.
+  Promoted to [B4](#b4) after the owner requested investigation. This is a stale
+  integration fixture, not a navigation-product defect; B4 records its separate
+  correction and full-gate verification.
