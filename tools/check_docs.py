@@ -13,7 +13,7 @@ so a doc that describes a file that has moved, an ADR that has been superseded
 without saying so, or a checklist item ticked against no commit, is a defect
 that nothing was catching.
 
-Six checks, each one a mistake that had actually happened in this tree:
+Seven checks, each one a mistake that had actually happened in this tree:
 
 1. Every repository path named in `AGENTS.md` exists. The guide's whole value is
    that its pointers are good.
@@ -27,6 +27,11 @@ Six checks, each one a mistake that had actually happened in this tree:
    and an agent reading the wrong end implements the dead decision.
 6. `docs/BACKLOG.md`'s checklist and its item sections are the same list, and a
    ticked box has a filled `Result` line.
+7. A blocked item and its blocker agree, in both places and at both ends. The
+   backlog's first rule is "take the first unticked item that is not blocked",
+   which only means anything while "blocked" is a notation that cannot drift:
+   the item says `**Blocked by XN.**` and `— *blocked by XN*`, and XN says
+   `— *unblocks XN*` back.
 
 A checked box whose `Result` still says "commit pending" is reported as a
 warning rather than a failure: writing the result and committing it are two
@@ -303,6 +308,75 @@ def backlog(text: str) -> None:
             fail("docs/BACKLOG.md", f"{item} has a section but is not in the checklist")
 
 
+def blocks(text: str) -> None:
+    """A blocked item, its blocker, and both places each is written.
+
+    The backlog's first rule is "take the first unticked item that is not
+    blocked". Before this, "blocked" was an italic aside on one item and the
+    rule said nothing about it, so a literal reading walked straight into F7 —
+    which cannot be done until X6, twenty items further down, is finished.
+    """
+    declared: dict[str, str] = {}
+    for match in re.finditer(r"^### ([A-Z]+\d+) — .*?(?=^### |\Z)", text, re.M | re.S):
+        blocker = re.search(r"\*\*Blocked by ([A-Z]+\d+)\.\*\*", match.group(0))
+        if blocker:
+            declared[match.group(1)] = blocker.group(1)
+
+    notes: dict[str, str] = {}
+    unblocks: dict[str, list[str]] = {}
+    ticked: dict[str, bool] = {}
+    for match in re.finditer(
+        r"^- \[([ x])\] \[([A-Z]+\d+)\]\(#[a-z0-9-]+\)(.*)$", text, re.M
+    ):
+        done, item, rest = match.group(1) == "x", match.group(2), match.group(3)
+        ticked[item] = done
+        note = re.search(r"\*blocked by ([A-Z]+\d+)\*", rest)
+        if note:
+            notes[item] = note.group(1)
+        unblocks[item] = re.findall(r"\*unblocks ([A-Z]+\d+)\*", rest)
+
+    for item, blocker in declared.items():
+        if blocker not in ticked:
+            fail("docs/BACKLOG.md", f"{item} is blocked by {blocker}, which is not an item")
+            continue
+        if ticked[item]:
+            fail("docs/BACKLOG.md", f"{item} is ticked and still says it is blocked by {blocker}")
+        if item not in notes:
+            fail(
+                "docs/BACKLOG.md",
+                f"{item}'s section says 'Blocked by {blocker}' but its checklist line does not",
+            )
+        elif notes[item] != blocker:
+            fail(
+                "docs/BACKLOG.md",
+                f"{item}'s checklist says blocked by {notes[item]}, its section says {blocker}",
+            )
+        if item not in unblocks.get(blocker, []):
+            fail(
+                "docs/BACKLOG.md",
+                f"{item} waits on {blocker}, so {blocker}'s checklist line needs '— *unblocks {item}*'",
+            )
+        if ticked.get(blocker):
+            warnings.append(
+                f"{item} is still marked blocked by {blocker}, which is done — "
+                "unblock it or point it at what it is really waiting for"
+            )
+
+    for item, blocker in notes.items():
+        if item not in declared:
+            fail(
+                "docs/BACKLOG.md",
+                f"{item}'s checklist says blocked by {blocker} but its section does not",
+            )
+    for item, others in unblocks.items():
+        for other in others:
+            if other not in declared:
+                fail(
+                    "docs/BACKLOG.md",
+                    f"{item} says it unblocks {other}, which is not marked blocked by it",
+                )
+
+
 def main() -> None:
     texts = {name: read(name) for name in DOCS}
     decisions = texts["docs/DECISIONS.md"]
@@ -319,6 +393,7 @@ def main() -> None:
     if found:
         supersession(found)
     backlog(texts["docs/BACKLOG.md"])
+    blocks(texts["docs/BACKLOG.md"])
 
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)

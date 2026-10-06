@@ -14,8 +14,14 @@ Line numbers are from that commit and will drift — search for the named symbol
 
 For whoever (or whatever) picks up an item:
 
-1. Take the first unticked item in the checklist below, unless told to take a
-   specific one. One item per change.
+1. Take the first unticked item that is not **blocked**, unless told to take a
+   specific one. One item per change. An item is blocked when its section carries
+   a `**Blocked by XN.**` line and its checklist line says `— *blocked by XN*`;
+   skip it and take the next, rather than starting it and stopping. If you find
+   one blocked while working it, add both notes and move on. An item that unblocks
+   another says so on its own checklist line — `— *unblocks XN*` — so the
+   dependency is visible from either end. `tools/check_docs.py` holds both to each
+   other.
 2. Read the item's section in full, then **reproduce the problem before changing
    anything**. If it does not reproduce, do not "fix" it: write what you found on
    the item's `Result` line and stop.
@@ -74,7 +80,7 @@ This is the only place boxes are ticked.
 - [ ] [W4](#w4) No "go to page"
 - [ ] [W5](#w5) The preview always opens at page 1
 - [ ] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
-- [ ] [W7](#w7) The file chooser is minimal — *choose option A or B first*
+- [ ] [W7](#w7) The file chooser is minimal — *choose A or B yourself*
 - [ ] [W8](#w8) Find highlights only the current match
 - [ ] [W9](#w9) Previous versions can be restored but not looked at
 - [ ] [W10](#w10) Slugline is not installed on the owner's machine
@@ -86,7 +92,7 @@ This is the only place boxes are ticked.
 - [ ] [X3](#x3) Scene numbering commands
 - [ ] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
 - [ ] [X5](#x5) Outline in the navigator
-- [ ] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers)
+- [ ] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers) — *unblocks F7*
 - [ ] [X7](#x7) Omit and restore (editable boneyard)
 
 ---
