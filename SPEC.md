@@ -29,16 +29,16 @@ This spec is organised into **phases**. Each phase has:
 Do not start a phase until the previous phase's exit criteria are all ticked. The phases
 are ordered so that each one is independently demoable and each one de-risks the next.
 
-**Where the project is, as of 2026-07-27.** Phases 0–10 are written: the editor, the
-persistence, the entity index, the pagination engine, the PDF, the title page, the
-paginated preview, the navigator, spell-check, and the preferences. **Phase 11 —
-packaging and release — is the one that is left**, and its checklist below is the
-list of what stands between this and a shippable artifact.
+**Where the project is.** This part is history: it records where the build stood on
+2026-07-27, when Phase 11 was still ahead. Every phase has since shipped — the current
+release is the version in `app/pubspec.yaml` — and the checkboxes below were never
+maintained to the finish, so an unticked box here means "nobody went back to tick it",
+not "work outstanding". Open work lives in `docs/BACKLOG.md`.
 
 Between Phase 6 and Phase 7 sat a **stabilization gate**: a mid-project audit
 (`REVIEW.md`) found defects this document's checkboxes did not reflect, and a
-remediation plan worked through them phase by phase. That plan is now complete — all
-fourteen findings closed, its Phase 10 verification passed, and its Phase 7
+remediation plan worked through them phase by phase. That plan is now complete — every
+finding closed, its Phase 10 verification passed, and its Phase 7
 authorization gate opened. Its tracker file is not part of this repository; `REVIEW.md`
 is the audit that survives, and `docs/DECISIONS.md` carries the decisions it produced.
 A box ticked here means the behaviour is implemented *and* tested; where the remediation
@@ -73,6 +73,11 @@ produces submission-quality PDFs. Nothing else.
 
 These are not aspirations; they are acceptance thresholds. Measure them in CI on a
 120-page reference script (`testdata/reference-feature.fountain`, ~19,000 words).
+
+**The live list is `docs/BUDGETS.md`.** It carries these thresholds, the parse
+and serialise rows this table never had, and what measures each one — three of
+them are measured by nothing yet. The table below is the contract as it was
+written at the start of the build.
 
 | Metric | Budget |
 | --- | --- |
@@ -405,6 +410,14 @@ editor must implement that contract (ADR 0018).
 
 ### 5.2 Metrics — US Letter (default)
 
+**The shipped grid is `crates/layout/src/metrics.rs`, and ADR 0034 is the
+calibration record that settled it.** Two cells below (scene-heading blanks at
+the top of a page, parenthetical width) are the pre-calibration starting points
+and were overtaken by ADR 0034 — the table is kept as the agreement the grid was
+built to, not as its current values. Changing `metrics.rs` to match this table
+breaks `crates/render_pdf/tests/element_indents.rs`, the layout goldens and the
+PDF hashes; that is the intended outcome.
+
 Page 8.5" × 11". Grid origin at the top-left of the text area.
 
 | Property | Value |
@@ -489,6 +502,11 @@ grid. `crates/render_pdf/tests/element_indents.rs` pins the result out of a fini
 ---
 
 ## 6. Bridge API Surface
+
+**The live surface is `crates/bridge/src/api/` and the Dart generated from it in
+`app/lib/src/rust/`.** This listing is the surface as it was planned; most of it
+was renamed before it shipped, and it omits every recovery, external-change,
+watch and spell function. Read the Rust, not this.
 
 Keep this small. Every function here is a maintenance liability.
 

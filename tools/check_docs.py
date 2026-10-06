@@ -50,6 +50,7 @@ DOCS = [
     "SPEC.md",
     "REVIEW.md",
     "docs/BACKLOG.md",
+    "docs/BUDGETS.md",
     "docs/DECISIONS.md",
     "docs/DEPENDENCIES.md",
     "docs/KEYMAP.md",

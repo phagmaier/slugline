@@ -64,6 +64,7 @@ This is the only place boxes are ticked.
 - [ ] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
 - [ ] [F8](#f8) Incremental repagination is not proven equal to a full one
+- [ ] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
 
 **4. Everyday workflow**
 
@@ -650,6 +651,55 @@ assuming it: a test that passes either way proves nothing.
 count alone — a wrong page *break* with the right count is the defect. ADR 0022
 owns the fingerprint design; if the test shows the hints are unsound, supersede
 the record rather than widening a tolerance.
+
+**Effort.** M.
+**Result:** _open_
+
+---
+
+<a id="f9"></a>
+### F9 — Cold start, idle CPU and RSS are budgets nothing measures
+
+**Problem.** Three of the budgets in `docs/BUDGETS.md` have no test: cold start
+to a blinking cursor (< 500 ms), idle CPU with the window focused (0%), and RSS
+with the reference script open (< 250 MB). Those are the three a writer feels
+without measuring anything — a slow launch, a fan on an idle machine, an editor
+that grows until the desktop swaps — and the three nothing would notice
+regressing. SPEC §1.3 set all three; only the budgets that got a harness
+survived.
+
+**Evidence (read).** `docs/BUDGETS.md` marks each as measured by nothing. The
+other nine rows are enforced: `openBudgetMs` and `keystrokeBudgetMs` in
+`app/integration_test/keystroke_benchmark_test.dart`, the repagination budgets in
+`crates/layout/tests/pagination_is_fast_enough.rs`, parse and serialise in
+`crates/fountain/tests/parse_is_fast_enough.rs`, export in
+`crates/render_pdf/tests/export_is_fast_enough.rs`, and bundle size in
+`.github/workflows/ci.yml`. `app/test/startup_test.dart` covers startup *logic*
+and takes no timings.
+
+**Change.** One release-mode harness over the built bundle at
+`app/build/linux/x64/release/bundle` that:
+
+- launches with an empty script and times from `exec` to the first presented
+  frame;
+- reads `/proc/<pid>/status` for `VmRSS` with the reference script open;
+- samples `/proc/<pid>/stat` over a quiet interval for idle CPU, asserting no
+  polling wakeups rather than a small percentage.
+
+Run it from `tools/test_linux_integration.sh` or its own CI step, whichever
+keeps a failure legible.
+
+**Done when.** All three rows in `docs/BUDGETS.md` name a measurement, and each
+fails when its property is deliberately broken. Confirm that second half rather
+than assuming it: a timing test that cannot fail is the failure mode this item
+exists to prevent.
+
+**Watch out.** A shared runner's worst run is not the number that matters — take
+a best-of-N the way the pagination tests do, and say so in the reason string.
+Take frame time from the frame build callback, not wall clock: vsync quantises
+wall clock to 16.7 ms, which is the floor rather than a cost (ADR 0005). Adding
+production code so a benchmark can find its startup marker is the wrong trade;
+measure what ships.
 
 **Effort.** M.
 **Result:** _open_

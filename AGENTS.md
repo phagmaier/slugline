@@ -8,9 +8,9 @@ file says which files each record governs.
 
 ## Which documents govern
 
-This file, `docs/BACKLOG.md`, `docs/DECISIONS.md`, `docs/KEYMAP.md`,
-`docs/LINE_BREAKING.md` and `docs/DEPENDENCIES.md` are **live**: they describe
-the code as it is, and they govern changes to it.
+This file, `docs/BACKLOG.md`, `docs/DECISIONS.md`, `docs/BUDGETS.md`,
+`docs/KEYMAP.md`, `docs/LINE_BREAKING.md` and `docs/DEPENDENCIES.md` are
+**live**: they describe the code as it is, and they govern changes to it.
 
 `SPEC.md` and `REVIEW.md` are **provenance, not instructions**. They are the
 build plan and the mid-project audit that got the project to 1.0, kept only to
@@ -335,6 +335,11 @@ variable at it.
 The benchmark (`integration_test/keystroke_benchmark_test.dart`) measures the
 keystroke path with and without the crash journal. Both must stay under the
 budget; the second number is what matters for a real session.
+
+`docs/BUDGETS.md` is the live list of performance thresholds and what measures
+each one. Do not change a threshold without changing its test in the same
+change, and do not add a row there without the test that fails when it is
+exceeded.
 
 ## Project constraints
 
