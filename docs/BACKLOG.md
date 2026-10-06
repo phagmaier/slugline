@@ -61,7 +61,7 @@ This is the only place boxes are ticked.
 - [x] [B3](#b3) README lists the wrong shortcuts and stale test counts
 - [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
 - [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
-- [ ] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
+- [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
 
 **3. Fountain and output fidelity**
 
@@ -501,7 +501,20 @@ leaves the tree clean, as does regenerating the bindings; analysis, tests and
 the release build pass on the committed lockfile.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `a6815f6`. Reproduced first, as the
+Evidence records. The lockfile now holds the four versions Flutter 3.44.8 pins,
+and nothing else in it moved. CI's flutter job and the release workflow resolve
+with `--enforce-lockfile`; `AGENTS.md` names the file's owner and lists the
+check with the other Flutter checks. Under 3.44.8 / Dart 3.12.2 the enforced
+resolve passes and leaves the tree clean, and so does regenerating the
+bindings, which is what exposed this. Flutter analysis and 539 tests, the
+Linux release build and network isolation pass on the committed lockfile. No
+dependency was added or removed and the application is unchanged: pinned
+builds were already resolving to these versions. Not exercised: the two
+workflow files on GitHub. They carry the same one-flag change, and the command
+was run locally under the same toolchain version. Left alone on purpose:
+`tools/release_preflight.sh` still runs a plain `pub get`, so a newer local
+Flutter can run it; if that rewrites the lockfile, CI now says so on push.
 
 ---
 
