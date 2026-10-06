@@ -1,8 +1,95 @@
 use slugline_document::{BlockKind, Document};
-use slugline_layout::{break_lines, paginate, LayoutLineKind, PageConfig, SceneNumberGutters};
+use slugline_layout::{
+    break_lines, paginate, LayoutEngine, LayoutLineKind, PageConfig, SceneNumberGutters,
+    ScriptSnapshot,
+};
 
 fn tiny(lines: u16) -> PageConfig {
     PageConfig::us_letter().with_line_capacity(lines)
+}
+
+#[test]
+fn lyric_runs_have_one_leading_blank_and_consecutive_content_rows() {
+    let document = Document::parse(
+        "Opening.\n\n~First lyric.\n~Second lyric.\n~Third lyric.\n\nInterlude.\n\n~Next verse.\n",
+    );
+    let output = paginate(&document, &PageConfig::us_letter());
+    let rows: Vec<_> = output.pages[0]
+        .lines
+        .iter()
+        .filter(|line| line.kind == LayoutLineKind::Content)
+        .map(|line| (line.content.as_str(), line.row))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Opening.", 0),
+            ("First lyric.", 2),
+            ("Second lyric.", 3),
+            ("Third lyric.", 4),
+            ("Interlude.", 6),
+            ("Next verse.", 8),
+        ]
+    );
+}
+
+#[test]
+fn lyric_run_uses_the_last_row_before_continuing_on_the_next_page() {
+    let document = Document::parse("Opening.\n\n~First.\n~Second.\n~Third.\n");
+    let output = paginate(&document, &tiny(4));
+    let rows: Vec<_> = output
+        .pages
+        .iter()
+        .enumerate()
+        .flat_map(|(page, output)| {
+            output
+                .lines
+                .iter()
+                .filter(|line| line.kind == LayoutLineKind::Content)
+                .map(move |line| (line.content.as_str(), page, line.row))
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Opening.", 0, 0),
+            ("First.", 0, 2),
+            ("Second.", 0, 3),
+            ("Third.", 1, 0),
+        ]
+    );
+}
+
+#[test]
+fn cached_lyrics_follow_their_current_predecessor() {
+    let document = Document::parse("~First.\n~Second.\n~Third.\n");
+    let mut snapshot = ScriptSnapshot::from(&document);
+    let mut engine = LayoutEngine::new();
+    let config = PageConfig::us_letter();
+    let content_rows = |output: &slugline_layout::PaginatedScript| {
+        output.pages[0]
+            .lines
+            .iter()
+            .filter(|line| line.kind == LayoutLineKind::Content)
+            .map(|line| line.row)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        content_rows(&engine.paginate_snapshot(&snapshot, &config)),
+        [0, 1, 2]
+    );
+    snapshot.blocks[1].kind = BlockKind::Action;
+    snapshot.revision += 1;
+    assert_eq!(
+        content_rows(&engine.repaginate(&snapshot, &config, snapshot.blocks[1].id)),
+        [0, 2, 4]
+    );
+    snapshot.blocks.remove(1);
+    snapshot.revision += 1;
+    assert_eq!(
+        content_rows(&engine.repaginate(&snapshot, &config, snapshot.blocks[1].id)),
+        [0, 1]
+    );
 }
 
 #[test]

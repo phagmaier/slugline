@@ -33,6 +33,8 @@ this file and the others to it.
 - The Linux writing integration test now opens the navigator through Ctrl+J
   before checking its rows, matching the compact-window drawer behavior.
   Application navigation is unchanged.
+- Consecutive lyric lines are single-spaced in the editor, preview and PDF,
+  with one blank line before each lyric run instead of before every line.
 
 ## 1.0.2 - 2026-09-13
 

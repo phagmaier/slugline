@@ -393,9 +393,17 @@ class DocumentLayout {
     _totalRows = row;
   }
 
-  /// Blank rows above block [blockIndex]. Nothing above the first block.
-  int blankRowsBefore(int blockIndex) =>
-      blockIndex == 0 ? 0 : metricsFor(_blocks[blockIndex].kind).blankLinesBefore;
+  /// Blank rows above a block. Lyric runs share one leading blank; the first
+  /// document block has none.
+  int blankRowsBefore(int blockIndex) {
+    if (blockIndex == 0) return 0;
+    final kind = _blocks[blockIndex].kind;
+    if (kind == BlockKind.lyric &&
+        _blocks[blockIndex - 1].kind == BlockKind.lyric) {
+      return 0;
+    }
+    return metricsFor(kind).blankLinesBefore;
+  }
 
   /// The first row that shows text of this block.
   int firstRowOf(int blockIndex) =>

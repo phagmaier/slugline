@@ -336,6 +336,43 @@ void main() {
   });
 
   group('document rows', () {
+    test('lyric runs keep one leading blank and consecutive rows', () {
+      final layout = DocumentLayout([
+        block(BlockKind.action, 'Opening.', id: 1),
+        block(BlockKind.lyric, 'First lyric.', id: 2),
+        block(BlockKind.lyric, 'Second lyric.', id: 3),
+        block(BlockKind.lyric, 'Third lyric.', id: 4),
+        block(BlockKind.action, 'Interlude.', id: 5),
+        block(BlockKind.lyric, 'Next verse.', id: 6),
+      ]);
+      expect([for (var i = 0; i < 6; i++) layout.firstRowOf(i)],
+          [0, 2, 3, 4, 6, 8]);
+      expect(layout.totalRows, 9);
+      expect(layout.blockAtRow(3), 2);
+      expect(layout.rowAt(3, 0), 4);
+    });
+
+    test('changing a lyric predecessor reindexes an unchanged successor', () {
+      final blocks = [
+        block(BlockKind.lyric, 'First.', id: 1),
+        block(BlockKind.lyric, 'Second.', id: 2),
+        block(BlockKind.lyric, 'Third.', id: 3),
+      ];
+      final layout = DocumentLayout(blocks);
+      expect([for (var i = 0; i < 3; i++) layout.firstRowOf(i)], [0, 1, 2]);
+
+      blocks[1] = block(BlockKind.action, 'Interlude.', id: 2);
+      layout.rewrap(1);
+      layout.reindex();
+      expect([for (var i = 0; i < 3; i++) layout.firstRowOf(i)], [0, 2, 4]);
+
+      blocks.removeAt(1);
+      layout.removeAt(1);
+      layout.reindex();
+      expect(layout.firstRowOf(1), 1);
+      expect(layout.totalRows, 2);
+    });
+
     test('blank rows come from the element that follows them', () {
       final layout = DocumentLayout([
         block(BlockKind.action, 'One.', id: 1),

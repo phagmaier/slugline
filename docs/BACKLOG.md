@@ -1209,3 +1209,13 @@ not part of that item.
   Promoted to [B4](#b4) after the owner requested investigation. This is a stale
   integration fixture, not a navigation-product defect; B4 records its separate
   correction and full-gate verification.
+- 2026-10-06 — F4's optional Dart formatting check flags all three touched Dart
+  files, including existing constructors, switch arms and test assertions under
+  the installed formatter. Kept the surrounding style rather than reformatting
+  unrelated code; Flutter analysis and tests remain the required Dart checks.
+- 2026-10-06 — F4's full native integration run passed bridge and editor suites,
+  then failed `writing_test.dart` at line 174: “the real entity index and scene
+  parser drive the navigator” expected visible `STREET` and found none.
+  This differs from the earlier closed-drawer `HOUSE` failure fixed by B4.
+  Recorded the observed failure without changing navigator code or rerunning
+  the failed scenario; investigate separately from lyric spacing.

@@ -54,7 +54,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0031 | A character extension is recognised by its letters, not its punctuation | `crates/document/src/entities.rs` | live |
 | 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044/0045 — printed alignment and shared preview interpretation |
 | 0033 | A title-page edit is journalled like any other edit | `crates/document/src/recovery.rs`, `crates/storage/src/journal.rs`, `crates/bridge/src/api/doc.rs` | live |
-| 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | live |
+| 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | refined by 0046 — spacing belongs to lyric runs |
 | 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041 — navigator drawer below 900 px |
 | 0036 | Spell checking is an immutable Rust snapshot and a Dart overlay | `crates/spell/src/lib.rs`, `crates/bridge/src/api/spell.rs`, `app/lib/editor/spell_dialog.dart` | live |
 | 0037 | Preferences split display policy from screenplay output | `crates/storage/src/prefs.rs`, `app/lib/settings/preferences_dialog.dart`, `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` | live |
@@ -66,6 +66,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
 | 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | live |
 | 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | live |
+| 0046 | Consecutive lyric blocks share one leading blank | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart` | live |
 
 ---
 
@@ -2638,6 +2639,7 @@ reconcile, for a feature that is nine strings.
 ## ADR 0034 — Calibration: the grid is Final Draft's, and the references disagree with each other
 
 **Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7 · **Satisfies:** §5.5
+**Superseded by:** ADR 0046 refines lyric spacing only.
 
 ### Context
 
@@ -3430,3 +3432,46 @@ moving coordinates. Native Linux UI verification changes the setting, paints
 the real preview and exports through its PDF button; Poppler identifies italic
 body text and regular/bold headings for the two settings. Default layout
 goldens, PDF hashes and line-break fixtures remain unchanged.
+
+---
+
+## ADR 0046 — Consecutive lyric blocks share one leading blank
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Refines:** ADR 0034 — lyric spacing in the retained element table only.
+
+### Context
+
+F4 reproduced consecutive Fountain lyric blocks at a 24-point pitch in an
+exported PDF. Each block independently requested a blank row, so a verse was
+double-spaced in the paginator and the editor.
+
+### Decision
+
+Keep the lyric indent, width and default leading blank. Suppress that blank
+only when the immediately preceding document block is also a lyric. Source
+blank separators are not independent document blocks and do not split a run;
+another element kind does. Existing page-top suppression still applies.
+
+Resolve spacing from current block order while preparing Rust layout and while
+indexing editor rows. Do not change Fountain parsing or group lyrics into a new
+element. The prepared spacing also feeds scene-heading lookahead, so its
+two-content-row carry rule sees the same rows that will be placed.
+
+Cached wraps remain reusable, but cached predecessor-dependent spacing is not
+authoritative: every preparation resolves it again. An incremental slice begins
+at a page top, where its first lyric needs no leading blank regardless of the
+preceding page. Editor patch reindexing likewise updates untouched successors.
+
+### Verification
+
+Layout regressions cover three consecutive lyrics, an interlude that starts a
+new run, use of the final row on a short page, and predecessor kind changes and
+removal with cached wraps. Editor regressions cover the same run spacing and
+patch-driven successor reindexing. Poppler rasterisation and bounding boxes of
+the exported reproduction show a 12-point pitch. Layout goldens and PDF hashes
+were deliberately regenerated but remained unchanged for the existing corpus.
+The new lyric-run regressions cover the changed output; line breaking is unchanged.
+The rebuilt Linux release was opened under isolated XDG roots and Xvfb;
+screenshots of its editor and preview both show consecutive lyric rows.
+

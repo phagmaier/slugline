@@ -299,10 +299,10 @@ enum ColumnAlignment { left, right, centre }
 /// whole layout is one measure and a set of offsets into it. Column zero is the
 /// left margin (1.5" on the page) and 6.0" is its right edge.
 ///
-/// Element separation is exactly one blank line — a bottom margin equal to one
-/// line height, not a hardcoded pixel. Dialogue and a parenthetical follow their
-/// cue with no gap because a blank line there would break the block apart.
-/// `layout::metrics` holds the same counts and the goldens are pinned to them.
+/// Elements normally start after one blank grid row, not a hardcoded pixel.
+/// Dialogue and parentheticals follow their cue without a gap; consecutive
+/// lyrics share one leading blank for the run (ADR 0046). `DocumentLayout`
+/// resolves that adjacency while `layout::metrics` holds the same defaults.
 ///
 /// Sections, synopses and notes are not in §5.2 because they are never printed.
 /// They are editor-only, and sit at the left margin so that they read as
@@ -355,7 +355,7 @@ final Map<BlockKind, ElementMetrics> elementMetrics = {
     blankLinesBefore: 1,
     alignment: ColumnAlignment.centre,
   ),
-  // Lyric — as dialogue, but set off by a blank line.
+  // Lyric — as dialogue, with one blank before each run (ADR 0046).
   BlockKind.lyric: ElementMetrics.inches(
     indentInches: 1,
     widthInches: 3.5,

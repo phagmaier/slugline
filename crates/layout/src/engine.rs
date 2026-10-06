@@ -350,8 +350,15 @@ impl LayoutEngine {
         let mut misses = 0usize;
         let prepared = blocks
             .iter()
-            .filter_map(|block| {
-                let layout = layout_for(block.kind)?;
+            .enumerate()
+            .filter_map(|(index, block)| {
+                let mut layout = layout_for(block.kind)?;
+                if block.kind == BlockKind::Lyric
+                    && index > 0
+                    && blocks[index - 1].kind == BlockKind::Lyric
+                {
+                    layout.blanks_before = 0;
+                }
                 let fingerprint = fingerprint(block, layout.width);
                 let cached = self.cache.get(&block.id).filter(|cached| {
                     cached.fingerprint == fingerprint
@@ -365,7 +372,7 @@ impl LayoutEngine {
                         kind: block.kind,
                         lines: Arc::clone(&cached.lines),
                         scene_number: cached.scene_number.clone(),
-                        layout: cached.layout,
+                        layout,
                     });
                 }
 

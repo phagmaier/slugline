@@ -90,7 +90,7 @@ pub const CENTERED_BLANKS_BEFORE: u16 = 1;
 pub const LYRIC_INDENT: i16 = 10;
 /// SPEC §5.2: lyrics use the 35-column dialogue width.
 pub const LYRIC_WIDTH: u16 = 35;
-/// SPEC §5.2: lyrics have one blank line before them.
+/// One blank before a lyric run, none between consecutive lyrics (ADR 0046).
 pub const LYRIC_BLANKS_BEFORE: u16 = 1;
 
 /// The title page's lower-left block — contact, copyright, notes.
