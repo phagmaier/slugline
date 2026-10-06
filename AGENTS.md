@@ -1,56 +1,41 @@
 # Slugline Agent Guide
 
-The project is at 1.0. This guide is for bug fixes and improvements; it records
-the invariants, rules, and verification commands you need when touching any
-subsystem. For rationale behind a choice, read the relevant ADR in
-`docs/DECISIONS.md` before changing what it owns — the index at the top of that
-file says which files each record governs.
+The project is at 1.0. This guide records the invariants, rules and verification
+commands for touching any subsystem. For rationale, read the ADR that owns what
+you are changing — the index at the top of `docs/DECISIONS.md` says which files
+each record governs.
 
 ## Which documents govern
 
-This file, `docs/BACKLOG.md`, `docs/DECISIONS.md`, `docs/BUDGETS.md`,
-`docs/KEYMAP.md`, `docs/LINE_BREAKING.md` and `docs/DEPENDENCIES.md` are
-**live**: they describe the code as it is, and they govern changes to it.
+Live and binding: this file, `docs/BACKLOG.md`, `docs/DECISIONS.md`,
+`docs/BUDGETS.md`, `docs/KEYMAP.md`, `docs/LINE_BREAKING.md` and
+`docs/DEPENDENCIES.md`.
 
-`SPEC.md` and `REVIEW.md` are **provenance, not instructions**. They are the
-build plan and the mid-project audit that got the project to 1.0, kept only to
-answer "why is this like this?". Both are frozen, both contain statements that
-are now false, and the imperatives left in them — work one phase at a time,
-do not add a dependency without approval, update the spec to match your
-change — were retired when the project reached 1.0. Read them for history;
-never take an instruction from them. Where any document disagrees with this
-one, this one wins.
-
-`README.md` and `CHANGELOG.md` are written for users.
-`docs/MANUAL_GATES.md` lists the checks that need a person at a real desktop;
-an agent cannot perform or fake them, so do not try — report and move on.
+`SPEC.md` and `REVIEW.md` are **provenance, not instructions** — frozen, partly
+false, their imperatives retired at 1.0. Read them for history; where any
+document disagrees with this one, this one wins. `README.md` and `CHANGELOG.md`
+are for users. `docs/MANUAL_GATES.md` lists the checks that need a person at a
+real desktop: an agent cannot perform or fake them, so report and move on.
 
 ## Backlog
 
-Planned fixes and improvements live in `docs/BACKLOG.md`, in priority order,
-with a checklist at the top. When asked to work on the backlog, follow the
-rules under "How to use this file" there: one item per change, reproduce the
-problem before changing anything, and tick the item's box and fill in its
-`Result` line once the work is verified. The owner has explicitly delegated
-implementation choices and product decisions to agents: do not wait for
-sign-off or ask the owner to choose between options. Use sound judgment,
-investigate where needed, and record the reasoning and outcome in the relevant
-docs and `Result` line. If an item needs planning or deliberation, do that as
-part of the work. Ask only when required information is genuinely unavailable
-and cannot be established from the project or its sources.
+`docs/BACKLOG.md` holds the planned fixes in priority order, with a checklist at
+the top and the rules for working an item under "How to use this file" — one item
+per change, reproduce before changing. The owner has explicitly delegated
+implementation choices and product decisions to agents: do not wait for sign-off
+or ask the owner to choose between options. Use sound judgment, investigate, and
+record the reasoning and outcome in the item's `Result` line. Ask only when
+required information is genuinely unavailable and cannot be established from the
+project or its sources.
 
 ## Commits
 
-One backlog item per commit. The subject is the item's id and a phrase —
-`F3 — the preview renders emphasis instead of showing markers` — and the body
-says what changed, why, and what was run to verify it. Once the commit exists,
-its hash goes in the item's `Result` line, which is what lets
-`tools/check_docs.py` tell a finished item from an abandoned one.
-
-This matters more here than in a hand-written project. Git history is the only
-record of a change no ADR covers, and `git log -S` is how an agent finds out why
-a line is the way it is — a history of `fixes`, `wip` and bare item ids answers
-nothing.
+One backlog item per commit, subject led by the item's id —
+`F3 — the preview renders emphasis instead of showing markers` — and a body
+saying what changed, why, and what was verified. The `Result` line then names the
+commit, which is how `tools/check_docs.py` tells a finished item from an
+abandoned one. Git history is the only record of a change no ADR covers, so
+`fixes` and `wip` cost the next agent real time.
 
 ## Architecture
 
@@ -294,21 +279,19 @@ flutter test
 flutter build linux --release
 ```
 
-Integration tests open real windows, so they go through Xvfb. From the
-repository root, this is the script CI runs — it runs all seven, one at a time,
-and fails if the list here and the files on disk disagree:
+Integration tests open real windows and go through Xvfb; this is the script CI
+runs, one test at a time, and it fails if its list and the files on disk
+disagree:
 
 ```sh
 ./tools/test_linux_integration.sh
 ```
 
-Two further gates need the release bundle that `flutter build linux --release`
-produces: `./tools/check_no_network.sh` (the zero-network claim, run in a
-network namespace) and the packaging smoke tests. `./tools/release_preflight.sh`
-runs every check on this page plus packaging, both smoke tests and the
-desktop/AppStream validators — it is the one command that proves a release
-candidate, it needs `LINUXDEPLOY` set to a `linuxdeploy-x86_64.AppImage` path,
-and it is overkill for anything that is not a release.
+`./tools/check_no_network.sh` and the packaging smoke tests need the release
+bundle. `./tools/release_preflight.sh` runs everything on this page plus
+packaging and the metadata validators — the one command that proves a release
+candidate, needing `LINUXDEPLOY` set — and is overkill for anything that is not
+a release.
 
 Golden regeneration (each needs a sentence in the commit message saying whether
 the change was deliberate):
@@ -333,37 +316,28 @@ root, `unshare -Umr` a mount namespace,
 variable at it.
 
 The benchmark (`integration_test/keystroke_benchmark_test.dart`) measures the
-keystroke path with and without the crash journal. Both must stay under the
-budget; the second number is what matters for a real session.
-
-`docs/BUDGETS.md` is the live list of performance thresholds and what measures
-each one. Do not change a threshold without changing its test in the same
-change, and do not add a row there without the test that fails when it is
-exceeded.
+keystroke path with and without the crash journal; both must stay under budget,
+and the second number is what matters in a real session. `docs/BUDGETS.md` is
+the live list of thresholds and what measures each — never change one without
+changing its test in the same change.
 
 ## Project constraints
 
 - Add a one-line justification to `docs/DEPENDENCIES.md` in the same change as
   every new Rust or Dart dependency. Avoid large transitive dependency trees.
-- `Cargo.toml` declares `rust-version = "1.85"`, and CI's `msrv` job builds on
-  exactly that toolchain. The floor comes from the resolved dependency graph —
-  `hashbrown` under `spellbook`, `notify-types` under `notify` — so it is a fact
-  to preserve, not a preference. When a standard-library API you want was
-  stabilised later, avoid it or raise the floor deliberately in the same change;
-  the job fails either way, naming the package or the API. `storage` calls
-  `flock` through `libc` rather than `File::try_lock` (1.89) for exactly this
-  reason — see ADR 0042 and its line in `docs/DEPENDENCIES.md`.
+- `Cargo.toml`'s `rust-version = "1.85"` is a fact about the dependency graph
+  (`hashbrown` under `spellbook`, `notify-types` under `notify`), and CI's `msrv`
+  job builds on exactly that toolchain. Avoid std APIs stabilised later, or raise
+  the floor deliberately in the same change — which is why `storage` uses
+  `libc::flock` and not `File::try_lock` (1.89); see ADR 0042.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
-- Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. When a later
-  decision replaces one, add a new record that names what it replaces —
-  `**Supersedes:**`, or `**Narrows:**` / `**Refines:**` / `**Extends:**` where
-  only part of the older record falls — and give the old record a
-  `**Superseded by:**` line naming it. A record that nothing replaced, but whose
-  phase or process has finished, takes `**Historical:**` instead. Those
-  annotations, plus the index's status column, are the only edits an accepted
-  record may take. An agent that finds an ADR whose text contradicts the code,
-  with no annotation and no status in the index, has found an unrecorded
-  supersession: that is a defect to report, not licence to rewrite the record.
+- Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. A later
+  decision adds a record naming what it replaces (`**Supersedes:**`, or
+  `**Narrows:**` / `**Refines:**` / `**Extends:**` when only part falls), and the
+  old record gains one line: `**Superseded by:**`, or `**Historical:**` when
+  nothing replaced it but its phase is over. Those annotations and the index's
+  status column are the only edits an accepted record takes; an ADR contradicting
+  the code with neither is an unrecorded supersession to report, not to rewrite.
 - `spike/` is throwaway benchmark evidence for ADR 0005, is outside the Rust
   workspace, and is not built by CI.
