@@ -66,7 +66,7 @@ This is the only place boxes are ticked.
 - [x] [F1](#f1) Common character-cue shapes are read as action
 - [x] [F2](#f2) Emphasised centred, right-aligned and title lines are misaligned
 - [x] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
-- [ ] [F4](#f4) Consecutive lyric lines print double-spaced
+- [x] [F4](#f4) Consecutive lyric lines print double-spaced
 - [ ] [F5](#f5) A `~` line under a cue prints its tilde
 - [ ] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
@@ -639,7 +639,23 @@ paginator's, or page positions in the editor drift. Goldens and PDF hashes
 change.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `2926725`. Reproduced consecutive lyrics at
+24-point pitch in an exported PDF and failing paginator/editor regressions.
+Both layouts now suppress the leading blank only after another lyric block;
+new runs retain one blank and existing page-top suppression is unchanged.
+Spacing is resolved from current order, including cached wraps and untouched
+editor successors after predecessor changes/removal. ADR 0046 refines ADR 0034.
+Regressions cover three consecutive rows, interludes, the last row before a page
+break and predecessor edits/removal. The rebuilt release's editor and preview
+were visually checked under Xvfb; Poppler measured a 12-point lyric pitch.
+Unlike the expectation above, deliberately regenerated corpus layout goldens
+and PDF hashes remained unchanged; the new regressions cover lyric runs.
+Verification passed: 598 workspace tests (including line-break differential),
+rustfmt, clippy with warnings denied, layering/version/docs checks, Flutter
+analysis and 531 tests, Linux release build and network isolation. Native bridge,
+editor, IME, persistence, export and keystroke suites passed. The writing suite's
+separate navigator `STREET` visibility failure and optional formatter's existing
+style differences are recorded under “Found along the way”; neither was changed.
 
 <a id="f5"></a>
 ### F5 — A `~` line under a cue prints its tilde
