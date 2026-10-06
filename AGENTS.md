@@ -5,6 +5,15 @@ the invariants, rules, and verification commands you need when touching any
 subsystem. For rationale behind a choice, read the relevant ADR in
 `docs/DECISIONS.md` before changing what it owns.
 
+## Backlog
+
+Planned fixes and improvements live in `docs/BACKLOG.md`, in priority order,
+with a checklist at the top. When asked to work on the backlog, follow the
+rules under "How to use this file" there: one item per change, reproduce the
+problem before changing anything, and tick the item's box and fill in its
+`Result` line once the work is verified. Items tagged "needs go-ahead" are not
+started without the owner saying so.
+
 ## Architecture
 
 - **`crates/fountain`** — syntax: `BlockKind`, `TitlePage`, `Element`, parse,
