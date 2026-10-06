@@ -55,3 +55,21 @@ fn appearance_preferences_leave_pagination_byte_identical() {
         assert_eq!(actual.as_bytes(), baseline.as_bytes());
     }
 }
+
+#[test]
+fn heading_weight_is_an_output_preference_without_a_geometry_change() {
+    let document = Document::parse("INT. *ROOM* - DAY\n\nAction.\n");
+    let regular = Preferences::default();
+    let bold = Preferences {
+        bold_scene_headings: true,
+        ..regular.clone()
+    };
+    let regular_config = preference_page_config(&regular);
+    let bold_config = preference_page_config(&bold);
+    assert!(!regular_config.bold_scene_headings);
+    assert!(bold_config.bold_scene_headings);
+    assert_eq!(
+        paginate(&document, &regular_config).pages,
+        paginate(&document, &bold_config).pages,
+    );
+}

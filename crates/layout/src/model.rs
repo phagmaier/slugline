@@ -54,6 +54,8 @@ impl SceneNumberGutters {
 pub struct PageConfig {
     pub page_size: PageSize,
     pub scene_numbers: SceneNumberGutters,
+    /// Output weight only; does not change the fixed-grid geometry.
+    pub bold_scene_headings: bool,
     line_capacity_override: Option<u16>,
 }
 
@@ -68,6 +70,7 @@ impl PageConfig {
         Self {
             page_size: PageSize::UsLetter,
             scene_numbers: SceneNumberGutters::None,
+            bold_scene_headings: false,
             line_capacity_override: None,
         }
     }
@@ -76,12 +79,18 @@ impl PageConfig {
         Self {
             page_size: PageSize::A4,
             scene_numbers: SceneNumberGutters::None,
+            bold_scene_headings: false,
             line_capacity_override: None,
         }
     }
 
     pub const fn with_scene_numbers(mut self, gutters: SceneNumberGutters) -> Self {
         self.scene_numbers = gutters;
+        self
+    }
+
+    pub const fn with_bold_scene_headings(mut self, bold: bool) -> Self {
+        self.bold_scene_headings = bold;
         self
     }
 
@@ -157,6 +166,8 @@ pub struct LayoutLine {
     /// Wrapped line within `block`; absent for generated furniture.
     pub source_line: Option<u16>,
     pub kind: LayoutLineKind,
+    /// True only for content rows originating in a scene-heading block.
+    pub is_scene_heading: bool,
 }
 
 /// One title or screenplay page. Screenplay pages have `number = Some(1..)`;

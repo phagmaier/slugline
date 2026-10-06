@@ -13,8 +13,8 @@
 //! [`Geometry`] is the whole of the renderer's own opinion, and all it does is
 //! multiply a grid cell by its size in points.
 //!
-//! This crate interprets inline emphasis for typefaces (ADR 0019): the editor
-//! still shows markers literally, and wrapping still counts them as columns.
+//! This crate resolves inline emphasis for PDF and preview typefaces (ADR 0045).
+//! The editor shows markers literally, and wrapping still counts their columns.
 //! Within a row, printed runs start at the paginator's column with no gaps for
 //! removed markers (ADR 0032). The paginator now measures those same printed
 //! characters for centred and right-aligned placement (ADR 0044); no alignment
@@ -186,7 +186,7 @@ fn render_inner(
     custom_font: Option<&[u8]>,
 ) -> Vec<u8> {
     let geometry = Geometry::of(config);
-    let sheets = place(script);
+    let sheets = place(script, config);
 
     // Every character each face has to draw, so that the subsets are decided
     // before a single glyph id is written.
@@ -269,49 +269,30 @@ fn render_inner(
 /// The title page is first and is not among `script.pages`, so it is neither
 /// numbered nor counted — §Phase 7's requirement, which the paginator already
 /// arranged and this only has to not undo.
-fn place(script: &PaginatedScript) -> Vec<Vec<Placed>> {
-    let sheets: Vec<&Page> = script
+fn place(script: &PaginatedScript, config: &PageConfig) -> Vec<Vec<Placed>> {
+    let runs = emphasis_runs(script, config);
+    let mut placed: Vec<Vec<Placed>> = Vec::with_capacity(runs.len().max(1));
+    for (page, rows) in script
         .title_page
         .iter()
         .chain(script.pages.iter())
-        .collect();
-    let scanned = scan_paragraphs(&sheets);
-
-    let mut placed: Vec<Vec<Placed>> = Vec::with_capacity(sheets.len().max(1));
-    for (sheet, page) in sheets.iter().enumerate() {
+        .zip(runs)
+    {
         let mut out = Vec::new();
-        for (index, line) in page.lines.iter().enumerate() {
-            if line.content.is_empty() {
-                continue;
-            }
-            match &scanned[sheet][index] {
-                // The paginator decided the row and the column it starts at;
-                // the runs follow one another from there. The cells the markers
-                // occupied while it was measuring are closed up rather than
-                // left blank (ADR 0032).
-                Some(runs) => {
-                    let mut column = i32::from(line.column);
-                    for run in runs {
-                        let width = run.text.chars().count() as i32;
-                        out.push(Placed {
-                            row: i32::from(line.row),
-                            column,
-                            style: Style::of(run.emphasis.bold, run.emphasis.italic),
-                            underline: run.emphasis.underline,
-                            text: run.text.clone(),
-                        });
-                        column += width;
-                    }
-                }
-                // Furniture the paginator wrote itself. A stray asterisk in a
-                // page number is a page number.
-                None => out.push(Placed {
+        for (line, runs) in page.lines.iter().zip(rows) {
+            // The paginator decided the row and column; runs follow one
+            // another without leaving gaps for removed markers (ADR 0032).
+            let mut column = i32::from(line.column);
+            for run in runs {
+                let width = run.text.chars().count() as i32;
+                out.push(Placed {
                     row: i32::from(line.row),
-                    column: i32::from(line.column),
-                    style: Style::Regular,
-                    underline: false,
-                    text: line.content.clone(),
-                }),
+                    column,
+                    style: Style::of(run.emphasis.bold, run.emphasis.italic),
+                    underline: run.emphasis.underline,
+                    text: run.text,
+                });
+                column += width;
             }
         }
         placed.push(out);
@@ -325,18 +306,43 @@ fn place(script: &PaginatedScript) -> Vec<Vec<Placed>> {
     placed
 }
 
-/// Reads emphasis off every line that has any, a paragraph at a time.
+/// Resolves the text and output emphasis for every positioned line.
 ///
-/// `None` for a line the renderer must not interpret. Everything else gets the
-/// runs [`emphasis::scan`] found, and the reason this is a pass of its own is
-/// the word *paragraph*: whether a marker means anything depends on whether it
-/// has a partner, and its partner is very often on another row — sometimes on
-/// another page, when a speech was split. A block's rows are gathered across
-/// sheets and scanned together.
-fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Option<Vec<emphasis::EmphasisRun>>>> {
-    let mut scanned: Vec<Vec<Option<Vec<emphasis::EmphasisRun>>>> = sheets
+/// Sheets are in title-first order, and rows match each page's `lines` exactly,
+/// including empty run lists for empty text. Body paragraphs retain pairing
+/// across wraps and page breaks; title rows are interpreted independently.
+/// Generated page numbers and gutters remain literal. Scene-heading weight is
+/// additive to inline emphasis and never changes layout or the raw content.
+pub fn emphasis_runs(
+    script: &PaginatedScript,
+    config: &PageConfig,
+) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
+    let sheets: Vec<&Page> = script
+        .title_page
         .iter()
-        .map(|page| vec![None; page.lines.len()])
+        .chain(script.pages.iter())
+        .collect();
+    let mut scanned = scan_paragraphs(&sheets);
+    if config.bold_scene_headings {
+        for (page, rows) in sheets.iter().zip(&mut scanned) {
+            for (line, runs) in page.lines.iter().zip(rows) {
+                if line.is_scene_heading {
+                    for run in runs {
+                        run.emphasis.bold = true;
+                    }
+                }
+            }
+        }
+    }
+    scanned
+}
+
+/// Reads body rows together, without letting generated continuations interrupt
+/// their paragraph. Title and continuation rows keep independent pairing.
+fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
+    let mut scanned: Vec<Vec<Vec<emphasis::EmphasisRun>>> = sheets
+        .iter()
+        .map(|page| (0..page.lines.len()).map(|_| Vec::new()).collect())
         .collect();
 
     // A paragraph is a block's rows, in order, with none missing. A `(MORE)` or
@@ -345,7 +351,7 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Option<Vec<emphasis::EmphasisRun
     let mut paragraph: Vec<(usize, usize)> = Vec::new();
     let mut open: Option<(u64, u16)> = None;
     let close = |paragraph: &mut Vec<(usize, usize)>,
-                 scanned: &mut Vec<Vec<Option<Vec<emphasis::EmphasisRun>>>>| {
+                 scanned: &mut Vec<Vec<Vec<emphasis::EmphasisRun>>>| {
         if paragraph.is_empty() {
             return;
         }
@@ -354,7 +360,7 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Option<Vec<emphasis::EmphasisRun
             .map(|(sheet, line)| sheets[*sheet].lines[*line].content.as_str())
             .collect();
         for ((sheet, line), runs) in paragraph.drain(..).zip(emphasis::scan(&rows)) {
-            scanned[sheet][line] = Some(runs);
+            scanned[sheet][line] = runs;
         }
     };
 
@@ -378,12 +384,17 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Option<Vec<emphasis::EmphasisRun
                 // is read on its own and does not interrupt the paragraph the
                 // rows around it belong to.
                 LayoutLineKind::More | LayoutLineKind::Continued | LayoutLineKind::Title => {
-                    scanned[sheet][index] = Some(emphasis::scan_row(&line.content));
+                    scanned[sheet][index] = emphasis::scan_row(&line.content);
                 }
                 LayoutLineKind::Blank
                 | LayoutLineKind::PageNumber
                 | LayoutLineKind::SceneNumberLeft
-                | LayoutLineKind::SceneNumberRight => {}
+                | LayoutLineKind::SceneNumberRight => {
+                    scanned[sheet][index] = vec![emphasis::EmphasisRun {
+                        text: line.content.clone(),
+                        emphasis: emphasis::Emphasis::default(),
+                    }];
+                }
             }
         }
     }
@@ -647,6 +658,10 @@ fn identifier(
         config.page_size,
         config.lines_per_page(),
     ));
+    // Preserve the existing identifier (and default PDF hashes) when off.
+    if config.bold_scene_headings {
+        seed.push_str("bold_scene_headings\n");
+    }
     let mut bytes = seed.into_bytes();
     if let Some(font) = custom_font {
         bytes.extend_from_slice(font);
@@ -701,7 +716,7 @@ mod tests {
             "Title: Heat\nAuthor: Michael Mann\n\nINT. HOUSE - DAY\n\nJohn enters.\n",
         );
         let script = paginate(&document, &PageConfig::us_letter());
-        let sheets = place(&script);
+        let sheets = place(&script, &PageConfig::us_letter());
 
         assert_eq!(sheets.len(), script.pages.len() + 1);
         assert!(
@@ -724,7 +739,7 @@ mod tests {
             &Document::parse("He reads *quietly* and **loudly** and _underlined_.\n"),
             &PageConfig::us_letter(),
         );
-        let placed = place(&script).remove(0);
+        let placed = place(&script, &PageConfig::us_letter()).remove(0);
         let styled: Vec<(&str, Style, bool)> = placed
             .iter()
             .map(|p| (p.text.as_str(), p.style, p.underline))
@@ -746,7 +761,7 @@ mod tests {
         // Long enough that the paginator must break it, and italic throughout.
         let long = "*".to_owned() + &"wandering ".repeat(12) + "home.*";
         let script = paginate(&Document::parse(&(long + "\n")), &PageConfig::us_letter());
-        let placed = place(&script).remove(0);
+        let placed = place(&script, &PageConfig::us_letter()).remove(0);
         let rows: BTreeSet<i32> = placed
             .iter()
             .filter(|p| p.style == Style::Italic)
@@ -770,12 +785,217 @@ mod tests {
             &Document::parse("He opens *emphasis and never closes it.\n\nThe next paragraph.\n"),
             &PageConfig::us_letter(),
         );
-        let placed = place(&script).remove(0);
+        let placed = place(&script, &PageConfig::us_letter()).remove(0);
         let next = placed
             .iter()
             .find(|p| p.text.contains("next paragraph"))
             .expect("the second paragraph is on the page");
         assert_eq!(next.style, Style::Regular);
+    }
+
+    #[test]
+    fn shared_runs_pair_across_wrapped_dialogue_and_page_furniture() {
+        let config = PageConfig::us_letter().with_line_capacity(8);
+        let source = format!("JOHN\n*{}home.*\n", "wandering ".repeat(60));
+        let script = paginate(&Document::parse(&source), &config);
+        assert!(
+            script.pages.len() > 1,
+            "the paired paragraph crosses a page"
+        );
+        let runs = emphasis_runs(&script, &config);
+        assert_eq!(runs.len(), script.pages.len());
+        let mut dialogue_rows = 0;
+        let mut more = 0;
+        let mut continued = 0;
+        for (page, rows) in script.pages.iter().zip(runs) {
+            assert_eq!(rows.len(), page.lines.len());
+            for (line, runs) in page.lines.iter().zip(rows) {
+                if line.content.is_empty() {
+                    assert!(runs.is_empty());
+                } else {
+                    assert!(!runs.is_empty());
+                }
+                if line.kind == LayoutLineKind::Content && line.column == 10 {
+                    dialogue_rows += 1;
+                    assert!(runs.iter().all(|run| run.emphasis.italic));
+                    assert!(runs.iter().all(|run| !run.text.contains('*')));
+                } else {
+                    assert!(runs
+                        .iter()
+                        .all(|run| run.emphasis == emphasis::Emphasis::PLAIN));
+                }
+                more += usize::from(line.kind == LayoutLineKind::More);
+                continued += usize::from(line.kind == LayoutLineKind::Continued);
+            }
+        }
+        assert!(dialogue_rows > 2, "pairing crosses multiple wraps");
+        assert!(
+            more > 0 && continued > 0,
+            "furniture did not end the paragraph"
+        );
+    }
+
+    #[test]
+    fn shared_runs_keep_title_rows_independent_and_literal_markers_honest() {
+        let config = PageConfig::us_letter();
+        let document = Document::parse(
+            "Title: *Open\n    close*\nAuthor: ***Writer***\n\n\
+             He sees \\*literal\\* and \\_literal\\_ plus *unpaired.\n",
+        );
+        let script = paginate(&document, &config);
+        let runs = emphasis_runs(&script, &config);
+        let title = script.title_page.as_ref().expect("title sheet");
+        assert_eq!(runs.len(), script.pages.len() + 1);
+        assert_eq!(runs[0].len(), title.lines.len());
+        for literal in ["*Open", "close*"] {
+            let index = title
+                .lines
+                .iter()
+                .position(|line| line.content == literal)
+                .expect("separate title row");
+            assert_eq!(
+                runs[0][index],
+                vec![emphasis::EmphasisRun {
+                    text: literal.to_owned(),
+                    emphasis: emphasis::Emphasis::PLAIN,
+                }]
+            );
+        }
+        assert!(runs[0]
+            .iter()
+            .flatten()
+            .any(|run| { run.text == "Writer" && run.emphasis.bold && run.emphasis.italic }));
+        let printed: String = runs[1]
+            .iter()
+            .zip(script.pages[0].lines.iter())
+            .filter(|(_, line)| line.kind == LayoutLineKind::Content)
+            .flat_map(|(runs, _)| runs.iter().map(|run| run.text.as_str()))
+            .collect();
+        assert_eq!(printed, "He sees *literal* and _literal_ plus *unpaired.");
+        assert!(runs[1]
+            .iter()
+            .flatten()
+            .all(|run| { run.emphasis == emphasis::Emphasis::PLAIN }));
+        assert!(script.pages[0]
+            .lines
+            .iter()
+            .any(|line| line.content.contains("\\*")));
+    }
+
+    /// Read face selections and coordinates from the finished, uncompressed
+    /// content streams, not from the transported emphasis flags.
+    fn finished_text_operators(bytes: &[u8]) -> Vec<(f64, f64, String, usize)> {
+        let pdf = String::from_utf8_lossy(bytes);
+        let mut face = String::new();
+        let mut operators = Vec::new();
+        for line in pdf.lines() {
+            if line == "BT" {
+                face.clear();
+            } else if let Some(selection) = line.strip_suffix(" 12 Tf") {
+                face = selection.to_owned();
+            } else if let Some(matrix) = line.strip_prefix("1 0 0 1 ") {
+                let (position, glyphs) = matrix.split_once(" Tm <").expect("text matrix");
+                let mut position = position.split_whitespace();
+                let x = position.next().unwrap().parse().unwrap();
+                let y = position.next().unwrap().parse().unwrap();
+                let glyphs = glyphs.strip_suffix("> Tj").expect("text operator");
+                operators.push((x, y, face.clone(), glyphs.len() / 4));
+            }
+        }
+        operators
+    }
+
+    #[test]
+    fn finished_pdf_heading_faces_follow_both_options_without_moving_any_text() {
+        let document = Document::parse(
+            "Title: Cover\n\nINT. *_HOUSE_* - **DAY** #12#\n\nAction **bold** stays.\n",
+        );
+        let regular =
+            PageConfig::us_letter().with_scene_numbers(slugline_layout::SceneNumberGutters::Both);
+        let script = paginate(&document, &regular);
+        let heading = script.pages[0]
+            .lines
+            .iter()
+            .find(|line| line.is_scene_heading)
+            .expect("heading row");
+        assert_eq!(heading.content, "INT. *_HOUSE_* - **DAY**");
+        let y = Geometry::of(&regular).baseline_y(i32::from(heading.row));
+        let plain_bytes = render(&script, &regular, &info());
+        let plain_operators = finished_text_operators(&plain_bytes);
+        for bold in [false, true] {
+            let config = regular.clone().with_bold_scene_headings(bold);
+            let bytes = render(&script, &config, &info());
+            let pdf = String::from_utf8_lossy(&bytes);
+            let operators = finished_text_operators(&bytes);
+            let geometry: Vec<_> = operators
+                .iter()
+                .map(|(x, y, _, count)| (*x, *y, *count))
+                .collect();
+            let plain_geometry: Vec<_> = plain_operators
+                .iter()
+                .map(|(x, y, _, count)| (*x, *y, *count))
+                .collect();
+            assert_eq!(geometry, plain_geometry, "weight cannot move or wrap text");
+            let at_heading: Vec<_> = operators
+                .iter()
+                .filter(|(_, row, _, _)| *row == y)
+                .cloned()
+                .collect();
+            assert_eq!(
+                at_heading,
+                vec![
+                    (79.2, y, "/F1".to_owned(), 2),
+                    (108.0, y, if bold { "/F2" } else { "/F1" }.to_owned(), 5),
+                    (144.0, y, if bold { "/F4" } else { "/F3" }.to_owned(), 5),
+                    (180.0, y, if bold { "/F2" } else { "/F1" }.to_owned(), 3),
+                    (201.6, y, "/F2".to_owned(), 3),
+                    (554.4, y, "/F1".to_owned(), 2),
+                ]
+            );
+            assert!(pdf.contains(if bold {
+                "CourierPrime-BoldItalic"
+            } else {
+                "CourierPrime-Italic"
+            }));
+            assert_eq!(pdf.contains("CourierPrime-BoldItalic"), bold);
+            assert!(
+                operators
+                    .iter()
+                    .any(|(_, row, face, count)| { *row != y && face == "/F2" && *count == 4 }),
+                "inline bold stays bold independently of the heading option"
+            );
+            assert!(pdf.contains(" l S"), "the heading keeps inline underline");
+            let runs = emphasis_runs(&script, &config);
+            for (page, rows) in script
+                .title_page
+                .iter()
+                .chain(script.pages.iter())
+                .zip(runs)
+            {
+                for (line, runs) in page.lines.iter().zip(rows) {
+                    if line.is_scene_heading {
+                        assert!(runs
+                            .iter()
+                            .all(|run| { run.emphasis.bold == (bold || run.text == "DAY") }));
+                        assert!(runs
+                            .iter()
+                            .any(|run| run.emphasis.italic && run.emphasis.underline));
+                    } else if line.kind != LayoutLineKind::Content {
+                        assert!(runs.iter().all(|run| !run.emphasis.bold));
+                    }
+                }
+            }
+        }
+        assert_ne!(
+            identifier(&script, &info(), &regular, None),
+            identifier(
+                &script,
+                &info(),
+                &regular.with_bold_scene_headings(true),
+                None
+            ),
+            "output weight participates in the deterministic identifier"
+        );
     }
 
     #[test]

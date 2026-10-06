@@ -27,6 +27,14 @@ PageView _page(int number, int block, int from, int to) => PageView(
       row: -3,
       column: 58,
       content: '$number.',
+      runs: [
+        EmphasisRunView(
+          text: '$number.',
+          bold: false,
+          italic: false,
+          underline: false,
+        ),
+      ],
       sourceLine: null,
       kind: LayoutLineKind.pageNumber,
     ),
@@ -35,6 +43,14 @@ PageView _page(int number, int block, int from, int to) => PageView(
         row: sourceLine - from,
         column: 0,
         content: 'Action line $sourceLine.',
+        runs: [
+          EmphasisRunView(
+            text: 'Action line $sourceLine.',
+            bold: false,
+            italic: false,
+            underline: false,
+          ),
+        ],
         block: block,
         sourceLine: sourceLine,
         kind: LayoutLineKind.content,
@@ -61,10 +77,13 @@ class _OutputCore extends FakeCore implements ScreenplayOutput {
   _OutputCore(super.blocks, this.pagination);
 
   PaginationView pagination;
+  final List<PageSetup> setups = [];
 
   @override
-  Future<PaginationOutcome> paginate(PageSetup setup) async =>
-      PaginationOutcome.current(pagination: pagination);
+  Future<PaginationOutcome> paginate(PageSetup setup) async {
+    setups.add(setup);
+    return PaginationOutcome.current(pagination: pagination);
+  }
 
   @override
   Future<SaveOutcome> exportPdf(
@@ -89,6 +108,7 @@ void main() {
         setup: const PageSetup(
           paper: PaperSize.usLetter,
           sceneNumbers: SceneNumbers.off,
+          boldSceneHeadings: false,
           debugLinesPerPage: null,
         ),
         initialRow: 45,
@@ -115,6 +135,7 @@ void main() {
         setup: const PageSetup(
           paper: PaperSize.usLetter,
           sceneNumbers: SceneNumbers.off,
+          boldSceneHeadings: false,
           debugLinesPerPage: null,
         ),
       );
@@ -230,6 +251,31 @@ void main() {
     // The page count shares its line with the scene and word counts now, so it
     // is looked for inside the label rather than as the whole of it.
     expect(find.textContaining('Page 2 of 2'), findsOneWidget);
+    expect(core.setups.last.boldSceneHeadings, isFalse);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 900,
+          height: 320,
+          child: EditorPage(
+            controller: controller,
+            initialScrollRow: secondBlockRow,
+            initialPageSetup: const PageSetup(
+              paper: PaperSize.usLetter,
+              sceneNumbers: SceneNumbers.off,
+              boldSceneHeadings: true,
+              debugLinesPerPage: null,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      core.setups.last.boldSceneHeadings,
+      isTrue,
+      reason: 'A live heading preference change repaginates output.',
+    );
 
     final scrollable = tester.state<ScrollableState>(
       find.descendant(

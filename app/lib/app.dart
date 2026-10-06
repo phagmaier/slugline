@@ -481,6 +481,7 @@ ThemeMode _themeMode(String appearance) => switch (appearance) {
 
 PageSetup _pageSetup(files.PreferencesView preferences) => PageSetup(
   paper: preferences.defaultPaper == 'a4' ? PaperSize.a4 : PaperSize.usLetter,
+  boldSceneHeadings: preferences.boldSceneHeadings,
   sceneNumbers: switch (preferences.sceneNumbers) {
     'left' => SceneNumbers.left,
     'right' => SceneNumbers.right,
@@ -505,6 +506,7 @@ files.PreferencesView _copyPreferences(
   editorTextSize: editorTextSize ?? value.editorTextSize,
   defaultPaper: value.defaultPaper,
   sceneNumbers: value.sceneNumbers,
+  boldSceneHeadings: value.boldSceneHeadings,
   pdfFontPath: value.pdfFontPath,
   distractionFree: distractionFree ?? value.distractionFree,
   pageView: value.pageView,

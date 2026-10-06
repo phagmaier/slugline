@@ -39,7 +39,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
 | 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | live |
 | 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — no page indication in the editor |
-| 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | partly superseded by 0044 — emphasis interpretation, for alignment only |
+| 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | partly superseded by 0044/0045 — printed alignment and shared output emphasis |
 | 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | live |
 | 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | live |
@@ -52,7 +52,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0029 | Exporting a copy is not Save As, and it refuses two destinations | `crates/bridge/src/api/files.rs`, `app/lib/preview/export_dialog.dart`, `app/lib/core/document_core.dart`, `app/lib/library/save_dialogs.dart` | live |
 | 0030 | The completion popup names its gestures, and its rows are not click targets | `app/lib/editor/editor_surface.dart`, `app/test/editor/autocomplete_test.dart` | partly superseded by 0041 — popup activation and row cap |
 | 0031 | A character extension is recognised by its letters, not its punctuation | `crates/document/src/entities.rs` | live |
-| 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044 — raw-marker alignment consequence |
+| 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044/0045 — printed alignment and shared preview interpretation |
 | 0033 | A title-page edit is journalled like any other edit | `crates/document/src/recovery.rs`, `crates/storage/src/journal.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | live |
 | 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041 — navigator drawer below 900 px |
@@ -65,6 +65,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0042 | Crash journals carry kernel ownership across publication | `crates/storage/src/journal.rs`, `crates/storage/Cargo.toml`, `crates/bridge/tests/persistence.rs` | live |
 | 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
 | 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | live |
+| 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | live |
 
 ---
 
@@ -1349,8 +1350,8 @@ honest statement today is that most of it is not enforced yet.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2 (recorded during the
 mid-project remediation)
-**Superseded by:** ADR 0044 for the restriction of emphasis interpretation to
-the PDF renderer, for alignment only; literal editor display and raw-width
+**Superseded by:** ADR 0044 for printed-width alignment and ADR 0045 for shared
+preview/PDF emphasis interpretation; literal editor display and raw-width
 wrapping are unchanged.
 
 ### Context
@@ -2482,8 +2483,9 @@ normalisation, not name normalisation.
 ## ADR 0032 — The PDF writer is ours, and it interprets emphasis without leaving a gap
 
 **Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7
-**Superseded by:** ADR 0044 for the raw-marker alignment consequence only; the
-writer is still ours and the rest of this record stands.
+**Superseded by:** ADR 0044 for the raw-marker alignment consequence and
+ADR 0045 for sharing output emphasis with the preview. The PDF writer and
+gap-free placement remain unchanged.
 
 ### Context
 
@@ -3364,3 +3366,67 @@ The corpus audit before regeneration found only two layout changes: the
 emphasised titles in `05-title-page` and `reference-feature` move three columns
 right. Their Letter and A4 PDF hashes are deliberately regenerated; all other
 layout coordinates, row content, page breaks and PDF hashes stay unchanged.
+
+---
+
+## ADR 0045 — Preview and PDF share resolved emphasis and heading weight
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Supersedes:** ADR 0019's restriction of styled emphasis to the PDF and
+ADR 0032's private PDF-only paragraph interpretation.
+**Extends:** ADR 0037's shared output defaults with scene-heading weight.
+
+### Context
+
+F3 reproduced two disagreements: the preview painted raw paired markers in a
+regular face, and the editor painted headings bold while the PDF printed them
+regular. A preview labelled as printed output must not have its own
+interpretation of Fountain.
+
+### Decision
+
+`render_pdf::emphasis_runs` exposes the PDF's existing paragraph interpretation.
+Both PDF placement and bridge conversion consume its resolved text, bold,
+italic and underline flags. Body rows pair across consecutive source rows of
+one block, including page boundaries; `(MORE)` and continued cues are scanned
+individually without interrupting that paragraph. Title rows pair individually.
+Page numbers and scene-number gutters remain literal. Unpaired markers remain
+printable and escapes follow the existing Fountain scanner.
+
+`LayoutLineView` retains raw `content`, block identity, source-row index and
+grid coordinates beside required resolved runs. Flutter paints those runs with
+the bundled faces, advancing by printed Unicode scalars on the existing grid.
+It does not parse markup, wrap text, or decide page breaks.
+
+“Bold scene headings” is one persisted output preference, off by default.
+Regular uppercase headings preserve Slugline's existing printed output and
+default PDF hashes; bold is an explicit stylistic choice, not a new mandatory
+screenplay rule. Modern examples also use bold headings, as
+[Final Draft's element guide](https://www.finaldraft.com/blog/how-to-use-final-draft-script-elements)
+shows, so the option supports that convention without changing old exports.
+The editor, preview and PDF follow the same base heading weight. Output inline
+bold remains additive, and italic headings become bold italic when enabled.
+Scene-number gutters and other furniture do not inherit heading weight.
+
+Layout carries a scene-heading flag on its content rows, rather than asking
+the renderer to infer element kinds from uppercase text. `PageConfig` carries
+weight so cached preview results describe their requested setup, not a later
+preference value. Geometry is unchanged. The bridge names Fountain run types
+through a direct workspace dependency, without re-exporting them through the
+document model or adding an external package.
+
+### Boundaries and verification
+
+Editor inline markup remains literal and selectable; raw-width wrapping remains
+the `docs/LINE_BREAKING.md` contract. Printed-width wrapping, styled editor
+emphasis and shortcuts belong to X4, not this decision.
+
+Bundled-font pixel comparisons prove marker-free italic preview painting,
+mixed faces/underline and grid advancement, and both heading weights. The
+editor regression observes actual painted styles and live repainting.
+Rust tests cover cross-page pairing, independent titles, escapes, unpaired
+markers, additive heading weight and finished PDF face operators without
+moving coordinates. Native Linux UI verification changes the setting, paints
+the real preview and exports through its PDF button; Poppler identifies italic
+body text and regular/bold headings for the two settings. Default layout
+goldens, PDF hashes and line-break fixtures remain unchanged.

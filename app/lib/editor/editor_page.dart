@@ -50,6 +50,7 @@ class EditorPage extends StatefulWidget {
     this.initialPageSetup = const PageSetup(
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
       debugLinesPerPage: null,
     ),
     this.onNavigatorVisibilityChanged,
@@ -676,6 +677,8 @@ class EditorPageState extends State<EditorPage> {
                                   controller: widget.controller,
                                   textSize: widget.textSize,
                                   pageView: widget.pageView,
+                                  boldSceneHeadings:
+                                      widget.initialPageSetup.boldSceneHeadings,
                                   pageIndicator: _pageIndicator,
                                   initialScrollRow: widget.initialScrollRow,
                                   focusNode: _editorFocus,

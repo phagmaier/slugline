@@ -9,10 +9,10 @@
 //!
 //! ## Who calls this, and why it takes rows rather than a row
 //!
-//! The PDF renderer styles the printed text; the paginator uses the same
-//! interpretation to align centred and right-aligned rows (ADR 0044).
+//! PDF and preview share styled output through `render_pdf::emphasis_runs`;
+//! the paginator uses the same interpretation for alignment (ADR 0044/0045).
 //! Wrapping and editor display still count the literal markers (ADR 0019).
-//! Both callers receive a paragraph already broken into rows, and an emphasis
+//! Output callers receive a paragraph already broken into rows, and an emphasis
 //! run may well open on one and close on another:
 //!
 //! ```text

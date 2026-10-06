@@ -36,6 +36,7 @@ class EditorSurface extends StatefulWidget {
     this.initialScrollRow = 0,
     this.textSize = 15,
     this.pageView = true,
+    this.boldSceneHeadings = false,
     this.pageIndicator,
     this.focusNode,
     this.onOpenPalette,
@@ -59,6 +60,7 @@ class EditorSurface extends StatefulWidget {
   /// falls back to continuous until [pageIndicator] has a pagination to draw —
   /// which is also what a widget test with no core behind it gets.
   final bool pageView;
+  final bool boldSceneHeadings;
 
   /// Where Rust's paginator put the page breaks.
   ///
@@ -1021,6 +1023,7 @@ class EditorSurfaceState extends State<EditorSurface>
                               colours: _EditorColours.of(context),
                               fontSize: _fontSize,
                               lineCache: _lineCache,
+                              boldSceneHeadings: widget.boldSceneHeadings,
                             ),
                           ),
                         ),
@@ -1327,6 +1330,7 @@ class _SurfacePainter extends CustomPainter {
     required this.colours,
     required this.fontSize,
     required this.lineCache,
+    required this.boldSceneHeadings,
   }) : super(
          repaint: Listenable.merge([
            controller,
@@ -1344,6 +1348,7 @@ class _SurfacePainter extends CustomPainter {
   final TextRange composing;
   final _EditorColours colours;
   final double fontSize;
+  final bool boldSceneHeadings;
 
   /// Owned by the surface's state, so it outlives any one delegate install.
   final LineTextCache lineCache;
@@ -1403,7 +1408,9 @@ class _SurfacePainter extends CustomPainter {
       final blockStyle = _textStyle(fontSize).copyWith(
         color: muted ? colours.dim : colours.text,
         fontStyle: muted ? FontStyle.italic : null,
-        fontWeight: block.kind == BlockKind.sceneHeading ? FontWeight.bold : null,
+        fontWeight: boldSceneHeadings && block.kind == BlockKind.sceneHeading
+            ? FontWeight.bold
+            : null,
       );
 
       if (block.kind == BlockKind.pageBreak) {
@@ -1446,10 +1453,9 @@ class _SurfacePainter extends CustomPainter {
           // it painted last frame, and re-laying them is the frame's whole
           // cost. The cache key is the text and the resolved style, so an edit
           // is a miss by construction, never a stale hit.
-          lineCache.line(text, blockStyle).paint(
-            canvas,
-            Offset(x, y + (lineHeight - fontSize) / 2),
-          );
+          lineCache
+              .line(text, blockStyle)
+              .paint(canvas, Offset(x, y + (lineHeight - fontSize) / 2));
         }
 
         _paintSpellingUnderlines(canvas, block.id, line, x, y);
@@ -1471,10 +1477,12 @@ class _SurfacePainter extends CustomPainter {
         color: colours.dim.withValues(alpha: 0.6),
         fontStyle: FontStyle.italic,
       );
-      lineCache.line('Start writing…', hintStyle).paint(
-        canvas,
-        Offset(pageLeft, geometry.yOfRow(0) + (lineHeight - fontSize) / 2),
-      );
+      lineCache
+          .line('Start writing…', hintStyle)
+          .paint(
+            canvas,
+            Offset(pageLeft, geometry.yOfRow(0) + (lineHeight - fontSize) / 2),
+          );
     }
 
     if (showCaret) _paintCaret(canvas);
@@ -1725,6 +1733,7 @@ class _SurfacePainter extends CustomPainter {
       old.controller != controller ||
       old.geometry != geometry ||
       old.fontSize != fontSize ||
+      old.boldSceneHeadings != boldSceneHeadings ||
       old.showCaret != showCaret ||
       old.composing != composing ||
       old.colours != colours;

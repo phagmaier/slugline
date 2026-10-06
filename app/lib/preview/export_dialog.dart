@@ -50,6 +50,7 @@ class ExportDialog extends StatefulWidget {
     this.initialSetup = const PageSetup(
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
       debugLinesPerPage: null,
     ),
     super.key,
@@ -72,6 +73,7 @@ class ExportDialog extends StatefulWidget {
     PageSetup initialSetup = const PageSetup(
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
       debugLinesPerPage: null,
     ),
   }) => showDialog<void>(
@@ -122,6 +124,7 @@ class _ExportDialogState extends State<ExportDialog> {
   PageSetup get _setup => PageSetup(
     paper: _paper,
     sceneNumbers: _sceneNumbers,
+    boldSceneHeadings: widget.initialSetup.boldSceneHeadings,
     // Never set outside the Phase 6F diagnostic: a real preview and a real
     // export take the row count from the paper (§5.2).
     debugLinesPerPage: null,
@@ -380,9 +383,7 @@ class _ExportDialogState extends State<ExportDialog> {
                   report,
                   key: const Key('export-report'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: _reportIsFailure
-                        ? context.colours.danger
-                        : null,
+                    color: _reportIsFailure ? context.colours.danger : null,
                   ),
                 ),
               ],

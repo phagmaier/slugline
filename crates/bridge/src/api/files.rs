@@ -209,6 +209,7 @@ pub struct PreferencesView {
     pub editor_text_size: u16,
     pub default_paper: String,
     pub scene_numbers: String,
+    pub bold_scene_headings: bool,
     pub pdf_font_path: Option<String>,
     pub distraction_free: bool,
     pub page_view: bool,
@@ -1342,12 +1343,14 @@ pub(super) fn preference_page_config(preferences: &CorePreferences) -> PageConfi
     } else {
         PageConfig::us_letter()
     };
-    config.with_scene_numbers(match preferences.scene_numbers.as_str() {
-        prefs::SCENE_NUMBERS_LEFT => slugline_layout::SceneNumberGutters::Left,
-        prefs::SCENE_NUMBERS_RIGHT => slugline_layout::SceneNumberGutters::Right,
-        prefs::SCENE_NUMBERS_BOTH => slugline_layout::SceneNumberGutters::Both,
-        _ => slugline_layout::SceneNumberGutters::None,
-    })
+    config
+        .with_scene_numbers(match preferences.scene_numbers.as_str() {
+            prefs::SCENE_NUMBERS_LEFT => slugline_layout::SceneNumberGutters::Left,
+            prefs::SCENE_NUMBERS_RIGHT => slugline_layout::SceneNumberGutters::Right,
+            prefs::SCENE_NUMBERS_BOTH => slugline_layout::SceneNumberGutters::Both,
+            _ => slugline_layout::SceneNumberGutters::None,
+        })
+        .with_bold_scene_headings(preferences.bold_scene_headings)
 }
 
 fn commit_saved_page_count(state: &mut AppState, id: &str, token: u64, page_count: u32) {
@@ -2104,6 +2107,7 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
             editor_text_size: preferences.editor_text_size,
             default_paper: preferences.default_paper,
             scene_numbers: preferences.scene_numbers,
+            bold_scene_headings: preferences.bold_scene_headings,
             pdf_font_path: preferences.pdf_font_path.map(PathBuf::from),
             distraction_free: preferences.distraction_free,
             page_view: preferences.page_view,
@@ -2370,6 +2374,7 @@ fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
         editor_text_size: preferences.editor_text_size,
         default_paper: preferences.default_paper.clone(),
         scene_numbers: preferences.scene_numbers.clone(),
+        bold_scene_headings: preferences.bold_scene_headings,
         pdf_font_path: preferences
             .pdf_font_path
             .as_ref()
@@ -2497,6 +2502,20 @@ mod tests {
         assert_eq!(CorePreferences::load(&paths.preferences()), expected);
         assert!(paths.legacy_preferences().exists());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preference_view_transports_both_heading_weights() {
+        for bold_scene_headings in [false, true] {
+            let preferences = CorePreferences {
+                bold_scene_headings,
+                ..CorePreferences::default()
+            };
+            assert_eq!(
+                prefs_view(&preferences).bold_scene_headings,
+                bold_scene_headings
+            );
+        }
     }
 
     /// How long a save is given to reach the disk before the test calls it
@@ -4431,6 +4450,7 @@ mod tests {
         layout::PageSetup {
             paper: layout::PaperSize::UsLetter,
             scene_numbers: layout::SceneNumbers::Off,
+            bold_scene_headings: false,
             debug_lines_per_page: None,
         }
     }

@@ -14,6 +14,7 @@ export 'package:slugline/src/rust/api/files.dart'
 
 export 'package:slugline/src/rust/api/layout.dart'
     show
+        EmphasisRunView,
         LayoutLineKind,
         LayoutLineView,
         PageSetup,

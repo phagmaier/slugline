@@ -692,6 +692,7 @@ impl<'a> Paginator<'a> {
             block: None,
             source_line: None,
             kind: LayoutLineKind::PageNumber,
+            is_scene_heading: false,
         });
         self.current.sort_by_key(|line| (line.row, line.column));
         self.pages.push(Page {
@@ -714,6 +715,7 @@ impl<'a> Paginator<'a> {
                 block: None,
                 source_line: None,
                 kind: LayoutLineKind::Blank,
+                is_scene_heading: false,
             });
             self.used += 1;
         }
@@ -981,6 +983,7 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                 block: Some(block.id),
                 source_line: Some(index as u16),
                 kind: LayoutLineKind::Content,
+                is_scene_heading: block.kind == BlockKind::SceneHeading,
             }];
             if index == 0 && block.kind == BlockKind::SceneHeading {
                 if let Some(number) = &block.scene_number {
@@ -992,6 +995,7 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                         block: Some(block.id),
                         source_line: None,
                         kind: LayoutLineKind::SceneNumberLeft,
+                        is_scene_heading: false,
                     });
                     fragments.push(LayoutLine {
                         row: 0,
@@ -1000,6 +1004,7 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                         block: Some(block.id),
                         source_line: None,
                         kind: LayoutLineKind::SceneNumberRight,
+                        is_scene_heading: false,
                     });
                 }
             }
@@ -1036,6 +1041,7 @@ fn generated_row(column: i16, content: String, block: BlockId, kind: LayoutLineK
             block: Some(block),
             source_line: None,
             kind,
+            is_scene_heading: false,
         }],
         role: RowRole::Other,
     }
@@ -1129,6 +1135,7 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             block: None,
             source_line: None,
             kind: LayoutLineKind::Title,
+            is_scene_heading: false,
         });
     }
     let lower_count = lower_left.len().max(lower_right.len()) as u16;
@@ -1141,6 +1148,7 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             block: None,
             source_line: None,
             kind: LayoutLineKind::Title,
+            is_scene_heading: false,
         });
     }
     for (offset, content) in lower_right.into_iter().enumerate() {
@@ -1151,6 +1159,7 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             block: None,
             source_line: None,
             kind: LayoutLineKind::Title,
+            is_scene_heading: false,
         });
     }
     lines.sort_by_key(|line| (line.row, line.column));

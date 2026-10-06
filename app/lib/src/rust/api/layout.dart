@@ -11,7 +11,7 @@ part 'layout.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `changed_block`, `clamp_u32`, `fingerprint`, `fingerprints`, `line_view`, `page_config`, `page_view`, `paginate_snapshot`, `paginate`, `pagination_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Job`, `Planned`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `paginate`. Lays the document out on the page grid.
 ///
@@ -25,6 +25,35 @@ Future<PaginationOutcome> docPaginate({
   handle: handle,
   setup: setup,
 );
+
+/// A resolved printable run, shared with the PDF's emphasis interpretation.
+class EmphasisRunView {
+  final String text;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+
+  const EmphasisRunView({
+    required this.text,
+    required this.bold,
+    required this.italic,
+    required this.underline,
+  });
+
+  @override
+  int get hashCode =>
+      text.hashCode ^ bold.hashCode ^ italic.hashCode ^ underline.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EmphasisRunView &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          bold == other.bold &&
+          italic == other.italic &&
+          underline == other.underline;
+}
 
 /// Why a positioned fragment exists. Mirrors `layout::LayoutLineKind`; the
 /// duplication is deliberate, so that the engine's internal vocabulary can
@@ -53,9 +82,11 @@ class LayoutLineView {
   final int row;
   final int column;
 
-  /// The characters to draw, already uppercased and wrapped. Not the block's
-  /// text: a scene heading is stored as typed and drawn in capitals.
+  /// Raw text, already uppercased and wrapped, retained for source identity.
   final String content;
+
+  /// Printable text and final output styles; no Fountain rescan is needed.
+  final List<EmphasisRunView> runs;
 
   /// The block this came from, or `None` for generated furniture — a page
   /// number, a blank, a `(MORE)`. This is the identity a preview maps a click
@@ -73,6 +104,7 @@ class LayoutLineView {
     required this.row,
     required this.column,
     required this.content,
+    required this.runs,
     this.block,
     this.sourceLine,
     required this.kind,
@@ -83,6 +115,7 @@ class LayoutLineView {
       row.hashCode ^
       column.hashCode ^
       content.hashCode ^
+      runs.hashCode ^
       block.hashCode ^
       sourceLine.hashCode ^
       kind.hashCode;
@@ -95,6 +128,7 @@ class LayoutLineView {
           row == other.row &&
           column == other.column &&
           content == other.content &&
+          runs == other.runs &&
           block == other.block &&
           sourceLine == other.sourceLine &&
           kind == other.kind;
@@ -104,6 +138,7 @@ class LayoutLineView {
 class PageSetup {
   final PaperSize paper;
   final SceneNumbers sceneNumbers;
+  final bool boldSceneHeadings;
 
   /// Shrinks the page to this many rows. For tests and the debug surface
   /// only: it makes a page break happen in three blocks instead of fifty, so
@@ -114,12 +149,16 @@ class PageSetup {
   const PageSetup({
     required this.paper,
     required this.sceneNumbers,
+    required this.boldSceneHeadings,
     this.debugLinesPerPage,
   });
 
   @override
   int get hashCode =>
-      paper.hashCode ^ sceneNumbers.hashCode ^ debugLinesPerPage.hashCode;
+      paper.hashCode ^
+      sceneNumbers.hashCode ^
+      boldSceneHeadings.hashCode ^
+      debugLinesPerPage.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -128,6 +167,7 @@ class PageSetup {
           runtimeType == other.runtimeType &&
           paper == other.paper &&
           sceneNumbers == other.sceneNumbers &&
+          boldSceneHeadings == other.boldSceneHeadings &&
           debugLinesPerPage == other.debugLinesPerPage;
 }
 

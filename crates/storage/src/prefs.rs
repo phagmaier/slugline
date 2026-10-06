@@ -68,6 +68,8 @@ pub struct Preferences {
     pub default_paper: String,
     /// `off`, `left`, `right`, or `both`.
     pub scene_numbers: String,
+    /// Bold scene-heading content in the editor, preview and PDF.
+    pub bold_scene_headings: bool,
     /// A user-selected TrueType face. `None` means the vendored Courier Prime
     /// family and is the fidelity-safe default.
     pub pdf_font_path: Option<PathBuf>,
@@ -105,6 +107,7 @@ impl Default for Preferences {
             editor_text_size: EDITOR_TEXT_SIZE,
             default_paper: PAPER_US_LETTER.to_owned(),
             scene_numbers: SCENE_NUMBERS_OFF.to_owned(),
+            bold_scene_headings: false,
             pdf_font_path: None,
             distraction_free: false,
             page_view: true,
@@ -204,6 +207,7 @@ mod tests {
         assert_eq!(prefs.editor_text_size, 15);
         assert_eq!(prefs.default_paper, "us_letter");
         assert_eq!(prefs.scene_numbers, "off");
+        assert!(!prefs.bold_scene_headings);
         assert!(prefs.pdf_font_path.is_none());
         assert!(!prefs.distraction_free);
         assert!(prefs.page_view, "page view is the default");
@@ -222,6 +226,7 @@ mod tests {
             editor_text_size: 18,
             default_paper: PAPER_A4.to_owned(),
             scene_numbers: SCENE_NUMBERS_BOTH.to_owned(),
+            bold_scene_headings: true,
             page_view: false,
             pdf_font_path: Some(PathBuf::from("/usr/share/fonts/mono.ttf")),
             backup_dir: Some(PathBuf::from("/mnt/usb/backups")),
@@ -260,6 +265,10 @@ mod tests {
         let prefs = Preferences::load(&path);
         assert_eq!(prefs.autosave_idle_ms, 750);
         assert_eq!(prefs.autosave_interval_ms, 30_000, "the rest are defaults");
+        assert!(
+            !prefs.bold_scene_headings,
+            "older files keep regular headings"
+        );
     }
 
     #[test]

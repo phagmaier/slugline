@@ -79,6 +79,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
         row: -3,
         column: 60 - '$number.'.length,
         content: '$number.',
+        runs: [
+          EmphasisRunView(
+            text: '$number.',
+            bold: false,
+            italic: false,
+            underline: false,
+          ),
+        ],
         sourceLine: null,
         kind: LayoutLineKind.pageNumber,
       ),
@@ -86,6 +94,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
         row: 1,
         column: 0,
         content: 'INT. LIBRARY - DAY',
+        runs: const [
+          EmphasisRunView(
+            text: 'INT. LIBRARY - DAY',
+            bold: false,
+            italic: false,
+            underline: false,
+          ),
+        ],
         block: number * 10,
         sourceLine: 0,
         kind: LayoutLineKind.content,
@@ -94,6 +110,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
         row: 3,
         column: 22,
         content: number == 1 ? 'NADIA' : "NADIA (CONT'D)",
+        runs: [
+          EmphasisRunView(
+            text: number == 1 ? 'NADIA' : "NADIA (CONT'D)",
+            bold: false,
+            italic: false,
+            underline: false,
+          ),
+        ],
         block: number * 10 + 1,
         sourceLine: number == 1 ? 0 : null,
         kind: number == 1 ? LayoutLineKind.content : LayoutLineKind.continued,
@@ -102,6 +126,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
         row: 4,
         column: 10,
         content: 'We agreed on the unopened post.',
+        runs: const [
+          EmphasisRunView(
+            text: 'We agreed on the unopened post.',
+            bold: false,
+            italic: false,
+            underline: false,
+          ),
+        ],
         block: number * 10 + 2,
         sourceLine: 0,
         kind: LayoutLineKind.content,
@@ -111,6 +143,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
           row: 5,
           column: 22,
           content: '(MORE)',
+          runs: const [
+            EmphasisRunView(
+              text: '(MORE)',
+              bold: false,
+              italic: false,
+              underline: false,
+            ),
+          ],
           block: 12,
           sourceLine: null,
           kind: LayoutLineKind.more,
@@ -130,6 +170,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
                 row: 18,
                 column: 21,
                 content: 'THE LONG WAY ROUND',
+                runs: const [
+                  EmphasisRunView(
+                    text: 'THE LONG WAY ROUND',
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                  ),
+                ],
                 sourceLine: null,
                 kind: LayoutLineKind.title,
               ),
@@ -137,6 +185,14 @@ PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
                 row: 20,
                 column: 25,
                 content: 'Written by',
+                runs: const [
+                  EmphasisRunView(
+                    text: 'Written by',
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                  ),
+                ],
                 sourceLine: null,
                 kind: LayoutLineKind.title,
               ),

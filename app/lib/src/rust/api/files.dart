@@ -402,6 +402,7 @@ class PreferencesView {
   final int editorTextSize;
   final String defaultPaper;
   final String sceneNumbers;
+  final bool boldSceneHeadings;
   final String? pdfFontPath;
   final bool distractionFree;
   final bool pageView;
@@ -421,6 +422,7 @@ class PreferencesView {
     required this.editorTextSize,
     required this.defaultPaper,
     required this.sceneNumbers,
+    required this.boldSceneHeadings,
     this.pdfFontPath,
     required this.distractionFree,
     required this.pageView,
@@ -442,6 +444,7 @@ class PreferencesView {
       editorTextSize.hashCode ^
       defaultPaper.hashCode ^
       sceneNumbers.hashCode ^
+      boldSceneHeadings.hashCode ^
       pdfFontPath.hashCode ^
       distractionFree.hashCode ^
       pageView.hashCode ^
@@ -465,6 +468,7 @@ class PreferencesView {
           editorTextSize == other.editorTextSize &&
           defaultPaper == other.defaultPaper &&
           sceneNumbers == other.sceneNumbers &&
+          boldSceneHeadings == other.boldSceneHeadings &&
           pdfFontPath == other.pdfFontPath &&
           distractionFree == other.distractionFree &&
           pageView == other.pageView &&

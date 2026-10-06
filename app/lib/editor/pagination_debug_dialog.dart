@@ -39,6 +39,7 @@ class _PaginationDebugDialogState extends State<PaginationDebugDialog> {
       const layout.PageSetup(
         paper: layout.PaperSize.usLetter,
         sceneNumbers: layout.SceneNumbers.both,
+        boldSceneHeadings: false,
         debugLinesPerPage: 12,
       ),
     );

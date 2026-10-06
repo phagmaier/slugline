@@ -190,8 +190,10 @@ void main() {
     final occupied = path('export-occupied.fountain');
     File(occupied).writeAsStringSync('Somebody else.\n');
     final wouldReplace = await core.saveAs(occupied);
-    expect((wouldReplace as SaveOutcome_Failed).failure,
-        SaveFailure.alreadyExists);
+    expect(
+      (wouldReplace as SaveOutcome_Failed).failure,
+      SaveFailure.alreadyExists,
+    );
     expect(
       File(occupied).readAsStringSync(),
       'Somebody else.\n',
@@ -343,11 +345,10 @@ void main() {
       expect(await core.externalChange(), (false, false), reason: 'in step');
 
       File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
-      expect(
-        await core.externalChange(),
-        (false, true),
-        reason: 'unmodified here and different there — reload silently',
-      );
+      expect(await core.externalChange(), (
+        false,
+        true,
+      ), reason: 'unmodified here and different there — reload silently');
 
       await core.reload();
       expect(core.source(), 'EXT. STREET - NIGHT\n');
@@ -525,8 +526,12 @@ void main() {
           ),
         )
         .position;
-    expect(position.pixels, greaterThan(0),
-        reason: 'the editor should be scrolled past the top after session restore');
+    expect(
+      position.pixels,
+      greaterThan(0),
+      reason:
+          'the editor should be scrolled past the top after session restore',
+    );
   });
 
   testWidgets('a script whose file has gone is shown as missing, not dropped', (
@@ -593,6 +598,7 @@ void main() {
       editorTextSize: 18,
       defaultPaper: 'a4',
       sceneNumbers: 'right',
+      boldSceneHeadings: true,
       pdfFontPath: null,
       distractionFree: false,
       pageView: false,
@@ -605,6 +611,7 @@ void main() {
     expect(await Core.instance.setPreferences(changed), isTrue);
     expect(Core.instance.preferences().autosaveIdleMs, 750);
     expect(Core.instance.preferences().navigatorVisible, isFalse);
+    expect(Core.instance.preferences().boldSceneHeadings, isTrue);
     expect(
       Core.instance.preferences().pageView,
       isFalse,

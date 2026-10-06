@@ -2630,6 +2630,22 @@ impl SseDecode for crate::api::doc::EditResult {
     }
 }
 
+impl SseDecode for crate::api::layout::EmphasisRunView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_bold = <bool>::sse_decode(deserializer);
+        let mut var_italic = <bool>::sse_decode(deserializer);
+        let mut var_underline = <bool>::sse_decode(deserializer);
+        return crate::api::layout::EmphasisRunView {
+            text: var_text,
+            bold: var_bold,
+            italic: var_italic,
+            underline: var_underline,
+        };
+    }
+}
+
 impl SseDecode for crate::api::doc::FindMatch {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2703,6 +2719,7 @@ impl SseDecode for crate::api::layout::LayoutLineView {
         let mut var_row = <i32>::sse_decode(deserializer);
         let mut var_column = <i32>::sse_decode(deserializer);
         let mut var_content = <String>::sse_decode(deserializer);
+        let mut var_runs = <Vec<crate::api::layout::EmphasisRunView>>::sse_decode(deserializer);
         let mut var_block = <Option<u64>>::sse_decode(deserializer);
         let mut var_sourceLine = <Option<u32>>::sse_decode(deserializer);
         let mut var_kind = <crate::api::layout::LayoutLineKind>::sse_decode(deserializer);
@@ -2710,6 +2727,7 @@ impl SseDecode for crate::api::layout::LayoutLineView {
             row: var_row,
             column: var_column,
             content: var_content,
+            runs: var_runs,
             block: var_block,
             source_line: var_sourceLine,
             kind: var_kind,
@@ -2784,6 +2802,20 @@ impl SseDecode for Vec<crate::api::doc::Completion> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::doc::Completion>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::layout::EmphasisRunView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::layout::EmphasisRunView>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -3165,10 +3197,12 @@ impl SseDecode for crate::api::layout::PageSetup {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_paper = <crate::api::layout::PaperSize>::sse_decode(deserializer);
         let mut var_sceneNumbers = <crate::api::layout::SceneNumbers>::sse_decode(deserializer);
+        let mut var_boldSceneHeadings = <bool>::sse_decode(deserializer);
         let mut var_debugLinesPerPage = <Option<u32>>::sse_decode(deserializer);
         return crate::api::layout::PageSetup {
             paper: var_paper,
             scene_numbers: var_sceneNumbers,
+            bold_scene_headings: var_boldSceneHeadings,
             debug_lines_per_page: var_debugLinesPerPage,
         };
     }
@@ -3281,6 +3315,7 @@ impl SseDecode for crate::api::files::PreferencesView {
         let mut var_editorTextSize = <u16>::sse_decode(deserializer);
         let mut var_defaultPaper = <String>::sse_decode(deserializer);
         let mut var_sceneNumbers = <String>::sse_decode(deserializer);
+        let mut var_boldSceneHeadings = <bool>::sse_decode(deserializer);
         let mut var_pdfFontPath = <Option<String>>::sse_decode(deserializer);
         let mut var_distractionFree = <bool>::sse_decode(deserializer);
         let mut var_pageView = <bool>::sse_decode(deserializer);
@@ -3299,6 +3334,7 @@ impl SseDecode for crate::api::files::PreferencesView {
             editor_text_size: var_editorTextSize,
             default_paper: var_defaultPaper,
             scene_numbers: var_sceneNumbers,
+            bold_scene_headings: var_boldSceneHeadings,
             pdf_font_path: var_pdfFontPath,
             distraction_free: var_distractionFree,
             page_view: var_pageView,
@@ -4053,6 +4089,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::EditResult>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::EmphasisRunView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.text.into_into_dart().into_dart(),
+            self.bold.into_into_dart().into_dart(),
+            self.italic.into_into_dart().into_dart(),
+            self.underline.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::EmphasisRunView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::EmphasisRunView>
+    for crate::api::layout::EmphasisRunView
+{
+    fn into_into_dart(self) -> crate::api::layout::EmphasisRunView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::doc::FindMatch {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -4142,6 +4201,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::layout::LayoutLineView {
             self.row.into_into_dart().into_dart(),
             self.column.into_into_dart().into_dart(),
             self.content.into_into_dart().into_dart(),
+            self.runs.into_into_dart().into_dart(),
             self.block.into_into_dart().into_dart(),
             self.source_line.into_into_dart().into_dart(),
             self.kind.into_into_dart().into_dart(),
@@ -4275,6 +4335,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::layout::PageSetup {
         [
             self.paper.into_into_dart().into_dart(),
             self.scene_numbers.into_into_dart().into_dart(),
+            self.bold_scene_headings.into_into_dart().into_dart(),
             self.debug_lines_per_page.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -4416,6 +4477,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::PreferencesView {
             self.editor_text_size.into_into_dart().into_dart(),
             self.default_paper.into_into_dart().into_dart(),
             self.scene_numbers.into_into_dart().into_dart(),
+            self.bold_scene_headings.into_into_dart().into_dart(),
             self.pdf_font_path.into_into_dart().into_dart(),
             self.distraction_free.into_into_dart().into_dart(),
             self.page_view.into_into_dart().into_dart(),
@@ -5031,6 +5093,16 @@ impl SseEncode for crate::api::doc::EditResult {
     }
 }
 
+impl SseEncode for crate::api::layout::EmphasisRunView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.text, serializer);
+        <bool>::sse_encode(self.bold, serializer);
+        <bool>::sse_encode(self.italic, serializer);
+        <bool>::sse_encode(self.underline, serializer);
+    }
+}
+
 impl SseEncode for crate::api::doc::FindMatch {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5093,6 +5165,7 @@ impl SseEncode for crate::api::layout::LayoutLineView {
         <i32>::sse_encode(self.row, serializer);
         <i32>::sse_encode(self.column, serializer);
         <String>::sse_encode(self.content, serializer);
+        <Vec<crate::api::layout::EmphasisRunView>>::sse_encode(self.runs, serializer);
         <Option<u64>>::sse_encode(self.block, serializer);
         <Option<u32>>::sse_encode(self.source_line, serializer);
         <crate::api::layout::LayoutLineKind>::sse_encode(self.kind, serializer);
@@ -5155,6 +5228,16 @@ impl SseEncode for Vec<crate::api::doc::Completion> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::doc::Completion>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::layout::EmphasisRunView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::layout::EmphasisRunView>::sse_encode(item, serializer);
         }
     }
 }
@@ -5463,6 +5546,7 @@ impl SseEncode for crate::api::layout::PageSetup {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::layout::PaperSize>::sse_encode(self.paper, serializer);
         <crate::api::layout::SceneNumbers>::sse_encode(self.scene_numbers, serializer);
+        <bool>::sse_encode(self.bold_scene_headings, serializer);
         <Option<u32>>::sse_encode(self.debug_lines_per_page, serializer);
     }
 }
@@ -5550,6 +5634,7 @@ impl SseEncode for crate::api::files::PreferencesView {
         <u16>::sse_encode(self.editor_text_size, serializer);
         <String>::sse_encode(self.default_paper, serializer);
         <String>::sse_encode(self.scene_numbers, serializer);
+        <bool>::sse_encode(self.bold_scene_headings, serializer);
         <Option<String>>::sse_encode(self.pdf_font_path, serializer);
         <bool>::sse_encode(self.distraction_free, serializer);
         <bool>::sse_encode(self.page_view, serializer);

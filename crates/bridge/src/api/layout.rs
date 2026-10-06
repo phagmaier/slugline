@@ -75,6 +75,7 @@ pub enum SceneNumbers {
 pub struct PageSetup {
     pub paper: PaperSize,
     pub scene_numbers: SceneNumbers,
+    pub bold_scene_headings: bool,
     /// Shrinks the page to this many rows. For tests and the debug surface
     /// only: it makes a page break happen in three blocks instead of fifty, so
     /// a break rule can be looked at without a fifty-page fixture. A real
@@ -99,6 +100,15 @@ pub enum LayoutLineKind {
     Title,
 }
 
+/// A resolved printable run, shared with the PDF's emphasis interpretation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmphasisRunView {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+}
+
 /// One printable fragment, placed on the grid.
 ///
 /// `row` is relative to the top of the text area and `column` to its left edge.
@@ -108,9 +118,10 @@ pub enum LayoutLineKind {
 pub struct LayoutLineView {
     pub row: i32,
     pub column: i32,
-    /// The characters to draw, already uppercased and wrapped. Not the block's
-    /// text: a scene heading is stored as typed and drawn in capitals.
+    /// Raw text, already uppercased and wrapped, retained for source identity.
     pub content: String,
+    /// Printable text and final output styles; no Fountain rescan is needed.
+    pub runs: Vec<EmphasisRunView>,
     /// The block this came from, or `None` for generated furniture — a page
     /// number, a blank, a `(MORE)`. This is the identity a preview maps a click
     /// back to the editor with, and it is the same `BlockId` [`crate::api::doc`]
@@ -447,7 +458,8 @@ pub(crate) fn page_config(setup: &PageSetup) -> PageConfig {
         SceneNumbers::Left => paginator::SceneNumberGutters::Left,
         SceneNumbers::Right => paginator::SceneNumberGutters::Right,
         SceneNumbers::Both => paginator::SceneNumberGutters::Both,
-    });
+    })
+    .with_bold_scene_headings(setup.bold_scene_headings);
     match setup.debug_lines_per_page {
         Some(lines) => config.with_line_capacity(lines.min(u16::MAX as u32) as u16),
         None => config,
@@ -456,12 +468,23 @@ pub(crate) fn page_config(setup: &PageSetup) -> PageConfig {
 
 fn pagination_view(pagination: &Pagination) -> PaginationView {
     let script = &pagination.script;
+    let mut runs = slugline_render_pdf::emphasis_runs(script, &pagination.config).into_iter();
+    let title_page = script
+        .title_page
+        .as_ref()
+        .map(|page| page_view(page, runs.next().expect("title-page runs")));
+    let pages = script
+        .pages
+        .iter()
+        .zip(runs)
+        .map(|(page, rows)| page_view(page, rows))
+        .collect();
     PaginationView {
         revision: script.revision,
         generation: pagination.generation,
         page_count: clamp_u32(script.pages.len()),
-        title_page: script.title_page.as_ref().map(page_view),
-        pages: script.pages.iter().map(page_view).collect(),
+        title_page,
+        pages,
         stats: PaginationStats {
             block_hits: clamp_u32(script.stats.block_hits),
             block_misses: clamp_u32(script.stats.block_misses),
@@ -474,18 +497,38 @@ fn pagination_view(pagination: &Pagination) -> PaginationView {
     }
 }
 
-fn page_view(page: &paginator::Page) -> PageView {
+fn page_view(
+    page: &paginator::Page,
+    runs: Vec<Vec<slugline_fountain::emphasis::EmphasisRun>>,
+) -> PageView {
     PageView {
         number: page.number,
-        lines: page.lines.iter().map(line_view).collect(),
+        lines: page
+            .lines
+            .iter()
+            .zip(runs)
+            .map(|(line, runs)| line_view(line, runs))
+            .collect(),
     }
 }
 
-fn line_view(line: &paginator::LayoutLine) -> LayoutLineView {
+fn line_view(
+    line: &paginator::LayoutLine,
+    runs: Vec<slugline_fountain::emphasis::EmphasisRun>,
+) -> LayoutLineView {
     LayoutLineView {
         row: i32::from(line.row),
         column: i32::from(line.column),
         content: line.content.clone(),
+        runs: runs
+            .into_iter()
+            .map(|run| EmphasisRunView {
+                text: run.text,
+                bold: run.emphasis.bold,
+                italic: run.emphasis.italic,
+                underline: run.emphasis.underline,
+            })
+            .collect(),
         block: line.block.map(|block| block.0),
         source_line: line.source_line.map(u32::from),
         kind: match line.kind {
@@ -669,8 +712,104 @@ mod tests {
         PageSetup {
             paper: PaperSize::UsLetter,
             scene_numbers: SceneNumbers::Off,
+            bold_scene_headings: false,
             debug_lines_per_page: None,
         }
+    }
+
+    #[test]
+    fn preview_runs_use_the_explicit_cached_setup_and_preserve_raw_geometry() {
+        let doc = Doc::parse("Title: Cover\n\nINT. *ROOM* - DAY #12#\n\nHe reads **loudly**.\n");
+        let preview = |bold_scene_headings| match block_on(doc_paginate(
+            doc.handle(),
+            PageSetup {
+                scene_numbers: SceneNumbers::Both,
+                bold_scene_headings,
+                ..letter()
+            },
+        )) {
+            PaginationOutcome::Current { pagination } => pagination,
+            other => panic!("expected current preview, got {other:?}"),
+        };
+        let regular = preview(false);
+        let weighted = preview(true);
+        assert_eq!(regular.page_count, weighted.page_count);
+        let lines = |view: &PaginationView| {
+            view.title_page
+                .iter()
+                .chain(view.pages.iter())
+                .flat_map(|page| page.lines.iter())
+                .map(|line| {
+                    (
+                        line.row,
+                        line.column,
+                        line.content.clone(),
+                        line.block,
+                        line.source_line,
+                        line.kind,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lines(&regular), lines(&weighted));
+        for (bold, view) in [(false, &regular), (true, &weighted)] {
+            let heading = view.pages[0]
+                .lines
+                .iter()
+                .find(|line| line.content == "INT. *ROOM* - DAY")
+                .expect("raw heading retains its markers");
+            assert_eq!(
+                heading.runs,
+                vec![
+                    EmphasisRunView {
+                        text: "INT. ".to_owned(),
+                        bold,
+                        italic: false,
+                        underline: false,
+                    },
+                    EmphasisRunView {
+                        text: "ROOM".to_owned(),
+                        bold,
+                        italic: true,
+                        underline: false,
+                    },
+                    EmphasisRunView {
+                        text: " - DAY".to_owned(),
+                        bold,
+                        italic: false,
+                        underline: false,
+                    },
+                ]
+            );
+            for line in view
+                .title_page
+                .iter()
+                .chain(view.pages.iter())
+                .flat_map(|page| page.lines.iter())
+            {
+                if line.content.is_empty() {
+                    assert!(line.runs.is_empty());
+                } else {
+                    assert!(!line.runs.is_empty());
+                }
+                if line.kind != LayoutLineKind::Content {
+                    assert!(line.runs.iter().all(|run| !run.bold));
+                }
+            }
+            assert!(view.pages[0]
+                .lines
+                .iter()
+                .flat_map(|line| &line.runs)
+                .any(|run| run.text == "loudly" && run.bold && !run.italic));
+        }
+        assert_eq!(
+            doc.runs(),
+            2,
+            "each output setup gets its own cached result"
+        );
+        let again = preview(false);
+        assert_eq!(lines(&again), lines(&regular));
+        assert_eq!(again.pages[0].lines, regular.pages[0].lines);
     }
 
     /// Enough action for pages to accumulate and checkpoints to be taken every

@@ -153,13 +153,14 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   `UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf --test golden`.
 - **The renderer makes no layout decisions.** Every row and column comes from
   `crates/layout` and is copied; `Geometry` multiplies a grid cell by its size
-  in points. The one thing it interprets is inline emphasis (ADR 0019):
-  `fountain::emphasis` takes a paragraph's rows together so a run that wrapped
-  still pairs up, and an unpaired marker stays an ordinary character.
-- **The preview and the PDF read one `PaginationView`.**
-  `app/lib/preview/preview_view.dart` draws it and has nothing in it that could
-  be a second layout implementation; its size on screen is its own and is not
-  part of the pagination request.
+  in points. `render_pdf::emphasis_runs` shares resolved inline emphasis with
+  the bridge (ADR 0045): body rows pair across wraps/pages, title rows pair
+  individually, and an unpaired marker stays an ordinary character.
+- **The preview and PDF share the paginated snapshot and resolved runs.**
+  `app/lib/preview/preview_view.dart` paints Rust's runs and makes no layout
+  or emphasis-parsing decision. Raw row content and source identity stay intact.
+  “Bold scene headings” is an output preference, off by default, followed by
+  the editor, preview and PDF. Editor inline markup and wrapping remain literal.
 - **An export is not a Save As** (ADR 0029). `doc_export_pdf` and
   `doc_export_fountain` both refuse `AlreadyExists` (retry with
   `overwrite: true`) and `ScriptIsOpen` (never retried). The export dialog

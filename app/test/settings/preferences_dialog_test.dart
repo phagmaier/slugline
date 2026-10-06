@@ -32,6 +32,7 @@ void main() {
     defaultPaper: 'us_letter',
     sceneNumbers: 'off',
     pdfFontPath: null,
+    boldSceneHeadings: false,
     distractionFree: false,
     pageView: false,
     autosaveIdleMs: 2000,
@@ -93,6 +94,14 @@ void main() {
       '12',
     );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('bold scene headings preference')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('bold scene headings preference')),
+    );
 
     await tester.tap(find.byKey(const ValueKey('save preferences')));
     await tester.pumpAndSettle();
@@ -104,6 +113,7 @@ void main() {
     expect(result!.autosaveIntervalMs, 12000);
     expect(result!.editorTextSize, greaterThan(15));
     expect(result!.spellLanguage, 'en_US');
+    expect(result!.boldSceneHeadings, isTrue);
   });
 
   testWidgets('a custom PDF face carries the grid-fidelity warning', (

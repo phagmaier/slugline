@@ -26,6 +26,10 @@ this file and the others to it.
 - Emphasised centred lines and title fields now align by printed width, and
   transitions and draft dates end at the right margin. Escaped markers and
   unpaired markup retain their printed widths; wrapping is unchanged.
+- Preview now renders Fountain emphasis with the same italic, bold and underline
+  interpretation as PDF export, including runs spanning wrapped rows and pages.
+  “Bold scene headings” in Preferences applies to editor, preview and PDF;
+  it is off by default. Editor inline markers and wrapping are unchanged.
 
 ## 1.0.2 - 2026-09-13
 

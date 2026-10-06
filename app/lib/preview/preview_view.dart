@@ -75,10 +75,7 @@ class _PreviewViewState extends State<PreviewView> {
   @override
   Widget build(BuildContext context) {
     final sheets = PreviewView.sheetsOf(widget.pagination);
-    final geometry = PreviewGeometry(
-      paper: widget.paper,
-      scale: widget.scale,
-    );
+    final geometry = PreviewGeometry(paper: widget.paper, scale: widget.scale);
     return ListView.separated(
       key: const Key('preview-sheets'),
       padding: const EdgeInsets.all(24),
@@ -266,17 +263,27 @@ class _PagePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final style = _textStyle(geometry, ink);
     for (final line in lines) {
-      if (line.content.isEmpty || line.kind == LayoutLineKind.pageNumber) {
-        continue;
+      if (line.kind == LayoutLineKind.pageNumber) continue;
+      var column = line.column;
+      for (final run in line.runs) {
+        final painter = lineCache.line(
+          run.text,
+          style.copyWith(
+            fontWeight: run.bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: run.italic ? FontStyle.italic : FontStyle.normal,
+            decoration: run.underline
+                ? TextDecoration.underline
+                : TextDecoration.none,
+          ),
+        );
+        final at = geometry.at(line.row, column);
+        // Centred within the row's box, on the printed baseline grid.
+        painter.paint(
+          canvas,
+          Offset(at.dx, at.dy + (geometry.row - painter.height) / 2),
+        );
+        column += run.text.runes.length;
       }
-      final painter = lineCache.line(line.content, style);
-      final at = geometry.at(line.row, line.column);
-      // Centred within the row's box, so that a preview row sits on the
-      // baseline grid the printed one does.
-      painter.paint(
-        canvas,
-        Offset(at.dx, at.dy + (geometry.row - painter.height) / 2),
-      );
     }
   }
 

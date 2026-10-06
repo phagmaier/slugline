@@ -128,6 +128,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditResult dco_decode_edit_result(dynamic raw);
 
   @protected
+  EmphasisRunView dco_decode_emphasis_run_view(dynamic raw);
+
+  @protected
   FindMatch dco_decode_find_match(dynamic raw);
 
   @protected
@@ -162,6 +165,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Completion> dco_decode_list_completion(dynamic raw);
+
+  @protected
+  List<EmphasisRunView> dco_decode_list_emphasis_run_view(dynamic raw);
 
   @protected
   List<FindMatch> dco_decode_list_find_match(dynamic raw);
@@ -446,6 +452,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditResult sse_decode_edit_result(SseDeserializer deserializer);
 
   @protected
+  EmphasisRunView sse_decode_emphasis_run_view(SseDeserializer deserializer);
+
+  @protected
   FindMatch sse_decode_find_match(SseDeserializer deserializer);
 
   @protected
@@ -480,6 +489,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Completion> sse_decode_list_completion(SseDeserializer deserializer);
+
+  @protected
+  List<EmphasisRunView> sse_decode_list_emphasis_run_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<FindMatch> sse_decode_list_find_match(SseDeserializer deserializer);
@@ -846,6 +860,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_edit_result(EditResult self, SseSerializer serializer);
 
   @protected
+  void sse_encode_emphasis_run_view(
+    EmphasisRunView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_find_match(FindMatch self, SseSerializer serializer);
 
   @protected
@@ -899,6 +919,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_completion(
     List<Completion> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_emphasis_run_view(
+    List<EmphasisRunView> self,
     SseSerializer serializer,
   );
 

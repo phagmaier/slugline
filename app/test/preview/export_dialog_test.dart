@@ -20,7 +20,10 @@ void main() {
   /// Giving the test a window the dialog fits in is the alternative to
   /// scrolling to every button before tapping it.
   setUp(() {
-    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .views
+        .first;
     view.physicalSize = const Size(1280, 960);
     view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -49,6 +52,7 @@ void main() {
     PageSetup initialSetup = const PageSetup(
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
       debugLinesPerPage: null,
     ),
   }) async {
@@ -86,12 +90,18 @@ void main() {
       initialSetup: const PageSetup(
         paper: PaperSize.a4,
         sceneNumbers: SceneNumbers.right,
+        boldSceneHeadings: true,
         debugLinesPerPage: null,
       ),
     );
 
     expect(output.setups.single.paper, PaperSize.a4);
+    expect(output.setups.single.boldSceneHeadings, isTrue);
     expect(output.setups.single.sceneNumbers, SceneNumbers.right);
+    answer = '/scripts/bold-headings.pdf';
+    await tester.tap(find.byKey(const Key('export-pdf')));
+    await tester.pumpAndSettle();
+    expect(output.pdfExports.single.$2.boldSceneHeadings, isTrue);
   });
 
   testWidgets('exporting a PDF writes one and moves nothing', (tester) async {
@@ -102,6 +112,7 @@ void main() {
 
     expect(output.pdfExports.single.$1, '/scripts/heat.pdf');
     expect(output.pdfExports.single.$3, isFalse, reason: 'nothing to replace');
+    expect(output.pdfExports.single.$2.boldSceneHeadings, isFalse);
     expect(
       asked.single,
       'Export PDF|heat.pdf|/scripts',
@@ -132,28 +143,30 @@ void main() {
     expect(core.dirty, isFalse, reason: 'and the dirty flag is untouched');
   });
 
-  testWidgets('a destination that is already there is asked about, then replaced', (
+  testWidgets(
+    'a destination that is already there is asked about, then replaced',
+    (tester) async {
+      core.existingFiles.add('/scripts/copy.fountain');
+      await open(tester);
+      answer = '/scripts/copy.fountain';
+      await tester.tap(find.byKey(const Key('export-fountain')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('There is already a file there'), findsOneWidget);
+      expect(core.exports, isEmpty, reason: 'nothing has been written yet');
+
+      await tester.tap(find.text('Replace'));
+      await tester.pumpAndSettle();
+      expect(core.exports.single, (
+        '/scripts/copy.fountain',
+        true,
+      ), reason: 'the second call is the answer to the question');
+    },
+  );
+
+  testWidgets('declining to replace writes nothing and says so', (
     tester,
   ) async {
-    core.existingFiles.add('/scripts/copy.fountain');
-    await open(tester);
-    answer = '/scripts/copy.fountain';
-    await tester.tap(find.byKey(const Key('export-fountain')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('There is already a file there'), findsOneWidget);
-    expect(core.exports, isEmpty, reason: 'nothing has been written yet');
-
-    await tester.tap(find.text('Replace'));
-    await tester.pumpAndSettle();
-    expect(
-      core.exports.single,
-      ('/scripts/copy.fountain', true),
-      reason: 'the second call is the answer to the question',
-    );
-  });
-
-  testWidgets('declining to replace writes nothing and says so', (tester) async {
     output.existingFiles.add('/scripts/heat.pdf');
     await open(tester);
     answer = '/scripts/heat.pdf';
@@ -230,7 +243,9 @@ void main() {
     await tester.pumpAndSettle();
     // The pane is narrower than an actual-size sheet, so fitting grows the
     // scale without leaving the slider's range — and the label tracks it.
-    final slider = tester.widget<Slider>(find.byKey(const Key('preview-scale')));
+    final slider = tester.widget<Slider>(
+      find.byKey(const Key('preview-scale')),
+    );
     expect(slider.value, greaterThan(4.2));
     expect(slider.value, lessThanOrEqualTo(slider.max));
     expect(

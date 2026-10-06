@@ -154,6 +154,11 @@ Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Open Preview and export with
 <kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export. Everything else is in the
 command palette.
 
+Preview and PDF render Fountain's italic, bold and underline emphasis; the
+editor keeps inline markers visible while you write. Preferences
+(<kbd>Ctrl</kbd>+<kbd>,</kbd>) → Output → **Bold scene headings** changes heading
+weight in all three views. It is off by default and does not change wrapping.
+
 > [!TIP]
 > If you're new to Fountain, start at [fountain.io][fountain]. The syntax fits
 > on a napkin, and Slugline supports every production element in the spec.

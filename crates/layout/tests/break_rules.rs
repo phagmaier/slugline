@@ -364,3 +364,45 @@ fn dialogue_wraps_at_thirty_five_character_width() {
         "dialogue text is short enough to not wrap"
     );
 }
+
+#[test]
+fn scene_heading_identity_is_content_only_and_weight_never_changes_geometry() {
+    let heading = format!("INT. {} - DAY #12#", "VERY LONG ROOM NAME ".repeat(5));
+    let document = Document::parse(&format!(
+        "Title: Cover\n\n{heading}\n\nAction follows.\n\nJOHN\nHello.\n"
+    ));
+    let scene = document
+        .blocks()
+        .iter()
+        .find(|block| block.kind() == BlockKind::SceneHeading)
+        .expect("heading")
+        .id();
+    for preset in [PageConfig::us_letter(), PageConfig::a4()] {
+        assert!(!preset.bold_scene_headings, "presets keep headings regular");
+        let regular = preset.with_scene_numbers(SceneNumberGutters::Both);
+        let bold = regular.clone().with_bold_scene_headings(true);
+        let plain = paginate(&document, &regular);
+        let weighted = paginate(&document, &bold);
+        assert_eq!(plain.title_page, weighted.title_page);
+        assert_eq!(plain.pages, weighted.pages);
+        assert_eq!(plain.checkpoints, weighted.checkpoints);
+        assert_eq!(plain.debug_dump(), weighted.debug_dump());
+        let mut heading_rows = 0;
+        for line in plain
+            .title_page
+            .iter()
+            .chain(plain.pages.iter())
+            .flat_map(|page| page.lines.iter())
+        {
+            let heading_content = line.kind == LayoutLineKind::Content && line.block == Some(scene);
+            assert_eq!(line.is_scene_heading, heading_content);
+            if heading_content {
+                heading_rows += 1;
+            }
+        }
+        assert!(
+            heading_rows > 1,
+            "every wrapped heading row retains its kind"
+        );
+    }
+}

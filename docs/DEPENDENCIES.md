@@ -28,6 +28,10 @@ Workspace edge `layout -> fountain` — reuse the existing emphasis pairing and
 escape rules for printed-width alignment, without a second scanner or any new
 external dependency (ADR 0044).
 
+Workspace edge `bridge -> fountain` — name the existing emphasis-run type while
+transporting the PDF's shared interpretation to the preview, without a document
+re-export or a Dart scanner; no external dependency (ADR 0045).
+
 ## Vendored assets
 
 | Asset | Version | Used by | Justification |

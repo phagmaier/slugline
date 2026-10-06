@@ -50,10 +50,9 @@ EXPECTED_DIRECT: dict[str, set[str]] = {
     "render_pdf": {"layout", "fountain", "document"},
     "storage": {"document"},
     "spell": set(),
-    # Phase 2 wired the document in, Phase 4 the storage, and remediation Phase
-    # 6D the layout (ADR 0020). `fountain` is reached through `document`'s
-    # re-exports rather than directly, so the bridge does not name it here.
-    "bridge": {"document", "layout", "storage"},
+    # ADR 0045: preview transport names Fountain emphasis runs directly while
+    # sharing their paragraph interpretation with the PDF renderer.
+    "bridge": {"fountain", "document", "layout", "storage"},
 }
 
 

@@ -64,7 +64,7 @@ This is the only place boxes are ticked.
 
 - [x] [F1](#f1) Common character-cue shapes are read as action
 - [x] [F2](#f2) Emphasised centred, right-aligned and title lines are misaligned
-- [ ] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
+- [x] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
 - [ ] [F4](#f4) Consecutive lyric lines print double-spaced
 - [ ] [F5](#f5) A `~` line under a cue prints its tilde
 - [ ] [F6](#f6) Page 1 carries a page number
@@ -546,7 +546,43 @@ in the italic face; editor, preview and PDF agree on heading weight for both
 settings of the option.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-06 — committed as `F3 — preview and PDF share emphasis and
+heading weight` (this commit). Reproduced before editing with actual preview
+and editor paint regressions; the PDF dump executable printed regular headings
+and italic body emphasis while the preview painted literal markers and the
+editor used bold headings.
+`render_pdf::emphasis_runs` now resolves output runs once per consumer with the
+existing cross-wrap/cross-page block pairing, individually scanned title and
+continuation rows, literal page-number/gutter furniture, escapes and unpaired
+markers. The bridge carries resolved faces beside unchanged raw row content,
+coordinates and source identity; Dart paints runs and never parses Fountain.
+“Bold scene headings” is a persisted output option, off by default to preserve
+existing printed output and regular uppercase-heading convention; bold remains
+an explicit supported stylistic choice. Editor, preview and PDF follow its
+base heading weight, while output inline bold remains additive. ADR 0045
+supersedes only the output-interpretation restrictions of ADRs 0019/0032 and
+extends ADR 0037. X4 wrapping and editor inline styling remain untouched.
+Bundled-font pixel regressions prove marker-free italic painting, mixed
+bold/italic/underline faces, scalar-grid advancement and both heading weights;
+the editor regression observes actual painted styles and live repainting.
+Rust regressions cover paragraph boundaries, heading options, cache separation
+and finished PDF face operators without coordinate changes. The real Linux
+preferences/preview/export UI exercised both settings through its PDF button;
+Poppler extracted italic `quietly` and regular/bold headings, and screenshots
+of the actual preview and rendered PDFs were inspected. Temporary screenshot
+hooks were removed. Bridge bindings were regenerated, not hand-edited.
+Verification: all 595 Rust workspace tests and 529 Flutter tests passed, as
+did clippy with warnings denied, Rust formatting, layering/version/docs checks,
+Flutter analysis, six complete native integration files, the serialized Linux
+release build and headed network isolation. The journalled keystroke p99 was
+3.49 ms, within budget. The full integration script is not wholly green:
+`writing_test.dart` passed 11 tests but failed its narrow-window navigator
+expectation; recorded under Found along the way and left outside F3.
+A concurrent debug/release build failed to find `libapp.so`; after integration
+finished, the serialized release build passed without a product-code change.
+Default layout goldens, PDF hashes, line-break fixtures and page breaks are
+unchanged; no golden regeneration was needed. F1/F2 and earlier work were
+preserved.
 
 <a id="f4"></a>
 ### F4 — Consecutive lyric lines print double-spaced
@@ -1127,3 +1163,11 @@ not part of that item.
   a three-line deletion, not a fix. It touches the save path's error
   classification, so it wants the full-disk test
   (`SLUGLINE_FULL_DISK_DIR`, see the recipes above) rather than a drive-by.
+- 2026-10-06 — F3's full Linux integration script stopped in
+  `writing_test.dart`: “the real entity index and scene parser drive the
+  navigator” expects visible `HOUSE` immediately after opening. The test's
+  native narrow window instead uses ADR 0041's closed navigator drawer below
+  900 px (`EditorPage._buildEditor`). The fixture needs to open that drawer or
+  establish a wide viewport before asserting on its rows. Left unchanged:
+  navigator presentation is outside F3; the remaining integration files were
+  run separately.

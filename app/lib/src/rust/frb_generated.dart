@@ -2538,6 +2538,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EmphasisRunView dco_decode_emphasis_run_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return EmphasisRunView(
+      text: dco_decode_String(arr[0]),
+      bold: dco_decode_bool(arr[1]),
+      italic: dco_decode_bool(arr[2]),
+      underline: dco_decode_bool(arr[3]),
+    );
+  }
+
+  @protected
   FindMatch dco_decode_find_match(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2592,15 +2606,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LayoutLineView dco_decode_layout_line_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return LayoutLineView(
       row: dco_decode_i_32(arr[0]),
       column: dco_decode_i_32(arr[1]),
       content: dco_decode_String(arr[2]),
-      block: dco_decode_opt_CastedPrimitive_u_64(arr[3]),
-      sourceLine: dco_decode_opt_box_autoadd_u_32(arr[4]),
-      kind: dco_decode_layout_line_kind(arr[5]),
+      runs: dco_decode_list_emphasis_run_view(arr[3]),
+      block: dco_decode_opt_CastedPrimitive_u_64(arr[4]),
+      sourceLine: dco_decode_opt_box_autoadd_u_32(arr[5]),
+      kind: dco_decode_layout_line_kind(arr[6]),
     );
   }
 
@@ -2638,6 +2653,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<Completion> dco_decode_list_completion(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_completion).toList();
+  }
+
+  @protected
+  List<EmphasisRunView> dco_decode_list_emphasis_run_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_emphasis_run_view).toList();
   }
 
   @protected
@@ -2863,12 +2884,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PageSetup dco_decode_page_setup(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return PageSetup(
       paper: dco_decode_paper_size(arr[0]),
       sceneNumbers: dco_decode_scene_numbers(arr[1]),
-      debugLinesPerPage: dco_decode_opt_box_autoadd_u_32(arr[2]),
+      boldSceneHeadings: dco_decode_bool(arr[2]),
+      debugLinesPerPage: dco_decode_opt_box_autoadd_u_32(arr[3]),
     );
   }
 
@@ -2946,8 +2968,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PreferencesView dco_decode_preferences_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 17)
-      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return PreferencesView(
       autosaveEnabled: dco_decode_bool(arr[0]),
       autocompleteEnabled: dco_decode_bool(arr[1]),
@@ -2958,14 +2980,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       editorTextSize: dco_decode_u_16(arr[6]),
       defaultPaper: dco_decode_String(arr[7]),
       sceneNumbers: dco_decode_String(arr[8]),
-      pdfFontPath: dco_decode_opt_String(arr[9]),
-      distractionFree: dco_decode_bool(arr[10]),
-      pageView: dco_decode_bool(arr[11]),
-      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[12]),
-      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[13]),
-      backupDir: dco_decode_opt_String(arr[14]),
-      backupKeepVersions: dco_decode_u_32(arr[15]),
-      backupKeepDays: dco_decode_u_32(arr[16]),
+      boldSceneHeadings: dco_decode_bool(arr[9]),
+      pdfFontPath: dco_decode_opt_String(arr[10]),
+      distractionFree: dco_decode_bool(arr[11]),
+      pageView: dco_decode_bool(arr[12]),
+      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[13]),
+      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[14]),
+      backupDir: dco_decode_opt_String(arr[15]),
+      backupKeepVersions: dco_decode_u_32(arr[16]),
+      backupKeepDays: dco_decode_u_32(arr[17]),
     );
   }
 
@@ -3560,6 +3583,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EmphasisRunView sse_decode_emphasis_run_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_text = sse_decode_String(deserializer);
+    var var_bold = sse_decode_bool(deserializer);
+    var var_italic = sse_decode_bool(deserializer);
+    var var_underline = sse_decode_bool(deserializer);
+    return EmphasisRunView(
+      text: var_text,
+      bold: var_bold,
+      italic: var_italic,
+      underline: var_underline,
+    );
+  }
+
+  @protected
   FindMatch sse_decode_find_match(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
@@ -3614,6 +3652,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_row = sse_decode_i_32(deserializer);
     var var_column = sse_decode_i_32(deserializer);
     var var_content = sse_decode_String(deserializer);
+    var var_runs = sse_decode_list_emphasis_run_view(deserializer);
     var var_block = sse_decode_opt_CastedPrimitive_u_64(deserializer);
     var var_sourceLine = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_kind = sse_decode_layout_line_kind(deserializer);
@@ -3621,6 +3660,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       row: var_row,
       column: var_column,
       content: var_content,
+      runs: var_runs,
       block: var_block,
       sourceLine: var_sourceLine,
       kind: var_kind,
@@ -3695,6 +3735,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <Completion>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_completion(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<EmphasisRunView> sse_decode_list_emphasis_run_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <EmphasisRunView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_emphasis_run_view(deserializer));
     }
     return ans_;
   }
@@ -4089,10 +4143,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_paper = sse_decode_paper_size(deserializer);
     var var_sceneNumbers = sse_decode_scene_numbers(deserializer);
+    var var_boldSceneHeadings = sse_decode_bool(deserializer);
     var var_debugLinesPerPage = sse_decode_opt_box_autoadd_u_32(deserializer);
     return PageSetup(
       paper: var_paper,
       sceneNumbers: var_sceneNumbers,
+      boldSceneHeadings: var_boldSceneHeadings,
       debugLinesPerPage: var_debugLinesPerPage,
     );
   }
@@ -4189,6 +4245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_editorTextSize = sse_decode_u_16(deserializer);
     var var_defaultPaper = sse_decode_String(deserializer);
     var var_sceneNumbers = sse_decode_String(deserializer);
+    var var_boldSceneHeadings = sse_decode_bool(deserializer);
     var var_pdfFontPath = sse_decode_opt_String(deserializer);
     var var_distractionFree = sse_decode_bool(deserializer);
     var var_pageView = sse_decode_bool(deserializer);
@@ -4207,6 +4264,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       editorTextSize: var_editorTextSize,
       defaultPaper: var_defaultPaper,
       sceneNumbers: var_sceneNumbers,
+      boldSceneHeadings: var_boldSceneHeadings,
       pdfFontPath: var_pdfFontPath,
       distractionFree: var_distractionFree,
       pageView: var_pageView,
@@ -4826,6 +4884,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_emphasis_run_view(
+    EmphasisRunView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.bold, serializer);
+    sse_encode_bool(self.italic, serializer);
+    sse_encode_bool(self.underline, serializer);
+  }
+
+  @protected
   void sse_encode_find_match(FindMatch self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_CastedPrimitive_u_64(self.block, serializer);
@@ -4873,6 +4943,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.row, serializer);
     sse_encode_i_32(self.column, serializer);
     sse_encode_String(self.content, serializer);
+    sse_encode_list_emphasis_run_view(self.runs, serializer);
     sse_encode_opt_CastedPrimitive_u_64(self.block, serializer);
     sse_encode_opt_box_autoadd_u_32(self.sourceLine, serializer);
     sse_encode_layout_line_kind(self.kind, serializer);
@@ -4944,6 +5015,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_completion(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_emphasis_run_view(
+    List<EmphasisRunView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_emphasis_run_view(item, serializer);
     }
   }
 
@@ -5306,6 +5389,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_paper_size(self.paper, serializer);
     sse_encode_scene_numbers(self.sceneNumbers, serializer);
+    sse_encode_bool(self.boldSceneHeadings, serializer);
     sse_encode_opt_box_autoadd_u_32(self.debugLinesPerPage, serializer);
   }
 
@@ -5384,6 +5468,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_16(self.editorTextSize, serializer);
     sse_encode_String(self.defaultPaper, serializer);
     sse_encode_String(self.sceneNumbers, serializer);
+    sse_encode_bool(self.boldSceneHeadings, serializer);
     sse_encode_opt_String(self.pdfFontPath, serializer);
     sse_encode_bool(self.distractionFree, serializer);
     sse_encode_bool(self.pageView, serializer);
