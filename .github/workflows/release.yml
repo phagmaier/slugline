@@ -69,9 +69,11 @@ jobs:
           cache: true
           pub-cache: true
 
+      # What ships is built from the committed lockfile or not at all — see
+      # the note on the CI flutter job's resolve step.
       - name: Resolve Flutter packages
         working-directory: app
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Resolve vendored Cargokit build-tool packages
         working-directory: app/rust_builder/cargokit/build_tool

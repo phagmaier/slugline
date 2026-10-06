@@ -282,6 +282,7 @@ python3 tools/make_reference.py --check   # after touching fountain's syntax, pa
 Flutter checks from `app/`:
 
 ```sh
+flutter pub get --enforce-lockfile   # fails if the lockfile is not this toolchain's
 flutter analyze
 flutter test
 flutter build linux --release
@@ -338,6 +339,11 @@ changing its test in the same change.
   job builds on exactly that toolchain. Avoid std APIs stabilised later, or raise
   the floor deliberately in the same change — which is why `storage` uses
   `libc::flock` and not `File::try_lock` (1.89); see ADR 0042.
+- `app/pubspec.lock` is the resolution of the toolchain CI pins (Flutter 3.44.8),
+  and CI resolves with `--enforce-lockfile`. The SDK pins four packages
+  exactly, so `pub get` under a newer Flutter rewrites them — as does anything
+  that runs it for you, the bridge code generator included. Restore the lockfile
+  unless the change is a deliberate dependency or toolchain bump.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
 - Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. A later

@@ -44,6 +44,9 @@ this file and the others to it.
   screenplay convention; numbering starts showing on page 2. “Number the first
   page” in Preferences restores it in page view, preview and PDF. Page counts
   and every other page number are unchanged.
+- The committed Dart lockfile is again the one the supported Flutter toolchain
+  (3.44.8) resolves, and CI and the release build now refuse one that is not.
+  The application is unchanged: those builds were already using these versions.
 
 ## 1.0.2 - 2026-09-13
 

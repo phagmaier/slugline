@@ -61,6 +61,7 @@ This is the only place boxes are ticked.
 - [x] [B3](#b3) README lists the wrong shortcuts and stale test counts
 - [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
 - [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
+- [ ] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
 
 **3. Fountain and output fidelity**
 
@@ -467,6 +468,40 @@ writing scenario. The rebuilt release UI was visually checked after Characters
 caret. Flutter analysis and 534 tests, Linux release/network checks, 598 Rust
 tests, rustfmt/clippy and layering/version/docs checks passed. Temporary
 diagnostics were removed; changelog and keymap describe the restored behavior.
+
+<a id="b6"></a>
+### B6 — The committed Dart lockfile is not the pinned toolchain's
+
+**Problem.** `app/pubspec.lock` records versions the supported toolchain cannot
+use. Every `flutter pub get` under Flutter 3.44.8 — CI's, the release
+workflow's, and the one the bridge code generator runs — re-resolves four
+packages and leaves the tree dirty, and CI builds and tests from that silent
+re-resolution rather than from what is committed.
+
+**Evidence (reproduced under Flutter 3.44.8 / Dart 3.12.2, the CI pin).**
+`flutter pub get --enforce-lockfile` fails with “Unable to satisfy
+`pubspec.yaml` using `pubspec.lock`”. A plain `flutter pub get` reports
+“Changed 4 dependencies!” and moves `matcher` 0.12.20 → 0.12.19, `meta` 1.19.0 →
+1.18.0, `test_api` 0.7.12 → 0.7.11 and `vector_math` 2.4.2 → 2.2.0. Those are
+the exact versions the SDK's own `flutter` and `flutter_test` packages pin, so
+no other resolution exists for this toolchain. The newer versions arrived in
+`fc918d5` (2026-09-13), written by a newer local Flutter — which
+`environment.flutter: ">=3.44.8"` permits. Found during F6, when regenerating
+the bindings rewrote the file.
+
+**Change.** Commit the pinned toolchain's resolution. Resolve with
+`--enforce-lockfile` in CI and in the release workflow, so a lockfile written by
+another SDK fails there instead of being replaced without a word. Say in
+`AGENTS.md` whose file it is. Leave `tools/release_preflight.sh` and the
+minimum-version constraint alone: a newer local toolchain still builds and
+tests, and the drift it causes is now caught on push.
+
+**Done when.** `flutter pub get --enforce-lockfile` passes under 3.44.8 and
+leaves the tree clean, as does regenerating the bindings; analysis, tests and
+the release build pass on the committed lockfile.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -1362,6 +1397,8 @@ not part of that item.
   Restored, and `flutter test` and the release build left it alone afterwards.
   The committed lockfile looks resolved by a newer SDK than the one CI pins;
   not investigated.
+  Promoted to [B6](#b6) after the owner asked whether to address it: the
+  lockfile cannot be satisfied by the pinned toolchain at all.
 - 2026-10-06 — F6: `README.md` sends the reader to Preferences → “Output” for
   Bold scene headings, but the dialog's section is headed “Page defaults”.
   Left as it is; the sentence added for F6 does not repeat the label.

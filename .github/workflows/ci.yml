@@ -176,9 +176,14 @@ jobs:
           flutter-version: "3.44.8"
           cache: true
 
+      # `--enforce-lockfile`: the committed lockfile is this toolchain's
+      # resolution. The SDK pins `meta`, `matcher`, `test_api` and
+      # `vector_math` exactly, so a lockfile written by a newer Flutter cannot
+      # be satisfied here, and a plain `pub get` would quietly resolve
+      # something else and build from that instead.
       - name: Resolve packages
         working-directory: app
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       # Cargokit's vendored build tool is a separate Dart package. A developer
       # checkout normally has its package config from the first Linux build,
