@@ -68,7 +68,7 @@ This is the only place boxes are ticked.
 - [x] [F2](#f2) Emphasised centred, right-aligned and title lines are misaligned
 - [x] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
 - [x] [F4](#f4) Consecutive lyric lines print double-spaced
-- [ ] [F5](#f5) A `~` line under a cue prints its tilde
+- [x] [F5](#f5) A `~` line under a cue prints its tilde
 - [ ] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
 - [ ] [F8](#f8) Incremental repagination is not proven equal to a full one
@@ -722,7 +722,38 @@ does not spell this case out. If the investigation says the current behaviour
 is defensible, close the item with that finding.
 
 **Effort.** S to investigate; M if it becomes a change.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `eab21a4`. Reproduced with the PDF dump
+example and Poppler: both sung lines retain `~` at the dialogue indent; a
+standalone lyric removes it. The [Fountain reference](https://fountain.io/syntax/#lyrics)
+says lyrics are always forced and their tilde is removed, while its
+[dialogue rule](https://fountain.io/syntax/#dialogue) says any text after a cue
+or parenthetical is dialogue; it does not resolve their overlap.
+[Screenplain](https://github.com/vilcans/screenplain/blob/abf0d0800ab0b9dfd5bbe780137641e746afbad4/screenplain/parsers/fountain.py)
+keeps the tilde in exported dialogue HTML and also in standalone action
+(it has no lyric recogniser).
+[Afterwriting's parser](https://github.com/afterwriting/aw-parser/blob/090e911c49599e0dbe41229e4f6a2c0f9639df8c/parser.js)
+keeps the speech's dialogue kind but converts each leading `~` line to italic
+markup. Both were run, not merely read.
+[FountainJS](https://github.com/jonnygreenwald/fountain-js/blob/a0e57b77344c4fc333bd3ca2a653a58a9d62e0c1/src/token.ts)
+was also run: it produces lyric tokens inside dialogue after a parenthetical or
+spoken line and removes the tilde in HTML; directly under a cue it throws on
+an undefined previous token. Decision: retain the dialogue block and literal
+editable source, but resolve sung hard lines in Fountain for output, remove
+only their lyric marker and italicise their wrapped rows. Do not detach a song
+from its cue or change speech continuation rules.
+ADR 0047 records that choice. Fountain owns recognition; cached layout rows
+carry marker identity and hard-line style scope, and preview/PDF share the
+resolved output. Regressions cover whitespace/tab boundaries, literal tildes
+at soft wraps, source tiling, mixed speeches, composed emphasis, page splits
+and cached/incremental pagination. A rebuilt release preview under Xvfb and a
+Poppler raster show italic, marker-free sung dialogue with literal editor text
+unchanged. PDF smokes also verify a two-page song and regular continuation
+furniture. Default corpus layout goldens, PDF hashes and line-break fixtures
+remain unchanged. Verification passed: 613 workspace tests, rustfmt, clippy
+with warnings denied, layering/version/reference checks, Flutter analysis and
+534 tests, Linux release build and network isolation.
+All seven native integration suites passed under Xvfb, including preview/PDF
+export and both keystroke budgets (journalled p99: 4.78 ms).
 
 <a id="f6"></a>
 ### F6 — Page 1 carries a page number
