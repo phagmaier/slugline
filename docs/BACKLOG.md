@@ -69,7 +69,7 @@ This is the only place boxes are ticked.
 - [x] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
 - [x] [F4](#f4) Consecutive lyric lines print double-spaced
 - [x] [F5](#f5) A `~` line under a cue prints its tilde
-- [ ] [F6](#f6) Page 1 carries a page number
+- [x] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
 - [ ] [F8](#f8) Incremental repagination is not proven equal to a full one
 - [ ] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
@@ -773,7 +773,43 @@ purpose. Appearance preferences must not affect pagination — this is an output
 setting and belongs with paper size and scene numbers.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `9b750f2`. Reproduced before changing
+anything: every committed layout golden had `-3 -> ( 58, "1.")` under `PAGE 1`,
+and a PDF exported from the reference script with the dump example read back
+through Poppler with `1.` at the top right of its first screenplay sheet.
+`PageConfig::number_first_page`, off by default, now decides it. The paginator
+leaves the page-number line off the page numbered 1 unless it is set;
+`Page::number` is still `Some(1)`, so the count, every later number, the
+checkpoints and every row of script are the same under either setting. It is
+stored as `number_first_page` with paper size and scene numbers and offered as
+“Number the first page” under Page defaults. ADR 0048 records the decision.
+What turned out differently from the item: only the paginator needed the rule.
+Preview and PDF draw the lines they are given and followed without a change.
+The editor's page view paints its own sheet numbers, so it reads which pages
+of the paginated snapshot carry a number line (`PageIndicator.printsNumber`)
+rather than the preference, which would have been a second copy of the rule in
+Dart. The export dialog carries the saved value and has no toggle of its own,
+as with heading weight, so the PDF cannot disagree with the sheets on screen.
+Continuous view's page-break labels are the application's count, not a picture
+of the sheet, and are unchanged. A one-page script still draws no sheet in page
+view at all — the gap already listed under Found along the way — so there the
+change shows only in preview and PDF.
+Goldens were regenerated on purpose: each of the twelve layout goldens lost
+exactly that one line, and all 22 PDF hashes changed. With the option on, all
+22 PDFs reproduce the previously committed hashes byte for byte, so the new
+default differs from the old output by the number alone. Line-break fixtures
+are unchanged. Regressions cover both papers, page 2 remaining `2.`, an
+explicit page break, an incremental edit on page 1 against a full pagination
+under both settings, the two setups being cached apart, the stored preference
+and both dialogs, the preview, and page view's painter, whose test fails when
+its question is removed. Verification passed: 621 workspace tests, rustfmt,
+clippy with warnings denied, layering/version/docs/reference checks, Flutter
+analysis and 539 tests, Linux release build and network isolation. All seven
+native integration suites passed under Xvfb, including a new one that drives
+the real Preferences dialog and reads the exported PDF back under both
+settings, and both keystroke budgets (journalled p99: 4.53 ms). The rebuilt
+release under isolated XDG roots and Xvfb shows the first sheet unnumbered by
+default and with `1.` when the stored preference is on.
 
 <a id="f7"></a>
 ### F7 — `@McCLANE` prints as `MCCLANE`
@@ -1315,3 +1351,17 @@ not part of that item.
   the failed scenario; investigate separately from lyric spacing.
   Promoted to [B5](#b5) after the owner requested investigation; the docked
   Linux navigator loses its page-level shortcut focus boundary on tab clicks.
+- 2026-10-06 — F6: `dart format` run over all of `app/` rewrites 41 of its 97
+  Dart files, not only the ones an item touches (see F4's note above). Nothing
+  gates Dart formatting, so a tree-wide run buries a change in thousands of
+  unrelated lines; it was undone here file by file. Either format the tree once
+  in its own change and check it in CI, or have `AGENTS.md` say to leave it.
+- 2026-10-06 — F6: `flutter_rust_bridge_codegen generate` ran `pub get` and
+  rewrote `app/pubspec.lock` under the pinned Flutter 3.44.8, moving `matcher`
+  0.12.20 to 0.12.19, `meta` 1.19.0 to 1.18.0 and `test_api` 0.7.12 to 0.7.11.
+  Restored, and `flutter test` and the release build left it alone afterwards.
+  The committed lockfile looks resolved by a newer SDK than the one CI pins;
+  not investigated.
+- 2026-10-06 — F6: `README.md` sends the reader to Preferences → “Output” for
+  Bold scene headings, but the dialog's section is headed “Page defaults”.
+  Left as it is; the sentence added for F6 does not repeat the label.
