@@ -35,21 +35,20 @@ class EditorGeometry {
   /// all, which then simply draws no page furniture.
   final List<PageStart> pageStarts;
 
-  /// Whether to draw discrete sheets. Continuous scroll is the default and is
-  /// the mode this geometry degrades to when there are no [pageStarts].
+  /// Whether to draw discrete sheets. Horizontal placement reserves the sheet
+  /// immediately; page furniture and vertical gaps wait for [pageStarts].
   final bool pageView;
 
-  /// The width of the scrollbar that overlays the right edge. The column is
-  /// centered within the viewport less this strip, so it stays visually
-  /// centered regardless of whether the scrollbar is painted.
+  /// The width of the scrollbar that overlays the right edge. The sheet in page
+  /// view, or the column in continuous view, is centred in the remaining space
+  /// regardless of whether the scrollbar is painted.
   final double scrollbarWidth;
 
   double get advance => metrics.advance;
   double get lineHeight => metrics.lineHeight;
 
   /// Whether sheets are actually being drawn, as opposed to merely asked for.
-  /// Page view with nothing paginated yet is continuous scroll until the first
-  /// snapshot lands.
+  /// Page view keeps continuous vertical spacing until the first snapshot lands.
   bool get sheeted => pageView && pageStarts.isNotEmpty;
 
   /// The width of the content column: 6.0 inches of text and never more.
@@ -67,19 +66,24 @@ class EditorGeometry {
   /// start shrinking. A quarter of an inch of page.
   double get minimumSideMargin => metrics.across(0.25);
 
-  /// The left edge of the text column, centred in the viewport less the
-  /// scrollbar strip so the column looks centred regardless of the bar.
+  /// The left edge of the text column. Page view centres the sheet, then places
+  /// the column at its left margin; continuous view centres the column itself.
+  /// Both exclude the scrollbar strip and retain safe narrow-column bounds.
   double get columnLeft {
     final usable = viewportWidth - scrollbarWidth;
-    return ((usable - columnWidth) / 2)
-        .clamp(0.0, math.max(0.0, usable - columnWidth));
+    final left = pageView
+        ? math.max(0.0, (usable - sheetWidth) / 2) + metrics.leftMargin
+        : (usable - columnWidth) / 2;
+    return left.clamp(0.0, math.max(0.0, usable - columnWidth));
   }
 
   /// The right edge of the text column — the 6.0-inch mark.
   double get columnRight => columnLeft + columnWidth;
 
-  /// The sheet's left edge, 1.5 inches to the left of the text column. Only
-  /// meaningful when [sheeted]; in continuous view there is no sheet.
+  /// The sheet's left edge, 1.5 inches to the left of the text column. Page view
+  /// reserves this position even before pagination. If only the scrollbar strip
+  /// prevents the sheet fitting, its left edge stays at zero; a viewport too
+  /// narrow for the column still takes precedence over the sheet's margins.
   double get sheetLeft => columnLeft - metrics.leftMargin;
 
   double get sheetWidth => metrics.paperWidth;

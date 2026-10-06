@@ -15,6 +15,12 @@ this file and the others to it.
 - Previous versions now include changed-text autosave snapshots at ten-minute
   intervals and changed files on opening. Explicit saves always record a version,
   and hourly retention protects recent history from bursts of manual saves.
+- Find's element filter can be reset to "Every element" and remembers the reset
+  when Find is reopened; cancelling the menu leaves the filter unchanged.
+- Page-view sheets are centred within the editor's scrollbar reserve, without
+  left-edge clipping or a horizontal jump when pagination first arrives.
+- The README now lists Ctrl+K for the command palette and Ctrl+P for Preview and
+  export, and omits test counts that become stale.
 
 ## 1.0.2 - 2026-09-13
 

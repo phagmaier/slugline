@@ -298,6 +298,9 @@ class _Toggle extends StatelessWidget {
   }
 }
 
+// A non-null popup result distinguishes "Every element" from cancellation.
+typedef _ElementFilterSelection = ({BlockKind? kind});
+
 class _ElementFilter extends StatelessWidget {
   const _ElementFilter({required this.value, required this.onChanged});
 
@@ -306,15 +309,15 @@ class _ElementFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<BlockKind?>(
+    return PopupMenuButton<_ElementFilterSelection>(
       tooltip: 'Restrict to an element type',
-      initialValue: value,
-      onSelected: onChanged,
+      initialValue: (kind: value),
+      onSelected: (selection) => onChanged(selection.kind),
       itemBuilder: (context) => [
-        const PopupMenuItem(value: null, child: Text('Every element')),
+        const PopupMenuItem(value: (kind: null), child: Text('Every element')),
         const PopupMenuDivider(),
         for (final choice in elementChoices)
-          PopupMenuItem(value: choice.kind, child: Text(choice.label)),
+          PopupMenuItem(value: (kind: choice.kind), child: Text(choice.label)),
       ],
       child: Row(
         children: [

@@ -50,7 +50,7 @@ always will.
   transitions and more without reaching for the mouse. Slugline recognises
   Fountain syntax as you type and keeps the formatting invisible.
 - **Keyboard-first** — every action has a shortcut. The command palette
-  (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) lets you reach anything by
+  (<kbd>Ctrl</kbd>+<kbd>K</kbd>) lets you reach anything by
   name. See `docs/KEYMAP.md` for the full map.
 - **Live autocomplete** — character names and scene headings are suggested from
   what you've already written.
@@ -150,9 +150,9 @@ It all starts with a scene heading.
 CUT TO BLACK
 ```
 
-Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Export a PDF with
-<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>. Everything else is in the command
-palette.
+Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Open Preview and export with
+<kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export. Everything else is in the
+command palette.
 
 > [!TIP]
 > If you're new to Fountain, start at [fountain.io][fountain]. The syntax fits
@@ -212,11 +212,11 @@ Architecture decisions are recorded in `docs/DECISIONS.md`.
 ## Development
 
 ```sh
-cargo test --workspace                                    # Rust (553 tests)
+cargo test --workspace                                    # Rust tests
 python3 tools/check_layering.py                           # crate layering
 python3 tools/check_version.py                            # consistent versioning
-cd app && flutter test                                    # Dart unit tests (457)
-./tools/test_linux_integration.sh                         # integration (56)
+cd app && flutter test                                    # Dart unit tests
+./tools/test_linux_integration.sh                         # Linux integration tests
 ./tools/check_no_network.sh                               # network-isolation gate
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```

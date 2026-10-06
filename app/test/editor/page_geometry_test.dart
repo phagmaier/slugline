@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show kMinInteractiveDimension;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
@@ -20,10 +21,7 @@ EditorGeometry _geometry({
   pageView: pageView,
 );
 
-const _starts = [
-  PageStart(row: 54, number: 2),
-  PageStart(row: 110, number: 3),
-];
+const _starts = [PageStart(row: 54, number: 2), PageStart(row: 110, number: 3)];
 
 void main() {
   group('the measure', () {
@@ -59,6 +57,36 @@ void main() {
   });
 
   group('continuous scroll', () {
+    test('keeps fitted horizontal placement with a scrollbar reserve', () {
+      for (final width in [640.0, 800.0, 812.0, 900.0, 1280.0, 3840.0]) {
+        final metrics = ScreenplayMetrics.forFontSize(
+          ScreenplayMetrics.fittedFontSize(
+            preferredFontSize: 15,
+            viewportWidth: width,
+            pageView: false,
+          ),
+        );
+        for (final starts in [const <PageStart>[], _starts]) {
+          final geometry = EditorGeometry(
+            metrics: metrics,
+            viewportWidth: width,
+            totalRows: 300,
+            pageStarts: starts,
+            scrollbarWidth: kMinInteractiveDimension,
+          );
+          final usable = width - kMinInteractiveDimension;
+          final expectedLeft = ((usable - geometry.columnWidth) / 2).clamp(
+            0.0,
+            usable - geometry.columnWidth,
+          );
+          expect(geometry.columnLeft, expectedLeft, reason: 'width $width');
+          expect(geometry.sheeted, isFalse);
+          expect(geometry.topPadding, metrics.down(0.5));
+          expect(geometry.pageGap, metrics.down(1.5));
+        }
+      }
+    });
+
     test('rows are evenly spaced whatever the pagination says', () {
       final geometry = _geometry(pageStarts: _starts);
       expect(geometry.sheeted, isFalse);
@@ -85,6 +113,82 @@ void main() {
   });
 
   group('page view', () {
+    for (final preferredSize in [15.0, 24.0]) {
+      for (final width in [640.0, 800.0, 812.0, 900.0, 1280.0, 3840.0]) {
+        test('centres fitted sheets at width $width, size $preferredSize', () {
+          const tolerance = 1e-7;
+          final metrics = ScreenplayMetrics.forFontSize(
+            ScreenplayMetrics.fittedFontSize(
+              preferredFontSize: preferredSize,
+              viewportWidth: width,
+              pageView: true,
+            ),
+          );
+          final before = EditorGeometry(
+            metrics: metrics,
+            viewportWidth: width,
+            totalRows: 300,
+            pageView: true,
+            scrollbarWidth: kMinInteractiveDimension,
+          );
+          final after = EditorGeometry(
+            metrics: metrics,
+            viewportWidth: width,
+            totalRows: 300,
+            pageStarts: _starts,
+            pageView: true,
+            scrollbarWidth: kMinInteractiveDimension,
+          );
+          final leftGap = after.sheetLeft;
+          final rightGap = width - after.sheetLeft - after.sheetWidth;
+          expect(after.sheetWidth, lessThanOrEqualTo(width + tolerance));
+          expect(leftGap, greaterThanOrEqualTo(-tolerance));
+          expect(rightGap, greaterThanOrEqualTo(-tolerance));
+          expect(
+            (leftGap - rightGap).abs(),
+            lessThanOrEqualTo(kMinInteractiveDimension + tolerance),
+          );
+          expect(
+            after.columnLeft,
+            closeTo(leftGap + metrics.leftMargin, tolerance),
+          );
+          expect(after.sheetLeft, before.sheetLeft);
+          expect(after.columnLeft, before.columnLeft);
+          expect(after.columnRight, before.columnRight);
+          expect(before.sheeted, isFalse);
+          expect(after.sheeted, isTrue);
+          // Pagination changes vertical furniture only, not the grid's x origin.
+          expect(before.topPadding, metrics.down(0.5));
+          expect(after.topPadding, metrics.down(1));
+        });
+      }
+    }
+
+    test('retains narrow and fallback column bounds', () {
+      for (final (metrics, width) in [
+        (_metrics, 300.0),
+        (_metrics, 100.0),
+        (const ScreenplayMetrics(advance: 40, lineHeight: 21), 4000.0),
+      ]) {
+        final geometry = EditorGeometry(
+          metrics: metrics,
+          viewportWidth: width,
+          totalRows: 10,
+          pageView: true,
+          scrollbarWidth: kMinInteractiveDimension,
+        );
+        expect(geometry.columnLeft, greaterThanOrEqualTo(0));
+        expect(
+          geometry.columnRight,
+          lessThanOrEqualTo(width - kMinInteractiveDimension),
+        );
+        expect(
+          geometry.columnWidth,
+          lessThanOrEqualTo(ScreenplayMetrics.maxColumnWidth),
+        );
+      }
+    });
+
     test('falls back to continuous until there is a pagination to draw', () {
       final geometry = _geometry(pageView: true);
       expect(geometry.sheeted, isFalse);
@@ -125,7 +229,10 @@ void main() {
     // page and came back a scroll later.
     for (final (name, geometry) in [
       ('continuous', _geometry(totalRows: 200)),
-      ('continuous with breaks', _geometry(totalRows: 200, pageStarts: _starts)),
+      (
+        'continuous with breaks',
+        _geometry(totalRows: 200, pageStarts: _starts),
+      ),
       (
         'page view',
         _geometry(totalRows: 200, pageStarts: _starts, pageView: true),

@@ -4,6 +4,7 @@
 // goes, what the selection covers, and how a patch from the core is folded into
 // the copy Flutter paints. Nothing here decides what a screenplay element is.
 
+import 'package:flutter/material.dart' show kMinInteractiveDimension;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,21 +16,21 @@ import '../support/fake_core.dart';
 import '../support/pump_editor.dart';
 
 BlockView _block(int id, BlockKind kind, String text) => BlockView(
-      id: id,
-      kind: kind,
-      sectionLevel: 0,
-      text: text,
-      forced: false,
-      dual: false,
-      readOnly: false,
-    );
+  id: id,
+  kind: kind,
+  sectionLevel: 0,
+  text: text,
+  forced: false,
+  dual: false,
+  readOnly: false,
+);
 
 FakeCore scene() => FakeCore([
-      _block(1, BlockKind.sceneHeading, 'INT. HOUSE - DAY'),
-      _block(2, BlockKind.action, 'John enters.'),
-      _block(3, BlockKind.character, 'JOHN'),
-      _block(4, BlockKind.dialogue, 'Hello.'),
-    ]);
+  _block(1, BlockKind.sceneHeading, 'INT. HOUSE - DAY'),
+  _block(2, BlockKind.action, 'John enters.'),
+  _block(3, BlockKind.character, 'JOHN'),
+  _block(4, BlockKind.dialogue, 'Hello.'),
+]);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -57,8 +58,9 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 0);
     });
 
-    testWidgets('the down arrow crosses the blank rows between elements',
-        (tester) async {
+    testWidgets('the down arrow crosses the blank rows between elements', (
+      tester,
+    ) async {
       final controller = await pumpEditor(tester, scene());
       caretAt(controller, 0, 4);
 
@@ -71,8 +73,9 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 4);
     });
 
-    testWidgets('a horizontal move keeps a column for later vertical moves',
-        (tester) async {
+    testWidgets('a horizontal move keeps a column for later vertical moves', (
+      tester,
+    ) async {
       final core = FakeCore([
         _block(1, BlockKind.action, 'a very long first line of action'),
         _block(2, BlockKind.action, 'short'),
@@ -88,12 +91,16 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
       expect(controller.selection.focus.block, 3);
-      expect(controller.selection.focus.offsetUtf16, 20,
-          reason: 'the original column survives the short line');
+      expect(
+        controller.selection.focus.offsetUtf16,
+        20,
+        reason: 'the original column survives the short line',
+      );
     });
 
-    testWidgets('the caret after a newline is on the next visual row',
-        (tester) async {
+    testWidgets('the caret after a newline is on the next visual row', (
+      tester,
+    ) async {
       final controller = await pumpEditor(
         tester,
         FakeCore.single(BlockKind.action, 'One.\nTwo.'),
@@ -103,8 +110,9 @@ void main() {
       expect(controller.caretRow, 1);
     });
 
-    testWidgets('vertical movement reaches the start of a hard line',
-        (tester) async {
+    testWidgets('vertical movement reaches the start of a hard line', (
+      tester,
+    ) async {
       final controller = await pumpEditor(
         tester,
         FakeCore.single(BlockKind.action, 'One.\nTwo.'),
@@ -131,8 +139,9 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 'John enters.'.length);
     });
 
-    testWidgets('Ctrl+Home and Ctrl+End reach the ends of the script',
-        (tester) async {
+    testWidgets('Ctrl+Home and Ctrl+End reach the ends of the script', (
+      tester,
+    ) async {
       final controller = await pumpEditor(tester, scene());
       caretAt(controller, 1, 5);
 
@@ -149,8 +158,9 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     });
 
-    testWidgets('PageDown and PageUp move by a screen and stop at the ends',
-        (tester) async {
+    testWidgets('PageDown and PageUp move by a screen and stop at the ends', (
+      tester,
+    ) async {
       final core = FakeCore([
         for (var i = 1; i <= 60; i++) _block(i, BlockKind.action, 'Line $i.'),
       ]);
@@ -165,12 +175,16 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
         await tester.pump();
       }
-      expect(controller.selection.focus.block, 1,
-          reason: 'PageUp stops at the top rather than running off it');
+      expect(
+        controller.selection.focus.block,
+        1,
+        reason: 'PageUp stops at the top rather than running off it',
+      );
     });
 
-    testWidgets('the caret steps over an emoji rather than into it',
-        (tester) async {
+    testWidgets('the caret steps over an emoji rather than into it', (
+      tester,
+    ) async {
       // 'a🎬b' is four UTF-16 code units; offset 2 is inside the surrogate pair,
       // and an offset the core would refuse (ADR 0001).
       final core = FakeCore.single(BlockKind.action, 'a🎬b');
@@ -229,8 +243,9 @@ void main() {
       expect(end.offsetUtf16, 'Hello.'.length);
     });
 
-    testWidgets('an unshifted arrow collapses the selection to its edge',
-        (tester) async {
+    testWidgets('an unshifted arrow collapses the selection to its edge', (
+      tester,
+    ) async {
       final controller = await pumpEditor(tester, scene());
       selectFromTo(controller, 1, 4, 3, 2);
 
@@ -247,7 +262,10 @@ void main() {
       // column 1 whole and no column addresses the middle of its surrogate
       // pair. The caret cannot come to rest on an offset the core refuses
       // (ADR 0001) because no click can name one.
-      final controller = await pumpEditor(tester, FakeCore.single(BlockKind.action, 'a\u{1F3AC}b'));
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'a\u{1F3AC}b'),
+      );
 
       controller.placeCaretAt(0, 1);
       await tester.pump();
@@ -262,19 +280,25 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 4, reason: 'end of line');
     });
 
-    testWidgets('a click inside a tab expansion is still a model offset',
-        (tester) async {
+    testWidgets('a click inside a tab expansion is still a model offset', (
+      tester,
+    ) async {
       // The tab is one character of the model and four columns of the grid.
       // Clicking any of them puts the caret before the tab: a click resolves to
       // a model offset, never to a column the document does not have.
       final controller = await pumpEditor(
-          tester, FakeCore.single(BlockKind.action, '\tabc'));
+        tester,
+        FakeCore.single(BlockKind.action, '\tabc'),
+      );
 
       for (final column in [0, 1, 2, 3]) {
         controller.placeCaretAt(0, column);
         await tester.pump();
-        expect(controller.selection.focus.offsetUtf16, 0,
-            reason: 'column $column is inside the tab');
+        expect(
+          controller.selection.focus.offsetUtf16,
+          0,
+          reason: 'column $column is inside the tab',
+        );
       }
 
       controller.placeCaretAt(0, 4);
@@ -286,21 +310,28 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 4, reason: 'end of line');
     });
 
-    testWidgets('a caret in a combining sequence steps off the cluster',
-        (tester) async {
+    testWidgets('a caret in a combining sequence steps off the cluster', (
+      tester,
+    ) async {
       // A cluster is one column per scalar, so a click can land between the
       // letter and its mark. Grapheme safety is the editor's, not the grid's.
       final controller = await pumpEditor(
-          tester, FakeCore.single(BlockKind.action, 'ae\u{301}b'));
+        tester,
+        FakeCore.single(BlockKind.action, 'ae\u{301}b'),
+      );
 
       controller.placeCaretAt(0, 2);
       await tester.pump();
-      expect(controller.selection.focus.offsetUtf16, 1,
-          reason: 'back to the start of the cluster');
+      expect(
+        controller.selection.focus.offsetUtf16,
+        1,
+        reason: 'back to the start of the cluster',
+      );
     });
 
-    testWidgets('a click places the caret and a drag extends from it',
-        (tester) async {
+    testWidgets('a click places the caret and a drag extends from it', (
+      tester,
+    ) async {
       final controller = await pumpEditor(tester, scene());
       final surface = tester.getTopLeft(find.byType(EditorSurface));
 
@@ -312,12 +343,41 @@ void main() {
       await tester.pump();
       await gesture.up();
 
-      expect(controller.selection.anchor, anchor, reason: 'the anchor is the click');
+      expect(
+        controller.selection.anchor,
+        anchor,
+        reason: 'the anchor is the click',
+      );
       expect(controller.hasSelection, isTrue);
     });
 
-    testWidgets('a click on the second hard line maps into that line',
-        (tester) async {
+    testWidgets('page-view click maps the centred sheet to a model caret', (
+      tester,
+    ) async {
+      final controller = await pumpEditor(
+        tester,
+        FakeCore.single(BlockKind.action, 'One.\nSecond line.'),
+      );
+      final surfaceFinder = find.byType(EditorSurface);
+      expect(tester.widget<EditorSurface>(surfaceFinder).pageView, isTrue);
+      final geometry = editorGeometry();
+      expect(geometry.scrollbarWidth, kMinInteractiveDimension);
+      expect(geometry.sheetLeft, greaterThanOrEqualTo(0));
+      final surface = tester.getTopLeft(surfaceFinder);
+
+      // The shared helper includes the production-fitted size and scrollbar
+      // reserve. Row one, column three is offset eight after the hard newline.
+      await tester.tapAt(surface + editorCell(1, 3));
+      await tester.pump();
+
+      expect(controller.selection.focus.block, controller.blocks.single.id);
+      expect(controller.selection.focus.offsetUtf16, 8);
+      expect(controller.selection.anchor, controller.selection.focus);
+    });
+
+    testWidgets('a click on the second hard line maps into that line', (
+      tester,
+    ) async {
       final controller = await pumpEditor(
         tester,
         FakeCore.single(BlockKind.action, 'One.\nTwo.'),
@@ -367,8 +427,9 @@ void main() {
   });
 
   group('applying what the core says', () {
-    testWidgets('an edit patches the editor rather than refetching',
-        (tester) async {
+    testWidgets('an edit patches the editor rather than refetching', (
+      tester,
+    ) async {
       final core = scene();
       final controller = await pumpEditor(tester, core);
       final readsAfterLoad = core.blockReads;
@@ -379,13 +440,17 @@ void main() {
       }
       await tester.pump();
 
-      expect(core.blockReads, readsAfterLoad,
-          reason: 'the document is never read back (§6)');
+      expect(
+        core.blockReads,
+        readsAfterLoad,
+        reason: 'the document is never read back (§6)',
+      );
       expect(controller.blocks[1].text, 'enters.');
     });
 
-    testWidgets('inserted blocks land at the index the core gave them',
-        (tester) async {
+    testWidgets('inserted blocks land at the index the core gave them', (
+      tester,
+    ) async {
       final core = scene();
       final controller = await pumpEditor(tester, core);
       caretAt(controller, 0, 4);
@@ -405,8 +470,9 @@ void main() {
       expect(controller.caretRow, controller.layout.rowAt(1, 0));
     });
 
-    testWidgets('undo puts the caret back where the edit started',
-        (tester) async {
+    testWidgets('undo puts the caret back where the edit started', (
+      tester,
+    ) async {
       final core = scene();
       final controller = await pumpEditor(tester, core);
       caretAt(controller, 1, 4);
@@ -426,8 +492,9 @@ void main() {
       expect(controller.blocks[1].text, 'John enters.');
     });
 
-    testWidgets('an incremental edit inserts and lays out a hard newline',
-        (tester) async {
+    testWidgets('an incremental edit inserts and lays out a hard newline', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'One.Two.');
       final controller = await pumpEditor(tester, core);
       caretAt(controller, 0, 4);
@@ -441,8 +508,9 @@ void main() {
       expect(core.blockReads, 1, reason: 'the patch is applied in place');
     });
 
-    testWidgets('an incremental edit removes and relays out a hard newline',
-        (tester) async {
+    testWidgets('an incremental edit removes and relays out a hard newline', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'One.\nTwo.');
       final controller = await pumpEditor(tester, core);
       expect(controller.layout.linesOf(0).length, 2);
@@ -459,8 +527,9 @@ void main() {
   });
 
   group('clipboard', () {
-    testWidgets('copy and paste preserve an embedded hard newline',
-        (tester) async {
+    testWidgets('copy and paste preserve an embedded hard newline', (
+      tester,
+    ) async {
       final clipboard = _FakeClipboard(tester);
       final controller = await pumpEditor(
         tester,
@@ -481,8 +550,9 @@ void main() {
       expect(controller.caretRow, 1);
     });
 
-    testWidgets('copy asks the core for the selection as Fountain',
-        (tester) async {
+    testWidgets('copy asks the core for the selection as Fountain', (
+      tester,
+    ) async {
       final clipboard = _FakeClipboard(tester);
       final controller = await pumpEditor(tester, scene());
       selectFromTo(controller, 2, 0, 3, 6);
@@ -510,8 +580,9 @@ void main() {
       expect(controller.blocks[0].text, 'INT.  - DAY');
     });
 
-    testWidgets('paste sends the clipboard to the core as Fountain',
-        (tester) async {
+    testWidgets('paste sends the clipboard to the core as Fountain', (
+      tester,
+    ) async {
       final clipboard = _FakeClipboard(tester)..text = 'CUT TO:';
       final core = scene();
       final controller = await pumpEditor(tester, core);
@@ -547,16 +618,19 @@ void main() {
   });
 
   group('typing', () {
-    testWidgets('a character from the platform becomes one ReplaceText',
-        (tester) async {
+    testWidgets('a character from the platform becomes one ReplaceText', (
+      tester,
+    ) async {
       final core = scene();
       final controller = await pumpEditor(tester, core);
       caretAt(controller, 1, 4);
 
-      tester.testTextInput.updateEditingValue(const TextEditingValue(
-        text: 'JohnX enters.',
-        selection: TextSelection.collapsed(offset: 5),
-      ));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'JohnX enters.',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
       await tester.pump();
 
       expect(
@@ -569,8 +643,9 @@ void main() {
       expect(controller.blocks[1].text, 'JohnX enters.');
     });
 
-    testWidgets('typing over a cross-block selection is one paste',
-        (tester) async {
+    testWidgets('typing over a cross-block selection is one paste', (
+      tester,
+    ) async {
       final core = scene();
       final controller = await pumpEditor(tester, core);
       selectFromTo(controller, 1, 4, 3, 4);
@@ -579,26 +654,37 @@ void main() {
       await tester.pump();
 
       expect(core.pastes.single.$2, '!');
-      expect(core.pastes.single.$3, isTrue,
-          reason: 'a typed character is text, not Fountain');
+      expect(
+        core.pastes.single.$3,
+        isTrue,
+        reason: 'a typed character is text, not Fountain',
+      );
       expect(controller.blocks.length, 2, reason: 'two blocks were absorbed');
       expect(controller.blocks[1].text, 'John!o.');
     });
 
-    testWidgets('a newline from the platform splits rather than being stored',
-        (tester) async {
+    testWidgets('a newline from the platform splits rather than being stored', (
+      tester,
+    ) async {
       final core = scene();
       final controller = await pumpEditor(tester, core);
       caretAt(controller, 1, 4);
 
-      tester.testTextInput.updateEditingValue(const TextEditingValue(
-        text: 'John\n enters.',
-        selection: TextSelection.collapsed(offset: 5),
-      ));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'John\n enters.',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
       await tester.pump();
 
-      expect(controller.blocks.map((b) => b.text),
-          ['INT. HOUSE - DAY', 'John', ' enters.', 'JOHN', 'Hello.']);
+      expect(controller.blocks.map((b) => b.text), [
+        'INT. HOUSE - DAY',
+        'John',
+        ' enters.',
+        'JOHN',
+        'Hello.',
+      ]);
       for (final block in controller.blocks) {
         expect(block.text, isNot(contains('\n')));
       }
@@ -617,9 +703,7 @@ void main() {
       final controller = EditorController(core);
       addTearDown(controller.dispose);
       const ghost = DocPosition(block: 9999, offsetUtf16: 0);
-      controller.setSelection(
-        const DocSelection(anchor: ghost, focus: ghost),
-      );
+      controller.setSelection(const DocSelection(anchor: ghost, focus: ghost));
       core.commands.clear();
       return controller;
     }
@@ -759,8 +843,12 @@ class _FakeClipboard {
         }
       },
     );
-    addTearDown(() => tester.binding.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform, null));
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
   }
 
   String? text;

@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/find_bar.dart';
 
 import '../support/fake_core.dart';
 import '../support/pump_editor.dart';
@@ -274,20 +275,71 @@ void main() {
     expect(core.queries.last.caseSensitive, isTrue, reason: 'both stay set');
   });
 
-  testWidgets('the element filter reaches the core', (tester) async {
+  testWidgets('the element filter resets and menu cancellation preserves it', (
+    tester,
+  ) async {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
     await openFind(tester, controller);
     await typeFind(tester, 'house');
-    await tester.pumpAndSettle();
+    final everyLabel = find.descendant(
+      of: find.byType(FindBar),
+      matching: find.text('Every element'),
+    );
+    final dialogueLabel = find.descendant(
+      of: find.byType(FindBar),
+      matching: find.text('Dialogue'),
+    );
+    expect(controller.query.kinds, isEmpty);
     expect(core.queries.last.kinds, isEmpty);
+    expect(everyLabel, findsOneWidget);
 
-    await tester.tap(find.text('Every element'));
+    await tester.tap(everyLabel);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dialogue').last);
     await tester.pumpAndSettle();
-
+    expect(controller.query.kinds, [BlockKind.dialogue]);
     expect(core.queries.last.kinds, [BlockKind.dialogue]);
+    expect(dialogueLabel, findsOneWidget);
+    expect(everyLabel, findsNothing);
+
+    // Dismissing the menu is not a request to search every element.
+    final scansBeforeCancel = core.queries.length;
+    await tester.tap(dialogueLabel);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+    expect(core.queries, hasLength(scansBeforeCancel));
+    expect(controller.query.kinds, [BlockKind.dialogue]);
+    expect(core.queries.last.kinds, [BlockKind.dialogue]);
+    expect(dialogueLabel, findsOneWidget);
+    expect(everyLabel, findsNothing);
+
+    await tester.tap(dialogueLabel);
+    await tester.pumpAndSettle();
+    final everyItem = find.ancestor(
+      of: find.text('Every element'),
+      matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
+    );
+    // The active Dialogue entry positions Every element offscreen at 800x600.
+    await tester.ensureVisible(everyItem);
+    await tester.pumpAndSettle();
+    await tester.tap(everyItem);
+    await tester.pumpAndSettle();
+    expect(core.queries, hasLength(scansBeforeCancel + 1));
+    expect(controller.query.kinds, isEmpty);
+    expect(core.queries.last.kinds, isEmpty);
+    expect(everyLabel, findsOneWidget);
+    expect(dialogueLabel, findsNothing);
+
+    await tester.tap(find.byTooltip('Close (Escape)'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FindBar), findsNothing);
+    await openFind(tester, controller);
+    expect(controller.query.kinds, isEmpty);
+    expect(core.queries.last.kinds, isEmpty);
+    expect(everyLabel, findsOneWidget);
+    expect(dialogueLabel, findsNothing);
   });
 
   testWidgets('Replace changes one match and moves to the next', (

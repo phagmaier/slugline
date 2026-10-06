@@ -47,9 +47,9 @@ This is the only place boxes are ticked.
 
 **2. Small confirmed bugs**
 
-- [ ] [B1](#b1) Find's element filter cannot be reset to "Every element"
-- [ ] [B2](#b2) Page-view sheets are off-centre and clip on the left
-- [ ] [B3](#b3) README lists the wrong shortcuts and stale test counts
+- [x] [B1](#b1) Find's element filter cannot be reset to "Every element"
+- [x] [B2](#b2) Page-view sheets are off-centre and clip on the left
+- [x] [B3](#b3) README lists the wrong shortcuts and stale test counts
 
 **3. Fountain and output fidelity**
 
@@ -291,7 +291,14 @@ existing tests only ever restrict.
 then resets, and the query's `kinds` is empty.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
+change). Reproduced with a visible menu-item click: Dialogue → Every element
+left `kinds == [dialogue]`. Popup selections now use non-null typed records,
+including the unrestricted choice, without changing the nullable filter or
+Rust query contract. The widget regression covers reset, cancellation and
+close/reopen persistence. A native Linux smoke against the real Rust core
+observed three matches → one Dialogue match → three matches after reset and
+reopening; the test double's simplified search remains unchanged.
 
 <a id="b2"></a>
 ### B2 — Page-view sheets are off-centre and clip on the left
@@ -332,7 +339,17 @@ and that a click still maps to the cell it lands on.
 completion popup. Change the geometry, not the callers.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
+change). Reproduced at editor width 800 and preferred text size 15: sheet gaps
+were −19.60/72.35 px. `EditorGeometry` now centres the sheet inside the scrollbar
+reserve, then places the text inside its left margin, keyed on `pageView` rather
+than pagination readiness. Continuous placement, font fitting and vertical
+pagination are unchanged; existing column bounds still protect extremely narrow
+viewports. Fitted-metrics regressions cover widths 640–3840, preferences 15/24,
+first-snapshot stability, continuous placement and narrow/fallback bounds, with
+a widget caret-hit regression. Native visual/click smoke passed at widths 800,
+1280 and 991 with the navigator docked; the 800 px sheet gaps are now
+2.37/50.37 px. The narrow navigator drawer and rebuilt release were also checked.
 
 <a id="b3"></a>
 ### B3 — README lists the wrong shortcuts and stale test counts
@@ -348,7 +365,17 @@ the preview because `_onPageKey` ignores Shift for that key
 maintaining.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
+change). Confirmed README drift against `docs/KEYMAP.md` and the keyboard
+handlers. The README now gives Ctrl+K for the palette and describes Ctrl+P as
+opening Preview and export, where PDF export is selected; test totals were
+removed rather than repinned. Native smoke and the rebuilt release both opened
+the documented surfaces with those keys. Batch verification: 524 Flutter tests,
+Flutter analysis, 579 Rust workspace tests, clippy with warnings denied, Rust
+formatting, layering/version checks and the Linux release build passed.
+Temporary reproduction/native-smoke harnesses were removed. Native smoke used
+the current display because `xvfb-run` is unavailable; the full Linux integration
+suite was not run.
 
 ---
 
@@ -931,3 +958,9 @@ S1 is fixed, two windows cover it.
 
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
+
+- 2026-10-06 — While preparing B2's visual smoke, read a separate single-page
+  presentation gap: `PageIndicator._resolvePageStarts` excludes page 1, and
+  `EditorGeometry.sheeted` requires a nonempty start list. A one-page pagination
+  therefore has no sheet furniture despite page view being enabled. Not
+  exercised or changed; investigate separately from horizontal centring.
