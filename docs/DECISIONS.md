@@ -65,8 +65,9 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0042 | Crash journals carry kernel ownership across publication | `crates/storage/src/journal.rs`, `crates/storage/Cargo.toml`, `crates/bridge/tests/persistence.rs` | live |
 | 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
 | 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | live |
-| 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | live |
+| 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | extended by 0047 — sung-dialogue output |
 | 0046 | Consecutive lyric blocks share one leading blank | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart` | live |
+| 0047 | Sung hard lines remain dialogue and carry lyric output metadata | `crates/fountain/src/syntax.rs`, `crates/fountain/src/lib.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/model.rs`, `crates/render_pdf/src/lib.rs` | live |
 
 ---
 
@@ -3377,6 +3378,7 @@ layout coordinates, row content, page breaks and PDF hashes stay unchanged.
 **Supersedes:** ADR 0019's restriction of styled emphasis to the PDF and
 ADR 0032's private PDF-only paragraph interpretation.
 **Extends:** ADR 0037's shared output defaults with scene-heading weight.
+**Superseded by:** ADR 0047 extends resolved output with sung-dialogue italics.
 
 ### Context
 
@@ -3475,3 +3477,70 @@ The new lyric-run regressions cover the changed output; line breaking is unchang
 The rebuilt Linux release was opened under isolated XDG roots and Xvfb;
 screenshots of its editor and preview both show consecutive lyric rows.
 
+
+---
+
+## ADR 0047 — Sung hard lines remain dialogue and carry lyric output metadata
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Extends:** ADR 0045 — marker-free, shared preview/PDF output for sung dialogue.
+
+### Context
+
+F5 reproduced a leading `~` under a character cue in printed dialogue. The
+[Fountain reference](https://fountain.io/syntax/#lyrics) requires removal of a
+lyric's tilde, but its [dialogue rule](https://fountain.io/syntax/#dialogue)
+also makes any text after a cue or parenthetical dialogue. It does not settle
+their overlap. The implementation comparison and pinned source links are in
+`docs/BACKLOG.md`, F5: Screenplain preserves the tilde; Afterwriting removes
+it and applies italic markup without changing the dialogue kind. FountainJS
+supports lyric tokens within speeches after a spoken line or parenthetical,
+but its direct-under-cue case currently throws.
+
+### Decision
+
+A sung hard line in a speech remains Dialogue. Retain its literal text, block
+identity and provenance, rather than splitting it into a standalone Lyric and
+losing its cue, speech break rules or canonical adjacency. This is output
+interpretation, not a new block kind or automatic classification rule.
+
+Fountain's `dialogue_lyric_marker_utf8` calls the existing marker recogniser
+on a hard line's leading-whitespace-trimmed view and returns the actual marker
+offset. Only a leading, unescaped `~` qualifies. Other element kinds and
+mid-hard-line tildes remain literal.
+
+Layout wraps once with source spans and caches lyric metadata with each row.
+`LayoutLine::is_lyric` covers every wrap of the sung hard line;
+`lyric_marker_utf8` identifies the single raw-row byte to omit, only on the row
+that contains it. Source spans distinguish that marker from a literal tilde at
+a later soft-wrap start, including expanded tabs and indentation that wraps
+before the marker. Leading whitespace and raw row content remain intact.
+
+The shared output resolver removes only the metadata-designated marker before
+pairing inline emphasis, then adds italic to sung rows' resolved runs. Inline
+bold and underline still compose, and explicit inline emphasis can still pair
+across hard lines. Lyric base italics end at the source newline but survive
+wraps and page breaks. Generated continuation cues and `(MORE)` do not inherit
+them. Preview consumes the same runs as PDF; neither recognises lyric syntax.
+
+No bridge API, bindings, editor metrics, speech grouping, page break rule or
+line-breaking contract changes. The editor continues to show the literal tilde
+and count its column, as it does inline emphasis markers. Standalone Lyric
+blocks keep their existing style and run spacing.
+
+### Verification
+
+Regressions cover semantic marker boundaries, byte-exact source tiling,
+tabs/Unicode whitespace and wrapped indentation, hard-newline style reset,
+literal tildes at soft-wrap starts, speech continuation, cached full and
+incremental pagination, composed emphasis, finished PDF faces and Poppler text
+extraction. The PDF dump smoke exercises direct, mixed and two-page songs;
+Poppler XML confirms italic sung output, bold-italic composition and regular
+neighboring speech/continuation furniture. Rasterisation shows marker-free
+italic lyrics at the dialogue indent.
+The rebuilt Linux release preview was opened under isolated XDG roots and Xvfb;
+its actual-size sheet shows the same italic, marker-free lyrics while the
+editor behind it retains the source tildes. Default corpus layout goldens,
+PDF hashes and line-break fixtures remain unchanged.
+All seven native integration suites passed, including preview/PDF export and
+the journalled keystroke budget (p99 4.78 ms).

@@ -146,6 +146,45 @@ fn the_text_comes_out_in_reading_order_with_no_markup_in_it() {
 }
 
 #[test]
+fn sung_dialogue_extracts_without_its_marker_but_literal_tildes_remain() {
+    let source = "Title: ~Cover\n\n!~Action.\n\n@~JOHN\n(~quietly)\n\
+                  ~Café **_strong_**.\nSpoken ~ literal.\n~Second song.\nPlain end.\n\n\
+                  JANE\n~Direct song.\n";
+    let Some(text) = require_pdftotext(extract(&export(source), &["-layout"])) else {
+        return;
+    };
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let expected = [
+        "~Cover",
+        "~Action.",
+        "~JOHN",
+        "(~quietly)",
+        "Café strong.",
+        "Spoken ~ literal.",
+        "Second song.",
+        "Plain end.",
+        "JANE",
+        "Direct song.",
+    ];
+    let mut at = 0;
+    for wanted in expected {
+        let found = text[at..]
+            .find(wanted)
+            .unwrap_or_else(|| panic!("{wanted:?} is missing or out of order in:\n{text}"));
+        at += found + wanted.len();
+    }
+    assert_eq!(
+        text.matches('~').count(),
+        5,
+        "only literal tildes are selectable"
+    );
+    assert!(
+        !text.contains(['*', '_']),
+        "inline emphasis markers are not selectable"
+    );
+}
+
+#[test]
 fn the_title_page_is_the_first_page_and_the_screenplay_starts_at_page_one() {
     let bytes = export(SCRIPT);
     let Some(first) = require_pdftotext(extract(&bytes, &["-f", "1", "-l", "1"])) else {

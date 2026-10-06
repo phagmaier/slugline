@@ -37,6 +37,9 @@ this file and the others to it.
   with one blank line before each lyric run instead of before every line.
 - Clicking the navigator's Characters tab no longer disables Ctrl+J on Linux.
   The shortcut returns to scene search without clicking back into the editor.
+- Sung lines beginning with `~` inside dialogue now print without the tilde and
+  in italics in preview and PDF, including wrapped lines and page continuations.
+  They remain part of the speech; source text and editor wrapping are unchanged.
 
 ## 1.0.2 - 2026-09-13
 

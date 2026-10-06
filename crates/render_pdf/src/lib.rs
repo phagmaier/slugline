@@ -311,8 +311,8 @@ fn place(script: &PaginatedScript, config: &PageConfig) -> Vec<Vec<Placed>> {
 /// Sheets are in title-first order, and rows match each page's `lines` exactly,
 /// including empty run lists for empty text. Body paragraphs retain pairing
 /// across wraps and page breaks; title rows are interpreted independently.
-/// Generated page numbers and gutters remain literal. Scene-heading weight is
-/// additive to inline emphasis and never changes layout or the raw content.
+/// Generated page numbers and gutters remain literal. Scene-heading weight and
+/// sung-dialogue italics are additive to inline emphasis; raw content is intact.
 pub fn emphasis_runs(
     script: &PaginatedScript,
     config: &PageConfig,
@@ -323,13 +323,13 @@ pub fn emphasis_runs(
         .chain(script.pages.iter())
         .collect();
     let mut scanned = scan_paragraphs(&sheets);
-    if config.bold_scene_headings {
-        for (page, rows) in sheets.iter().zip(&mut scanned) {
-            for (line, runs) in page.lines.iter().zip(rows) {
-                if line.is_scene_heading {
-                    for run in runs {
-                        run.emphasis.bold = true;
-                    }
+    for (page, rows) in sheets.iter().zip(&mut scanned) {
+        for (line, runs) in page.lines.iter().zip(rows) {
+            let bold = config.bold_scene_headings && line.is_scene_heading;
+            if bold || line.is_lyric {
+                for run in runs {
+                    run.emphasis.bold |= bold;
+                    run.emphasis.italic |= line.is_lyric;
                 }
             }
         }
@@ -355,10 +355,29 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
         if paragraph.is_empty() {
             return;
         }
-        let rows: Vec<&str> = paragraph
+        // Layout owns lyric recognition. Only marked rows need a temporary
+        // string, and removing the marker precedes paragraph-wide pairing.
+        let unmarked: Vec<(usize, String)> = paragraph
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (sheet, row))| {
+                let line = &sheets[*sheet].lines[*row];
+                line.lyric_marker_utf8.map(|marker| {
+                    debug_assert_eq!(line.content.as_bytes()[marker], b'~');
+                    let mut text = String::with_capacity(line.content.len() - 1);
+                    text.push_str(&line.content[..marker]);
+                    text.push_str(&line.content[marker + 1..]);
+                    (index, text)
+                })
+            })
+            .collect();
+        let mut rows: Vec<&str> = paragraph
             .iter()
             .map(|(sheet, line)| sheets[*sheet].lines[*line].content.as_str())
             .collect();
+        for (index, text) in &unmarked {
+            rows[*index] = text;
+        }
         for ((sheet, line), runs) in paragraph.drain(..).zip(emphasis::scan(&rows)) {
             scanned[sheet][line] = runs;
         }
@@ -836,6 +855,179 @@ mod tests {
     }
 
     #[test]
+    fn sung_hard_lines_remove_only_their_marker_and_do_not_style_their_neighbors() {
+        let config = PageConfig::us_letter();
+        let document = Document::parse(
+            "Title: ~Cover\n\n!~Action.\n\n@~JOHN\n(~quietly)\n\
+             Spoken first.\n~Sing ~ this.\nSpoken middle.\n\u{2003}~Café.\nPlain end.\n\n\
+             JANE\n~Direct song.\n\nJACK\n(softly)\n~After parenthetical.\n",
+        );
+        let script = paginate(&document, &config);
+        let raw = script.clone();
+        let runs = emphasis_runs(&script, &config);
+        let expected = [
+            ("~Sing ~ this.", "Sing ~ this."),
+            ("\u{2003}~Café.", "\u{2003}Café."),
+            ("~Direct song.", "Direct song."),
+            ("~After parenthetical.", "After parenthetical."),
+        ];
+        let mut sung = 0;
+        let mut literal_tildes = 0;
+        for (page, rows) in script
+            .title_page
+            .iter()
+            .chain(script.pages.iter())
+            .zip(runs)
+        {
+            for (line, runs) in page.lines.iter().zip(rows) {
+                if let Some((_, printed)) = expected
+                    .iter()
+                    .find(|(content, _)| *content == line.content)
+                {
+                    sung += 1;
+                    assert!(line.is_lyric);
+                    assert_eq!(
+                        runs,
+                        vec![emphasis::EmphasisRun {
+                            text: (*printed).to_owned(),
+                            emphasis: emphasis::Emphasis {
+                                italic: true,
+                                ..emphasis::Emphasis::PLAIN
+                            },
+                        }]
+                    );
+                } else {
+                    assert!(!line.is_lyric, "{:?}", line.content);
+                    assert!(runs
+                        .iter()
+                        .all(|run| run.emphasis == emphasis::Emphasis::PLAIN));
+                    if line.content.contains('~') {
+                        literal_tildes += 1;
+                        let printed: String = runs.iter().map(|run| run.text.as_str()).collect();
+                        assert_eq!(printed, line.content);
+                    }
+                }
+            }
+        }
+        assert_eq!(sung, expected.len());
+        assert_eq!(literal_tildes, 4, "title, action, cue and parenthetical");
+        assert_eq!(script, raw, "resolved output cannot mutate raw rows");
+    }
+
+    #[test]
+    fn sung_base_style_keeps_inline_pairing_across_spoken_hard_lines() {
+        let config = PageConfig::us_letter();
+        let script = paginate(
+            &Document::parse("JOHN\n~**_Sing\nSpoken_**\n~*Again*.\nPlain end.\n"),
+            &config,
+        );
+        let runs = emphasis_runs(&script, &config);
+        let mut paired_rows = 0;
+        let mut again = false;
+        for (line, runs) in script.pages[0].lines.iter().zip(&runs[0]) {
+            match line.content.as_str() {
+                "~**_Sing" | "Spoken_**" => {
+                    paired_rows += 1;
+                    assert_eq!(runs.len(), 1);
+                    assert_eq!(runs[0].text, if line.is_lyric { "Sing" } else { "Spoken" });
+                    assert!(runs[0].emphasis.bold && runs[0].emphasis.underline);
+                    assert_eq!(runs[0].emphasis.italic, line.content == "~**_Sing");
+                }
+                "~*Again*." => {
+                    again = true;
+                    assert_eq!(
+                        runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+                        "Again."
+                    );
+                    assert!(runs.iter().all(|run| run.emphasis.italic));
+                    assert!(runs
+                        .iter()
+                        .all(|run| !run.emphasis.bold && !run.emphasis.underline));
+                }
+                _ => assert!(runs
+                    .iter()
+                    .all(|run| run.emphasis == emphasis::Emphasis::PLAIN)),
+            }
+        }
+        assert_eq!(paired_rows, 2);
+        assert!(again);
+    }
+
+    #[test]
+    fn sung_wraps_and_page_splits_keep_composed_emphasis_without_styling_furniture() {
+        let config = PageConfig::us_letter().with_line_capacity(8);
+        let source = format!(
+            "Title: ~Cover\n\nJOHN\n~**_{}home._**\nSpoken after.\n~Second song.\nPlain finish.\n",
+            "wandering ".repeat(60)
+        );
+        let script = paginate(&Document::parse(&source), &config);
+        assert!(script.pages.len() > 1);
+        let runs = emphasis_runs(&script, &config);
+        let mut long_rows = 0;
+        let mut lyric_pages = BTreeSet::new();
+        let mut markers = 0;
+        let mut more = 0;
+        let mut continued = 0;
+        for (sheet, (page, rows)) in script
+            .title_page
+            .iter()
+            .chain(script.pages.iter())
+            .zip(runs)
+            .enumerate()
+        {
+            for (line, runs) in page.lines.iter().zip(rows) {
+                if line.is_lyric {
+                    lyric_pages.insert(sheet);
+                    markers += usize::from(line.lyric_marker_utf8.is_some());
+                    assert!(runs.iter().all(|run| run.emphasis.italic));
+                    assert!(runs.iter().all(|run| !run.text.contains(['~', '*', '_'])));
+                    if line.content == "~Second song." {
+                        assert!(runs
+                            .iter()
+                            .all(|run| !run.emphasis.bold && !run.emphasis.underline));
+                    } else {
+                        long_rows += 1;
+                        assert!(runs
+                            .iter()
+                            .all(|run| run.emphasis.bold && run.emphasis.underline));
+                    }
+                } else {
+                    assert!(runs
+                        .iter()
+                        .all(|run| run.emphasis == emphasis::Emphasis::PLAIN));
+                }
+                more += usize::from(line.kind == LayoutLineKind::More);
+                continued += usize::from(line.kind == LayoutLineKind::Continued);
+            }
+        }
+        assert!(long_rows > 2);
+        assert!(lyric_pages.len() > 1);
+        assert_eq!(markers, 2, "one marker per sung source hard line");
+        assert!(more > 0 && continued > 0);
+    }
+
+    #[test]
+    fn a_literal_tilde_at_a_soft_wrap_is_not_a_lyric_marker() {
+        let config = PageConfig::us_letter();
+        let source = format!("JOHN\n{} ~literal tilde.\n", "x".repeat(35));
+        let script = paginate(&Document::parse(&source), &config);
+        let runs = emphasis_runs(&script, &config);
+        let mut found = false;
+        for (line, runs) in script.pages[0].lines.iter().zip(&runs[0]) {
+            assert!(!line.is_lyric);
+            assert_eq!(line.lyric_marker_utf8, None);
+            assert!(runs
+                .iter()
+                .all(|run| run.emphasis == emphasis::Emphasis::PLAIN));
+            if line.content.starts_with('~') {
+                found = true;
+                assert_eq!(runs[0].text, "~literal tilde.");
+            }
+        }
+        assert!(found, "a mid-hard-line tilde starts the second visual row");
+    }
+
+    #[test]
     fn shared_runs_keep_title_rows_independent_and_literal_markers_honest() {
         let config = PageConfig::us_letter();
         let document = Document::parse(
@@ -903,6 +1095,53 @@ mod tests {
             }
         }
         operators
+    }
+
+    #[test]
+    fn finished_pdf_sung_dialogue_uses_italic_faces_and_keeps_inline_underline() {
+        let config = PageConfig::us_letter();
+        let script = paginate(
+            &Document::parse("JOHN\n~Sing **_strong_** *soft*.\nSpoken after.\n"),
+            &config,
+        );
+        let bytes = render(&script, &config, &info());
+        let pdf = String::from_utf8_lossy(&bytes);
+        let operators = finished_text_operators(&bytes);
+        let sung = script.pages[0]
+            .lines
+            .iter()
+            .find(|line| line.is_lyric)
+            .expect("sung dialogue row");
+        let y = Geometry::of(&config).baseline_y(i32::from(sung.row));
+        let sung_operators: Vec<_> = operators
+            .iter()
+            .filter(|(_, row, _, _)| *row == y)
+            .collect();
+        assert!(!sung_operators.is_empty());
+        assert!(sung_operators
+            .iter()
+            .all(|(_, _, face, _)| face == "/F3" || face == "/F4"));
+        assert!(sung_operators
+            .iter()
+            .any(|(_, _, face, count)| face == "/F4" && *count == 6));
+        assert_eq!(
+            sung_operators
+                .iter()
+                .map(|(_, _, _, count)| *count)
+                .sum::<usize>(),
+            "Sing strong soft.".chars().count(),
+            "no lyric or inline marker becomes a printed glyph"
+        );
+        assert!(operators
+            .iter()
+            .filter(|(_, row, _, _)| *row != y)
+            .all(|(_, _, face, _)| face == "/F1"));
+        assert!(pdf.contains("CourierPrime-Italic"));
+        assert!(pdf.contains("CourierPrime-BoldItalic"));
+        assert!(
+            pdf.contains(" l S"),
+            "the bold-italic word remains underlined"
+        );
     }
 
     #[test]

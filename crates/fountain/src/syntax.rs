@@ -88,6 +88,19 @@ pub(crate) fn marker_of(line: &str) -> Option<(Marker, &str)> {
     }
 }
 
+/// Finds the lyric marker on one hard line within a Dialogue block.
+///
+/// Leading whitespace is retained in the caller's text, so the result is a
+/// UTF-8 byte offset in `line`, not in its trimmed recognition view. Escaped
+/// and mid-line tildes are ordinary dialogue.
+pub fn dialogue_lyric_marker_utf8(line: &str) -> Option<usize> {
+    let trimmed = line.trim_start();
+    match marker_of(trimmed) {
+        Some((Marker::Lyric, _)) => Some(line.len() - trimmed.len()),
+        _ => None,
+    }
+}
+
 /// The kind opened by a protected-span delimiter at the start of a line.
 /// Whether the delimiter is closed, and whether anything follows it, is the
 /// parser's responsibility.

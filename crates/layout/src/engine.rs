@@ -4,9 +4,9 @@ use std::sync::Arc;
 use slugline_document::{
     split_scene_number, without_notes_and_boneyards, BlockId, BlockKind, Document, TitleField,
 };
-use slugline_fountain::emphasis;
+use slugline_fountain::{dialogue_lyric_marker_utf8, emphasis};
 
-use crate::line_break::break_lines;
+use crate::line_break::{break_lines, break_lines_with_spans};
 use crate::metrics;
 use crate::model::{
     CacheStats, LayoutLine, LayoutLineKind, Page, PageConfig, PaginatedScript,
@@ -36,7 +36,7 @@ struct PreviousPagination {
 #[derive(Debug)]
 struct CachedBlock {
     fingerprint: u64,
-    lines: Arc<[String]>,
+    lines: Arc<[PreparedLine]>,
     scene_number: Option<String>,
     layout: ElementLayout,
 }
@@ -45,9 +45,16 @@ struct CachedBlock {
 struct PreparedBlock {
     id: BlockId,
     kind: BlockKind,
-    lines: Arc<[String]>,
+    lines: Arc<[PreparedLine]>,
     scene_number: Option<String>,
     layout: ElementLayout,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedLine {
+    content: String,
+    is_lyric: bool,
+    lyric_marker_utf8: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -385,7 +392,7 @@ impl LayoutEngine {
                     (visible.as_ref(), None)
                 };
                 let display = display_text(text, layout.uppercase);
-                let lines: Arc<[String]> = break_lines(&display, layout.width).into();
+                let lines = prepare_lines(&display, layout.width, block.kind);
                 self.cache.insert(
                     block.id,
                     CachedBlock {
@@ -410,6 +417,46 @@ impl LayoutEngine {
         }
         prepared
     }
+}
+
+fn prepare_lines(text: &str, width: u16, kind: BlockKind) -> Arc<[PreparedLine]> {
+    if kind != BlockKind::Dialogue {
+        return break_lines_with_spans(text, width)
+            .into_iter()
+            .map(|line| PreparedLine {
+                content: line.text,
+                is_lyric: false,
+                lyric_marker_utf8: None,
+            })
+            .collect();
+    }
+    let mut hard_lines = text.split('\n');
+    let mut marker = dialogue_lyric_marker_utf8(hard_lines.next().unwrap_or_default());
+    break_lines_with_spans(text, width)
+        .into_iter()
+        .map(|line| {
+            let lyric_marker_utf8 = marker
+                .filter(|&offset| line.span.start_utf8 <= offset && offset < line.span.end_utf8)
+                .map(|_| {
+                    // The semantic marker is the first non-whitespace scalar
+                    // of its hard line. Once source boundaries locate its row,
+                    // the first tilde in that row is precisely that marker,
+                    // even after tabs expand or indentation wraps before it.
+                    line.text.find('~').expect("wrapped lyric marker")
+                });
+            let prepared = PreparedLine {
+                content: line.text,
+                is_lyric: marker.is_some(),
+                lyric_marker_utf8,
+            };
+            if let Some(newline) = line.span.hard_break_utf8 {
+                let hard_start = newline + 1;
+                marker = dialogue_lyric_marker_utf8(hard_lines.next().unwrap_or_default())
+                    .map(|offset| hard_start + offset);
+            }
+            prepared
+        })
+        .collect()
 }
 
 fn same_page_end(new: &Page, old: &Page) -> bool {
@@ -700,6 +747,8 @@ impl<'a> Paginator<'a> {
             source_line: None,
             kind: LayoutLineKind::PageNumber,
             is_scene_heading: false,
+            is_lyric: false,
+            lyric_marker_utf8: None,
         });
         self.current.sort_by_key(|line| (line.row, line.column));
         self.pages.push(Page {
@@ -723,6 +772,8 @@ impl<'a> Paginator<'a> {
                 source_line: None,
                 kind: LayoutLineKind::Blank,
                 is_scene_heading: false,
+                is_lyric: false,
+                lyric_marker_utf8: None,
             });
             self.used += 1;
         }
@@ -859,8 +910,12 @@ impl<'a> Paginator<'a> {
             return;
         }
 
-        let cue_text = speech.cue.lines.first().cloned().unwrap_or_default();
-        let continued = continued_cue(&cue_text);
+        let cue_text = speech
+            .cue
+            .lines
+            .first()
+            .map_or("", |line| line.content.as_str());
+        let continued = continued_cue(cue_text);
         let mut body_index = 0usize;
         let mut first_page = true;
 
@@ -951,9 +1006,13 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
         && block
             .lines
             .iter()
-            .any(|line| line.contains(['*', '_', '\\']))
+            .any(|line| line.content.contains(['*', '_', '\\']))
     {
-        let rows: Vec<&str> = block.lines.iter().map(String::as_str).collect();
+        let rows: Vec<&str> = block
+            .lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect();
         Some(emphasis::printed_widths(&rows))
     } else {
         None
@@ -962,7 +1021,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
         .lines
         .iter()
         .enumerate()
-        .map(|(index, content)| {
+        .map(|(index, line)| {
+            let content = &line.content;
             let width = || {
                 printed_widths
                     .as_ref()
@@ -991,6 +1051,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                 source_line: Some(index as u16),
                 kind: LayoutLineKind::Content,
                 is_scene_heading: block.kind == BlockKind::SceneHeading,
+                is_lyric: line.is_lyric,
+                lyric_marker_utf8: line.lyric_marker_utf8,
             }];
             if index == 0 && block.kind == BlockKind::SceneHeading {
                 if let Some(number) = &block.scene_number {
@@ -1003,6 +1065,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                         source_line: None,
                         kind: LayoutLineKind::SceneNumberLeft,
                         is_scene_heading: false,
+                        is_lyric: false,
+                        lyric_marker_utf8: None,
                     });
                     fragments.push(LayoutLine {
                         row: 0,
@@ -1012,6 +1076,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                         source_line: None,
                         kind: LayoutLineKind::SceneNumberRight,
                         is_scene_heading: false,
+                        is_lyric: false,
+                        lyric_marker_utf8: None,
                     });
                 }
             }
@@ -1049,6 +1115,8 @@ fn generated_row(column: i16, content: String, block: BlockId, kind: LayoutLineK
             source_line: None,
             kind,
             is_scene_heading: false,
+            is_lyric: false,
+            lyric_marker_utf8: None,
         }],
         role: RowRole::Other,
     }
@@ -1143,6 +1211,8 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             source_line: None,
             kind: LayoutLineKind::Title,
             is_scene_heading: false,
+            is_lyric: false,
+            lyric_marker_utf8: None,
         });
     }
     let lower_count = lower_left.len().max(lower_right.len()) as u16;
@@ -1156,6 +1226,8 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             source_line: None,
             kind: LayoutLineKind::Title,
             is_scene_heading: false,
+            is_lyric: false,
+            lyric_marker_utf8: None,
         });
     }
     for (offset, content) in lower_right.into_iter().enumerate() {
@@ -1167,6 +1239,8 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             source_line: None,
             kind: LayoutLineKind::Title,
             is_scene_heading: false,
+            is_lyric: false,
+            lyric_marker_utf8: None,
         });
     }
     lines.sort_by_key(|line| (line.row, line.column));

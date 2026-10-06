@@ -168,6 +168,11 @@ pub struct LayoutLine {
     pub kind: LayoutLineKind,
     /// True only for content rows originating in a scene-heading block.
     pub is_scene_heading: bool,
+    /// True for every wrapped row of a sung hard line within Dialogue.
+    pub is_lyric: bool,
+    /// UTF-8 byte offset of that hard line's leading `~` in raw `content`.
+    /// Only the wrapped row containing the marker has an offset.
+    pub lyric_marker_utf8: Option<usize>,
 }
 
 /// One title or screenplay page. Screenplay pages have `number = Some(1..)`;

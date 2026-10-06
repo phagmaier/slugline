@@ -31,7 +31,7 @@ pub struct LineSpan {
 /// the column width is the only text split mid-word. Tabs expand to four-column
 /// tab stops before wrapping, and explicit newlines always begin a new line.
 pub fn break_lines(text: &str, width: u16) -> Vec<String> {
-    wrap(text, width)
+    break_lines_with_spans(text, width)
         .into_iter()
         .map(|line| line.text)
         .collect()
@@ -45,15 +45,15 @@ pub fn break_lines(text: &str, width: u16) -> Vec<String> {
 /// a caret and a PDF's source mapping are made of. The two share one
 /// implementation, so a row here is the row `break_lines` returns.
 pub fn line_spans(text: &str, width: u16) -> Vec<LineSpan> {
-    wrap(text, width)
+    break_lines_with_spans(text, width)
         .into_iter()
         .map(|line| line.span)
         .collect()
 }
 
-struct WrappedLine {
-    span: LineSpan,
-    text: String,
+pub(crate) struct WrappedLine {
+    pub(crate) span: LineSpan,
+    pub(crate) text: String,
 }
 
 /// One hard line expanded onto the grid: one entry per cell.
@@ -64,7 +64,8 @@ struct Cells {
     offsets: Vec<usize>,
 }
 
-fn wrap(text: &str, width: u16) -> Vec<WrappedLine> {
+/// Returns row text and its source boundaries from a single wrapping pass.
+pub(crate) fn break_lines_with_spans(text: &str, width: u16) -> Vec<WrappedLine> {
     let width = usize::from(width.max(1));
     let mut output = Vec::new();
     let mut hard_start = 0usize;
