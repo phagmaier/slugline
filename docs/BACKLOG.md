@@ -31,7 +31,10 @@ For whoever (or whatever) picks up an item:
    [Found along the way](#found-along-the-way) instead of fixing it.
 6. When the work is verified: tick the item's box in the checklist and fill in
    its `Result` line with the date, the commit, and anything that turned out
-   differently from what the item describes. Do not delete items.
+   differently from what the item describes. Do not delete items. One item per
+   commit, with the item's id leading the subject — see `AGENTS.md`. Tick the box
+   once the commit exists, so the `Result` can name it; a ticked box whose
+   `Result` still says "commit pending" is reported by `tools/check_docs.py`.
 
 Effort: **S** is under a day, **M** a few days, **L** a week or more.
 
@@ -60,6 +63,7 @@ This is the only place boxes are ticked.
 - [ ] [F5](#f5) A `~` line under a cue prints its tilde
 - [ ] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
+- [ ] [F8](#f8) Incremental repagination is not proven equal to a full one
 
 **4. Everyday workflow**
 
@@ -143,8 +147,7 @@ renames a new file into place.
 - Making the app single-instance is a different change and not part of this.
 
 **Effort.** S–M.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree change
-based on `e5911fa`). Reproduced recipe 3 with release processes and isolated
+**Result:** 2026-10-06 — verified in `c1db1f9`. Reproduced recipe 3 with release processes and isolated
 `/tmp` XDG roots: launch 2 removed launch 1's journal. Journals now hold
 exclusive `libc::flock` locks; startup, accept and discard acquire ownership,
 and atomic creation/replacement publishes an already locked inode. Rust 1.82
@@ -204,8 +207,7 @@ a save is already running. Backups go through `save_atomically`. They are a
 cache: deleting them must cost only convenience.
 
 **Effort.** S–M.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree change
-based on `c1db1f9`). Reproduced with an actual bridge smoke executable: opening
+**Result:** 2026-10-06 — verified in `d487d5f`. Reproduced with an actual bridge smoke executable: opening
 created no backup, autosave wrote edited bytes with `backup: None`, and an
 explicit dirty save created one. Autosaves now snapshot different saved bytes
 when the newest filename timestamp is at least ten minutes old; opening keeps
@@ -259,8 +261,7 @@ Title-page edits already go through `doc_set_title_field` and the journal
 (ADR 0033); nothing changes there.
 
 **Effort.** S.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
-change). Reproduced the newline loss in the Contact field, then changed every
+**Result:** 2026-10-06 — verified in `3a5dcd8`. Reproduced the newline loss in the Contact field, then changed every
 title-page field, including additional keys, to accept newlines and grow from
 one line as needed. The regression widget test preserves a three-line Contact
 after editing; the existing Fountain multi-line canonical round-trip test also
@@ -291,8 +292,7 @@ existing tests only ever restrict.
 then resets, and the query's `kinds` is empty.
 
 **Effort.** S.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
-change). Reproduced with a visible menu-item click: Dialogue → Every element
+**Result:** 2026-10-06 — verified in `40b1f1c`. Reproduced with a visible menu-item click: Dialogue → Every element
 left `kinds == [dialogue]`. Popup selections now use non-null typed records,
 including the unrestricted choice, without changing the nullable filter or
 Rust query contract. The widget regression covers reset, cancellation and
@@ -339,8 +339,7 @@ and that a click still maps to the cell it lands on.
 completion popup. Change the geometry, not the callers.
 
 **Effort.** S.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
-change). Reproduced at editor width 800 and preferred text size 15: sheet gaps
+**Result:** 2026-10-06 — verified in `40b1f1c`. Reproduced at editor width 800 and preferred text size 15: sheet gaps
 were −19.60/72.35 px. `EditorGeometry` now centres the sheet inside the scrollbar
 reserve, then places the text inside its left margin, keyed on `pageView` rather
 than pagination readiness. Continuous placement, font fitting and vertical
@@ -365,8 +364,7 @@ the preview because `_onPageKey` ignores Shift for that key
 maintaining.
 
 **Effort.** S.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
-change). Confirmed README drift against `docs/KEYMAP.md` and the keyboard
+**Result:** 2026-10-06 — verified in `40b1f1c`. Confirmed README drift against `docs/KEYMAP.md` and the keyboard
 handlers. The README now gives Ctrl+K for the palette and describes Ctrl+P as
 opening Preview and export, where PDF export is selected; test totals were
 removed rather than repinned. Native smoke and the rebuilt release both opened
@@ -431,8 +429,7 @@ deliberately. `normalize_character` in `crates/document/src/entities.rs` feeds
 autocomplete and the navigator and must cope with the new characters.
 
 **Effort.** S–M.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
-change). Reproduced with the PDF dump executable: all four examples and
+**Result:** 2026-10-06 — verified in `e71b3be`. Reproduced with the PDF dump executable: all four examples and
 `JOHN, JR.` printed with their dialogue at column 0. The shared recognizer now
 accepts unrestricted punctuation and checks capitals only outside balanced
 trailing parenthesised extensions, including stacked and nested groups; the
@@ -486,8 +483,7 @@ This item does not touch wrapping — that is X4. Check the layering script stil
 passes if `layout` needs emphasis scanning it cannot currently reach.
 
 **Effort.** S–M.
-**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
-change, preserving F1 and earlier backlog work). The actual PDF dump executable
+**Result:** 2026-10-06 — verified in `5e8f8fe`. The actual PDF dump executable
 and `pdftotext -bbox` reproduced the reported title centre at 26.5, centred
 `THE **END**` at 27.5, and an emphasised transition ending at 56. After the
 layout fix, both centres are 29.5 (within half a column of 30), and the
@@ -620,6 +616,46 @@ Decide X6 first.
 
 ---
 
+<a id="f8"></a>
+### F8 — Incremental repagination is not proven equal to a full one
+
+**Problem.** `repaginate` reuses per-block fingerprints instead of laying the
+document out again (ADR 0022). Nothing checks that its result equals what a full
+`paginate_snapshot` of the same edited document would produce, so the fast path
+rests on the hints being right rather than on a test. A wrong reuse surfaces as
+a stale page count or a sheet boundary in the wrong place — the kind of defect a
+writer finds after printing.
+
+**Evidence (read).** ADR 0022 admits the gap and defers the test: "no test
+compares `repaginate` of an edited snapshot against `paginate_snapshot` … ADR
+0025's focused review should turn it into a test". That review is spent — the
+plan holding its findings left the tree — and ADR 0025 now carries a
+`Historical:` line naming this gap. `crates/layout/tests/incremental.rs` has two
+tests, `one_edit_invalidates_one_block_and_reuses_a_checkpoint_prefix` and
+`reference_pagination_is_identical_one_hundred_times`; neither compares the two
+paths.
+
+**Change.** A differential test over `testdata/corpus/`: paginate, apply an
+edit, `repaginate`, and assert the incremental `PaginationView` equals a full
+`paginate_snapshot` of the edited document — pages, rows and page breaks. Cover
+what a fingerprint could plausibly get wrong: an edit that changes a block's
+wrapped *height*, one that changes it within its height, an insert that pushes a
+scene heading across a page boundary, and dual dialogue whose partner moves.
+
+**Done when.** The test exists, runs over the corpus, and fails when
+`repaginate`'s reuse is deliberately broken. Check that second half rather than
+assuming it: a test that passes either way proves nothing.
+
+**Watch out.** Do not make a failure go away by relaxing the comparison to page
+count alone — a wrong page *break* with the right count is the defect. ADR 0022
+owns the fingerprint design; if the test shows the hints are unsound, supersede
+the record rather than widening a tolerance.
+
+**Effort.** M.
+**Result:** _open_
+
+---
+
 ## 4. Everyday workflow
 
 Everything in this section is **read** from the code unless it says otherwise.
@@ -634,14 +670,17 @@ be driven with the arrow keys.
 
 **Evidence.** `_onPageKey` (`app/lib/editor/editor_page.dart:508`) has none of
 these keys. The library handles only F1 and Ctrl+,
-(`app/lib/library/library_page.dart:173`). `docs/KEYMAP.md` says "There is no
+(`app/lib/library/library_page.dart:177-188`) — typing already filters
+(`Key('library-search')`, `library_page.dart:339`), but the list cannot be
+walked or opened from the keyboard. `docs/KEYMAP.md` says "There is no
 key for open or new".
 
 **Change.**
 - Ctrl+O: a quick-open panel listing library scripts with type-to-filter, plus
   a "Browse…" entry.
 - Ctrl+N: new script. Ctrl+W: back to the library.
-- Library: typing filters, Up/Down moves, Enter opens.
+- Library: Up/Down moves the selection and Enter opens it. The filter field
+  already exists; give it focus on open.
 - Update `docs/KEYMAP.md`, the shortcuts dialog and the command palette.
 
 **Done when.** Widget tests cover each key, and a test goes from the library to
@@ -698,12 +737,18 @@ journalled. A newline arriving from an input method must still split.
 **Problem.** Notes from readers arrive as page numbers. There is no way to jump
 to page 47.
 
-**Evidence.** No such command exists. The data does: `PageIndicator` keeps the
-first printable line of every page (`_firstLineOfPage`,
-`app/lib/editor/page_indicator.dart:68`).
+**Evidence.** No such command exists. The data does, with one edge:
+`PageIndicator._firstLineOfPage` holds the first printable line of each page,
+but `_resolvePageStarts` drops page 1 (`if (number <= 1) continue;`,
+`app/lib/editor/page_indicator.dart:118`) — a page start is a page *break*, and
+nothing breaks before the first page. So "go to page 1" has to mean "scroll to
+the top", not a lookup that will find nothing. (The same exclusion is why a
+one-page script draws no sheet furniture; that is logged under
+[Found along the way](#found-along-the-way).)
 
 **Change.** A "Go to page…" command in the palette, with a shortcut recorded in
-`docs/KEYMAP.md`, that moves the caret to the first line of that page.
+`docs/KEYMAP.md`, that moves the caret to the first line of that page; page 1 is
+the document start.
 
 **Watch out.** The editor never decides where a page ends; use the paginated
 snapshot, and do nothing rather than estimate when there is none yet.
@@ -1009,11 +1054,8 @@ not part of that item.
   therefore has no sheet furniture despite page view being enabled. Not
   exercised or changed; investigate separately from horizontal centring.
 - 2026-10-06 — While indexing the ADRs, found an unowned correctness gap.
-  ADR 0022 (incremental repagination by checkpoint) says its missing
-  `repaginate`-versus-`paginate_snapshot` equivalence test is owed to "ADR 0025's
+  ADR 0022 (incremental repagination by checkpoint) said its missing
+  `repaginate`-versus-`paginate_snapshot` equivalence test was owed to "ADR 0025's
   focused review", but that review is spent and the plan that held its findings
-  is no longer in the tree. `crates/layout/tests/incremental.rs` has two tests
-  and neither compares `repaginate` of an edited snapshot against a full
-  `paginate_snapshot`, so the incrementality claim rests on the fingerprint hints
-  rather than on an equality proof. ADR 0025 now records this as historical and
-  names the gap; it needs an item of its own.
+  is no longer in the tree. Promoted to [F8](#f8), which is where the work now
+  lives; ADR 0025 records the history and points at it.

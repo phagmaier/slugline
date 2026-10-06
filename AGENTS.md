@@ -39,6 +39,19 @@ docs and `Result` line. If an item needs planning or deliberation, do that as
 part of the work. Ask only when required information is genuinely unavailable
 and cannot be established from the project or its sources.
 
+## Commits
+
+One backlog item per commit. The subject is the item's id and a phrase —
+`F3 — the preview renders emphasis instead of showing markers` — and the body
+says what changed, why, and what was run to verify it. Once the commit exists,
+its hash goes in the item's `Result` line, which is what lets
+`tools/check_docs.py` tell a finished item from an abandoned one.
+
+This matters more here than in a hand-written project. Git history is the only
+record of a change no ADR covers, and `git log -S` is how an agent finds out why
+a line is the way it is — a history of `fixes`, `wip` and bare item ids answers
+nothing.
+
 ## Architecture
 
 - **`crates/fountain`** — syntax: `BlockKind`, `TitlePage`, `Element`, parse,
@@ -269,6 +282,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 python3 tools/check_layering.py
 python3 tools/check_version.py
+python3 tools/check_docs.py                # the docs still point at real files and live ADRs
 python3 tools/make_reference.py --check   # after touching fountain's syntax, parser or serialiser
 ```
 
@@ -326,6 +340,12 @@ budget; the second number is what matters for a real session.
 
 - Add a one-line justification to `docs/DEPENDENCIES.md` in the same change as
   every new Rust or Dart dependency. Avoid large transitive dependency trees.
+- `Cargo.toml` declares `rust-version = "1.82"`, but CI and every machine that
+  builds this project run current stable, so **nothing checks that floor**. Treat
+  1.82 as binding anyway: when a standard-library API you want was stabilised
+  later, avoid it or raise the floor deliberately and say so in the change.
+  `storage` calls `flock` through `libc` rather than `File::try_lock` (1.89) for
+  exactly this reason — see ADR 0042 and its line in `docs/DEPENDENCIES.md`.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
 - Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. When a later

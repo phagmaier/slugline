@@ -79,6 +79,12 @@ jobs:
       - name: One release version everywhere
         run: python3 tools/check_version.py
 
+      # The prose is what an agent reads before it reads the code, so a doc
+      # pointing at a file that has moved, an ADR superseded without saying so,
+      # or a ticked backlog item with no Result is a defect nothing else catches.
+      - name: The documents still describe this repository
+        run: python3 tools/check_docs.py
+
   fuzz:
     name: Fuzz — parser and round trip
     runs-on: ubuntu-latest

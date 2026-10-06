@@ -17,6 +17,7 @@ done
 
 python3 tools/check_version.py
 python3 tools/check_layering.py
+python3 tools/check_docs.py
 python3 tools/make_reference.py --check
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
