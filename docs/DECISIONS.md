@@ -1,8 +1,70 @@
 # Architecture Decision Records
 
-One record per non-obvious choice (spec §2.5). Newest last. A record is never
-edited after it is accepted — if the decision changes, add a new record that
-supersedes it and say so in both.
+One record per non-obvious choice: a choice between real alternatives that a
+later agent would otherwise re-litigate. Newest last.
+
+A record's decision is never rewritten once it is accepted. If the decision
+changes, add a new record that names what it replaces — `**Supersedes:**`, or
+`**Narrows:**` / `**Refines:**` / `**Extends:**` where only part of the older
+record falls — and give the old record a `**Superseded by:**` line naming its
+replacement. A record that nothing replaced, but whose phase or process has
+since finished, takes a `**Historical:**` line instead. Those annotations are
+the only edits an accepted record takes.
+
+**Read the index before the records.** It is the map: what each record owns, and
+whether it still governs. A record whose status is not `live` has been partly or
+wholly replaced, and its status names the record that did it — read that one
+too. A `historical` record is spent: it settled a question about a phase or a
+process that has since finished, so nothing supersedes it and nothing needs to.
+
+## Index
+
+| # | Title | Owns | Status |
+| --- | --- | --- | --- |
+| 0001 | The bridge speaks UTF-16, and conversion is fallible | `crates/bridge/src/offsets.rs` | live |
+| 0002 | Rust builds through cargokit, with the FRB version pinned exactly | `Cargo.toml`, `app/pubspec.yaml`, `app/lib/src/rust/`, `app/rust_builder/` | live |
+| 0003 | `freezed` is accepted as a Dart dependency | `app/pubspec.yaml`, `app/lib/src/rust/` | live |
+| 0004 | Layering is enforced by a script, not by cargo-deny | `tools/check_layering.py`, `Cargo.toml` | live |
+| 0005 | Editor implementation: a single custom editing surface | `app/lib/editor/editor_surface.dart`, `spike/` | narrowed by 0018 — Dart line breaking is permanent |
+| 0006 | The project is called Slugline | `Cargo.toml`, `app/pubspec.yaml`, `crates/storage/src/paths.rs` | live |
+| 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | live |
+| 0008 | Syntax lives in `fountain`, identity and history live in `document` | `crates/fountain/src/model.rs`, `crates/document/src/lib.rs`, `crates/document/src/document.rs`, `crates/document/src/edit.rs` | live |
+| 0009 | The bridge's document surface: flat kinds, patches, and refusals as values | `crates/bridge/src/api/doc.rs`, `app/flutter_rust_bridge.yaml`, `app/lib/src/rust/` | live |
+| 0010 | Paste is composed in the bridge, and grouped by the document | `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | live |
+| 0011 | Automatic classification is the recognition rules read forwards | `crates/fountain/src/infer.rs`, `crates/document/src/workflow.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | live |
+| 0012 | The custom surface's semantics tree is a render object per block | `app/lib/editor/surface_semantics.dart`, `app/test/editor/accessibility_test.dart` | live |
+| 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | live |
+| 0014 | The autosave clock lives in Dart | `app/lib/editor/autosave.dart`, `app/lib/editor/editor_page.dart` | partly superseded by 0043 — "autosave writes no backup" |
+| 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | live |
+| 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
+| 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | live |
+| 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — no page indication in the editor |
+| 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | partly superseded by 0044 — emphasis interpretation, for alignment only |
+| 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | live |
+| 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live |
+| 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | live |
+| 0023 | One crash recovery is offered per launch | `app/lib/app.dart`, `app/lib/library/recovery_dialog.dart`, `crates/bridge/src/api/files.rs` | live |
+| 0024 | The interval autosave keeps running while the writer types | `app/lib/editor/autosave.dart`, `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs` | superseded by 0028 — own-write suppression mechanism |
+| 0025 | The paginator's break rules get a focused review before Phase 7 | `crates/layout/src/engine.rs`, `crates/layout/tests/break_rules.rs` | historical — gate on a shipped phase; its record file is gone |
+| 0026 | One save of a script at a time, by a per-session lock | `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
+| 0027 | A save rebuilds its journal around what was typed during it | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs` | live |
+| 0028 | A save is recognised by the file it left, not by a counted event | `crates/storage/src/watch.rs`, `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs` | live |
+| 0029 | Exporting a copy is not Save As, and it refuses two destinations | `crates/bridge/src/api/files.rs`, `app/lib/preview/export_dialog.dart`, `app/lib/core/document_core.dart`, `app/lib/library/save_dialogs.dart` | live |
+| 0030 | The completion popup names its gestures, and its rows are not click targets | `app/lib/editor/editor_surface.dart`, `app/test/editor/autocomplete_test.dart` | partly superseded by 0041 — popup activation and row cap |
+| 0031 | A character extension is recognised by its letters, not its punctuation | `crates/document/src/entities.rs` | live |
+| 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044 — raw-marker alignment consequence |
+| 0033 | A title-page edit is journalled like any other edit | `crates/document/src/recovery.rs`, `crates/storage/src/journal.rs`, `crates/bridge/src/api/doc.rs` | live |
+| 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | live |
+| 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041 — navigator drawer below 900 px |
+| 0036 | Spell checking is an immutable Rust snapshot and a Dart overlay | `crates/spell/src/lib.rs`, `crates/bridge/src/api/spell.rs`, `app/lib/editor/spell_dialog.dart` | live |
+| 0037 | Preferences split display policy from screenplay output | `crates/storage/src/prefs.rs`, `app/lib/settings/preferences_dialog.dart`, `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` | live |
+| 0038 | The save path checks the file it is replacing; the watcher only asks early | `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
+| 0039 | The release build unwinds; `panic = "abort"` is superseded | `Cargo.toml`, `app/linux/CMakeLists.txt` | live |
+| 0040 | The fluid editor shows output page position in its status bar | `app/lib/editor/page_indicator.dart`, `app/lib/editor/editor_page.dart`, `crates/bridge/src/api/layout.rs` | live |
+| 0041 | Suggestions follow writing intent, and narrow windows keep the page wide | `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/navigator_sidebar.dart` | live |
+| 0042 | Crash journals carry kernel ownership across publication | `crates/storage/src/journal.rs`, `crates/storage/Cargo.toml`, `crates/bridge/tests/persistence.rs` | live |
+| 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
+| 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | live |
 
 ---
 
@@ -146,6 +208,10 @@ with the offending edge named. Standard library only.
 ## ADR 0005 — Editor implementation: a single custom editing surface
 
 **Date:** 2026-07-24 · **Status:** accepted · **Phase:** 0
+**Superseded by:** ADR 0018 for the consequence below that Prototype C's line
+breaking "must be replaced by" the Rust `layout` crate's output; the Dart wrap
+implementation is permanent and stays on the keystroke path. The rest of this
+record stands.
 
 > This is the decision Phase 0 exists to make. Every later phase depends on it.
 
@@ -880,6 +946,8 @@ editor.
 ## ADR 0014 — The autosave clock lives in Dart
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4
+**Superseded by:** ADR 0043 for "Autosave writes no backup" only; the
+Dart-owned clock, the suppression rules and the save-failure behaviour stand.
 
 ### Context
 
@@ -984,6 +1052,9 @@ for.
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (repaired during the
 mid-project remediation) · **Supersedes:** nothing; it states a sequence ADR 0013
 left implicit
+**Superseded by:** ADR 0042 for the recovery sequence below, which takes no
+journal lock: a live journal's kernel ownership now gates accepting and
+discarding a recovery. The rest of this record stands.
 
 ### Context
 
@@ -1174,6 +1245,9 @@ rule accidental and leaves the useless self-suggestion in the popup.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 (decided during the
 mid-project remediation) · **Narrows:** ADR 0005 for 1.0; does not reverse it
+**Superseded by:** ADR 0040 for "No page breaks, page numbers, or page gutters
+in the editing surface" only; the fluid editor shows output page position in its
+status bar.
 
 ### Context
 
@@ -1275,6 +1349,9 @@ honest statement today is that most of it is not enforced yet.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2 (recorded during the
 mid-project remediation)
+**Superseded by:** ADR 0044 for the restriction of emphasis interpretation to
+the PDF renderer, for alignment only; literal editor display and raw-width
+wrapping are unchanged.
 
 ### Context
 
@@ -1638,6 +1715,10 @@ discarding it without asking is the P0 §1.2 forbids.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (recorded during the
 mid-project remediation) · **Extends:** ADR 0014
+**Superseded by:** ADR 0028 for how own writes are suppressed: this record
+records the write after it succeeds and swallows the first matching event, where
+the shipped design records it before the write and matches every event. The rest
+of this record stands.
 
 ### Context
 
@@ -1723,6 +1804,13 @@ of them can see F4 today, because nothing yet distinguishes our own write.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 → 7 (scheduled during
 the mid-project remediation)
+**Historical:** this record scheduled a focused review of the paginator's break
+rules. The plan that was to hold its findings (`REMEDIATION_PLAN.md`) is no
+longer in the tree, so whether the review was performed cannot be established
+from the repository. Nothing supersedes this record. One obligation it was meant
+to discharge is still open: ADR 0022 defers a `repaginate`-versus-
+`paginate_snapshot` equivalence test to this review, and
+`crates/layout/tests/incremental.rs` has no such test.
 
 ### Context
 
@@ -2257,6 +2345,8 @@ overwrite check and the canonical comparison removed, two do.
 
 **Date:** 2026-07-26 · **Status:** accepted · **Phase:** 5 (mid-project
 remediation, Phase 9)
+**Superseded by:** ADR 0041 for the popup's activation rule and its fixed
+eight-row presentation; the decision that its rows are not click targets stands.
 
 ### Context
 
@@ -2392,6 +2482,8 @@ normalisation, not name normalisation.
 ## ADR 0032 — The PDF writer is ours, and it interprets emphasis without leaving a gap
 
 **Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7
+**Superseded by:** ADR 0044 for the raw-marker alignment consequence only; the
+writer is still ours and the rest of this record stands.
 
 ### Context
 
@@ -2632,6 +2724,9 @@ chose, and the deltas against two others are measured and written down above.
 **Status:** Accepted
 **Date:** 2026-07-26
 **Phase:** 8
+**Superseded by:** ADR 0041 for treating the docked navigator as the expanded
+state on narrow windows; below 900 px it is a temporary drawer that does not
+overwrite the saved preference.
 
 ### Context
 

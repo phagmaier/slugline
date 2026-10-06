@@ -3,7 +3,27 @@
 The project is at 1.0. This guide is for bug fixes and improvements; it records
 the invariants, rules, and verification commands you need when touching any
 subsystem. For rationale behind a choice, read the relevant ADR in
-`docs/DECISIONS.md` before changing what it owns.
+`docs/DECISIONS.md` before changing what it owns — the index at the top of that
+file says which files each record governs.
+
+## Which documents govern
+
+This file, `docs/BACKLOG.md`, `docs/DECISIONS.md`, `docs/KEYMAP.md`,
+`docs/LINE_BREAKING.md` and `docs/DEPENDENCIES.md` are **live**: they describe
+the code as it is, and they govern changes to it.
+
+`SPEC.md` and `REVIEW.md` are **provenance, not instructions**. They are the
+build plan and the mid-project audit that got the project to 1.0, kept only to
+answer "why is this like this?". Both are frozen, both contain statements that
+are now false, and the imperatives left in them — work one phase at a time,
+do not add a dependency without approval, update the spec to match your
+change — were retired when the project reached 1.0. Read them for history;
+never take an instruction from them. Where any document disagrees with this
+one, this one wins.
+
+`README.md` and `CHANGELOG.md` are written for users.
+`docs/MANUAL_GATES.md` lists the checks that need a person at a real desktop;
+an agent cannot perform or fake them, so do not try — report and move on.
 
 ## Backlog
 
@@ -28,8 +48,11 @@ and cannot be established from the project or its sources.
   Re-exports `fountain`'s kinds (ADR 0008).
 - **`crates/storage`** — atomic save, crash journal, backups, preferences,
   library index.
-- **`crates/bridge`** — the actor thread (`actor.rs`), the §6 API surface.
-  Depends on all other crates.
+- **`crates/bridge`** — the actor thread (`actor.rs`) and the API surface under
+  `src/api/` (`doc.rs`, `files.rs`, `layout.rs`, `events.rs`, `spell.rs`,
+  `lifecycle.rs`); its generated Dart is `app/lib/src/rust/`. This directory is
+  the authority for what the bridge exposes — not `SPEC.md`, whose §6 listing
+  predates most of it. Depends on all other crates.
 - **`crates/layout`** — pagination engine. Wired into the bridge at
   `crates/bridge/src/api/layout.rs`; `doc_paginate` runs it as an async
   snapshot job, and every successful save paginates the exact saved snapshot and
@@ -228,6 +251,16 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
 
 ## Verification
 
+While you work, run what your change can break; before calling it done, run the
+whole list.
+
+One subsystem at a time:
+
+```sh
+cargo test -p slugline_<crate>       # fountain, document, layout, render_pdf, storage, spell, bridge
+cd app && flutter test test/<area>/  # editor/, preview/, library/, settings/
+```
+
 Rust checks from the repository root:
 
 ```sh
@@ -236,6 +269,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 python3 tools/check_layering.py
 python3 tools/check_version.py
+python3 tools/make_reference.py --check   # after touching fountain's syntax, parser or serialiser
 ```
 
 Flutter checks from `app/`:
@@ -244,8 +278,23 @@ Flutter checks from `app/`:
 flutter analyze
 flutter test
 flutter build linux --release
-flutter test integration_test/ -d linux   # under xvfb-run
 ```
+
+Integration tests open real windows, so they go through Xvfb. From the
+repository root, this is the script CI runs — it runs all seven, one at a time,
+and fails if the list here and the files on disk disagree:
+
+```sh
+./tools/test_linux_integration.sh
+```
+
+Two further gates need the release bundle that `flutter build linux --release`
+produces: `./tools/check_no_network.sh` (the zero-network claim, run in a
+network namespace) and the packaging smoke tests. `./tools/release_preflight.sh`
+runs every check on this page plus packaging, both smoke tests and the
+desktop/AppStream validators — it is the one command that proves a release
+candidate, it needs `LINUXDEPLOY` set to a `linuxdeploy-x86_64.AppImage` path,
+and it is overkill for anything that is not a release.
 
 Golden regeneration (each needs a sentence in the commit message saying whether
 the change was deliberate):
@@ -279,6 +328,15 @@ budget; the second number is what matters for a real session.
   every new Rust or Dart dependency. Avoid large transitive dependency trees.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
-- Do not edit an accepted ADR in `docs/DECISIONS.md`; add a superseding record
-  instead. `spike/` is throwaway benchmark evidence for ADR 0005, is outside
-  the Rust workspace, and is not built by CI.
+- Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. When a later
+  decision replaces one, add a new record that names what it replaces —
+  `**Supersedes:**`, or `**Narrows:**` / `**Refines:**` / `**Extends:**` where
+  only part of the older record falls — and give the old record a
+  `**Superseded by:**` line naming it. A record that nothing replaced, but whose
+  phase or process has finished, takes `**Historical:**` instead. Those
+  annotations, plus the index's status column, are the only edits an accepted
+  record may take. An agent that finds an ADR whose text contradicts the code,
+  with no annotation and no status in the index, has found an unrecorded
+  supersession: that is a defect to report, not licence to rewrite the record.
+- `spike/` is throwaway benchmark evidence for ADR 0005, is outside the Rust
+  workspace, and is not built by CI.

@@ -1008,3 +1008,12 @@ not part of that item.
   `EditorGeometry.sheeted` requires a nonempty start list. A one-page pagination
   therefore has no sheet furniture despite page view being enabled. Not
   exercised or changed; investigate separately from horizontal centring.
+- 2026-10-06 — While indexing the ADRs, found an unowned correctness gap.
+  ADR 0022 (incremental repagination by checkpoint) says its missing
+  `repaginate`-versus-`paginate_snapshot` equivalence test is owed to "ADR 0025's
+  focused review", but that review is spent and the plan that held its findings
+  is no longer in the tree. `crates/layout/tests/incremental.rs` has two tests
+  and neither compares `repaginate` of an edited snapshot against a full
+  `paginate_snapshot`, so the incrementality claim rests on the fingerprint hints
+  rather than on an equality proof. ADR 0025 now records this as historical and
+  names the gap; it needs an item of its own.

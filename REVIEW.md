@@ -1,8 +1,9 @@
 # Slugline — Mid-Project Technical Audit
 
-> **ARCHIVAL.** All fourteen findings are closed. This audit is preserved as
+> **ARCHIVAL.** Every finding below is closed. This audit is preserved as
 > provenance for the quality claims in `README.md`; the decisions it produced are
-> recorded in `docs/DECISIONS.md`.
+> recorded in `docs/DECISIONS.md`. `AGENTS.md` is the authority for how to work
+> in this repository — this file issues no instructions.
 
 **Date:** 2026-07-25 · **Reviewed at:** commit `16b6cff` ("phase 6"), branch `dev`
 

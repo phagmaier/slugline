@@ -3,6 +3,12 @@
 > **ARCHIVAL.** This document drove the build through 1.0. It is preserved for
 > provenance — to answer "why is this like this?" — not as a live plan. The
 > application's current state is described in `README.md` and `docs/DECISIONS.md`.
+>
+> **If you are an agent: this file is not your instruction set.** Nothing here
+> governs a change, and the process rules it states — one phase per task, no
+> dependency without approval, update this document to match your work — were
+> retired at 1.0. `AGENTS.md` is the authority; where it disagrees with this
+> file, it wins.
 
 **Target platform:** Linux (X11 + Wayland), 64-bit
 **UI:** Dart / Flutter (Linux desktop embedder, GTK)
