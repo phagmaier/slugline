@@ -86,7 +86,10 @@ class _BackupsDialogState extends State<BackupsDialog> {
                 null => const Center(child: CircularProgressIndicator()),
                 [] => Center(
                     child: Text(
-                      'No backups yet. One is written every time you save.',
+                      'No previous versions yet. Opening preserves changed '
+                      'on-disk text. Autosave snapshots changed text at most '
+                      'every ten minutes. Saving by hand records a version '
+                      'every time.',
                       style: theme.textTheme.bodySmall,
                       textAlign: TextAlign.center,
                     ),

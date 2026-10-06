@@ -214,6 +214,20 @@ Saving by hand is a habit, not a requirement: autosave writes two seconds after
 you stop typing and every thirty seconds while you do not, and every edit in
 between is already in a crash-recovery record on disk.
 
+Previous versions do not require a manual-save habit either. Autosaves snapshot
+changed text at most every ten minutes, comparing it with the newest saved
+version. Opening a script preserves its changed on-disk starting text, including
+a baseline when there are no previous versions yet. Saving explicitly records a
+version every time: even a clean `Ctrl+S` after autosave keeps that version.
+Snapshots are best effort; an unavailable backup cache does not fail opening or
+saving the script.
+
+Retention combines the newest N versions, the newest version in each UTC-hour
+bucket across the current hour and the previous 23 hours, and M daily versions.
+The defaults are N = 10 and M = 7. Overlapping versions count only once, so these
+tiers retain at most N + 24 + M copies. Rapid manual saves cannot evict every
+earlier hour, though a newer copy can replace an older one within the same hour.
+
 ## Moving
 
 | Key | Action |

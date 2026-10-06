@@ -1,4 +1,4 @@
-//! Rolling backups: §Phase 4's "last N versions plus one per day for M days".
+//! Rolling backups: recent versions, hourly snapshots and daily history.
 //!
 //! A backup is a whole copy of the script, written beside nothing, in
 //! `$XDG_STATE_HOME/slugline/backups/<script-id>/<unix-millis>.fountain`. Whole
@@ -17,8 +17,9 @@
 //! [`Written`].
 //!
 //! Retention keeps, in one pass: the newest `keep_versions` copies unconditionally,
-//! plus the newest copy from each of the last `keep_days` UTC days. A day bucket
-//! is `millis / 86_400_000`, which needs no calendar and no `chrono`.
+//! plus the newest copy in each of the current and previous 23 UTC hours and
+//! each of the last `keep_days` UTC days. Buckets use Unix milliseconds, which
+//! needs no calendar and no `chrono`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::atomic::{save_atomically, SaveError};
 use crate::journal::script_id;
 
+const MILLIS_PER_HOUR: u64 = 3_600_000;
 const MILLIS_PER_DAY: u64 = 86_400_000;
 
 /// How many copies to keep. §Phase 4's defaults are 10 and 7.
@@ -97,6 +99,60 @@ pub fn write(
     contents: &str,
     retention: Retention,
 ) -> Result<Written, SaveError> {
+    write_at(root, script, contents, retention, now_millis())
+}
+
+/// Writes only when the newest snapshot is old enough and its bytes differ.
+///
+/// A zero minimum age bypasses the clock gate, even after clock rollback.
+/// Missing or unreadable snapshots are treated as needing a rescue copy.
+pub fn write_if_changed(
+    root: &Path,
+    script: &Path,
+    contents: &str,
+    retention: Retention,
+    minimum_age_millis: u64,
+) -> Result<Option<Written>, SaveError> {
+    write_if_changed_at(
+        root,
+        script,
+        contents,
+        retention,
+        minimum_age_millis,
+        now_millis(),
+    )
+}
+
+fn write_if_changed_at(
+    root: &Path,
+    script: &Path,
+    contents: &str,
+    retention: Retention,
+    minimum_age_millis: u64,
+    now: u64,
+) -> Result<Option<Written>, SaveError> {
+    if let Some(newest) = list(root, script).first() {
+        if minimum_age_millis != 0
+            && now
+                .checked_sub(newest.written_millis)
+                .is_none_or(|age| age < minimum_age_millis)
+        {
+            return Ok(None);
+        }
+        if fs::read(&newest.path).is_ok_and(|bytes| bytes == contents.as_bytes()) {
+            return Ok(None);
+        }
+    }
+    write_at(root, script, contents, retention, now).map(Some)
+}
+
+fn write_at(
+    root: &Path,
+    script: &Path,
+    contents: &str,
+    retention: Retention,
+    written_millis: u64,
+) -> Result<Written, SaveError> {
     let directory = directory(root, script);
     if let Err(error) = fs::create_dir_all(&directory) {
         return Err(SaveError::Io {
@@ -112,8 +168,7 @@ pub fn write(
     // save below, and the reasons that are left are reasons to keep the copy.
     let origin = record_origin(&directory, script);
 
-    let written_millis = now_millis();
-    let path = unique_path(&directory, written_millis);
+    let path = unique_path(&directory, written_millis)?;
     save_atomically(&path, contents)?;
 
     let backup = Backup {
@@ -123,7 +178,7 @@ pub fn write(
     };
     // Pruning is best effort: the copy is written, and failing to delete an old
     // one is not a reason to tell the user the backup did not happen.
-    let _ = prune(root, script, retention);
+    let _ = prune_at(root, script, retention, written_millis);
     Ok(Written { backup, origin })
 }
 
@@ -148,20 +203,33 @@ fn record_origin(directory: &Path, script: &Path) -> Result<(), SaveError> {
     save_atomically(&path, wanted.as_bytes())
 }
 
-/// Two saves in the same millisecond would otherwise be the same file. The
-/// second gets a suffix rather than overwriting the first.
-fn unique_path(directory: &Path, millis: u64) -> PathBuf {
-    let first = directory.join(format!("{millis}.fountain"));
-    if !first.exists() {
-        return first;
-    }
-    for nonce in 1..1000 {
-        let candidate = directory.join(format!("{millis}-{nonce}.fountain"));
-        if !candidate.exists() {
-            return candidate;
+/// Same-millisecond saves get increasing suffixes, even after pruning removed
+/// the original file or earlier suffixes. Listing order then remains write order.
+fn unique_path(directory: &Path, millis: u64) -> Result<PathBuf, SaveError> {
+    let newest_nonce = fs::read_dir(directory)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension()? != "fountain" {
+                return None;
+            }
+            let stem = path.file_stem()?.to_str()?;
+            let timestamp: u64 = stem.split('-').next()?.parse().ok()?;
+            (timestamp == millis).then(|| collision_nonce(&path))
+        })
+        .max();
+    match newest_nonce {
+        None => Ok(directory.join(format!("{millis}.fountain"))),
+        Some(nonce) => {
+            let next = nonce.checked_add(1).ok_or_else(|| SaveError::Io {
+                path: directory.to_path_buf(),
+                message: "backup collision suffix exhausted".to_owned(),
+            })?;
+            Ok(directory.join(format!("{millis}-{next}.fountain")))
         }
     }
-    first
 }
 
 /// Every copy of one script, newest first.
@@ -188,32 +256,53 @@ pub fn list(root: &Path, script: &Path) -> Vec<Backup> {
     backups.sort_by(|a, b| {
         b.written_millis
             .cmp(&a.written_millis)
+            .then_with(|| collision_nonce(&b.path).cmp(&collision_nonce(&a.path)))
             .then(b.path.cmp(&a.path))
     });
     backups
 }
 
+fn collision_nonce(path: &Path) -> u64 {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.split_once('-'))
+        .and_then(|(_, nonce)| nonce.parse().ok())
+        .unwrap_or(0)
+}
+
 /// Deletes the copies `retention` does not call for. Returns how many went.
 pub fn prune(root: &Path, script: &Path, retention: Retention) -> std::io::Result<usize> {
+    prune_at(root, script, retention, now_millis())
+}
+
+fn prune_at(root: &Path, script: &Path, retention: Retention, now: u64) -> std::io::Result<usize> {
     let backups = list(root, script);
     let keep_versions = retention.keep_versions as usize;
-    let today = now_millis() / MILLIS_PER_DAY;
+    let today = now / MILLIS_PER_DAY;
+    let this_hour = now / MILLIS_PER_HOUR;
     let oldest_day = today.saturating_sub(retention.keep_days.saturating_sub(1) as u64);
 
     let mut days_kept: Vec<u64> = Vec::new();
+    let mut hours_kept = [false; 24];
     let mut removed = 0;
     for (index, backup) in backups.iter().enumerate() {
-        // The newest N, whatever day they are from: this is what makes "undo the
-        // last five saves" possible on a day when the writer saved fifty times.
-        if index < keep_versions {
-            days_kept.push(backup.day());
-            continue;
-        }
-        // Then one per day, so that last Tuesday's draft is still reachable
-        // after a thousand saves since.
         let day = backup.day();
-        if day >= oldest_day && !days_kept.contains(&day) {
-            days_kept.push(day);
+        let hour_age = this_hour.checked_sub(backup.written_millis / MILLIS_PER_HOUR);
+        let hour_slot = hour_age.filter(|age| *age < 24).map(|age| age as usize);
+        let keep_hour = hour_slot.is_some_and(|slot| !hours_kept[slot]);
+        let keep_day = retention.keep_days != 0
+            && day >= oldest_day
+            && day <= today
+            && !days_kept.contains(&day);
+        // Union of newest N, newest per recent hour, and newest per recent day.
+        // Mark every retained bucket so older copies cannot displace its newest.
+        if index < keep_versions || keep_hour || keep_day {
+            if let Some(slot) = hour_slot {
+                hours_kept[slot] = true;
+            }
+            if keep_day {
+                days_kept.push(day);
+            }
             continue;
         }
         if fs::remove_file(&backup.path).is_ok() {
@@ -383,28 +472,50 @@ mod tests {
         let script = Path::new("/x.fountain");
         let directory = directory(dir.path(), script);
         fs::create_dir_all(&directory).unwrap();
-        let first = unique_path(&directory, 5_000);
+        let first = unique_path(&directory, 5_000).unwrap();
         fs::write(&first, "a").unwrap();
-        let second = unique_path(&directory, 5_000);
+        let second = unique_path(&directory, 5_000).unwrap();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn an_exhausted_collision_suffix_preserves_the_existing_snapshot() {
+        let dir = TempDir::new("backup-exhausted-collision");
+        let script = Path::new("/x.fountain");
+        let directory = directory(dir.path(), script);
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(format!("1000-{}.fountain", u64::MAX));
+        fs::write(&path, "preserved").unwrap();
+        assert!(write_if_changed_at(
+            dir.path(),
+            script,
+            "new text",
+            Retention::default(),
+            0,
+            1_000,
+        )
+        .is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "preserved");
+        assert_eq!(list(dir.path(), script)[0].path, path);
     }
 
     #[test]
     fn the_newest_versions_are_kept_whatever_day_they_are_from() {
         let dir = TempDir::new("backup-versions");
         let script = Path::new("/x.fountain");
-        let today = now_millis() / MILLIS_PER_DAY * MILLIS_PER_DAY;
+        let today = 30 * MILLIS_PER_DAY;
         // Twenty saves inside one hour, which is an ordinary afternoon.
         for step in 0..20 {
             plant(dir.path(), script, today + step * 60_000, "text");
         }
-        prune(
+        prune_at(
             dir.path(),
             script,
             Retention {
                 keep_versions: 10,
                 keep_days: 7,
             },
+            today + MILLIS_PER_HOUR,
         )
         .unwrap();
         assert_eq!(list(dir.path(), script).len(), 10);
@@ -414,13 +525,13 @@ mod tests {
     fn one_copy_per_day_survives_a_busy_week() {
         let dir = TempDir::new("backup-days");
         let script = Path::new("/x.fountain");
-        let today = now_millis() / MILLIS_PER_DAY;
+        let today = 30;
         // One save a day for a fortnight, plus a burst today.
         for day in 0..14 {
             plant(
                 dir.path(),
                 script,
-                (today - day) * MILLIS_PER_DAY + 3_600_000,
+                (today - day) * MILLIS_PER_DAY + 2 * MILLIS_PER_HOUR,
                 "text",
             );
         }
@@ -433,13 +544,14 @@ mod tests {
             );
         }
 
-        prune(
+        prune_at(
             dir.path(),
             script,
             Retention {
                 keep_versions: 10,
                 keep_days: 7,
             },
+            today * MILLIS_PER_DAY + 12 * MILLIS_PER_HOUR,
         )
         .unwrap();
         let kept = list(dir.path(), script);
@@ -451,6 +563,317 @@ mod tests {
         assert!(
             !days.contains(&(today - 7)),
             "a week and a day ago is outside the window"
+        );
+    }
+
+    const AUTOSAVE_INTERVAL: u64 = 600_000;
+
+    fn conditional(root: &Path, script: &Path, contents: &str, now: u64) -> Option<Written> {
+        write_if_changed_at(
+            root,
+            script,
+            contents,
+            Retention::default(),
+            AUTOSAVE_INTERVAL,
+            now,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn autosaves_create_the_first_snapshot_and_include_the_exact_age_boundary() {
+        let dir = TempDir::new("backup-autosave-boundary");
+        let script = Path::new("/x.fountain");
+        let first = conditional(dir.path(), script, "first", 1_000).unwrap();
+        assert_eq!(first.backup.written_millis, 1_000);
+        assert_eq!(fs::read(&first.backup.path).unwrap(), b"first");
+        assert!(conditional(dir.path(), script, "changed", 600_999).is_none());
+        let next = conditional(dir.path(), script, "changed", 601_000).unwrap();
+        assert_eq!(next.backup.written_millis, 601_000);
+        assert_eq!(list(dir.path(), script).len(), 2);
+    }
+
+    #[test]
+    fn repeated_autosaves_follow_the_snapshot_clock_not_attempts_or_unchanged_bytes() {
+        let dir = TempDir::new("backup-autosave-timeline");
+        let script = Path::new("/x.fountain");
+        conditional(dir.path(), script, "first", 0).unwrap();
+        for now in [100_000, 200_000, 500_000, 599_999] {
+            assert!(conditional(dir.path(), script, "second", now).is_none());
+        }
+        assert!(conditional(dir.path(), script, "first", 600_000).is_none());
+        let second = conditional(dir.path(), script, "second", 600_001).unwrap();
+        assert_eq!(second.backup.written_millis, 600_001);
+        assert!(conditional(dir.path(), script, "third", 1_200_000).is_none());
+        let third = conditional(dir.path(), script, "third", 1_200_001).unwrap();
+        assert_eq!(third.backup.written_millis, 1_200_001);
+        assert_eq!(list(dir.path(), script).len(), 3);
+    }
+
+    #[test]
+    fn an_unconditional_save_of_unchanged_bytes_resets_autosave_age() {
+        let dir = TempDir::new("backup-manual-age");
+        let script = Path::new("/x.fountain");
+        conditional(dir.path(), script, "first", 0).unwrap();
+        let manual = write_at(dir.path(), script, "first", Retention::default(), 500_000).unwrap();
+        assert_eq!(manual.backup.written_millis, 500_000);
+        assert_eq!(list(dir.path(), script).len(), 2);
+        assert!(conditional(dir.path(), script, "changed", 600_000).is_none());
+        assert!(conditional(dir.path(), script, "changed", 1_099_999).is_none());
+        assert!(conditional(dir.path(), script, "changed", 1_100_000).is_some());
+    }
+
+    #[test]
+    fn future_snapshots_suppress_autosaves_until_the_clock_catches_up() {
+        let dir = TempDir::new("backup-clock-rollback");
+        let script = Path::new("/x.fountain");
+        plant(dir.path(), script, 2_000_000, "future");
+        for now in [0, 1_000_000, 2_000_000, 2_599_999] {
+            assert!(conditional(dir.path(), script, "changed", now).is_none());
+        }
+        assert!(conditional(dir.path(), script, "changed", 2_600_000).is_some());
+    }
+
+    #[test]
+    fn opening_ignores_age_but_not_equal_bytes_even_with_a_future_snapshot() {
+        let dir = TempDir::new("backup-open");
+        let script = Path::new("/x.fountain");
+        let retention = Retention::default();
+        let first = write_if_changed_at(dir.path(), script, "first", retention, 0, 100)
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.backup.written_millis, 100);
+        assert!(
+            write_if_changed_at(dir.path(), script, "first", retention, 0, 101)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            write_if_changed_at(dir.path(), script, "changed", retention, 0, 101)
+                .unwrap()
+                .is_some()
+        );
+        plant(dir.path(), script, 1_000_000, "future");
+        assert!(
+            write_if_changed_at(dir.path(), script, "future", retention, 0, 102)
+                .unwrap()
+                .is_none()
+        );
+        let rescued = write_if_changed_at(dir.path(), script, "opened", retention, 0, 102)
+            .unwrap()
+            .unwrap();
+        assert_eq!(fs::read(&rescued.backup.path).unwrap(), b"opened");
+        assert_eq!(rescued.backup.written_millis, 102);
+    }
+
+    #[test]
+    fn deleted_or_unreadable_snapshot_caches_attempt_a_rescue() {
+        let dir = TempDir::new("backup-cache-rescue");
+        let script = Path::new("/x.fountain");
+        let first = conditional(dir.path(), script, "text", 0).unwrap();
+        fs::remove_file(first.backup.path).unwrap();
+        assert!(conditional(dir.path(), script, "text", 1).is_some());
+        fs::remove_dir_all(directory(dir.path(), script)).unwrap();
+        assert!(conditional(dir.path(), script, "text", 2).is_some());
+
+        // A directory with a snapshot filename is unreadable as bytes, even
+        // for privileged test runners. Its timestamp still gates autosaves.
+        let blocked = directory(dir.path(), script).join("100.fountain");
+        fs::create_dir(&blocked).unwrap();
+        assert!(conditional(dir.path(), script, "rescued", 600_099).is_none());
+        let rescued = conditional(dir.path(), script, "rescued", 600_100).unwrap();
+        assert_eq!(fs::read(rescued.backup.path).unwrap(), b"rescued");
+        assert!(blocked.is_dir(), "unreadable entries do not prevent rescue");
+    }
+
+    #[test]
+    fn each_recent_utc_hour_keeps_only_its_newest_when_daily_and_n_are_disabled() {
+        let dir = TempDir::new("backup-hourly");
+        let script = Path::new("/x.fountain");
+        let this_hour = 100;
+        let now = this_hour * MILLIS_PER_HOUR + 1_000;
+        for age in 0..=25 {
+            let hour = (this_hour - age) * MILLIS_PER_HOUR;
+            plant(dir.path(), script, hour + 100, "older");
+            plant(dir.path(), script, hour + 200, "newer");
+        }
+        prune_at(
+            dir.path(),
+            script,
+            Retention {
+                keep_versions: 0,
+                keep_days: 0,
+            },
+            now,
+        )
+        .unwrap();
+        let kept = list(dir.path(), script);
+        assert_eq!(kept.len(), 24);
+        for (age, backup) in kept.iter().enumerate() {
+            assert_eq!(
+                backup.written_millis,
+                (this_hour - age as u64) * MILLIS_PER_HOUR + 200
+            );
+            assert_eq!(fs::read(&backup.path).unwrap(), b"newer");
+        }
+    }
+
+    #[test]
+    fn manual_save_bursts_preserve_hourly_history_alongside_newest_versions() {
+        let dir = TempDir::new("backup-manual-burst");
+        let script = Path::new("/x.fountain");
+        let start = 100 * MILLIS_PER_HOUR;
+        let retention = Retention {
+            keep_versions: 3,
+            keep_days: 0,
+        };
+        for hour in 0..24 {
+            write_at(
+                dir.path(),
+                script,
+                "hourly",
+                retention,
+                start + hour * MILLIS_PER_HOUR,
+            )
+            .unwrap();
+        }
+        let final_hour = start + 23 * MILLIS_PER_HOUR;
+        for step in 1..=50 {
+            write_at(dir.path(), script, "hourly", retention, final_hour + step).unwrap();
+        }
+        let kept = list(dir.path(), script);
+        assert_eq!(kept.len(), 26, "three newest plus 23 older hours");
+        assert_eq!(
+            kept[..3]
+                .iter()
+                .map(|backup| backup.written_millis)
+                .collect::<Vec<_>>(),
+            [final_hour + 50, final_hour + 49, final_hour + 48]
+        );
+        assert_eq!(kept.last().unwrap().written_millis, start);
+    }
+
+    #[test]
+    fn newest_versions_survive_outside_hourly_and_daily_windows() {
+        let dir = TempDir::new("backup-old-versions");
+        let script = Path::new("/x.fountain");
+        for millis in [100, 200, 300, 400] {
+            plant(dir.path(), script, millis, "old");
+        }
+        prune_at(
+            dir.path(),
+            script,
+            Retention {
+                keep_versions: 2,
+                keep_days: 0,
+            },
+            100 * MILLIS_PER_DAY,
+        )
+        .unwrap();
+        assert_eq!(
+            list(dir.path(), script)
+                .iter()
+                .map(|backup| backup.written_millis)
+                .collect::<Vec<_>>(),
+            [400, 300]
+        );
+    }
+
+    #[test]
+    fn same_millisecond_manual_bursts_keep_the_actual_newest_bytes() {
+        let dir = TempDir::new("backup-manual-collisions");
+        let script = Path::new("/x.fountain");
+        let retention = Retention {
+            keep_versions: 3,
+            keep_days: 0,
+        };
+        for step in 0..=20 {
+            let contents = step.to_string();
+            let written = write_at(dir.path(), script, &contents, retention, 1_000).unwrap();
+            let newest = list(dir.path(), script);
+            assert_eq!(newest[0].path, written.backup.path);
+            assert_eq!(fs::read(&newest[0].path).unwrap(), contents.as_bytes());
+            assert_eq!(newest.len(), ((step + 1) as usize).min(3));
+            assert!(
+                write_if_changed_at(dir.path(), script, &contents, retention, 0, 1_000)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        let kept = list(dir.path(), script);
+        assert_eq!(kept.len(), 3);
+        assert_eq!(fs::read(&kept[0].path).unwrap(), b"20");
+        assert!(
+            write_if_changed_at(dir.path(), script, "20", retention, 0, 1_000)
+                .unwrap()
+                .is_none()
+        );
+        let last = write_if_changed_at(dir.path(), script, "new", retention, 0, 1_000)
+            .unwrap()
+            .unwrap();
+        assert_eq!(fs::read(last.backup.path).unwrap(), b"new");
+        prune_at(
+            dir.path(),
+            script,
+            Retention {
+                keep_versions: 0,
+                keep_days: 0,
+            },
+            1_000,
+        )
+        .unwrap();
+        let kept = list(dir.path(), script);
+        assert_eq!(kept.len(), 1, "the hour keeps its newest collision");
+        assert_eq!(fs::read(&kept[0].path).unwrap(), b"new");
+        let retention = Retention {
+            keep_versions: 0,
+            keep_days: 0,
+        };
+        for step in 0..=20 {
+            let contents = format!("hour-only {step}");
+            let written = write_at(dir.path(), script, &contents, retention, 1_000).unwrap();
+            let newest = list(dir.path(), script);
+            assert_eq!(newest.len(), 1);
+            assert_eq!(newest[0].path, written.backup.path);
+            assert_eq!(fs::read(&newest[0].path).unwrap(), contents.as_bytes());
+            assert!(
+                write_if_changed_at(dir.path(), script, &contents, retention, 0, 1_000)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn zero_daily_retention_does_not_preserve_future_buckets_beyond_newest_n() {
+        let dir = TempDir::new("backup-future-retention");
+        let script = Path::new("/x.fountain");
+        let now = 30 * MILLIS_PER_DAY + 2 * MILLIS_PER_HOUR;
+        plant(dir.path(), script, now, "current hour");
+        plant(
+            dir.path(),
+            script,
+            now + MILLIS_PER_HOUR,
+            "future hour today",
+        );
+        let tomorrow = 31 * MILLIS_PER_DAY;
+        plant(dir.path(), script, tomorrow, "newest N");
+        prune_at(
+            dir.path(),
+            script,
+            Retention {
+                keep_versions: 1,
+                keep_days: 0,
+            },
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            list(dir.path(), script)
+                .iter()
+                .map(|backup| backup.written_millis)
+                .collect::<Vec<_>>(),
+            [tomorrow, now]
         );
     }
 

@@ -237,10 +237,9 @@ Future<SaveOutcome> docExportPdf({
 
 /// The autosave, called by Dart's own timers.
 ///
-/// Identical to [`doc_save`] except that it writes no backup — a backup per
-/// autosave would be a hundred a day and would push yesterday's draft out of the
-/// retention window by lunchtime — and that it answers [`SaveOutcome::Unchanged`]
-/// quietly when there is nothing to write, which is most of the time.
+/// Writes a changed snapshot at most once per ten minutes, decided from the
+/// newest backup's filename when this save is already running (ADR 0043).
+/// Answers [`SaveOutcome::Unchanged`] quietly when there is nothing to write.
 Future<SaveOutcome> docAutosave({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiFilesDocAutosave(handle: handle);
 

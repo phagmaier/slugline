@@ -3148,3 +3148,73 @@ releases the lock when the last descriptor for that open file description closes
   spawning. A fork can briefly inherit another test's descriptor before exec
   closes it, keeping its lock alive after the owning test drops its journal.
   A throwaway fork experiment confirmed this descriptor-lifetime behavior.
+
+---
+
+## ADR 0043 — Previous versions include bounded automatic snapshots
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Supersedes:** ADR 0014's "Autosave writes no backup" consequence only.
+Its Dart-owned timers, suppression rules and save-failure behavior remain.
+
+### Context
+
+A writer who relies entirely on autosave still needs previous versions, not
+only the current file and a crash-recovery journal. Backlog S2's bridge smoke
+reproduced no backup on opening and no backup after autosave, while an explicit
+dirty save did create one. ADR 0014 avoided an unbounded stream of autosave
+backups to protect older drafts, but withholding all autosave history makes the
+manual-save habit a requirement for version recovery.
+
+The same gap affects starting text changed outside Slugline while a script is
+closed. Opening that file should preserve its on-disk starting point before
+editing, including the first opening when the backup cache is absent. Explicit
+save remains a deliberate version boundary even when autosave has already made
+the document clean.
+
+### Decision
+
+Make snapshot decisions in the existing open/save worker paths, using the
+newest backup's filename timestamp and a byte comparison with its contents:
+
+* Opening snapshots the on-disk starting text when it differs from the newest
+  backup. A missing cache establishes the first baseline. Opening ignores the
+  age gate, including when the newest filename has a future timestamp.
+* Autosave snapshots changed text only when the newest backup is at least ten
+  minutes old. Any newer backup, including an explicit save or opening snapshot,
+  restarts that eligibility window. A future timestamp delays eligibility until
+  ten minutes after that timestamp; no correction state is added.
+* With no newest backup, an automatic snapshot can establish the baseline.
+  Missing or unreadable newest contents prompt a rescue snapshot when the age
+  gate permits one, rather than treating an unavailable comparison as equality.
+* Every explicit save attempts an unconditional snapshot, even for identical
+  bytes or a clean `Ctrl+S` after autosave.
+
+Snapshots use atomic writes and remain best effort. Backup-cache read, write or
+retention failures do not fail an otherwise successful open or script save.
+The script's own write failures still follow the existing save-error behavior.
+There is no new core timer, per-document snapshot state, index or dependency;
+Dart's existing autosave timers still decide when to request a save.
+
+Retention is the union of the existing configurable newest N and daily M tiers
+with a fixed hourly tier: keep the newest snapshot in each UTC-hour bucket for
+the current hour and the previous 23 hours. Defaults remain N = 10 and M = 7;
+no preference or retention field is added for the hourly tier.
+
+### Consequences
+
+* Autosave-only writers gain previous versions without making every autosave a
+  backup. Byte-identical automatic saves and openings do not consume history.
+* Opening preserves changed external starting text even if the script was not
+  open when another program changed it. The first opening creates a baseline
+  instead of requiring the writer to remember a manual save.
+* Rapid explicit saves cannot evict all earlier hours from recent history.
+  Retention is bounded by N + 24 + M copies before overlaps are removed. This
+  is a time-bucket policy, not source tagging: the newest snapshot in an hour
+  may replace an earlier autosnapshot or explicit snapshot in that same hour.
+* A clock moved into the future can postpone automatic snapshots, but cannot
+  prevent an opening baseline or an explicit-save snapshot. The policy derives
+  eligibility from existing filenames rather than maintaining another clock.
+* An unavailable cache can leave gaps in previous versions without preventing
+  the writer from opening or saving the screenplay. Atomic publication avoids
+  exposing a partially written snapshot.

@@ -42,7 +42,7 @@ This is the only place boxes are ticked.
 **1. Safety — do these first**
 
 - [x] [S1](#s1) A second launch deletes a running session's crash journal
-- [ ] [S2](#s2) Autosave never writes a previous version
+- [x] [S2](#s2) Autosave never writes a previous version
 - [ ] [S3](#s3) The title-page dialog fuses multi-line fields
 
 **2. Small confirmed bugs**
@@ -204,7 +204,30 @@ a save is already running. Backups go through `save_atomically`. They are a
 cache: deleting them must cost only convenience.
 
 **Effort.** S–M.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree change
+based on `c1db1f9`). Reproduced with an actual bridge smoke executable: opening
+created no backup, autosave wrote edited bytes with `backup: None`, and an
+explicit dirty save created one. Autosaves now snapshot different saved bytes
+when the newest filename timestamp is at least ten minutes old; opening keeps
+different on-disk starting text without an age gate, including a first baseline
+when the cache is absent. Explicit saves snapshot every time, including clean
+Ctrl+S after autosave. No core timer, new preference, index or dependency.
+ADR 0043 supersedes only ADR 0014's no-autosave-backup decision.
+Retention adds the newest copy in each of the current and previous 23 UTC hours
+to the existing newest-N and daily-M tiers: bounded recent history survives
+manual-save bursts, though a newer copy can replace one within the same hour.
+Same-millisecond snapshots now sort by numeric suffix and keep increasing that
+suffix after pruning, so comparisons and retention use the actual newest copy.
+Deterministic coverage includes exact interval boundaries, unchanged text,
+manual-save age resets, clock rollback, missing/unreadable caches, hourly/daily
+retention and same-millisecond bursts. Bridge coverage proves changed/identical
+opening, throttled autosaves, clean explicit saves/Save As, and backup failures
+that leave opening and saving successful. The post-change executable exercised
+those open/save paths; a Linux dialog smoke visually verified the new empty
+state. Throwaway harnesses were removed. Verification: 579 workspace tests,
+clippy with warnings denied, Rust formatting, layering/version checks, binding
+regeneration, Flutter analysis, 508 Flutter tests and all 16 Linux persistence
+integration tests passed.
 
 <a id="s3"></a>
 ### S3 — The title-page dialog fuses multi-line fields

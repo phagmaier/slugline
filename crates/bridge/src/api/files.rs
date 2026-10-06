@@ -52,6 +52,8 @@ use crate::api::events::{emit, CoreEvent};
 use crate::api::{layout, spell};
 use crate::state::{AppState, Session, Storage};
 
+const AUTOSAVE_BACKUP_INTERVAL_MILLIS: u64 = 10 * 60 * 1_000;
+
 // ---------------------------------------------------------------------------
 // Views
 // ---------------------------------------------------------------------------
@@ -346,7 +348,33 @@ pub async fn library_open(path: String) -> Option<DocumentHandle> {
     // The read happens here, off the actor thread: a 120-page script is half a
     // megabyte and a cold file is a disk seek.
     let source = std::fs::read_to_string(&path).ok()?;
-    Some(open_source(path, source, false))
+    let settings = actor().run(|state| {
+        state.storage().map(|storage| {
+            (
+                storage
+                    .prefs
+                    .backup_dir
+                    .clone()
+                    .unwrap_or_else(|| storage.paths.backup_dir()),
+                storage.prefs.retention(),
+            )
+        })
+    });
+    // Preserve the on-disk starting text before publishing an editable session.
+    // No age gate on open, and cache failure must never prevent opening a file.
+    let backup = settings.and_then(|(root, retention)| {
+        backup::write_if_changed(&root, &path, &source, retention, 0)
+            .ok()
+            .flatten()
+    });
+    let handle = open_source(path, source, false);
+    if let Some(written) = backup {
+        emit(CoreEvent::BackupWritten {
+            handle: handle.id,
+            path: written.backup.path.to_string_lossy().into_owned(),
+        });
+    }
+    Some(handle)
 }
 
 /// §6's `library_create`, with Phase 10's useful first-run template.
@@ -895,10 +923,9 @@ fn script_name(path: Option<&Path>) -> String {
 
 /// The autosave, called by Dart's own timers.
 ///
-/// Identical to [`doc_save`] except that it writes no backup — a backup per
-/// autosave would be a hundred a day and would push yesterday's draft out of the
-/// retention window by lunchtime — and that it answers [`SaveOutcome::Unchanged`]
-/// quietly when there is nothing to write, which is most of the time.
+/// Writes a changed snapshot at most once per ten minutes, decided from the
+/// newest backup's filename when this save is already running (ADR 0043).
+/// Answers [`SaveOutcome::Unchanged`] quietly when there is nothing to write.
 pub async fn doc_autosave(handle: DocumentHandle) -> SaveOutcome {
     let outcome = write_document(handle, None, false).await;
     if let SaveOutcome::Failed {
@@ -931,9 +958,8 @@ pub async fn doc_autosave(handle: DocumentHandle) -> SaveOutcome {
 ///
 /// The second save **waits** rather than being refused. The plan is made after
 /// the wait, so it writes whatever the document says by then: the newest
-/// revision, or — if the save it queued behind already wrote everything —
-/// nothing, and it says [`SaveOutcome::Unchanged`]. That is the coalescing, and
-/// it falls out of replanning rather than needing a queue.
+/// revision. An autosave with nothing left to write says
+/// [`SaveOutcome::Unchanged`]; an explicit save still records a version.
 ///
 /// ## Why it checks the file it is about to replace
 ///
@@ -957,7 +983,7 @@ pub async fn doc_autosave(handle: DocumentHandle) -> SaveOutcome {
 async fn write_document(
     handle: DocumentHandle,
     save_as: Option<PathBuf>,
-    with_backup: bool,
+    explicit_save: bool,
 ) -> SaveOutcome {
     // Step zero, off the actor thread: wait for any write of this document that
     // is already in flight.
@@ -1031,9 +1057,9 @@ async fn write_document(
             message: "this script has never been saved".to_owned(),
         };
     };
-    // Save As always writes, even to a document nobody has edited: the user
-    // asked for a file at a new path and a clean document is still a file.
-    if !plan.dirty && save_as.is_none() {
+    // Explicit saves always write and snapshot, even if autosave already made
+    // the document clean. Only redundant autosaves are coalesced.
+    if !plan.dirty && save_as.is_none() && !explicit_save {
         abandon_save(handle.id);
         return SaveOutcome::Unchanged;
     }
@@ -1112,16 +1138,26 @@ async fn write_document(
     // losing it is that a directory named after a hash cannot say what it is
     // without the library index; the next backup writes it again. A save that
     // worked must not grow a warning over that.
-    let backup = match (with_backup, &plan.storage) {
-        (true, Some((root, retention))) => backup::write(root, &path, &plan.text, *retention)
+    let backup = plan.storage.as_ref().and_then(|(root, retention)| {
+        let written = if explicit_save {
+            backup::write(root, &path, &plan.text, *retention).ok()
+        } else {
+            backup::write_if_changed(
+                root,
+                &path,
+                &plan.text,
+                *retention,
+                AUTOSAVE_BACKUP_INTERVAL_MILLIS,
+            )
             .ok()
-            .map(|written| BackupView {
-                path: written.backup.path.to_string_lossy().into_owned(),
-                written_millis: written.backup.written_millis,
-                bytes: written.backup.bytes,
-            }),
-        _ => None,
-    };
+            .flatten()
+        };
+        written.map(|written| BackupView {
+            path: written.backup.path.to_string_lossy().into_owned(),
+            written_millis: written.backup.written_millis,
+            bytes: written.backup.bytes,
+        })
+    });
     if let Some(written) = &backup {
         emit(CoreEvent::BackupWritten {
             handle: handle.id,
@@ -3191,7 +3227,7 @@ mod tests {
         let it = Fixture::open("abandoned");
 
         // Clean: nothing to write.
-        assert_eq!(block_on(doc_save(it.handle)), SaveOutcome::Unchanged);
+        assert_eq!(block_on(doc_autosave(it.handle)), SaveOutcome::Unchanged);
         assert!(!it.is_saving());
 
         // Unwritable: the directory is gone.
@@ -4967,5 +5003,139 @@ mod tests {
             format!("{RECOVERY_EDIT}{SCRIPT}"),
             "accepting recovery never saves the unsaved edit"
         );
+    }
+
+    #[test]
+    fn autosave_backups_are_throttled_without_losing_the_saved_text() {
+        let it = Fixture::open("autosave-backups");
+        let initial = block_on(backups_list(it.handle));
+        assert_eq!(initial.len(), 1);
+        assert_eq!(fs::read_to_string(&initial[0].path).unwrap(), SCRIPT);
+
+        it.types("First. ");
+        assert!(matches!(
+            block_on(doc_autosave(it.handle)),
+            SaveOutcome::Saved { backup: None, .. }
+        ));
+        assert_eq!(it.on_disk(), "First. The house is quiet.\n");
+
+        // Filename time is the policy's clock input, with no sleeping or timer.
+        let initial_path = Path::new(&initial[0].path);
+        fs::rename(initial_path, initial_path.with_file_name("1.fountain")).unwrap();
+        it.types("Second. ");
+        let SaveOutcome::Saved {
+            backup: Some(snapshot),
+            ..
+        } = block_on(doc_autosave(it.handle))
+        else {
+            panic!("an aged, different snapshot must be written");
+        };
+        assert_eq!(
+            fs::read_to_string(&snapshot.path).unwrap(),
+            "Second. First. The house is quiet.\n"
+        );
+        it.types("Third. ");
+        assert!(matches!(
+            block_on(doc_autosave(it.handle)),
+            SaveOutcome::Saved { backup: None, .. }
+        ));
+        assert_eq!(it.on_disk(), "Third. Second. First. The house is quiet.\n");
+        assert_eq!(block_on(backups_list(it.handle)).len(), 2);
+        assert!(!it.dirty());
+        assert!(it.journal_agrees_with_the_file());
+    }
+
+    #[test]
+    fn opening_snapshots_changed_disk_text_but_not_identical_text() {
+        let mut it = Fixture::open("open-backups");
+        let original = block_on(backups_list(it.handle))[0].clone();
+        crate::api::doc::doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(block_on(backups_list(it.handle)), vec![original.clone()]);
+        crate::api::doc::doc_close(it.handle);
+
+        // Changed outside Slugline, less than ten minutes after the first open.
+        fs::write(&it.script, "Changed elsewhere.\n").unwrap();
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        let versions = block_on(backups_list(it.handle));
+        assert_eq!(versions.len(), 2);
+        assert_eq!(
+            fs::read_to_string(&versions[0].path).unwrap(),
+            "Changed elsewhere.\n"
+        );
+        assert_eq!(fs::read_to_string(&original.path).unwrap(), SCRIPT);
+        assert_eq!(it.in_memory(), "Changed elsewhere.\n");
+        assert!(!it.dirty());
+        // Opening an already-open handle cannot add a spurious version either.
+        assert_eq!(
+            block_on(library_open(it.script.to_string_lossy().into_owned())),
+            Some(it.handle)
+        );
+        assert_eq!(block_on(backups_list(it.handle)), versions);
+    }
+
+    #[test]
+    fn explicit_saves_snapshot_even_after_autosave_made_the_document_clean() {
+        let it = Fixture::open("explicit-backups");
+        it.types("Autosaved. ");
+        assert!(matches!(
+            block_on(doc_autosave(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert!(!it.dirty());
+        let mut paths = std::collections::HashSet::new();
+        for _ in 0..3 {
+            let SaveOutcome::Saved {
+                backup: Some(snapshot),
+                ..
+            } = block_on(doc_save(it.handle))
+            else {
+                panic!("every explicit save must snapshot even unchanged text");
+            };
+            assert_eq!(fs::read_to_string(&snapshot.path).unwrap(), it.on_disk());
+            assert!(paths.insert(snapshot.path), "each save has its own version");
+        }
+        let destination = it.root.join("saved-as.fountain");
+        let SaveOutcome::Saved {
+            backup: Some(snapshot),
+            ..
+        } = block_on(doc_save_as(
+            it.handle,
+            destination.to_string_lossy().into_owned(),
+            false,
+        ))
+        else {
+            panic!("Save As must snapshot a clean document too");
+        };
+        assert_eq!(fs::read_to_string(&snapshot.path).unwrap(), it.in_memory());
+        assert_eq!(fs::read_to_string(&destination).unwrap(), it.in_memory());
+    }
+
+    #[test]
+    fn backup_cache_failure_does_not_fail_open_autosave_or_explicit_save() {
+        let mut it = Fixture::open("broken-backups");
+        // A regular file where the backup root should be fails even under root.
+        let blocked = it.root.join("blocked-backup-root");
+        fs::write(&blocked, "not a directory").unwrap();
+        let setting = blocked.clone();
+        actor().run(move |state| state.storage_mut().unwrap().prefs.backup_dir = Some(setting));
+        crate::api::doc::doc_close(it.handle);
+        fs::write(&it.script, "Opened without a backup.\n").unwrap();
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(it.in_memory(), "Opened without a backup.\n");
+
+        for explicit in [false, true] {
+            it.types("Saved without a backup. ");
+            let outcome = if explicit {
+                block_on(doc_save(it.handle))
+            } else {
+                block_on(doc_autosave(it.handle))
+            };
+            assert!(matches!(outcome, SaveOutcome::Saved { backup: None, .. }));
+            assert_eq!(it.on_disk(), it.in_memory());
+            assert!(!it.dirty());
+            assert!(it.journal_agrees_with_the_file());
+        }
+        assert_eq!(fs::read_to_string(&blocked).unwrap(), "not a directory");
     }
 }

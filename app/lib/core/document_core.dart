@@ -260,8 +260,8 @@ abstract class DocumentCore {
     bool overwrite = false,
   });
 
-  /// The same as [save] but quieter: no backup is written, and nothing to write
-  /// is [files.SaveOutcome_Unchanged] rather than news.
+  /// The same as [save] but quieter: changed backup snapshots are throttled to
+  /// ten minutes, and nothing to write is [files.SaveOutcome_Unchanged].
   Future<files.SaveOutcome> autosave();
 
   /// `(the document has unsaved edits, the file on disk differs)` — the two
