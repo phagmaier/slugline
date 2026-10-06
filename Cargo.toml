@@ -17,7 +17,13 @@ members = [
 # "one source" true rather than aspirational.
 version = "1.0.2"
 edition = "2021"
-rust-version = "1.82"
+# Not aspirational, and not a preference: this is the floor the resolved
+# dependency graph actually needs, and CI's `msrv` job builds on exactly this
+# toolchain. `hashbrown` (under `spellbook`) and `notify-types` (under `notify`)
+# are what set it, so lowering it means replacing one of those two — see their
+# lines in `docs/DEPENDENCIES.md`. It said 1.82 until those two moved and
+# nothing noticed, which is why the job exists.
+rust-version = "1.85"
 license = "GPL-3.0-or-later"
 publish = false
 

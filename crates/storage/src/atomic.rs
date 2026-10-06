@@ -65,9 +65,13 @@ impl SaveError {
     /// Classifies an OS error against the path it happened on.
     fn from_io(path: &Path, error: &io::Error) -> SaveError {
         // ENOSPC is 28 and EDQUOT is 122 on Linux. `io::ErrorKind` has had
-        // `StorageFull` and `QuotaExceeded` since 1.83 and we build against
-        // 1.82, so the raw numbers it is — with the kinds checked first, so this
-        // starts working through the front door the moment the floor moves.
+        // `StorageFull` and `QuotaExceeded` since 1.83, and the workspace floor
+        // is 1.85, so this raw-number guard is now a fallback the named kinds
+        // already cover — the match below is on `error.kind()`, so a toolchain
+        // with the kinds answers through the front door either way. Removing
+        // the guard touches the save path's error classification, which wants
+        // the full-disk test rather than a drive-by; it is logged under "Found
+        // along the way" in `docs/BACKLOG.md`.
         let full = matches!(error.raw_os_error(), Some(28) | Some(122));
         let path = path.to_path_buf();
         match error.kind() {

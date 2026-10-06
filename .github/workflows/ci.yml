@@ -85,6 +85,32 @@ jobs:
       - name: The documents still describe this repository
         run: python3 tools/check_docs.py
 
+  # `Cargo.toml`'s `rust-version` is the only claim in this repository that
+  # nobody can test locally: every development machine here runs current
+  # stable, which is several releases above the floor. So it went stale exactly
+  # as an unchecked claim does — `hashbrown` and `notify-types` raised the real
+  # floor to 1.85 while `rust-version` still said 1.82, and an agent paid for it
+  # by reaching for `libc::flock` instead of `File::try_lock` to honour a number
+  # that was already false.
+  #
+  # `cargo check` is the whole gate. Resolution is where a dependency's own
+  # `rust-version` is enforced, and type-checking is where a standard-library
+  # API newer than the floor fails — both before any linking, so this job needs
+  # no system libraries and stays cheap.
+  msrv:
+    name: MSRV — the declared floor still builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the declared floor
+        run: rustup toolchain install 1.85.0 --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo +1.85.0 check --workspace --all-targets
+
   fuzz:
     name: Fuzz — parser and round trip
     runs-on: ubuntu-latest

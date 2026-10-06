@@ -152,7 +152,10 @@ renames a new file into place.
 `/tmp` XDG roots: launch 2 removed launch 1's journal. Journals now hold
 exclusive `libc::flock` locks; startup, accept and discard acquire ownership,
 and atomic creation/replacement publishes an already locked inode. Rust 1.82
-is retained; no separate lock file or single-instance policy. ADR 0042 records
+was the floor when this landed and the `libc` route was taken to stay under it;
+the floor has since been corrected to 1.85, which `File::try_lock` (1.89) still
+exceeds, so the decision stands. No separate lock file or single-instance
+policy. ADR 0042 records
 the ownership/publication trade-offs. The real bridge two-process regression
 covers live empty/non-empty journals, direct and stale recovery decisions,
 reload, save-time replacement, same-script refusal and two successive
@@ -1109,3 +1112,12 @@ not part of that item.
   focused review", but that review is spent and the plan that held its findings
   is no longer in the tree. Promoted to [F8](#f8), which is where the work now
   lives; ADR 0025 records the history and points at it.
+- 2026-10-06 — While correcting the declared Rust floor from 1.82 to 1.85,
+  found that `SaveError::from_io` no longer needs its raw-errno guard:
+  `io::ErrorKind::StorageFull` and `QuotaExceeded` have existed since 1.83, so
+  `matches!(error.raw_os_error(), Some(28) | Some(122))` in
+  `crates/storage/src/atomic.rs` is a fallback the named kinds already cover.
+  Behaviour is the same either way — the match is on `error.kind()` — so this is
+  a three-line deletion, not a fix. It touches the save path's error
+  classification, so it wants the full-disk test
+  (`SLUGLINE_FULL_DISK_DIR`, see the recipes above) rather than a drive-by.

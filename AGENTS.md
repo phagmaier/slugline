@@ -345,12 +345,14 @@ exceeded.
 
 - Add a one-line justification to `docs/DEPENDENCIES.md` in the same change as
   every new Rust or Dart dependency. Avoid large transitive dependency trees.
-- `Cargo.toml` declares `rust-version = "1.82"`, but CI and every machine that
-  builds this project run current stable, so **nothing checks that floor**. Treat
-  1.82 as binding anyway: when a standard-library API you want was stabilised
-  later, avoid it or raise the floor deliberately and say so in the change.
-  `storage` calls `flock` through `libc` rather than `File::try_lock` (1.89) for
-  exactly this reason — see ADR 0042 and its line in `docs/DEPENDENCIES.md`.
+- `Cargo.toml` declares `rust-version = "1.85"`, and CI's `msrv` job builds on
+  exactly that toolchain. The floor comes from the resolved dependency graph —
+  `hashbrown` under `spellbook`, `notify-types` under `notify` — so it is a fact
+  to preserve, not a preference. When a standard-library API you want was
+  stabilised later, avoid it or raise the floor deliberately in the same change;
+  the job fails either way, naming the package or the API. `storage` calls
+  `flock` through `libc` rather than `File::try_lock` (1.89) for exactly this
+  reason — see ADR 0042 and its line in `docs/DEPENDENCIES.md`.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
 - Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. When a later
