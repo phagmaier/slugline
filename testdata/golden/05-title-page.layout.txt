@@ -1,5 +1,5 @@
 TITLE PAGE
-   18 -> ( 21, "_**BRASS TACKS**_")
+   18 -> ( 24, "_**BRASS TACKS**_")
    19 -> ( 26, "Part Two")
    20 -> ( 30, "")
    21 -> ( 25, "Written by")

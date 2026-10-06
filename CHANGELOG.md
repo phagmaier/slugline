@@ -23,6 +23,9 @@ this file and the others to it.
   export, and omits test counts that become stale.
 - Fountain character cues now accept punctuation such as `#`, `&`, `/` and `,`,
   and lowercase parenthesised extensions, without turning their speech into action.
+- Emphasised centred lines and title fields now align by printed width, and
+  transitions and draft dates end at the right margin. Escaped markers and
+  unpaired markup retain their printed widths; wrapping is unchanged.
 
 ## 1.0.2 - 2026-09-13
 

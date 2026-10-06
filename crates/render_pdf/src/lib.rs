@@ -13,14 +13,12 @@
 //! [`Geometry`] is the whole of the renderer's own opinion, and all it does is
 //! multiply a grid cell by its size in points.
 //!
-//! The one thing this crate *does* interpret is inline emphasis, because ADR
-//! 0019 put it here on purpose: `*italic*` is shown literally in the editor and
-//! counted as columns by the paginator, and the PDF is the only place the
-//! markers become a typeface instead of characters. Within a row the printed
-//! text is drawn from the row's own left edge with no gap where a marker was
-//! (ADR 0032); the consequence is that an emphasised transition or centred line
-//! ends a marker or two short of where an unemphasised one would, because the
-//! paginator aligned it while the markers still counted.
+//! This crate interprets inline emphasis for typefaces (ADR 0019): the editor
+//! still shows markers literally, and wrapping still counts them as columns.
+//! Within a row, printed runs start at the paginator's column with no gaps for
+//! removed markers (ADR 0032). The paginator now measures those same printed
+//! characters for centred and right-aligned placement (ADR 0044); no alignment
+//! decision belongs here.
 //!
 //! ## Determinism
 //!

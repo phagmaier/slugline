@@ -1172,6 +1172,7 @@ version = "1.0.2"
 dependencies = [
  "criterion",
  "slugline_document",
+ "slugline_fountain",
 ]
 
 [[package]]

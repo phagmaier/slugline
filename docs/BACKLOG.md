@@ -54,7 +54,7 @@ This is the only place boxes are ticked.
 **3. Fountain and output fidelity**
 
 - [x] [F1](#f1) Common character-cue shapes are read as action
-- [ ] [F2](#f2) Emphasised centred, right-aligned and title lines are misaligned
+- [x] [F2](#f2) Emphasised centred, right-aligned and title lines are misaligned
 - [ ] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
 - [ ] [F4](#f4) Consecutive lyric lines print double-spaced
 - [ ] [F5](#f5) A `~` line under a cue prints its tilde
@@ -486,7 +486,33 @@ This item does not touch wrapping — that is X4. Check the layering script stil
 passes if `layout` needs emphasis scanning it cannot currently reach.
 
 **Effort.** S–M.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
+change, preserving F1 and earlier backlog work). The actual PDF dump executable
+and `pdftotext -bbox` reproduced the reported title centre at 26.5, centred
+`THE **END**` at 27.5, and an emphasised transition ending at 56. After the
+layout fix, both centres are 29.5 (within half a column of 30), and the
+transition ends at 60. An emphasised draft date also ends at 60; escaped-marker
+text centres at 30 and unpaired-marker text remains at 30.
+`fountain::emphasis` now exposes count-only printed-width measurement using
+its existing tokenisation and pairing, without allocating styled text.
+Layout measures body rows together across wraps, title rows individually,
+and leaves left-aligned placement and raw-width wrapping unchanged. ADR 0044
+supersedes the alignment-only parts of ADRs 0019/0032; the direct
+`layout -> fountain` edge is documented and enforced.
+Three new finished-PDF coordinate regressions failed before and pass after;
+they cover nested emphasis, escapes, unpaired markers, right-aligned draft
+dates and pairing across wrapped body rows. All 588 Rust workspace tests,
+clippy with warnings denied, formatting and layering/version checks passed.
+Before regeneration, the corpus audit found only two changed title columns:
+`05-title-page` and `reference-feature`, each moved three columns right.
+Their dumped title centres are now 29.5 and 30 respectively. Two layout
+goldens and their four Letter/A4 PDF hashes were deliberately regenerated;
+all other layout coordinates, text, page breaks and PDF hashes are unchanged.
+Line-break fixtures are unchanged. Flutter checks were not run; this change
+does not implement preview styling (F3). Temporary smoke artifacts were
+removed. Eventual commit-message note: "Layout goldens and PDF hashes changed
+deliberately to align emphasised titles by printed width; wrapping and page
+breaks are unchanged."
 
 <a id="f3"></a>
 ### F3 — The preview shows literal emphasis markers; heading weight differs between views

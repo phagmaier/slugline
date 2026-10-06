@@ -9,11 +9,11 @@
 //!
 //! ## Who calls this, and why it takes rows rather than a row
 //!
-//! Through 1.0, exactly one caller: the PDF renderer. ADR 0019 settled that
-//! markers are shown literally in the editor and counted as columns by the
-//! paginator, and that the PDF is the only thing that interprets them. The
-//! renderer therefore receives a paragraph that is already broken into rows, and
-//! an emphasis run may well open on one and close on another:
+//! The PDF renderer styles the printed text; the paginator uses the same
+//! interpretation to align centred and right-aligned rows (ADR 0044).
+//! Wrapping and editor display still count the literal markers (ADR 0019).
+//! Both callers receive a paragraph already broken into rows, and an emphasis
+//! run may well open on one and close on another:
 //!
 //! ```text
 //!     *This is a long italic line that the
@@ -61,8 +61,8 @@ impl Emphasis {
 ///
 /// `text` is the printable characters, with every marker that turned out to be
 /// one — and every escaping backslash — removed. A row's runs are drawn one
-/// after another from wherever the paginator put the row: the cells the markers
-/// occupied while it was measuring are not left blank (ADR 0032).
+/// after another from wherever the paginator put the row, without gaps for
+/// removed markers (ADR 0032). Alignment uses printed width (ADR 0044).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmphasisRun {
     pub text: String,
@@ -82,6 +82,39 @@ pub fn scan(rows: &[&str]) -> Vec<Vec<EmphasisRun>> {
 /// [`scan`] for a caller that has one row and knows it is the whole paragraph.
 pub fn scan_row(row: &str) -> Vec<EmphasisRun> {
     scan(&[row]).pop().unwrap_or_default()
+}
+
+/// Printed grid-cell widths of a paragraph's rows, using the same pairing and
+/// escaping rules as [`scan`], without allocating styled runs or printed text.
+pub fn printed_widths(rows: &[&str]) -> Vec<usize> {
+    let mut widths = vec![0; rows.len()];
+    measure(rows, &mut widths);
+    widths
+}
+
+/// Printed width of a row known to be the whole paragraph, like [`scan_row`].
+pub fn printed_width(row: &str) -> usize {
+    let mut width = [0];
+    measure(&[row], &mut width);
+    width[0]
+}
+
+fn measure(rows: &[&str], widths: &mut [usize]) {
+    if !rows.iter().any(|row| row.contains(['*', '_', '\\'])) {
+        for (row, width) in rows.iter().zip(widths) {
+            *width = row.chars().count();
+        }
+        return;
+    }
+    let tokens = tokenise(rows);
+    let paired = pair(&tokens);
+    for (index, token) in tokens.iter().enumerate() {
+        widths[token.row] += match token.kind {
+            Kind::Text(_) => 1,
+            Kind::Marker { .. } if paired[index] => 0,
+            Kind::Marker { marker, .. } => marker.width(),
+        };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +350,24 @@ fn emit(rows: usize, tokens: &[Token], paired: &[bool]) -> Vec<Vec<EmphasisRun>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn printed_width_keeps_literals_and_removes_only_paired_markers_and_escapes() {
+        for (text, width) in [
+            ("", 0),
+            ("é中😀", 3),
+            ("_**BRICK & STEEL**_", 13),
+            ("***THE _END_***", 7),
+            ("UNPAIRED **TITLE", 16),
+            (r"\*STAR\* \\ \q", 11),
+            ("****END****", 5),
+        ] {
+            assert_eq!(printed_width(text), width, "{text:?}");
+        }
+        assert_eq!(printed_widths(&[]), Vec::<usize>::new());
+        assert_eq!(printed_widths(&["**THE", "", "END**"]), [3, 0, 3]);
+        assert_eq!(printed_widths(&["**THE", "END"]), [5, 3]);
+    }
 
     /// The runs as `(text, faces)`, with faces spelled `biu`.
     fn describe(runs: Vec<EmphasisRun>) -> Vec<(String, String)> {

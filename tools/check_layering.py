@@ -3,8 +3,8 @@
 
     fountain    depends on nothing in the workspace
     document    depends only on fountain
-    layout      depends only on document
-    render_pdf  depends only on layout
+    layout      depends only on document and fountain
+    render_pdf  depends only on layout and fountain (document for tests)
     storage     depends only on document
     spell       depends on nothing in the workspace
     bridge      depends on everything
@@ -43,11 +43,10 @@ ALLOWED: dict[str, set[str]] = {
 EXPECTED_DIRECT: dict[str, set[str]] = {
     "fountain": set(),
     "document": {"fountain"},
-    "layout": {"document"},
-    # Phase 7 added `fountain`: inline emphasis is Fountain syntax, and ADR 0019
-    # makes the PDF renderer the only thing that interprets it, so it reads the
-    # rules from where they live rather than restating them. `document` is a
-    # dev-dependency only — the tests need a parsed screenplay to render.
+    # ADR 0044: printed-width alignment reads Fountain's existing emphasis rules.
+    "layout": {"document", "fountain"},
+    # The renderer reads the same emphasis rules for styling, not layout.
+    # `document` is a dev-dependency: tests need a parsed screenplay to render.
     "render_pdf": {"layout", "fountain", "document"},
     "storage": {"document"},
     "spell": set(),

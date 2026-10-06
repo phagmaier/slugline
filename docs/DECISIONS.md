@@ -3218,3 +3218,54 @@ no preference or retention field is added for the hourly tier.
 * An unavailable cache can leave gaps in previous versions without preventing
   the writer from opening or saving the screenplay. Atomic publication avoids
   exposing a partially written snapshot.
+
+---
+
+## ADR 0044 — Layout aligns emphasis by printed width, without changing wraps
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Supersedes:** ADR 0032's raw-marker alignment consequence and ADR 0019's
+restriction of emphasis interpretation to the PDF renderer, for alignment only.
+Literal editor display and raw-width wrapping remain unchanged.
+
+### Context
+
+Backlog F2's PDF dump reproduced `_**BRICK & STEEL**_` centred at column 26.5,
+`> THE **END** <` at 27.5, and `> **FADE OUT:**` ending at 56 instead of 60.
+Layout counted markup while choosing the left edge; PDF removed it while
+drawing. Escaping backslashes caused the same disagreement.
+
+### Decision
+
+Layout measures printed width with `fountain::emphasis`'s existing tokenisation
+and pairing rules. Paired markers and escaping backslashes take no printed
+cells; unpaired markers and escaped characters remain printable. Width APIs
+count tokens without allocating styled runs or copies of the printed text.
+
+Body rows are measured together for each block, so a paired run crossing a wrap
+is hidden on both rows. Title rows are measured individually, matching the PDF
+renderer's existing title-row interpretation. This applies to centred title
+fields and right-aligned draft dates, as well as centred body lines and
+transitions. Left-aligned placement does not need emphasis measurement.
+
+Only horizontal alignment changes. Line breaking still measures raw text under
+`docs/LINE_BREAKING.md`; layout preserves row content, source-line identity and
+page breaks. The renderer still copies layout coordinates and chooses faces;
+it makes no wrapping or alignment decision. Integer grid columns put odd-width
+centred text half a column left of the exact centre, within the F2 tolerance.
+
+Add the direct workspace edge `layout -> fountain` rather than re-exporting a
+syntax scanner through `document` or implementing another one in layout.
+No external dependency is added.
+
+### Verification
+
+The PDF coordinate regressions measure finished text operators for centred
+lines, titles, transitions and draft dates, including nested, escaped, unpaired
+and cross-wrap emphasis. The actual dump executable and `pdftotext -bbox` show
+the reported title and centred line at 29.5 and the transition ending at 60.
+
+The corpus audit before regeneration found only two layout changes: the
+emphasised titles in `05-title-page` and `reference-feature` move three columns
+right. Their Letter and A4 PDF hashes are deliberately regenerated; all other
+layout coordinates, row content, page breaks and PDF hashes stay unchanged.

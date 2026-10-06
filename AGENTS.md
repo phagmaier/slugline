@@ -52,7 +52,8 @@ ask Rust for screenplay semantics rather than reimplementing them.
 
 Workspace layers enforced by `python3 tools/check_layering.py`:
 `fountain` has no workspace dependencies; `document -> fountain`;
-`layout -> document`; `render_pdf -> layout` and `-> fountain`;
+`layout -> document` and `-> fountain` (printed-width alignment, ADR 0044);
+`render_pdf -> layout` and `-> fountain`;
 `storage -> document`; `spell` has none; `bridge` may depend on all.
 Update the workspace manifest and the script's tables together when adding a
 workspace crate or allowed edge.

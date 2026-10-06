@@ -4,6 +4,7 @@ use std::sync::Arc;
 use slugline_document::{
     split_scene_number, without_notes_and_boneyards, BlockId, BlockKind, Document, TitleField,
 };
+use slugline_fountain::emphasis;
 
 use crate::line_break::break_lines;
 use crate::metrics;
@@ -935,17 +936,37 @@ impl<'a> Paginator<'a> {
 }
 
 fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
+    // Body emphasis pairs across all of a block's wrapped rows, just as it
+    // does in the renderer. Left-aligned and plain-text blocks need no scan.
+    let printed_widths = if block.layout.alignment != Alignment::Left
+        && block
+            .lines
+            .iter()
+            .any(|line| line.contains(['*', '_', '\\']))
+    {
+        let rows: Vec<&str> = block.lines.iter().map(String::as_str).collect();
+        Some(emphasis::printed_widths(&rows))
+    } else {
+        None
+    };
     block
         .lines
         .iter()
         .enumerate()
         .map(|(index, content)| {
-            let width = char_count(content) as i16;
+            let width = || {
+                printed_widths
+                    .as_ref()
+                    .map_or_else(|| char_count(content), |widths| widths[index])
+                    as i16
+            };
             let column = match block.layout.alignment {
                 Alignment::Left => block.layout.indent,
-                Alignment::Right => block.layout.indent + i16_from_u16(block.layout.width) - width,
+                Alignment::Right => {
+                    block.layout.indent + i16_from_u16(block.layout.width) - width()
+                }
                 Alignment::Centre => {
-                    block.layout.indent + (i16_from_u16(block.layout.width) - width) / 2
+                    block.layout.indent + (i16_from_u16(block.layout.width) - width()) / 2
                 }
             };
             let role = match block.kind {
@@ -1101,7 +1122,9 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
     for (offset, content) in main.into_iter().enumerate() {
         lines.push(LayoutLine {
             row: i16_from_u16(main_start) + offset as i16,
-            column: (i16_from_u16(metrics::ACTION_WIDTH) - char_count(&content) as i16) / 2,
+            column: (i16_from_u16(metrics::ACTION_WIDTH)
+                - emphasis::printed_width(&content) as i16)
+                / 2,
             content,
             block: None,
             source_line: None,
@@ -1123,7 +1146,7 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
     for (offset, content) in lower_right.into_iter().enumerate() {
         lines.push(LayoutLine {
             row: i16_from_u16(lower_start) + offset as i16,
-            column: i16_from_u16(metrics::ACTION_WIDTH) - char_count(&content) as i16,
+            column: i16_from_u16(metrics::ACTION_WIDTH) - emphasis::printed_width(&content) as i16,
             content,
             block: None,
             source_line: None,

@@ -144,6 +144,92 @@ fn a_transition_ends_at_the_text_area_and_a_centred_line_is_centred_in_it() {
     );
 }
 
+/// Printed row extents in columns, measured from the finished PDF operators.
+/// Each CID is four hex digits and advances one 7.2-point grid cell, regardless
+/// of face. Page numbers sit above the text area's 720-point top edge.
+fn printed_row_extents(bytes: &[u8]) -> Vec<(f64, f64)> {
+    let mut placed = placements(bytes);
+    placed.retain(|(_, y, _)| *y <= 720.0);
+    placed.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.total_cmp(&b.0)));
+    let mut rows: Vec<(f64, f64, f64)> = Vec::new();
+    for (x, y, glyphs) in placed {
+        let left = (x - 108.0) / 7.2;
+        let right = left + (glyphs.len() / 4) as f64;
+        if let Some(row) = rows.last_mut().filter(|row| row.0 == y) {
+            row.1 = row.1.min(left);
+            row.2 = row.2.max(right);
+        } else {
+            rows.push((y, left, right));
+        }
+    }
+    rows.into_iter()
+        .map(|(_, left, right)| (left, right))
+        .collect()
+}
+
+#[test]
+fn emphasised_centred_lines_and_titles_print_at_the_text_area_centre() {
+    for script in [
+        "> THE **END** <\n",
+        "Title: _**BRICK & STEEL**_\n\n",
+        "> ***THE _END_*** <\n",
+        "> ESCAPED \\*STAR\\* <\n",
+        "> UNPAIRED *STAR <\n",
+        "Title: ESCAPED \\_TITLE\\_\n\n",
+        "Title: UNPAIRED **TITLE\n\n",
+    ] {
+        let rows = printed_row_extents(&export(script, &PageConfig::us_letter()));
+        assert_eq!(rows.len(), 1, "{script:?}");
+        let (left, right) = rows[0];
+        let centre = (left + right) / 2.0;
+        assert!(
+            (centre - 30.0).abs() <= 0.5 + 1e-9,
+            "{script:?} prints centred at column {centre}, not within half a column of 30"
+        );
+    }
+}
+
+#[test]
+fn emphasised_transitions_and_draft_dates_print_to_column_sixty() {
+    for script in [
+        "> **FADE OUT:**\n",
+        "> _**CUT TO:**_\n",
+        "> CUT TO \\*BLACK\\*:\n",
+        "> UNPAIRED **CUT TO:\n",
+        "Draft date: **OCTOBER** 2026\n\n",
+        "Draft date: \\_OCTOBER\\_ 2026\n\n",
+    ] {
+        let rows = printed_row_extents(&export(script, &PageConfig::us_letter()));
+        assert_eq!(rows.len(), 1, "{script:?}");
+        let (_, right) = rows[0];
+        assert!(
+            (right - 60.0).abs() < 1e-9,
+            "{script:?} prints to column {right}, not 60"
+        );
+    }
+}
+
+#[test]
+fn alignment_pairs_emphasis_across_wrapped_body_rows() {
+    let text = format!("**{}END**", "WORD ".repeat(14));
+    for centred in [true, false] {
+        let script = if centred {
+            format!("> {text} <\n")
+        } else {
+            format!("> {text}\n")
+        };
+        let rows = printed_row_extents(&export(&script, &PageConfig::us_letter()));
+        assert_eq!(rows.len(), 2, "the fixture wraps by raw width");
+        for (left, right) in rows {
+            if centred {
+                assert!(((left + right) / 2.0 - 30.0).abs() <= 0.5 + 1e-9);
+            } else {
+                assert!((right - 60.0).abs() < 1e-9, "wrapped row ends at {right}");
+            }
+        }
+    }
+}
+
 #[test]
 fn baselines_are_six_to_the_inch_from_a_one_inch_margin() {
     // The half of the exit criterion the references all agree on, and the half

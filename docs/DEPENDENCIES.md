@@ -24,6 +24,10 @@ Format: `name` — what it does — why we cannot reasonably do without it.
 `printpdf`, the other original output shortlist candidate, was turned down when
 Phase 7 reached it — see below.
 
+Workspace edge `layout -> fountain` — reuse the existing emphasis pairing and
+escape rules for printed-width alignment, without a second scanner or any new
+external dependency (ADR 0044).
+
 ## Vendored assets
 
 | Asset | Version | Used by | Justification |
