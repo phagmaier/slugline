@@ -60,7 +60,7 @@ This is the only place boxes are ticked.
 - [x] [B2](#b2) Page-view sheets are off-centre and clip on the left
 - [x] [B3](#b3) README lists the wrong shortcuts and stale test counts
 - [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
-- [ ] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
+- [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
 
 **3. Fountain and output fidelity**
 
@@ -448,7 +448,25 @@ changing screenplay text. Modal-dialog input remains outside page shortcuts.
 The native writing suite and full Linux integration gate pass.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `6e92052`. A real-core diagnostic under
+isolated XDG roots observed Characters clicks move focus from the navigator
+field to the route scope, bypassing the page's Ctrl+J handler. The native
+viewport was 1280 × 720 with a docked sidebar. Flutter 3.44.8 and Dart 3.12.2
+match the repository/CI pins; no installation, version or dependency change was
+needed. Linux-mode widget coverage reproduced the docked failure before the
+fix; Android-mode and compact-drawer runs passed, exposing the previous
+coverage gap rather than a new parsing defect.
+`EditorPage` now owns a `FocusScope`, retaining unfocus inside the page's
+shortcut boundary without forcing focus on tab clicks. Child editing keys
+still run first and modal routes keep their own input boundary. Regressions
+cover docked and compact quick-jump filtering, Enter selecting the scene,
+unchanged screenplay source, and modal input isolation.
+All 57 native tests across seven suites now pass, including the original
+writing scenario. The rebuilt release UI was visually checked after Characters
+→ Ctrl+J → `street` → Enter: only STREET remained and its heading received the
+caret. Flutter analysis and 534 tests, Linux release/network checks, 598 Rust
+tests, rustfmt/clippy and layering/version/docs checks passed. Temporary
+diagnostics were removed; changelog and keymap describe the restored behavior.
 
 ---
 
