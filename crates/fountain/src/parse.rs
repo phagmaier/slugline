@@ -547,9 +547,6 @@ mod tests {
             kinds("Action.\n\nCUT TO:\n\nINT. HOUSE - DAY\n")[1],
             BlockKind::Transition
         );
-        // Followed immediately by another line it is not a transition, and the
-        // colon keeps it out of the §4.1 character set too, so it is action.
-        assert_eq!(kinds("CUT TO:\nWhat?\n"), [BlockKind::Action]);
     }
 
     #[test]

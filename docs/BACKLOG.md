@@ -53,7 +53,7 @@ This is the only place boxes are ticked.
 
 **3. Fountain and output fidelity**
 
-- [ ] [F1](#f1) Common character-cue shapes are read as action
+- [x] [F1](#f1) Common character-cue shapes are read as action
 - [ ] [F2](#f2) Emphasised centred, right-aligned and title lines are misaligned
 - [ ] [F3](#f3) The preview shows literal emphasis markers; heading weight differs between views
 - [ ] [F4](#f4) Consecutive lyric lines print double-spaced
@@ -431,7 +431,25 @@ deliberately. `normalize_character` in `crates/document/src/entities.rs` feeds
 autocomplete and the navigator and must cope with the new characters.
 
 **Effort.** S–M.
-**Result:** _open_
+**Result:** 2026-10-06 — verified; commit pending (uncommitted working-tree
+change). Reproduced with the PDF dump executable: all four examples and
+`JOHN, JR.` printed with their dialogue at column 0. The shared recognizer now
+accepts unrestricted punctuation and checks capitals only outside balanced
+trailing parenthesised extensions, including stacked and nested groups; the
+original cue text and `^` flag are retained. A name still needs an uppercase
+letter outside its extensions, and lowercase in the name still requires `@`.
+Scene-heading and transition precedence is unchanged. Removing the colon
+restriction also makes `CUT TO:` followed immediately by speech a cue, as the
+Fountain rule requires; inference now respects that non-blank-after context.
+Regression coverage includes parser/serialiser/inference agreement, BOM/CRLF
+byte-exact resaves, provenance tiling, cue-shaped action protection and invalid
+extensions. Autocomplete and navigator regressions verify punctuation,
+frequencies and occurrence IDs; `normalize_character` needed no change, and
+ADR 0031's known-extension-only normalization remains intact. The post-change
+PDF smoke's extracted coordinates prove cue column 22 and dialogue column 10
+for all five examples. All 584 Rust workspace tests, clippy with warnings
+denied, formatting and layering/version checks passed. Corpus layout and PDF
+goldens and line-break fixtures are unchanged; no regeneration was needed.
 
 <a id="f2"></a>
 ### F2 — Emphasised centred, right-aligned and title lines are misaligned

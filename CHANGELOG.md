@@ -21,6 +21,8 @@ this file and the others to it.
   left-edge clipping or a horizontal jump when pagination first arrives.
 - The README now lists Ctrl+K for the command palette and Ctrl+P for Preview and
   export, and omits test counts that become stale.
+- Fountain character cues now accept punctuation such as `#`, `&`, `/` and `,`,
+  and lowercase parenthesised extensions, without turning their speech into action.
 
 ## 1.0.2 - 2026-09-13
 

@@ -73,7 +73,9 @@ pub fn infer_kind(text: &str, at: Context) -> Option<BlockKind> {
     if syntax::is_scene_heading(text) {
         return Some(BlockKind::SceneHeading);
     }
-    if syntax::is_transition(text) {
+    // Like the parser, a transition needs a blank line after it. When speech
+    // follows immediately, even `CUT TO:` can instead be a character cue.
+    if syntax::is_transition(text) && !at.next.is_some_and(BlockKind::continues_dialogue) {
         return Some(BlockKind::Transition);
     }
     // A cue is only a cue when something speaks under it (§4.1); the same

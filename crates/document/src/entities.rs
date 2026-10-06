@@ -483,6 +483,43 @@ mod tests {
     }
 
     #[test]
+    fn imported_cue_punctuation_survives_completion_and_navigation() {
+        for name in [
+            "COP #1",
+            "MOM (on the phone)",
+            "MR. & MRS. SMITH",
+            "HANS/GRETEL",
+            "JOHN, JR.",
+        ] {
+            let source = format!("{name}\nHello.\n\n{name} (v.o.)\nAgain.\n");
+            let document = Document::parse(&source);
+            let index = EntityIndex::build(&document);
+            let completion = index.complete(EntityKind::Character, name, &[]);
+            assert_eq!(
+                completion
+                    .iter()
+                    .map(|candidate| (candidate.value.as_str(), candidate.frequency))
+                    .collect::<Vec<_>>(),
+                [(name, 2)],
+                "{name:?}"
+            );
+            let characters = index.characters(&document);
+            assert_eq!(
+                characters
+                    .iter()
+                    .map(|character| (character.name.as_str(), character.frequency))
+                    .collect::<Vec<_>>(),
+                [(name, 2)],
+                "{name:?}"
+            );
+            assert_eq!(
+                characters[0].blocks,
+                [document.blocks()[0].id(), document.blocks()[2].id()]
+            );
+        }
+    }
+
+    #[test]
     fn removing_the_last_occurrence_removes_the_entity_incrementally() {
         let mut document = Document::parse("INT. KITCHEN - DAY\n");
         let id = document.blocks()[0].id();

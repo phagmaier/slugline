@@ -367,14 +367,10 @@ fn opens_another_element(line: &str, has_more_lines: bool) -> bool {
 /// then goes on consuming until a blank line, so a swallowed block usually takes
 /// its neighbour's first line with it.
 ///
-/// Stated once and asked by every kind that can be written bare, rather than
-/// left to each kind's own rules to imply. Three of the four imply it today:
-/// `is_scene_heading` and `character_of` both reject the `Key: value` shape, so
-/// only `Transition` reaches it — `IN: TO:` is a transition by §4.1 and a title
-/// key by `looks_like_title_key`, and the parser resolves it the other way
-/// (F16). Relying on that coincidence would make a future loosening of either
-/// recognition rule reopen the hole silently, and losing a block on reopen is
-/// exactly what ADR 0007's round-trip guarantee exists to prevent.
+/// Asked by every kind that can be written bare: a cue such as `MARY: HELLO`
+/// can also look like a title key, and `IN: TO:` is both a transition and a key.
+/// At the top of a file the title-page parser wins, so the marker must protect
+/// the block's kind and its neighbour's text (ADR 0007).
 fn swallowed_by_title_page(at_top: bool, title_page: &TitlePage, line: &str) -> bool {
     at_top && title_page.is_empty() && looks_like_title_key(line)
 }
@@ -583,11 +579,7 @@ mod tests {
         assert_eq!(kinds_and_text(&after_title)[0].1, "IN: TO:");
     }
 
-    /// The other three kinds that can be written bare. Their own recognition
-    /// rules already keep them out of the title page, and this says so out
-    /// loud: if `character_of` or `is_scene_heading` is ever loosened to accept
-    /// a `Key: value` line, the shared check in `swallowed_by_title_page` is
-    /// what has to catch it, and this test is where that shows up.
+    /// Every kind written bare must protect a title-key-shaped first line.
     #[test]
     fn no_kind_written_bare_at_the_top_is_eaten_by_the_title_page() {
         let empty = TitlePage::default();

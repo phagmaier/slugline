@@ -298,24 +298,36 @@ pub(crate) fn is_transition(line: &str) -> bool {
 /// Splits a character cue into its name and its dual-dialogue flag, or returns
 /// `None` if the line is not shaped like a cue.
 ///
-/// §4.1 fixes the character set: letters, digits, `.`, `(`, `)`, `'`, `-`, and
-/// spaces. "All-caps" is read as "contains an upper-case letter and no
-/// lower-case one", which means a cue written entirely in a caseless script
-/// (CJK) needs the `@` prefix. That is the honest reading: without case there
-/// is nothing to distinguish a cue from a line of action.
+/// Punctuation is unrestricted. "All-caps" is read on the name outside trailing
+/// parenthesised extensions, which may be mixed case. The name must contain an
+/// upper-case letter and no lower-case one; a caseless script (CJK) still needs
+/// the `@` prefix to distinguish a cue from a line of action.
 pub(crate) fn character_of(line: &str) -> Option<(&str, bool)> {
     let line = line.trim();
     let (name, dual) = match line.strip_suffix('^') {
         Some(name) => (name.trim_end(), true),
         None => (line, false),
     };
-    if name.is_empty() || !is_all_caps(name) {
+    if name.contains(['\r', '\n']) {
         return None;
     }
-    let allowed = name
-        .chars()
-        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '(' | ')' | '\'' | '-' | ' '));
-    allowed.then_some((name, dual))
+    let mut stem = name;
+    while stem.ends_with(')') {
+        let mut depth = 0usize;
+        let opening = stem.char_indices().rev().find_map(|(index, c)| {
+            match c {
+                ')' => depth += 1,
+                '(' => depth -= 1,
+                _ => {}
+            }
+            (c == '(' && depth == 0).then_some(index)
+        });
+        let Some(opening) = opening else {
+            break;
+        };
+        stem = stem[..opening].trim_end();
+    }
+    is_all_caps(stem).then_some((name, dual))
 }
 
 /// Wrapped in parentheses (§4.1). Only meaningful directly after a character
@@ -425,8 +437,6 @@ mod tests {
         assert_eq!(character_of("1234"), None);
         assert_eq!(character_of(""), None);
         assert_eq!(character_of("^"), None);
-        // A comma is outside the §4.1 character set.
-        assert_eq!(character_of("JOHN, JR."), None);
         // Caseless scripts have no upper case to find.
         assert_eq!(character_of("日本"), None);
     }
