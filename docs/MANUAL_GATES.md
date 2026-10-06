@@ -71,7 +71,9 @@ the renderer changed since ADR 0034:
 3. `pdftotext -bbox out.pdf - | head` and confirm every baseline still lands on
    the six-lines-to-the-inch grid and the indents match §5.2.
 4. Open in a viewer (Evince/Okular) and print one page. Expected: 12pt Courier
-   Prime, 1" top/bottom margins, page number 0.5" from the top.
+   Prime, 1" top/bottom margins, page number 0.5" from the top. Page 1 carries
+   no number unless “Number the first page” is on (ADR 0048), so print page 2,
+   or turn the option on, to see one.
 
 ## 4. HiDPI and fractional scaling
 

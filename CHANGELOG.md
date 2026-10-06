@@ -40,6 +40,10 @@ this file and the others to it.
 - Sung lines beginning with `~` inside dialogue now print without the tilde and
   in italics in preview and PDF, including wrapped lines and page continuations.
   They remain part of the speech; source text and editor wrapping are unchanged.
+- The first page of a script no longer prints `1.`, following the usual
+  screenplay convention; numbering starts showing on page 2. “Number the first
+  page” in Preferences restores it in page view, preview and PDF. Page counts
+  and every other page number are unchanged.
 
 ## 1.0.2 - 2026-09-13
 

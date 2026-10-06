@@ -251,11 +251,28 @@ fn baselines_are_six_to_the_inch_from_a_one_inch_margin() {
             "{baseline} is {rows} rows from the top row, not a whole number"
         );
     }
-    // The page number is three rows above the text area — half an inch (§5.2).
+    // Page 1 carries no number unless the setup asks, so the topmost line is
+    // the first row of script, an ascender below the one-inch margin.
+    let ascender = 1600.0 / 2048.0 * 12.0;
     assert!(
-        (top - (792.0 - 72.0 + 36.0 - 1600.0 / 2048.0 * 12.0)).abs() < 0.001,
+        (top - (792.0 - 72.0 - ascender)).abs() < 0.001,
+        "the topmost line is the first row of script, one inch from the paper's top"
+    );
+    // Asked for, the page number is three rows above the text area — half an
+    // inch (§5.2) — and nothing else on the page has moved.
+    let numbered = export(
+        SCRIPT,
+        &PageConfig::us_letter().with_number_first_page(true),
+    );
+    let mut numbered_baselines: Vec<f64> = page_one(&numbered).iter().map(|(_, y, _)| *y).collect();
+    numbered_baselines.sort_by(f64::total_cmp);
+    numbered_baselines.dedup_by(|a, b| a == b);
+    let number = numbered_baselines.pop().expect("at least one row");
+    assert!(
+        (number - (792.0 - 72.0 + 36.0 - ascender)).abs() < 0.001,
         "the topmost line is the page number, half an inch from the paper's top"
     );
+    assert_eq!(numbered_baselines, baselines);
 }
 
 #[test]

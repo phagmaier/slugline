@@ -599,6 +599,7 @@ void main() {
       defaultPaper: 'a4',
       sceneNumbers: 'right',
       boldSceneHeadings: true,
+      numberFirstPage: true,
       pdfFontPath: null,
       distractionFree: false,
       pageView: false,
@@ -612,6 +613,7 @@ void main() {
     expect(Core.instance.preferences().autosaveIdleMs, 750);
     expect(Core.instance.preferences().navigatorVisible, isFalse);
     expect(Core.instance.preferences().boldSceneHeadings, isTrue);
+    expect(Core.instance.preferences().numberFirstPage, isTrue);
     expect(
       Core.instance.preferences().pageView,
       isFalse,

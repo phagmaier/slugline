@@ -746,9 +746,21 @@ mod tests {
             !sheets[0].iter().any(|placed| placed.text == "1."),
             "which carries no page number"
         );
+        assert_eq!(script.pages[0].number, Some(1));
+        assert!(
+            !sheets[1].iter().any(|placed| placed.text == "1."),
+            "the first screenplay page is still page 1, and by default does not print it"
+        );
+
+        let numbered = PageConfig::us_letter().with_number_first_page(true);
+        let sheets = place(&paginate(&document, &numbered), &numbered);
+        assert!(
+            !sheets[0].iter().any(|placed| placed.text == "1."),
+            "numbering the first page is about the screenplay, never the title page"
+        );
         assert!(
             sheets[1].iter().any(|placed| placed.text == "1."),
-            "the first screenplay page is still page 1"
+            "asked for, page 1 prints its number"
         );
     }
 

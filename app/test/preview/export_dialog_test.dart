@@ -53,6 +53,7 @@ void main() {
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
       boldSceneHeadings: false,
+      numberFirstPage: false,
       debugLinesPerPage: null,
     ),
   }) async {
@@ -91,17 +92,24 @@ void main() {
         paper: PaperSize.a4,
         sceneNumbers: SceneNumbers.right,
         boldSceneHeadings: true,
+        numberFirstPage: true,
         debugLinesPerPage: null,
       ),
     );
 
     expect(output.setups.single.paper, PaperSize.a4);
     expect(output.setups.single.boldSceneHeadings, isTrue);
+    expect(output.setups.single.numberFirstPage, isTrue);
     expect(output.setups.single.sceneNumbers, SceneNumbers.right);
     answer = '/scripts/bold-headings.pdf';
     await tester.tap(find.byKey(const Key('export-pdf')));
     await tester.pumpAndSettle();
     expect(output.pdfExports.single.$2.boldSceneHeadings, isTrue);
+    expect(
+      output.pdfExports.single.$2.numberFirstPage,
+      isTrue,
+      reason: 'changing paper in the dialog must not drop the saved option',
+    );
   });
 
   testWidgets('exporting a PDF writes one and moves nothing', (tester) async {
@@ -113,6 +121,7 @@ void main() {
     expect(output.pdfExports.single.$1, '/scripts/heat.pdf');
     expect(output.pdfExports.single.$3, isFalse, reason: 'nothing to replace');
     expect(output.pdfExports.single.$2.boldSceneHeadings, isFalse);
+    expect(output.pdfExports.single.$2.numberFirstPage, isFalse);
     expect(
       asked.single,
       'Export PDF|heat.pdf|/scripts',

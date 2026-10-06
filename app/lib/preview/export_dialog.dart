@@ -51,6 +51,7 @@ class ExportDialog extends StatefulWidget {
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
       boldSceneHeadings: false,
+      numberFirstPage: false,
       debugLinesPerPage: null,
     ),
     super.key,
@@ -74,6 +75,7 @@ class ExportDialog extends StatefulWidget {
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
       boldSceneHeadings: false,
+      numberFirstPage: false,
       debugLinesPerPage: null,
     ),
   }) => showDialog<void>(
@@ -125,6 +127,7 @@ class _ExportDialogState extends State<ExportDialog> {
     paper: _paper,
     sceneNumbers: _sceneNumbers,
     boldSceneHeadings: widget.initialSetup.boldSceneHeadings,
+    numberFirstPage: widget.initialSetup.numberFirstPage,
     // Never set outside the Phase 6F diagnostic: a real preview and a real
     // export take the row count from the paper (§5.2).
     debugLinesPerPage: null,

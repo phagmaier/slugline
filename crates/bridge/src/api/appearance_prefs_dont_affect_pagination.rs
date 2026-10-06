@@ -73,3 +73,31 @@ fn heading_weight_is_an_output_preference_without_a_geometry_change() {
         paginate(&document, &bold_config).pages,
     );
 }
+
+/// Numbering page 1 is the same kind of thing as paper size and scene numbers:
+/// a choice about what is printed, stored with the output defaults. It is not
+/// in the appearance list above because it does change the pagination dump —
+/// by exactly one line in the top margin, and by no row of script.
+#[test]
+fn first_page_numbering_is_an_output_preference_that_moves_no_row() {
+    let document = Document::parse(
+        "Title: The Quiet Grid\n\nINT. EDITING ROOM - NIGHT\n\nAction.\n\n===\n\nMore action.\n",
+    );
+    let unnumbered = Preferences::default();
+    let numbered = Preferences {
+        number_first_page: true,
+        ..unnumbered.clone()
+    };
+    let unnumbered_config = preference_page_config(&unnumbered);
+    let numbered_config = preference_page_config(&numbered);
+    assert!(!unnumbered_config.number_first_page);
+    assert!(numbered_config.number_first_page);
+
+    let plain = paginate(&document, &unnumbered_config).debug_dump();
+    let marked = paginate(&document, &numbered_config).debug_dump();
+    let first_page_number = "   -3 -> ( 58, \"1.\")\n";
+    assert_eq!(plain.matches(first_page_number).count(), 0);
+    assert_eq!(marked.matches(first_page_number).count(), 1);
+    assert_eq!(marked.replace(first_page_number, ""), plain);
+    assert!(plain.contains("   -3 -> ( 58, \"2.\")\n"));
+}

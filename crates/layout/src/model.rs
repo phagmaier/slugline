@@ -56,6 +56,10 @@ pub struct PageConfig {
     pub scene_numbers: SceneNumberGutters,
     /// Output weight only; does not change the fixed-grid geometry.
     pub bold_scene_headings: bool,
+    /// Whether page 1 prints its `1.`. Off by default: the convention leaves
+    /// the first page unnumbered. The line sits in the top margin, so no row
+    /// moves either way, and the page is still `number = Some(1)`.
+    pub number_first_page: bool,
     line_capacity_override: Option<u16>,
 }
 
@@ -71,6 +75,7 @@ impl PageConfig {
             page_size: PageSize::UsLetter,
             scene_numbers: SceneNumberGutters::None,
             bold_scene_headings: false,
+            number_first_page: false,
             line_capacity_override: None,
         }
     }
@@ -80,6 +85,7 @@ impl PageConfig {
             page_size: PageSize::A4,
             scene_numbers: SceneNumberGutters::None,
             bold_scene_headings: false,
+            number_first_page: false,
             line_capacity_override: None,
         }
     }
@@ -91,6 +97,11 @@ impl PageConfig {
 
     pub const fn with_bold_scene_headings(mut self, bold: bool) -> Self {
         self.bold_scene_headings = bold;
+        self
+    }
+
+    pub const fn with_number_first_page(mut self, number: bool) -> Self {
+        self.number_first_page = number;
         self
     }
 
@@ -177,6 +188,9 @@ pub struct LayoutLine {
 
 /// One title or screenplay page. Screenplay pages have `number = Some(1..)`;
 /// the title page has no number and lives separately on [`PaginatedScript`].
+/// `number` is the page's place in the count, not a promise that it is
+/// printed: only a [`LayoutLineKind::PageNumber`] line says that, and page 1
+/// carries one only under [`PageConfig::number_first_page`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Page {
     pub number: Option<u32>,

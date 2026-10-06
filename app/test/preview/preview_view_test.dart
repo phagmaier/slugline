@@ -35,15 +35,40 @@ void main() {
       expect(find.byKey(const Key('preview-title-page')), findsOneWidget);
       expect(find.byKey(const Key('preview-page-1')), findsOneWidget);
       expect(
-        find.byKey(const Key('preview-page-number-1')),
-        findsOneWidget,
-        reason: 'the paginator-provided page number is visibly rendered',
-      );
-      expect(
         find.byKey(const Key('preview-page-number-null')),
         findsNothing,
         reason: 'the title page remains unnumbered',
       );
+    });
+
+    testWidgets('a page is numbered exactly where the paginator numbered it', (
+      tester,
+    ) async {
+      // Small enough for both sheets to be built at once.
+      await pump(tester, samplePagination(titlePage: false), scale: 2.4);
+      expect(find.byKey(const Key('preview-page-1')), findsOneWidget);
+      expect(
+        find.byKey(const Key('preview-page-number-1')),
+        findsNothing,
+        reason: 'page one arrives without a number line and is drawn without',
+      );
+      expect(
+        find.byKey(const Key('preview-page-number-2')),
+        findsOneWidget,
+        reason: 'the paginator-provided page number is visibly rendered',
+      );
+
+      await pump(
+        tester,
+        samplePagination(titlePage: false, numberFirstPage: true),
+        scale: 2.4,
+      );
+      expect(
+        find.byKey(const Key('preview-page-number-1')),
+        findsOneWidget,
+        reason: 'the option is a line in the snapshot, not a preview rule',
+      );
+      expect(find.byKey(const Key('preview-page-number-2')), findsOneWidget);
     });
 
     testWidgets('a script with no title page has none in the preview', (

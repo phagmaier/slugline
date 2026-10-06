@@ -51,6 +51,7 @@ class EditorPage extends StatefulWidget {
       paper: PaperSize.usLetter,
       sceneNumbers: SceneNumbers.off,
       boldSceneHeadings: false,
+      numberFirstPage: false,
       debugLinesPerPage: null,
     ),
     this.onNavigatorVisibilityChanged,

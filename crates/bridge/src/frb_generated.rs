@@ -3198,11 +3198,13 @@ impl SseDecode for crate::api::layout::PageSetup {
         let mut var_paper = <crate::api::layout::PaperSize>::sse_decode(deserializer);
         let mut var_sceneNumbers = <crate::api::layout::SceneNumbers>::sse_decode(deserializer);
         let mut var_boldSceneHeadings = <bool>::sse_decode(deserializer);
+        let mut var_numberFirstPage = <bool>::sse_decode(deserializer);
         let mut var_debugLinesPerPage = <Option<u32>>::sse_decode(deserializer);
         return crate::api::layout::PageSetup {
             paper: var_paper,
             scene_numbers: var_sceneNumbers,
             bold_scene_headings: var_boldSceneHeadings,
+            number_first_page: var_numberFirstPage,
             debug_lines_per_page: var_debugLinesPerPage,
         };
     }
@@ -3316,6 +3318,7 @@ impl SseDecode for crate::api::files::PreferencesView {
         let mut var_defaultPaper = <String>::sse_decode(deserializer);
         let mut var_sceneNumbers = <String>::sse_decode(deserializer);
         let mut var_boldSceneHeadings = <bool>::sse_decode(deserializer);
+        let mut var_numberFirstPage = <bool>::sse_decode(deserializer);
         let mut var_pdfFontPath = <Option<String>>::sse_decode(deserializer);
         let mut var_distractionFree = <bool>::sse_decode(deserializer);
         let mut var_pageView = <bool>::sse_decode(deserializer);
@@ -3335,6 +3338,7 @@ impl SseDecode for crate::api::files::PreferencesView {
             default_paper: var_defaultPaper,
             scene_numbers: var_sceneNumbers,
             bold_scene_headings: var_boldSceneHeadings,
+            number_first_page: var_numberFirstPage,
             pdf_font_path: var_pdfFontPath,
             distraction_free: var_distractionFree,
             page_view: var_pageView,
@@ -4336,6 +4340,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::layout::PageSetup {
             self.paper.into_into_dart().into_dart(),
             self.scene_numbers.into_into_dart().into_dart(),
             self.bold_scene_headings.into_into_dart().into_dart(),
+            self.number_first_page.into_into_dart().into_dart(),
             self.debug_lines_per_page.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -4478,6 +4483,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::PreferencesView {
             self.default_paper.into_into_dart().into_dart(),
             self.scene_numbers.into_into_dart().into_dart(),
             self.bold_scene_headings.into_into_dart().into_dart(),
+            self.number_first_page.into_into_dart().into_dart(),
             self.pdf_font_path.into_into_dart().into_dart(),
             self.distraction_free.into_into_dart().into_dart(),
             self.page_view.into_into_dart().into_dart(),
@@ -5547,6 +5553,7 @@ impl SseEncode for crate::api::layout::PageSetup {
         <crate::api::layout::PaperSize>::sse_encode(self.paper, serializer);
         <crate::api::layout::SceneNumbers>::sse_encode(self.scene_numbers, serializer);
         <bool>::sse_encode(self.bold_scene_headings, serializer);
+        <bool>::sse_encode(self.number_first_page, serializer);
         <Option<u32>>::sse_encode(self.debug_lines_per_page, serializer);
     }
 }
@@ -5635,6 +5642,7 @@ impl SseEncode for crate::api::files::PreferencesView {
         <String>::sse_encode(self.default_paper, serializer);
         <String>::sse_encode(self.scene_numbers, serializer);
         <bool>::sse_encode(self.bold_scene_headings, serializer);
+        <bool>::sse_encode(self.number_first_page, serializer);
         <Option<String>>::sse_encode(self.pdf_font_path, serializer);
         <bool>::sse_encode(self.distraction_free, serializer);
         <bool>::sse_encode(self.page_view, serializer);

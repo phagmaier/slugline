@@ -68,28 +68,34 @@ class FakeOutput implements ScreenplayOutput {
 /// pages, with a speech the second page carries on from.
 ///
 /// The values are the ones `crates/layout` produces for this shape — a page
-/// number at row -3, content from row 0, a `(MORE)` and a `CHARACTER (CONT'D)`
-/// around a split — written out here so a widget test can assert on what the
-/// preview does with them without a native library.
-PaginationView samplePagination({bool titlePage = true, int pages = 2}) {
+/// number at row -3 on every page but the first, content from row 0, a `(MORE)`
+/// and a `CHARACTER (CONT'D)` around a split — written out here so a widget
+/// test can assert on what the preview does with them without a native library.
+/// [numberFirstPage] is the page-setup option that gives page 1 its line too.
+PaginationView samplePagination({
+  bool titlePage = true,
+  int pages = 2,
+  bool numberFirstPage = false,
+}) {
   PageView page(int number) => PageView(
     number: number,
     lines: [
-      LayoutLineView(
-        row: -3,
-        column: 60 - '$number.'.length,
-        content: '$number.',
-        runs: [
-          EmphasisRunView(
-            text: '$number.',
-            bold: false,
-            italic: false,
-            underline: false,
-          ),
-        ],
-        sourceLine: null,
-        kind: LayoutLineKind.pageNumber,
-      ),
+      if (number > 1 || numberFirstPage)
+        LayoutLineView(
+          row: -3,
+          column: 60 - '$number.'.length,
+          content: '$number.',
+          runs: [
+            EmphasisRunView(
+              text: '$number.',
+              bold: false,
+              italic: false,
+              underline: false,
+            ),
+          ],
+          sourceLine: null,
+          kind: LayoutLineKind.pageNumber,
+        ),
       LayoutLineView(
         row: 1,
         column: 0,

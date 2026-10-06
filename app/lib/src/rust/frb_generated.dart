@@ -2884,13 +2884,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PageSetup dco_decode_page_setup(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return PageSetup(
       paper: dco_decode_paper_size(arr[0]),
       sceneNumbers: dco_decode_scene_numbers(arr[1]),
       boldSceneHeadings: dco_decode_bool(arr[2]),
-      debugLinesPerPage: dco_decode_opt_box_autoadd_u_32(arr[3]),
+      numberFirstPage: dco_decode_bool(arr[3]),
+      debugLinesPerPage: dco_decode_opt_box_autoadd_u_32(arr[4]),
     );
   }
 
@@ -2968,8 +2969,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PreferencesView dco_decode_preferences_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return PreferencesView(
       autosaveEnabled: dco_decode_bool(arr[0]),
       autocompleteEnabled: dco_decode_bool(arr[1]),
@@ -2981,14 +2982,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       defaultPaper: dco_decode_String(arr[7]),
       sceneNumbers: dco_decode_String(arr[8]),
       boldSceneHeadings: dco_decode_bool(arr[9]),
-      pdfFontPath: dco_decode_opt_String(arr[10]),
-      distractionFree: dco_decode_bool(arr[11]),
-      pageView: dco_decode_bool(arr[12]),
-      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[13]),
-      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[14]),
-      backupDir: dco_decode_opt_String(arr[15]),
-      backupKeepVersions: dco_decode_u_32(arr[16]),
-      backupKeepDays: dco_decode_u_32(arr[17]),
+      numberFirstPage: dco_decode_bool(arr[10]),
+      pdfFontPath: dco_decode_opt_String(arr[11]),
+      distractionFree: dco_decode_bool(arr[12]),
+      pageView: dco_decode_bool(arr[13]),
+      autosaveIdleMs: dco_decode_CastedPrimitive_u_64(arr[14]),
+      autosaveIntervalMs: dco_decode_CastedPrimitive_u_64(arr[15]),
+      backupDir: dco_decode_opt_String(arr[16]),
+      backupKeepVersions: dco_decode_u_32(arr[17]),
+      backupKeepDays: dco_decode_u_32(arr[18]),
     );
   }
 
@@ -4144,11 +4146,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_paper = sse_decode_paper_size(deserializer);
     var var_sceneNumbers = sse_decode_scene_numbers(deserializer);
     var var_boldSceneHeadings = sse_decode_bool(deserializer);
+    var var_numberFirstPage = sse_decode_bool(deserializer);
     var var_debugLinesPerPage = sse_decode_opt_box_autoadd_u_32(deserializer);
     return PageSetup(
       paper: var_paper,
       sceneNumbers: var_sceneNumbers,
       boldSceneHeadings: var_boldSceneHeadings,
+      numberFirstPage: var_numberFirstPage,
       debugLinesPerPage: var_debugLinesPerPage,
     );
   }
@@ -4246,6 +4250,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_defaultPaper = sse_decode_String(deserializer);
     var var_sceneNumbers = sse_decode_String(deserializer);
     var var_boldSceneHeadings = sse_decode_bool(deserializer);
+    var var_numberFirstPage = sse_decode_bool(deserializer);
     var var_pdfFontPath = sse_decode_opt_String(deserializer);
     var var_distractionFree = sse_decode_bool(deserializer);
     var var_pageView = sse_decode_bool(deserializer);
@@ -4265,6 +4270,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       defaultPaper: var_defaultPaper,
       sceneNumbers: var_sceneNumbers,
       boldSceneHeadings: var_boldSceneHeadings,
+      numberFirstPage: var_numberFirstPage,
       pdfFontPath: var_pdfFontPath,
       distractionFree: var_distractionFree,
       pageView: var_pageView,
@@ -5390,6 +5396,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_paper_size(self.paper, serializer);
     sse_encode_scene_numbers(self.sceneNumbers, serializer);
     sse_encode_bool(self.boldSceneHeadings, serializer);
+    sse_encode_bool(self.numberFirstPage, serializer);
     sse_encode_opt_box_autoadd_u_32(self.debugLinesPerPage, serializer);
   }
 
@@ -5469,6 +5476,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.defaultPaper, serializer);
     sse_encode_String(self.sceneNumbers, serializer);
     sse_encode_bool(self.boldSceneHeadings, serializer);
+    sse_encode_bool(self.numberFirstPage, serializer);
     sse_encode_opt_String(self.pdfFontPath, serializer);
     sse_encode_bool(self.distractionFree, serializer);
     sse_encode_bool(self.pageView, serializer);

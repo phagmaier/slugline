@@ -161,6 +161,13 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   or emphasis-parsing decision. Raw row content and source identity stay intact.
   “Bold scene headings” is an output preference, off by default, followed by
   the editor, preview and PDF. Editor inline markup and wrapping remain literal.
+- **Page 1 is counted but not marked** (ADR 0048). `Page::number` is still
+  `Some(1)`; whether a page prints its number is whether the paginator gave it
+  a page-number line, and page 1 gets one only under “Number the first page”,
+  an output preference that is off by default. Preview and PDF draw the lines
+  they are given; the editor's page view asks `PageIndicator.printsNumber`.
+  Only `crates/layout` turns the option into that line; nothing else may
+  re-derive it from the preference.
 - **An export is not a Save As** (ADR 0029). `doc_export_pdf` and
   `doc_export_fountain` both refuse `AlreadyExists` (retry with
   `overwrite: true`) and `ScriptIsOpen` (never retried). The export dialog

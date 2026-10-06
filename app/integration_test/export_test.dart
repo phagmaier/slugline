@@ -84,6 +84,7 @@ void main() {
     paper: PaperSize.usLetter,
     sceneNumbers: SceneNumbers.off,
     boldSceneHeadings: false,
+    numberFirstPage: false,
     debugLinesPerPage: null,
   );
 
@@ -237,6 +238,7 @@ void main() {
       paper: PaperSize.a4,
       sceneNumbers: SceneNumbers.off,
       boldSceneHeadings: false,
+      numberFirstPage: false,
       debugLinesPerPage: null,
     );
 
@@ -301,6 +303,7 @@ void main() {
         paper: PaperSize.usLetter,
         sceneNumbers: SceneNumbers.off,
         boldSceneHeadings: bold,
+        numberFirstPage: false,
       );
       final pdf = path('presentation-$bold.pdf');
       await tester.pumpWidget(
@@ -359,6 +362,112 @@ void main() {
             ? contains('<b>INT. LIBRARY - DAY</b>')
             : contains('>INT. LIBRARY - DAY</text>'),
       );
+      expect(core.source(), text);
+      expect(core.dirty, isFalse);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('native preview and PDF export follow first-page numbering', (
+    tester,
+  ) async {
+    // Long enough for a second page, and with no digit of its own: any `1.` or
+    // `2.` that comes back out of the PDF is a page number.
+    final source = File(path('numbering.fountain'));
+    const line = 'George crosses the room again.';
+    final text = '${List.filled(40, line).join('\n\n')}\n';
+    await source.writeAsString(text);
+    final handle = await files.libraryOpen(path: source.path);
+    final core = RustDocumentCore.of(handle!);
+    addTearDown(core.close);
+
+    for (final numbered in [false, true, false]) {
+      PreferencesView? chosen;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              return Scaffold(
+                body: FilledButton(
+                  onPressed: () async {
+                    chosen = await PreferencesDialog.show(
+                      context,
+                      preferences: Core.instance.preferences(),
+                      spelling: Core.instance.spellStatus(),
+                    );
+                  },
+                  child: const Text('Preferences'),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.tap(find.text('Preferences'));
+      await tester.pumpAndSettle();
+      final toggle = find.widgetWithText(
+        SwitchListTile,
+        'Number the first page',
+      );
+      await tester.scrollUntilVisible(
+        toggle,
+        250,
+        scrollable: find.byType(Scrollable).last,
+      );
+      if (tester.widget<SwitchListTile>(toggle).value != numbered) {
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const ValueKey('save preferences')));
+      await tester.pumpAndSettle();
+      expect(chosen!.numberFirstPage, numbered);
+      expect(await Core.instance.setPreferences(chosen!), isTrue);
+      expect(Core.instance.preferences().numberFirstPage, numbered);
+
+      final setup = PageSetup(
+        paper: PaperSize.usLetter,
+        sceneNumbers: SceneNumbers.off,
+        boldSceneHeadings: false,
+        numberFirstPage: numbered,
+      );
+      final pagination = switch (await core.paginate(setup)) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        PaginationOutcome_Stale(:final pagination) => pagination,
+        PaginationOutcome_NoSuchDocument() => fail('the script is open'),
+      };
+      List<String> printed(PageView page) => [
+        for (final line in page.lines)
+          if (line.kind == LayoutLineKind.pageNumber) line.content,
+      ];
+      expect(pagination.pageCount, 2);
+      expect(pagination.pages[0].number, 1, reason: 'counted either way');
+      expect(printed(pagination.pages[0]), numbered ? ['1.'] : isEmpty);
+      expect(printed(pagination.pages[1]), ['2.']);
+
+      final pdf = path('numbering-$numbered.pdf');
+      final existing = File(pdf);
+      if (existing.existsSync()) existing.deleteSync();
+      expect(
+        await core.exportPdf(pdf, setup: setup),
+        isA<SaveOutcome_Saved>(),
+      );
+      Future<String> sheet(int number) async {
+        final extracted = await Process.run('pdftotext', [
+          '-f',
+          '$number',
+          '-l',
+          '$number',
+          pdf,
+          '-',
+        ]);
+        expect(extracted.exitCode, 0);
+        return extracted.stdout as String;
+      }
+
+      final first = await sheet(1);
+      expect(first, contains(line));
+      expect(first.contains('1.'), numbered);
+      expect(await sheet(2), contains('2.'));
       expect(core.source(), text);
       expect(core.dirty, isFalse);
     }

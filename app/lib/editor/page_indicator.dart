@@ -67,6 +67,9 @@ class PageIndicator extends ChangeNotifier {
   /// number to `(block id, wrapped line within that block)`.
   final Map<int, (int, int)> _firstLineOfPage = {};
 
+  /// The pages whose snapshot carries no [LayoutLineKind.pageNumber] line.
+  final Set<int> _unnumberedPages = {};
+
   /// [pageStarts], resolved against the layout the controller currently holds.
   /// Cleared whenever either side of that could have moved.
   List<PageStart>? _pageStarts;
@@ -132,6 +135,15 @@ class PageIndicator extends ChangeNotifier {
     return List.unmodifiable(starts);
   }
 
+  /// Whether [page]'s number is printed on its sheet.
+  ///
+  /// Rust's answer, read off the snapshot: a page prints its number exactly
+  /// when the paginator gave it a page-number line. Page 1 conventionally has
+  /// none, and whether it does is a page-setup option the paginator applies —
+  /// so page view asks this instead of reading the option and repeating the
+  /// rule. Every page counts as numbered until a snapshot says otherwise.
+  bool printsNumber(int page) => !_unnumberedPages.contains(page);
+
   String get label => switch ((_current, _total)) {
     (final current?, final total?) => 'Page $current of $total',
     _ => 'Pages …',
@@ -184,6 +196,7 @@ class PageIndicator extends ChangeNotifier {
         _pageAtLine.clear();
         _pageAtBlock.clear();
         _firstLineOfPage.clear();
+        _unnumberedPages.clear();
         _pageStarts = null;
         _words = null;
         _setPosition(null, null);
@@ -194,13 +207,16 @@ class PageIndicator extends ChangeNotifier {
     _pageAtLine.clear();
     _pageAtBlock.clear();
     _firstLineOfPage.clear();
+    _unnumberedPages.clear();
     _pageStarts = null;
 
     final firstPageAtBlock = <int, int>{};
     for (final page in pagination.pages) {
       final number = page.number;
       if (number == null) continue;
+      var numbered = false;
       for (final line in page.lines) {
+        numbered = numbered || line.kind == LayoutLineKind.pageNumber;
         final block = line.block;
         if (block == null) continue;
         firstPageAtBlock.putIfAbsent(block, () => number);
@@ -212,6 +228,7 @@ class PageIndicator extends ChangeNotifier {
           _firstLineOfPage.putIfAbsent(number, () => (block, sourceLine));
         }
       }
+      if (!numbered) _unnumberedPages.add(number);
     }
 
     // Sections, notes and other non-printing blocks have no paginator row.

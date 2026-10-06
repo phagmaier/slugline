@@ -738,18 +738,23 @@ impl<'a> Paginator<'a> {
             return;
         }
         let number = self.next_number;
-        let page_number = format!("{number}.");
-        self.current.push(LayoutLine {
-            row: metrics::PAGE_NUMBER_ROW,
-            column: metrics::PAGE_NUMBER_RIGHT_COLUMN - char_count(&page_number) as i16,
-            content: page_number,
-            block: None,
-            source_line: None,
-            kind: LayoutLineKind::PageNumber,
-            is_scene_heading: false,
-            is_lyric: false,
-            lyric_marker_utf8: None,
-        });
+        // Page 1 is counted but, by convention, not marked. An incremental run
+        // restarts from a checkpoint's own number, so this is the same answer
+        // whichever path reaches the first page.
+        if number > 1 || self.config.number_first_page {
+            let page_number = format!("{number}.");
+            self.current.push(LayoutLine {
+                row: metrics::PAGE_NUMBER_ROW,
+                column: metrics::PAGE_NUMBER_RIGHT_COLUMN - char_count(&page_number) as i16,
+                content: page_number,
+                block: None,
+                source_line: None,
+                kind: LayoutLineKind::PageNumber,
+                is_scene_heading: false,
+                is_lyric: false,
+                lyric_marker_utf8: None,
+            });
+        }
         self.current.sort_by_key(|line| (line.row, line.column));
         self.pages.push(Page {
             number: Some(number),

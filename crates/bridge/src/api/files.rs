@@ -210,6 +210,7 @@ pub struct PreferencesView {
     pub default_paper: String,
     pub scene_numbers: String,
     pub bold_scene_headings: bool,
+    pub number_first_page: bool,
     pub pdf_font_path: Option<String>,
     pub distraction_free: bool,
     pub page_view: bool,
@@ -1351,6 +1352,7 @@ pub(super) fn preference_page_config(preferences: &CorePreferences) -> PageConfi
             _ => slugline_layout::SceneNumberGutters::None,
         })
         .with_bold_scene_headings(preferences.bold_scene_headings)
+        .with_number_first_page(preferences.number_first_page)
 }
 
 fn commit_saved_page_count(state: &mut AppState, id: &str, token: u64, page_count: u32) {
@@ -2108,6 +2110,7 @@ pub async fn prefs_set(preferences: PreferencesView) -> bool {
             default_paper: preferences.default_paper,
             scene_numbers: preferences.scene_numbers,
             bold_scene_headings: preferences.bold_scene_headings,
+            number_first_page: preferences.number_first_page,
             pdf_font_path: preferences.pdf_font_path.map(PathBuf::from),
             distraction_free: preferences.distraction_free,
             page_view: preferences.page_view,
@@ -2375,6 +2378,7 @@ fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
         default_paper: preferences.default_paper.clone(),
         scene_numbers: preferences.scene_numbers.clone(),
         bold_scene_headings: preferences.bold_scene_headings,
+        number_first_page: preferences.number_first_page,
         pdf_font_path: preferences
             .pdf_font_path
             .as_ref()
@@ -2516,6 +2520,17 @@ mod tests {
                 bold_scene_headings
             );
         }
+    }
+
+    #[test]
+    fn preference_view_transports_first_page_numbering() {
+        assert!(!prefs_view(&CorePreferences::default()).number_first_page);
+        let preferences = CorePreferences {
+            number_first_page: true,
+            ..CorePreferences::default()
+        };
+        assert!(prefs_view(&preferences).number_first_page);
+        assert!(preference_page_config(&preferences).number_first_page);
     }
 
     /// How long a save is given to reach the disk before the test calls it
@@ -4451,6 +4466,7 @@ mod tests {
             paper: layout::PaperSize::UsLetter,
             scene_numbers: layout::SceneNumbers::Off,
             bold_scene_headings: false,
+            number_first_page: false,
             debug_lines_per_page: None,
         }
     }

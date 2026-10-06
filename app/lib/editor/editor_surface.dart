@@ -1528,7 +1528,11 @@ class _SurfacePainter extends CustomPainter {
       canvas
         ..drawRRect(rect, paper)
         ..drawRRect(rect, edge);
-      _paintPageNumber(canvas, sheet.number, sheet.top);
+      // Where paper has no number, the sheet has none: page 1, unless the
+      // page setup numbers it. The paginator decided; this only asks.
+      if (pageIndicator?.printsNumber(sheet.number) ?? true) {
+        _paintPageNumber(canvas, sheet.number, sheet.top);
+      }
     }
   }
 

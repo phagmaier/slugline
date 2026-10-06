@@ -33,6 +33,7 @@ void main() {
     sceneNumbers: 'off',
     pdfFontPath: null,
     boldSceneHeadings: false,
+    numberFirstPage: false,
     distractionFree: false,
     pageView: false,
     autosaveIdleMs: 2000,
@@ -102,6 +103,20 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('bold scene headings preference')),
     );
+    final numberFirstPage = find.byKey(
+      const ValueKey('number first page preference'),
+    );
+    await tester.scrollUntilVisible(
+      numberFirstPage,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      tester.widget<SwitchListTile>(numberFirstPage).value,
+      isFalse,
+      reason: 'page 1 is unnumbered until the writer asks',
+    );
+    await tester.tap(numberFirstPage);
 
     await tester.tap(find.byKey(const ValueKey('save preferences')));
     await tester.pumpAndSettle();
@@ -114,6 +129,7 @@ void main() {
     expect(result!.editorTextSize, greaterThan(15));
     expect(result!.spellLanguage, 'en_US');
     expect(result!.boldSceneHeadings, isTrue);
+    expect(result!.numberFirstPage, isTrue);
   });
 
   testWidgets('a custom PDF face carries the grid-fidelity warning', (

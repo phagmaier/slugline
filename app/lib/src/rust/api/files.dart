@@ -403,6 +403,7 @@ class PreferencesView {
   final String defaultPaper;
   final String sceneNumbers;
   final bool boldSceneHeadings;
+  final bool numberFirstPage;
   final String? pdfFontPath;
   final bool distractionFree;
   final bool pageView;
@@ -423,6 +424,7 @@ class PreferencesView {
     required this.defaultPaper,
     required this.sceneNumbers,
     required this.boldSceneHeadings,
+    required this.numberFirstPage,
     this.pdfFontPath,
     required this.distractionFree,
     required this.pageView,
@@ -445,6 +447,7 @@ class PreferencesView {
       defaultPaper.hashCode ^
       sceneNumbers.hashCode ^
       boldSceneHeadings.hashCode ^
+      numberFirstPage.hashCode ^
       pdfFontPath.hashCode ^
       distractionFree.hashCode ^
       pageView.hashCode ^
@@ -469,6 +472,7 @@ class PreferencesView {
           defaultPaper == other.defaultPaper &&
           sceneNumbers == other.sceneNumbers &&
           boldSceneHeadings == other.boldSceneHeadings &&
+          numberFirstPage == other.numberFirstPage &&
           pdfFontPath == other.pdfFontPath &&
           distractionFree == other.distractionFree &&
           pageView == other.pageView &&

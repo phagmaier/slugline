@@ -70,6 +70,9 @@ pub struct Preferences {
     pub scene_numbers: String,
     /// Bold scene-heading content in the editor, preview and PDF.
     pub bold_scene_headings: bool,
+    /// Print `1.` on the first page of the script. Off by default: the
+    /// convention is that page 1 is counted and not marked.
+    pub number_first_page: bool,
     /// A user-selected TrueType face. `None` means the vendored Courier Prime
     /// family and is the fidelity-safe default.
     pub pdf_font_path: Option<PathBuf>,
@@ -108,6 +111,7 @@ impl Default for Preferences {
             default_paper: PAPER_US_LETTER.to_owned(),
             scene_numbers: SCENE_NUMBERS_OFF.to_owned(),
             bold_scene_headings: false,
+            number_first_page: false,
             pdf_font_path: None,
             distraction_free: false,
             page_view: true,
@@ -208,6 +212,7 @@ mod tests {
         assert_eq!(prefs.default_paper, "us_letter");
         assert_eq!(prefs.scene_numbers, "off");
         assert!(!prefs.bold_scene_headings);
+        assert!(!prefs.number_first_page);
         assert!(prefs.pdf_font_path.is_none());
         assert!(!prefs.distraction_free);
         assert!(prefs.page_view, "page view is the default");
@@ -227,6 +232,7 @@ mod tests {
             default_paper: PAPER_A4.to_owned(),
             scene_numbers: SCENE_NUMBERS_BOTH.to_owned(),
             bold_scene_headings: true,
+            number_first_page: true,
             page_view: false,
             pdf_font_path: Some(PathBuf::from("/usr/share/fonts/mono.ttf")),
             backup_dir: Some(PathBuf::from("/mnt/usb/backups")),
@@ -268,6 +274,10 @@ mod tests {
         assert!(
             !prefs.bold_scene_headings,
             "older files keep regular headings"
+        );
+        assert!(
+            !prefs.number_first_page,
+            "older files take the unnumbered first page"
         );
     }
 

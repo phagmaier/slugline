@@ -140,6 +140,10 @@ class PageSetup {
   final SceneNumbers sceneNumbers;
   final bool boldSceneHeadings;
 
+  /// Whether page 1 prints its `1.`. The convention, and the default, is
+  /// that it does not; every later page is numbered either way.
+  final bool numberFirstPage;
+
   /// Shrinks the page to this many rows. For tests and the debug surface
   /// only: it makes a page break happen in three blocks instead of fifty, so
   /// a break rule can be looked at without a fifty-page fixture. A real
@@ -150,6 +154,7 @@ class PageSetup {
     required this.paper,
     required this.sceneNumbers,
     required this.boldSceneHeadings,
+    required this.numberFirstPage,
     this.debugLinesPerPage,
   });
 
@@ -158,6 +163,7 @@ class PageSetup {
       paper.hashCode ^
       sceneNumbers.hashCode ^
       boldSceneHeadings.hashCode ^
+      numberFirstPage.hashCode ^
       debugLinesPerPage.hashCode;
 
   @override
@@ -168,6 +174,7 @@ class PageSetup {
           paper == other.paper &&
           sceneNumbers == other.sceneNumbers &&
           boldSceneHeadings == other.boldSceneHeadings &&
+          numberFirstPage == other.numberFirstPage &&
           debugLinesPerPage == other.debugLinesPerPage;
 }
 

@@ -159,6 +159,9 @@ editor keeps inline markers visible while you write. Preferences
 (<kbd>Ctrl</kbd>+<kbd>,</kbd>) → Output → **Bold scene headings** changes heading
 weight in all three views. It is off by default and does not change wrapping.
 
+Page 1 is left unnumbered, as is conventional; **Number the first page** in the
+same Preferences section prints its `1.` in page view, preview and PDF.
+
 > [!TIP]
 > If you're new to Fountain, start at [fountain.io][fountain]. The syntax fits
 > on a napkin, and Slugline supports every production element in the spec.

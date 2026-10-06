@@ -76,6 +76,9 @@ pub struct PageSetup {
     pub paper: PaperSize,
     pub scene_numbers: SceneNumbers,
     pub bold_scene_headings: bool,
+    /// Whether page 1 prints its `1.`. The convention, and the default, is
+    /// that it does not; every later page is numbered either way.
+    pub number_first_page: bool,
     /// Shrinks the page to this many rows. For tests and the debug surface
     /// only: it makes a page break happen in three blocks instead of fifty, so
     /// a break rule can be looked at without a fifty-page fixture. A real
@@ -459,7 +462,8 @@ pub(crate) fn page_config(setup: &PageSetup) -> PageConfig {
         SceneNumbers::Right => paginator::SceneNumberGutters::Right,
         SceneNumbers::Both => paginator::SceneNumberGutters::Both,
     })
-    .with_bold_scene_headings(setup.bold_scene_headings);
+    .with_bold_scene_headings(setup.bold_scene_headings)
+    .with_number_first_page(setup.number_first_page);
     match setup.debug_lines_per_page {
         Some(lines) => config.with_line_capacity(lines.min(u16::MAX as u32) as u16),
         None => config,
@@ -713,6 +717,7 @@ mod tests {
             paper: PaperSize::UsLetter,
             scene_numbers: SceneNumbers::Off,
             bold_scene_headings: false,
+            number_first_page: false,
             debug_lines_per_page: None,
         }
     }
@@ -810,6 +815,47 @@ mod tests {
         let again = preview(false);
         assert_eq!(lines(&again), lines(&regular));
         assert_eq!(again.pages[0].lines, regular.pages[0].lines);
+    }
+
+    #[test]
+    fn page_one_reaches_the_view_numbered_only_when_the_setup_asks() {
+        let doc = Doc::parse(&long_script(40));
+        let preview = |number_first_page| match block_on(doc_paginate(
+            doc.handle(),
+            PageSetup {
+                number_first_page,
+                ..letter()
+            },
+        )) {
+            PaginationOutcome::Current { pagination } => pagination,
+            other => panic!("expected current preview, got {other:?}"),
+        };
+        let printed = |page: &PageView| {
+            page.lines
+                .iter()
+                .filter(|line| line.kind == LayoutLineKind::PageNumber)
+                .map(|line| line.content.clone())
+                .collect::<Vec<_>>()
+        };
+
+        let plain = preview(false);
+        let numbered = preview(true);
+        assert!(
+            plain.page_count >= 2,
+            "the fixture must reach a second page"
+        );
+        assert_eq!(plain.page_count, numbered.page_count);
+        assert_eq!(plain.pages[0].number, Some(1), "counted either way");
+        assert!(printed(&plain.pages[0]).is_empty());
+        assert_eq!(printed(&numbered.pages[0]), ["1."]);
+        assert_eq!(printed(&plain.pages[1]), ["2."]);
+        assert_eq!(plain.pages[1..], numbered.pages[1..]);
+        assert_eq!(
+            doc.runs(),
+            2,
+            "one generation, two setups: neither is answered from the other's result"
+        );
+        assert!(printed(&preview(false).pages[0]).is_empty());
     }
 
     /// Enough action for pages to accumulate and checkpoints to be taken every

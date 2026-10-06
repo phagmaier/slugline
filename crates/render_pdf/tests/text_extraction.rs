@@ -78,11 +78,14 @@ fn extract(bytes: &[u8], arguments: &[&str]) -> Option<String> {
 }
 
 fn export(source: &str) -> Vec<u8> {
-    let config = PageConfig::us_letter();
+    export_as(source, &PageConfig::us_letter())
+}
+
+fn export_as(source: &str, config: &PageConfig) -> Vec<u8> {
     let document = Document::parse(source);
     render(
-        &paginate(&document, &config),
-        &config,
+        &paginate(&document, config),
+        config,
         &DocumentInfo {
             title: "The Long Way Round".to_owned(),
             author: "Ada Lovelace".to_owned(),
@@ -201,8 +204,23 @@ fn the_title_page_is_the_first_page_and_the_screenplay_starts_at_page_one() {
         !first.contains("1."),
         "and no page number: it is not page one"
     );
-    assert!(second.contains("1."), "the screenplay's first page is 1.");
     assert!(second.contains("FADE IN:"));
+    assert!(
+        !second.contains("1."),
+        "the screenplay's first page is page one, and by convention does not say so"
+    );
+
+    let numbered = export_as(
+        SCRIPT,
+        &PageConfig::us_letter().with_number_first_page(true),
+    );
+    let first = extract(&numbered, &["-f", "1", "-l", "1"]).expect("poppler is here");
+    let second = extract(&numbered, &["-f", "2", "-l", "2"]).expect("poppler is here");
+    assert!(
+        !first.contains("1."),
+        "numbering the first page never numbers the title page"
+    );
+    assert!(second.contains("1."), "asked for, the first page is 1.");
 }
 
 #[test]

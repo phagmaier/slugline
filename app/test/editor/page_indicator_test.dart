@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart' hide PageView;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,6 +8,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/page_indicator.dart';
+import 'package:slugline/typography.dart';
 
 import '../support/fake_core.dart';
 import '../support/fake_output.dart';
@@ -20,43 +23,47 @@ BlockView _block(int id, int lines) => BlockView(
   readOnly: false,
 );
 
-PageView _page(int number, int block, int from, int to) => PageView(
-  number: number,
-  lines: [
-    LayoutLineView(
-      row: -3,
-      column: 58,
-      content: '$number.',
-      runs: [
-        EmphasisRunView(
-          text: '$number.',
-          bold: false,
-          italic: false,
-          underline: false,
-        ),
-      ],
-      sourceLine: null,
-      kind: LayoutLineKind.pageNumber,
-    ),
-    for (var sourceLine = from; sourceLine < to; sourceLine++)
-      LayoutLineView(
-        row: sourceLine - from,
-        column: 0,
-        content: 'Action line $sourceLine.',
-        runs: [
-          EmphasisRunView(
-            text: 'Action line $sourceLine.',
-            bold: false,
-            italic: false,
-            underline: false,
+/// A page as the paginator hands it over. [numbered] is whether it carries a
+/// page-number line, which by default every page but the first does.
+PageView _page(int number, int block, int from, int to, {bool? numbered}) =>
+    PageView(
+      number: number,
+      lines: [
+        if (numbered ?? number > 1)
+          LayoutLineView(
+            row: -3,
+            column: 58,
+            content: '$number.',
+            runs: [
+              EmphasisRunView(
+                text: '$number.',
+                bold: false,
+                italic: false,
+                underline: false,
+              ),
+            ],
+            sourceLine: null,
+            kind: LayoutLineKind.pageNumber,
           ),
-        ],
-        block: block,
-        sourceLine: sourceLine,
-        kind: LayoutLineKind.content,
-      ),
-  ],
-);
+        for (var sourceLine = from; sourceLine < to; sourceLine++)
+          LayoutLineView(
+            row: sourceLine - from,
+            column: 0,
+            content: 'Action line $sourceLine.',
+            runs: [
+              EmphasisRunView(
+                text: 'Action line $sourceLine.',
+                bold: false,
+                italic: false,
+                underline: false,
+              ),
+            ],
+            block: block,
+            sourceLine: sourceLine,
+            kind: LayoutLineKind.content,
+          ),
+      ],
+    );
 
 PaginationView _pagination(List<PageView> pages) => PaginationView(
   revision: 1,
@@ -109,6 +116,7 @@ void main() {
           paper: PaperSize.usLetter,
           sceneNumbers: SceneNumbers.off,
           boldSceneHeadings: false,
+          numberFirstPage: false,
           debugLinesPerPage: null,
         ),
         initialRow: 45,
@@ -136,6 +144,7 @@ void main() {
           paper: PaperSize.usLetter,
           sceneNumbers: SceneNumbers.off,
           boldSceneHeadings: false,
+          numberFirstPage: false,
           debugLinesPerPage: null,
         ),
       );
@@ -221,6 +230,148 @@ void main() {
     });
   });
 
+  group('printed page numbers', () {
+    const setup = PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
+      numberFirstPage: false,
+      debugLinesPerPage: null,
+    );
+
+    test(
+      'are the paginator\'s page-number lines, not a rule kept here',
+      () async {
+        final controller = EditorController(FakeCore([_block(1, 80)]));
+        addTearDown(controller.dispose);
+        final output = FakeOutput(
+          _pagination([_page(1, 1, 0, 40), _page(2, 1, 40, 80)]),
+        );
+        final indicator = PageIndicator(
+          controller: controller,
+          output: output,
+          setup: setup,
+        );
+        addTearDown(indicator.dispose);
+
+        expect(
+          indicator.printsNumber(1),
+          isTrue,
+          reason: 'nothing is unnumbered until a snapshot says so',
+        );
+
+        await indicator.refresh();
+        expect(indicator.printsNumber(1), isFalse);
+        expect(indicator.printsNumber(2), isTrue);
+
+        // The option arrives as a line on page one of the next snapshot. The
+        // indicator is told only that something changed, and repaints.
+        var notified = 0;
+        indicator.addListener(() => notified++);
+        output.pagination = _pagination([
+          _page(1, 1, 0, 40, numbered: true),
+          _page(2, 1, 40, 80),
+        ]);
+        await indicator.refresh();
+        expect(indicator.printsNumber(1), isTrue);
+        expect(indicator.printsNumber(2), isTrue);
+        expect(notified, greaterThan(0));
+
+        output.closed = true;
+        await indicator.refresh();
+        expect(
+          indicator.printsNumber(1),
+          isTrue,
+          reason: 'no snapshot, no claim',
+        );
+      },
+    );
+
+    /// Whether the surface's painter drew [label] as a sheet's page number,
+    /// asked of the painter's own text cache after a paint.
+    Future<bool> paintsSheetNumber(
+      WidgetTester tester,
+      String label, {
+      required bool firstPageNumbered,
+    }) async {
+      final controller = EditorController(FakeCore([_block(1, 30)]));
+      addTearDown(controller.dispose);
+      // A short first page keeps both sheets inside the test viewport.
+      final indicator = PageIndicator(
+        controller: controller,
+        output: FakeOutput(
+          _pagination([
+            _page(1, 1, 0, 5, numbered: firstPageNumbered),
+            _page(2, 1, 5, 30),
+          ]),
+        ),
+        setup: setup,
+      );
+      addTearDown(indicator.dispose);
+      await indicator.refresh();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EditorSurface(
+              controller: controller,
+              pageView: true,
+              pageIndicator: indicator,
+            ),
+          ),
+        ),
+      );
+      final paint = tester
+          .widgetList<CustomPaint>(
+            find.descendant(
+              of: find.byType(EditorSurface),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .firstWhere(
+            (paint) =>
+                paint.painter.runtimeType.toString() == '_SurfacePainter',
+          );
+      final dynamic delegate = paint.painter!;
+      expect(delegate.geometry.sheeted, isTrue, reason: 'page view is drawn');
+      final recorder = ui.PictureRecorder();
+      delegate.paint(Canvas(recorder), const Size(800, 600));
+      recorder.endRecording().dispose();
+
+      final hits = delegate.lineCache.hits as int;
+      delegate.lineCache.line(
+        label,
+        chromeLabelStyle(delegate.colours.gutter as Color),
+      );
+      return delegate.lineCache.hits == hits + 1;
+    }
+
+    testWidgets('page view leaves the first sheet unnumbered by default', (
+      tester,
+    ) async {
+      expect(
+        await paintsSheetNumber(tester, '1.', firstPageNumbered: false),
+        isFalse,
+      );
+    });
+
+    testWidgets('page view still numbers the second sheet', (tester) async {
+      expect(
+        await paintsSheetNumber(tester, '2.', firstPageNumbered: false),
+        isTrue,
+      );
+    });
+
+    testWidgets('page view numbers the first sheet when the paginator did', (
+      tester,
+    ) async {
+      expect(
+        await paintsSheetNumber(tester, '1.', firstPageNumbered: true),
+        isTrue,
+      );
+    });
+  });
+
   testWidgets('the writing view displays current and total output pages', (
     tester,
   ) async {
@@ -252,6 +403,7 @@ void main() {
     // is looked for inside the label rather than as the whole of it.
     expect(find.textContaining('Page 2 of 2'), findsOneWidget);
     expect(core.setups.last.boldSceneHeadings, isFalse);
+    expect(core.setups.last.numberFirstPage, isFalse);
     await tester.pumpWidget(
       MaterialApp(
         home: SizedBox(
@@ -264,6 +416,7 @@ void main() {
               paper: PaperSize.usLetter,
               sceneNumbers: SceneNumbers.off,
               boldSceneHeadings: true,
+              numberFirstPage: true,
               debugLinesPerPage: null,
             ),
           ),
@@ -275,6 +428,11 @@ void main() {
       core.setups.last.boldSceneHeadings,
       isTrue,
       reason: 'A live heading preference change repaginates output.',
+    );
+    expect(
+      core.setups.last.numberFirstPage,
+      isTrue,
+      reason: 'So does numbering the first page.',
     );
 
     final scrollable = tester.state<ScrollableState>(

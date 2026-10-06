@@ -68,6 +68,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | extended by 0047 — sung-dialogue output |
 | 0046 | Consecutive lyric blocks share one leading blank | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart` | live |
 | 0047 | Sung hard lines remain dialogue and carry lyric output metadata | `crates/fountain/src/syntax.rs`, `crates/fountain/src/lib.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/model.rs`, `crates/render_pdf/src/lib.rs` | live |
+| 0048 | Page 1 is counted, and prints its number only when the page setup asks | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/page_numbers.rs`, `crates/storage/src/prefs.rs`, `app/lib/editor/page_indicator.dart`, `app/lib/settings/preferences_dialog.dart` | live |
 
 ---
 
@@ -3544,3 +3545,88 @@ editor behind it retains the source tildes. Default corpus layout goldens,
 PDF hashes and line-break fixtures remain unchanged.
 All seven native integration suites passed, including preview/PDF export and
 the journalled keystroke budget (p99 4.78 ms).
+
+
+---
+
+## ADR 0048 — Page 1 is counted, and prints its number only when the page setup asks
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Extends:** ADR 0037's shared output defaults with first-page numbering.
+
+### Context
+
+F6 reproduced `1.` at the top right of the first screenplay page, in the
+committed layout goldens and in a PDF exported from the reference script.
+`Paginator::push_page` wrote a page-number line for every page it closed. The
+usual screenplay convention leaves the first page unnumbered: it is identified
+by being first, and the count starts showing on page 2. Some readers and
+templates do want the `1.`, so the convention is a default and not a rule.
+
+Three things read a page's number and could each have grown an opinion: the
+preview and the PDF, which copy the paginator's lines, and the editor's page
+view, which paints its own sheet numbers as chrome.
+
+### Decision
+
+`PageConfig::number_first_page`, **off by default**, is the one place the choice
+is made. It is stored as `number_first_page` beside paper size, scene numbers
+and heading weight, and offered as “Number the first page” under Page defaults.
+
+The paginator leaves the `LayoutLineKind::PageNumber` line off the page whose
+number is 1 unless the option is on. Nothing else changes:
+
+* `Page::number` is still `Some(1)`. The number is the page's place in the
+  count — what the status bar, the checkpoints and the preview's keys use — and
+  not a promise that it is printed. Only a page-number line says that. Making
+  page 1 `None` instead would have made it indistinguishable from a title page.
+* The exemption is keyed on the number, not on being first in a run. An
+  incremental repagination restarts from a checkpoint's own number, so both
+  paths reach the same answer, and an explicit page break does not start a
+  second unnumbered page.
+* The line sits in the top margin (row −3), so no row of script moves and the
+  page count, every later number and every checkpoint are identical under
+  either setting. With the option on, the output is byte-for-byte what it was
+  before this record.
+* It is an output setting, not an appearance preference: it changes the
+  paginated snapshot, by exactly one line. It therefore takes part in
+  `PageConfig` equality, so a committed pagination is never served for the
+  other setting and a prior output for it is never reused as a prefix. A PDF's
+  `/ID` is a digest of the layout dump and so already tells the two apart.
+
+The preview and the PDF need no rule; they draw the lines they are given. The
+editor's page view asks `PageIndicator.printsNumber`, which records which pages
+of the snapshot carry a page-number line. It does not read the preference:
+that would be a second copy of “page 1 is unnumbered unless…” in Dart, free to
+drift from the paginator's. Continuous view keeps the gutter label beside each
+page-break rule — that is the application counting the pages that begin there,
+not a picture of the sheet, and page 1 never had one.
+
+The export dialog carries the saved value and has no toggle of its own, as with
+heading weight. A per-export override would let the PDF disagree with the
+sheets the writer has been looking at, for a choice that is made once per
+script at most.
+
+Not chosen: dropping the number outright with no option. The backlog asks for
+the option, and it costs one field to keep every existing printout
+reproducible.
+
+### Verification
+
+`crates/layout/tests/page_numbers.rs` shows no page-number line on page 1 by
+default and `1.` at the usual cell with the option on, on both papers, with
+page 2 still `2.`, the remaining pages, checkpoints and script rows equal, an
+explicit break not restarting the exemption, and an incremental edit on page 1
+equal to a full pagination under both settings. Bridge tests cover the stored
+preference reaching `PageConfig`, both setups being cached apart, and the dump
+differing by exactly the one line. Widget tests cover the preference dialog,
+the export dialog carrying the saved value, the preview drawing a number only
+where a line exists, and page view painting a sheet number only where the
+snapshot has one; removing the painter's question makes that test fail.
+
+Layout goldens and PDF hashes were regenerated deliberately. Each of the twelve
+goldens lost exactly its `-3 -> ( 58, "1.")` line under `PAGE 1`. All 22 PDF
+hashes changed; with the option on, all 22 reproduce the previously committed
+hashes exactly. Line-break fixtures are unchanged. A native test drives the real
+Preferences dialog, paginates through the bridge and reads the exported PDF
+back with Poppler under both settings.

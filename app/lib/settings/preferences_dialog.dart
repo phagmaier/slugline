@@ -48,6 +48,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
   late String _paper = widget.preferences.defaultPaper;
   late String _sceneNumbers = widget.preferences.sceneNumbers;
   late bool _boldSceneHeadings = widget.preferences.boldSceneHeadings;
+  late bool _numberFirstPage = widget.preferences.numberFirstPage;
   late bool _distractionFree = widget.preferences.distractionFree;
   late bool _pageView = widget.preferences.pageView;
 
@@ -121,6 +122,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
         defaultPaper: _paper,
         sceneNumbers: _sceneNumbers,
         boldSceneHeadings: _boldSceneHeadings,
+        numberFirstPage: _numberFirstPage,
         pdfFontPath: font.isEmpty ? null : font,
         distractionFree: _distractionFree,
         pageView: _pageView,
@@ -368,6 +370,17 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                     value: _boldSceneHeadings,
                     onChanged: (value) =>
                         setState(() => _boldSceneHeadings = value),
+                  ),
+                  SwitchListTile(
+                    key: const ValueKey('number first page preference'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Number the first page'),
+                    subtitle: const Text(
+                      'Page 1 is conventionally left unnumbered.',
+                    ),
+                    value: _numberFirstPage,
+                    onChanged: (value) =>
+                        setState(() => _numberFirstPage = value),
                   ),
                   const SizedBox(height: 16),
                   TextField(
