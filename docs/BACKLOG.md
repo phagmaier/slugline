@@ -82,7 +82,7 @@ This is the only place boxes are ticked.
 
 - [x] [W1](#w1) Switching scripts needs the mouse: no new, open or close shortcuts
 - [x] [W2](#w2) The command palette is missing commands
-- [ ] [W3](#w3) No way to type a line break inside an element
+- [x] [W3](#w3) No way to type a line break inside an element
 - [ ] [W4](#w4) No "go to page"
 - [ ] [W5](#w5) The preview always opens at page 1
 - [ ] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
@@ -1287,7 +1287,42 @@ in one step.
 journalled. A newline arriving from an input method must still split.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `9e664bd`. Reproduced the split instead
+of an embedded newline with three failing widget cases (Action, Dialogue and
+Note), retained in `target/w3-widget-red.log`. Shift+Enter and numpad
+Shift+Enter now call `doc_line_break`; Rust reuses `BlockKind::is_multiline`
+and runs the ordinary Enter plan in other kinds. Deleting a selection and
+inserting the break are one isolated undo transaction, journalled through
+`inferring`, with no kind table in Dart. Undo restores the original selection
+and source; typing on either side stays separate. The product choice is for
+Shift+Enter to edit even when a completion has been deliberately highlighted;
+plain Enter keeps its completion behavior. ADR 0051 refines ADRs 0017/0041 for
+that distinction. The palette offers Insert line break, KEYMAP and F1 teach it,
+and input-method newlines still split, including while Shift is held.
+Widget cases exercise TextInput typing, selection replacement, Unicode/numpad
+offsets, completion priority, undo/redo and palette focus. Rust cases cover all
+supported kinds and single-line fallbacks, reversed cross-element selections,
+invalid offsets, read-only refusal and typing isolation. A real journal is
+replayed through break/undo/redo and save, preserving untouched BOM/CRLF title
+and opaque bytes. Native cases use the writing suite's per-character controller
+typing helper, send Shift+Enter through the surface and save/reopen actual
+Fountain files with adjacent lines in all three kinds. Initial native fixtures
+had test-input/selection failures; those logs remain, alongside an incorrect
+open-method compile failure and a corrected CRLF assertion. The Note-only
+fixture's separate zero-page status error is recorded under Found along the
+way and left unchanged; its final fixture includes printable Action text.
+Verified all 646 Rust tests, rustfmt, clippy, layering, version and docs checks;
+the enforced Flutter lockfile, 103-file format check, analysis and all 597
+widget tests; all seven native suites (63 tests), journalled keystroke p99
+2.36 ms; and the 28.91 MiB Linux release bundle, network-library and isolated
+`--version` checks. Release-process budgets passed: best startup 381.486 ms,
+one 10.009-second interval with zero ticks/switches/thread changes, best RSS
+274.71 MiB against the 320 MiB Xvfb ceiling. Every startup/idle/RSS sample and
+process log is retained in `target/w3-runtime-budgets.json`; other evidence and
+failures are under `target/w3-*`. The 250 MiB GPU claim stays pending manual
+gate 5. FRB 2.12.0 bindings were regenerated; no dependency, lockfile, golden
+or line-breaking fixture changed. W3 is committed locally, unpushed. Stop here;
+W4 is next, and no adjacent item was started.
 
 <a id="w4"></a>
 ### W4 — No "go to page"
