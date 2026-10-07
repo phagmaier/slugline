@@ -236,6 +236,14 @@ script is still the script it was, with its own path, its own journal and its ow
 unsaved changes (ADR 0029). The core refuses a destination that is already there
 until it is asked twice, and refuses a script this application has open outright.
 
+The preview opens on the page the caret is on, from the key, the palette and the
+toolbar alike. The page is looked up in the pagination the preview is about to
+draw, by the caret's own wrapped line, so a paragraph that crosses pages opens on
+the page the caret's line prints on. A caret in something that prints nothing —
+a note, a synopsis, a section — opens where the text above it ends. Page 1 opens
+at the top, title page included. It happens once, as the preview opens: changing
+the paper or the preview size afterwards is not a reason to go back there.
+
 `Ctrl+S` on a script that has never been saved asks where to put it. A save that
 fails says why — read-only, no permission, full disk each get their own sentence
 — and offers Save As, blocking, in a dialog that cannot be clicked away. §Phase 4

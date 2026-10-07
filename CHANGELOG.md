@@ -14,6 +14,12 @@ this file and the others to it.
   regression checks under Xvfb. The separate real-desktop memory budget remains
   a manual verification gate.
 
+### Changed
+
+- Preview and export opens on the page the caret is on instead of always at the
+  top. Page 1 still opens at the top, with the title page. The preview's scroll
+  bar now reflects the script's real length from the moment it opens.
+
 ### Fixed
 
 - Launching another window no longer deletes or offers a running session's

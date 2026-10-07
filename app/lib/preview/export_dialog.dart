@@ -54,12 +54,18 @@ class ExportDialog extends StatefulWidget {
       numberFirstPage: false,
       debugLinesPerPage: null,
     ),
+    this.opensAt,
     super.key,
   });
 
   final DocumentCore core;
   final ScreenplayOutput output;
   final PageSetup initialSetup;
+
+  /// Where in the script the preview opens, or null for its top. The editor
+  /// passes the caret, so that a writer checking how a page will print is shown
+  /// that page and not the first one.
+  final PreviewAnchor? opensAt;
 
   /// How a destination is asked for. The application's own chooser, and a seam
   /// a test replaces — what §Phase 7 specifies about exporting is what happens
@@ -78,10 +84,15 @@ class ExportDialog extends StatefulWidget {
       numberFirstPage: false,
       debugLinesPerPage: null,
     ),
+    PreviewAnchor? opensAt,
   }) => showDialog<void>(
     context: context,
-    builder: (_) =>
-        ExportDialog(core: core, output: output, initialSetup: initialSetup),
+    builder: (_) => ExportDialog(
+      core: core,
+      output: output,
+      initialSetup: initialSetup,
+      opensAt: opensAt,
+    ),
   );
 
   static Future<String?> _chooseWithFileChooser(
@@ -336,6 +347,7 @@ class _ExportDialogState extends State<ExportDialog> {
             pagination: pagination,
             paper: _paper,
             scale: _scale,
+            opensAt: widget.opensAt,
           ),
           PaginationOutcome_NoSuchDocument() => const Center(
             child: Text('The document is no longer open.'),

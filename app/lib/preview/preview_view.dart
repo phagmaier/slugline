@@ -1,6 +1,8 @@
 // `PageView` is a scrolling widget in Flutter and a sheet of a pagination in
 // the core. This file means the second one throughout, and the first one is not
 // used here at all.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart' hide PageView;
 
 import 'package:slugline/core/document_core.dart';
@@ -29,11 +31,20 @@ import 'package:slugline/typography.dart';
 /// a grid cell on screen and nothing else: the rows, the columns and the page
 /// count are what came back from Rust at every scale, which is what
 /// `test/preview/preview_zoom_test.dart` holds it to.
+///
+/// ## Where it opens
+///
+/// At the sheet [opensAt] is printed on, found in the pagination this widget
+/// was handed — the one it is about to draw — and not in a page number worked
+/// out anywhere else. The editor's status line has a snapshot of its own, but
+/// that one trails the text by a debounce and may not have arrived at all; the
+/// sheet a place lands on is a fact about *this* pagination.
 class PreviewView extends StatefulWidget {
   const PreviewView({
     required this.pagination,
     required this.paper,
     this.scale = 7.2,
+    this.opensAt,
     super.key,
   });
 
@@ -43,6 +54,13 @@ class PreviewView extends StatefulWidget {
   /// Screen points per grid column. A column is a tenth of an inch (§5.2), so
   /// 7.2 is actual size at 72 dots to the inch.
   final double scale;
+
+  /// The place in the script the preview is scrolled to when it first appears,
+  /// or null for the top.
+  ///
+  /// Read once. A later pagination, paper or scale leaves the view where the
+  /// reader has it, and so does a different value here.
+  final PreviewAnchor? opensAt;
 
   /// Every sheet of a pagination, title page first.
   ///
@@ -55,8 +73,76 @@ class PreviewView extends StatefulWidget {
       PreviewSheet(page: page, isTitlePage: false),
   ];
 
+  /// Which of [sheetsOf] the text at [anchor] is printed on, or null when
+  /// neither it nor anything before it reached a page.
+  ///
+  /// A lookup in the paginator's own answer, with nothing estimated: the sheet
+  /// carrying that wrapped line of that block. Where the pagination has no such
+  /// line — the block's line count has moved since, or the paginator printed
+  /// nothing for it — the block's nearest line above stands in for it, and for
+  /// a block with no lines at all, the sheet the text before it ends on. A
+  /// note, a synopsis or a section heading prints nothing, and a caret in one
+  /// is read as being where the page was left.
+  ///
+  /// Only lines carrying a [LayoutLineView.sourceLine] count. A `(MORE)` or a
+  /// `CONT'D` names the block it was generated for and is none of its lines.
+  static int? sheetOf(PaginationView pagination, PreviewAnchor anchor) {
+    final sheets = sheetsOf(pagination);
+    final lastSheetOf = <int, int>{};
+    int? firstOfBlock;
+    int? atOrAbove;
+    var nearestLine = -1;
+    for (var index = 0; index < sheets.length; index++) {
+      for (final line in sheets[index].page.lines) {
+        final block = line.block;
+        final sourceLine = line.sourceLine;
+        if (block == null || sourceLine == null) continue;
+        lastSheetOf[block] = index;
+        if (block != anchor.block) continue;
+        firstOfBlock ??= index;
+        if (sourceLine <= anchor.sourceLine && sourceLine >= nearestLine) {
+          nearestLine = sourceLine;
+          atOrAbove = index;
+        }
+      }
+    }
+    if (atOrAbove ?? firstOfBlock case final sheet?) return sheet;
+    for (final block in anchor.earlierBlocks) {
+      if (lastSheetOf[block] case final sheet?) return sheet;
+    }
+    return null;
+  }
+
   @override
   State<PreviewView> createState() => _PreviewViewState();
+}
+
+/// A place in the script, named the way the paginator names one.
+///
+/// [LayoutLineView.block] and [LayoutLineView.sourceLine] are how a line of a
+/// pagination says where it came from, so the same pair is how the editor says
+/// where the caret is. The editor's wrapping and the paginator's are one
+/// contract (`docs/LINE_BREAKING.md`), which is what makes a wrapped-line index
+/// mean the same line on both sides.
+class PreviewAnchor {
+  const PreviewAnchor({
+    required this.block,
+    required this.sourceLine,
+    this.earlierBlocks = const [],
+  });
+
+  /// The block's id — the `BlockId` the bridge speaks.
+  final int block;
+
+  /// Which wrapped line of [block], counting from zero.
+  final int sourceLine;
+
+  /// The ids of the blocks before [block], nearest first.
+  ///
+  /// Document order is the editor's to give: block ids are identities, not
+  /// positions, and a pagination holds only the blocks that printed. This is
+  /// what lets a place inside something that prints nothing be found at all.
+  final List<int> earlierBlocks;
 }
 
 class _PreviewViewState extends State<PreviewView> {
@@ -66,25 +152,80 @@ class _PreviewViewState extends State<PreviewView> {
   /// scale misses by construction rather than painting stale.
   final LineTextCache _lineCache = LineTextCache();
 
+  /// The desk showing around every sheet and between two of them.
+  static const double _gap = 24;
+
+  /// Made in the first layout rather than in `initState`: where the list opens
+  /// depends on how tall the pane is, and a position has to be right before the
+  /// first frame — one that is out of range is sprung back into it, in view.
+  ScrollController? _scroll;
+
   @override
   void dispose() {
+    _scroll?.dispose();
     _lineCache.dispose();
     super.dispose();
+  }
+
+  /// How far down the list opens, for a pane [viewport] tall.
+  ///
+  /// The top of the sheet [PreviewView.opensAt] is on, with the same margin
+  /// above it that the first sheet has in a preview opened at the top — or as
+  /// near to that as the end of the list allows.
+  ///
+  /// Page 1 opens at the top instead, title page and all. It is the start of
+  /// the script, and the title page has no caret position of its own: the top
+  /// of the script is the only place a writer can be said to be looking at it
+  /// from, and scrolling past it there would hide it above the fold.
+  ///
+  /// The arithmetic is the list's own — [build] gives it this extent — so the
+  /// offset is a count of sheets and nothing is measured.
+  double _openingOffset(
+    int sheetCount,
+    PreviewGeometry geometry,
+    double viewport,
+  ) {
+    final anchor = widget.opensAt;
+    if (anchor == null) return 0;
+    final sheet = PreviewView.sheetOf(widget.pagination, anchor);
+    final firstPage = widget.pagination.titlePage == null ? 0 : 1;
+    if (sheet == null || sheet <= firstPage) return 0;
+    final extent = geometry.height + _gap;
+    final length = _gap + sheetCount * extent;
+    return math.min(sheet * extent, math.max(0.0, length - viewport));
   }
 
   @override
   Widget build(BuildContext context) {
     final sheets = PreviewView.sheetsOf(widget.pagination);
     final geometry = PreviewGeometry(paper: widget.paper, scale: widget.scale);
-    return ListView.separated(
-      key: const Key('preview-sheets'),
-      padding: const EdgeInsets.all(24),
-      itemCount: sheets.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 24),
-      itemBuilder: (context, index) => _Sheet(
-        sheet: sheets[index],
-        geometry: geometry,
-        lineCache: _lineCache,
+    return LayoutBuilder(
+      builder: (context, constraints) => ListView.builder(
+        key: const Key('preview-sheets'),
+        controller: _scroll ??= ScrollController(
+          initialScrollOffset: _openingOffset(
+            sheets.length,
+            geometry,
+            constraints.maxHeight,
+          ),
+        ),
+        // Every sheet is the same paper, and the list is told so rather than
+        // left to find out. A list that has to measure its children lays out
+        // every sheet above the one it opens on before it can draw that one,
+        // and guesses at the length of the rest; told the extent, it goes
+        // straight there and its scroll bar is exact. The gap under a sheet is
+        // part of its item, so the last one keeps the margin the first has.
+        padding: const EdgeInsets.fromLTRB(_gap, _gap, _gap, 0),
+        itemExtent: geometry.height + _gap,
+        itemCount: sheets.length,
+        itemBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.only(bottom: _gap),
+          child: _Sheet(
+            sheet: sheets[index],
+            geometry: geometry,
+            lineCache: _lineCache,
+          ),
+        ),
       ),
     );
   }

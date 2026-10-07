@@ -151,8 +151,8 @@ CUT TO BLACK
 ```
 
 Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Open Preview and export with
-<kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export. Everything else is in the
-command palette.
+<kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export; the preview opens on the
+page your caret is on. Everything else is in the command palette.
 
 Use the palette for Preferences, Spell checking, Keyboard shortcuts, showing or
 hiding the navigator, distraction-free mode, page/continuous view and text size.

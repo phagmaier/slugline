@@ -14,13 +14,28 @@ void main() {
     PaginationView pagination, {
     PaperSize paper = PaperSize.usLetter,
     double scale = 4.0,
+    PreviewAnchor? opensAt,
   }) => tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: PreviewView(pagination: pagination, paper: paper, scale: scale),
+        body: PreviewView(
+          pagination: pagination,
+          paper: paper,
+          scale: scale,
+          opensAt: opensAt,
+        ),
       ),
     ),
   );
+
+  ScrollPosition scroll(WidgetTester tester) => tester
+      .state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const Key('preview-sheets')),
+          matching: find.byType(Scrollable),
+        ),
+      )
+      .position;
 
   group('sheets', () {
     testWidgets('the title page comes first and is not page one', (
@@ -92,6 +107,236 @@ void main() {
         for (final sheet in PreviewView.sheetsOf(pagination)) sheet.page.number,
       ];
       expect(numbers, [null, 1, 2, 3]);
+    });
+  });
+
+  group('the list of sheets', () {
+    testWidgets('is exactly as long as its sheets, from the first frame', (
+      tester,
+    ) async {
+      // Title page and four pages on the 800 by 600 test surface.
+      await pump(tester, samplePagination(pages: 4));
+      const geometry = PreviewGeometry(paper: PaperSize.usLetter, scale: 4);
+      final position = scroll(tester);
+
+      // A list that measures its children can only guess at the ones it has
+      // not built, and from the top it has built two of five.
+      expect(
+        position.maxScrollExtent,
+        closeTo(24 + 5 * (geometry.height + 24) - 600, 1e-9),
+      );
+      final title = find.byKey(const Key('preview-title-page'));
+      expect(tester.getTopLeft(title).dy, 24);
+      expect(tester.getSize(title), Size(geometry.width, geometry.height));
+      expect(
+        tester.getTopLeft(find.byKey(const Key('preview-page-1'))).dy,
+        closeTo(24 + geometry.height + 24, 1e-9),
+        reason: 'one gap between two sheets',
+      );
+
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pump();
+      final last = find.byKey(const Key('preview-page-4'));
+      expect(tester.getSize(last), Size(geometry.width, geometry.height));
+      expect(
+        tester.getBottomLeft(last).dy,
+        closeTo(600 - 24, 1e-9),
+        reason: 'the last sheet has the margin under it the first has above',
+      );
+    });
+  });
+
+  // `samplePagination` gives page N a heading (block N0), a cue (N1) and a
+  // speech (N2), each one wrapped line long. Page 1's speech ends in a
+  // `(MORE)`, and the cue on every later page is a `CONT'D` — furniture that
+  // names a block and is none of its lines.
+  group('the sheet a place in the script is on', () {
+    test('is the one carrying that line of that block', () {
+      const speech = PreviewAnchor(block: 22, sourceLine: 0);
+      expect(PreviewView.sheetOf(samplePagination(), speech), 2);
+      expect(
+        PreviewView.sheetOf(samplePagination(titlePage: false), speech),
+        1,
+        reason: 'a sheet is counted from the title page when there is one',
+      );
+      expect(
+        PreviewView.sheetOf(
+          samplePagination(pages: 4),
+          const PreviewAnchor(block: 40, sourceLine: 0),
+        ),
+        4,
+      );
+    });
+
+    test('falls to the nearest line above in the same block', () {
+      // The pagination has one line of this block and the editor now has six:
+      // the place is somewhere after line 0, and line 0 is what there is.
+      expect(
+        PreviewView.sheetOf(
+          samplePagination(),
+          const PreviewAnchor(block: 22, sourceLine: 5),
+        ),
+        2,
+      );
+    });
+
+    test('does not count furniture as a line of the block it names', () {
+      // Block 21 is page 2's `NADIA (CONT'D)` and nothing else, so it has no
+      // line to be found by and the text before it answers instead.
+      expect(
+        PreviewView.sheetOf(
+          samplePagination(),
+          const PreviewAnchor(
+            block: 21,
+            sourceLine: 0,
+            earlierBlocks: [20, 12, 11, 10],
+          ),
+        ),
+        2,
+      );
+      // Block 12's `(MORE)` is on page 1 and so is its one real line. Taken
+      // alone the furniture would say nothing different — which is the point
+      // of asking a block that has it for the sheet its text ends on.
+      expect(
+        PreviewView.sheetOf(
+          samplePagination(pages: 3),
+          const PreviewAnchor(
+            block: 99,
+            sourceLine: 0,
+            earlierBlocks: [21, 12],
+          ),
+        ),
+        1,
+        reason: 'the cue that was only ever a CONT\'D is passed over too',
+      );
+    });
+
+    test(
+      'is where the text before it ends, for a block that prints nothing',
+      () {
+        expect(
+          PreviewView.sheetOf(
+            samplePagination(pages: 3),
+            const PreviewAnchor(
+              block: 99,
+              sourceLine: 0,
+              // Nearest first: another silent block, then page 3's speech.
+              earlierBlocks: [98, 32, 30, 22],
+            ),
+          ),
+          3,
+        );
+      },
+    );
+
+    test('is nowhere when nothing at or before it reached a page', () {
+      expect(
+        PreviewView.sheetOf(
+          samplePagination(),
+          const PreviewAnchor(block: 99, sourceLine: 0),
+        ),
+        isNull,
+      );
+      expect(
+        PreviewView.sheetOf(
+          samplePagination(),
+          const PreviewAnchor(
+            block: 99,
+            sourceLine: 0,
+            earlierBlocks: [98, 97],
+          ),
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('where the preview opens', () {
+    testWidgets('at the top, when it is not told otherwise', (tester) async {
+      await pump(tester, samplePagination(pages: 4));
+      expect(scroll(tester).pixels, 0);
+    });
+
+    for (final paper in PaperSize.values) {
+      testWidgets('at the sheet it is told, on ${paper.name} at any scale', (
+        tester,
+      ) async {
+        for (final scale in [4.0, 6.5]) {
+          // A new key each time: where a preview opens is read once.
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: PreviewView(
+                  key: ValueKey(scale),
+                  pagination: samplePagination(pages: 4),
+                  paper: paper,
+                  scale: scale,
+                  opensAt: const PreviewAnchor(block: 30, sourceLine: 0),
+                ),
+              ),
+            ),
+          );
+          final sheet = PreviewGeometry(paper: paper, scale: scale).height;
+          // Title page, page 1, page 2, then page 3: three sheets down.
+          expect(scroll(tester).pixels, closeTo(3 * (sheet + 24), 1e-9));
+          expect(
+            tester.getTopLeft(find.byKey(const Key('preview-page-3'))).dy,
+            closeTo(24, 1e-9),
+          );
+          // There in the first frame, at rest: nothing is carrying it there.
+          expect(scroll(tester).isScrollingNotifier.value, isFalse);
+          await tester.pumpAndSettle();
+          expect(scroll(tester).pixels, closeTo(3 * (sheet + 24), 1e-9));
+        }
+      });
+    }
+
+    testWidgets('at the top when every sheet already fits in the pane', (
+      tester,
+    ) async {
+      // Two sheets of 264 with their margins are the 600 of the test surface.
+      await pump(
+        tester,
+        samplePagination(titlePage: false),
+        scale: 2.4,
+        opensAt: const PreviewAnchor(block: 20, sourceLine: 0),
+      );
+      expect(scroll(tester).maxScrollExtent, 0);
+      expect(scroll(tester).pixels, 0);
+      expect(find.byKey(const Key('preview-page-2')), findsOneWidget);
+    });
+
+    testWidgets('once: a later place, pagination or scale is not a reason '
+        'to go back there', (tester) async {
+      const third = PreviewAnchor(block: 30, sourceLine: 0);
+      await pump(tester, samplePagination(pages: 4), opensAt: third);
+      expect(scroll(tester).pixels, greaterThan(0));
+
+      // The reader goes back to the top, and then everything a rebuild can
+      // bring arrives. None of it is the preview opening.
+      scroll(tester).jumpTo(0);
+      await tester.pump();
+      await pump(
+        tester,
+        samplePagination(pages: 4),
+        opensAt: const PreviewAnchor(block: 20, sourceLine: 0),
+      );
+      expect(scroll(tester).pixels, 0);
+      await pump(
+        tester,
+        samplePagination(pages: 4, numberFirstPage: true),
+        opensAt: third,
+      );
+      expect(scroll(tester).pixels, 0);
+      await pump(tester, samplePagination(pages: 4), scale: 6, opensAt: third);
+      expect(scroll(tester).pixels, 0);
+      await pump(
+        tester,
+        samplePagination(pages: 4),
+        paper: PaperSize.a4,
+        opensAt: third,
+      );
+      expect(scroll(tester).pixels, 0);
     });
   });
 

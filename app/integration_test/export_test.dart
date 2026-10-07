@@ -16,6 +16,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart' hide PageView;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -23,6 +24,7 @@ import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/preview/export_dialog.dart';
 import 'package:slugline/preview/preview_view.dart';
@@ -470,4 +472,153 @@ void main() {
     }
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  // W5. The widget tests hold the lookup and the scrolling to a pagination
+  // written by hand. What only this can show is that the place the editor names
+  // — a block id and a wrapped line of its own layout — is a place the real
+  // paginator's lines carry, for a paragraph that crosses pages, with CRLF line
+  // endings and astral characters in it.
+  for (final titled in [false, true]) {
+    testWidgets('the preview opens on the caret\'s real page, '
+        'titlePage=$titled', (tester) async {
+      final text =
+          '\uFEFF${titled ? 'Title: Reader notes\r\n\r\n' : ''}'
+          '[[A private opening note.]]\r\n\r\n'
+          '${List.generate(150, (line) => 'Action line $line with 🎬.').join('\r\n')}'
+          '\r\n\r\n[[An aside that prints nothing.]]\r\n\r\n'
+          'The last paragraph.\r\n';
+      final file = File(path('opens-at-$titled.fountain'))
+        ..writeAsStringSync(text);
+      final bytes = file.readAsBytesSync();
+      final core = (await Core.instance.openDocument(file.path))!;
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(home: EditorPage(controller: controller)),
+      );
+      await tester.pumpAndSettle();
+
+      final snapshot = switch (await (core as ScreenplayOutput).paginate(
+        letter,
+      )) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        _ => fail('an unedited document has a current pagination'),
+      };
+      expect(snapshot.pageCount, greaterThanOrEqualTo(3));
+      expect(snapshot.titlePage != null, titled);
+      final journal = core.journalState;
+      final revision = controller.documentRevision;
+      final source = controller.source;
+
+      int indexOf(bool Function(BlockView) test) {
+        final index = controller.blocks.indexWhere(test);
+        expect(index, isNonNegative);
+        return index;
+      }
+
+      final opening = indexOf((block) => block.text.contains('opening note'));
+      final long = indexOf((block) => block.text.startsWith('Action line 0 '));
+      final aside = indexOf((block) => block.text.contains('An aside'));
+      final last = indexOf((block) => block.text == 'The last paragraph.');
+      expect([opening, long, aside, last], [0, 1, 2, 3]);
+      final longId = controller.blocks[long].id;
+
+      /// Opens the preview with the caret at [caret] and says how far down it
+      /// opened, in sheets, and which sheets are in view.
+      Future<void> opensOn(DocPosition caret, int page, String why) async {
+        controller.setSelection(DocSelection(anchor: caret, focus: caret));
+        await tester.pump();
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+        expect(find.byType(ExportDialog), findsOneWidget, reason: why);
+
+        final preview = tester.widget<PreviewView>(find.byType(PreviewView));
+        expect(
+          preview.pagination.pages.length,
+          snapshot.pages.length,
+          reason: 'the preview paginated the same text for the same paper',
+        );
+        final sheets = find.byKey(const Key('preview-sheets'));
+        final scroll = tester
+            .state<ScrollableState>(
+              find.descendant(of: sheets, matching: find.byType(Scrollable)),
+            )
+            .position;
+        final pitch =
+            PreviewGeometry(paper: preview.paper, scale: preview.scale).height +
+            24;
+        // Page 1 is the top of the preview, title page included; every later
+        // page is its own sheet, counted from the title page when there is one.
+        final sheet = page == 1 ? 0 : page - 1 + (titled ? 1 : 0);
+        final wanted = sheet * pitch;
+        expect(
+          scroll.pixels,
+          closeTo(
+            wanted < scroll.maxScrollExtent ? wanted : scroll.maxScrollExtent,
+            1e-6,
+          ),
+          reason: why,
+        );
+        final shown = find.byKey(Key('preview-page-$page'));
+        expect(shown, findsOneWidget, reason: why);
+        if (page > 1 && wanted <= scroll.maxScrollExtent) {
+          expect(
+            tester.getTopLeft(shown).dy - tester.getTopLeft(sheets).dy,
+            closeTo(24, 1e-6),
+            reason: why,
+          );
+        }
+        if (page == 1 && titled) {
+          expect(find.byKey(const Key('preview-title-page')), findsOneWidget);
+        }
+        await tester.tap(find.byTooltip('Close'));
+        await tester.pumpAndSettle();
+        expect(find.byType(ExportDialog), findsNothing);
+      }
+
+      // The last line the paginator put on each page: as far into the page as
+      // a caret can be, and on every page but the last, inside a block that
+      // began on page 1.
+      var endOfLong = 0;
+      for (final page in snapshot.pages) {
+        final line = page.lines.lastWhere(
+          (line) => line.block != null && line.sourceLine != null,
+        );
+        final index = controller.blocks.indexWhere(
+          (block) => block.id == line.block,
+        );
+        expect(index, isNonNegative);
+        final offset = controller.layout.linesOf(index)[line.sourceLine!].start;
+        await opensOn(
+          DocPosition(block: line.block!, offsetUtf16: offset),
+          page.number!,
+          'the last line of page ${page.number}',
+        );
+        if (page.lines.any((line) => line.block == longId)) {
+          endOfLong = page.number!;
+        }
+      }
+      expect(endOfLong, greaterThanOrEqualTo(3));
+
+      await opensOn(
+        DocPosition(block: controller.blocks[aside].id, offsetUtf16: 3),
+        endOfLong,
+        'a note, which prints nothing, after a paragraph ending on that page',
+      );
+      await opensOn(
+        DocPosition(block: controller.blocks[opening].id, offsetUtf16: 0),
+        1,
+        'a note above everything that prints',
+      );
+
+      expect(controller.source, source);
+      expect(controller.documentRevision, revision);
+      expect(core.journalState, journal);
+      expect(core.dirty, isFalse);
+      expect(file.readAsBytesSync(), bytes);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 }

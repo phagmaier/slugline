@@ -20,6 +20,7 @@ import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/editor/spell_dialog.dart';
 import 'package:slugline/editor/title_page_dialog.dart';
 import 'package:slugline/preview/export_dialog.dart';
+import 'package:slugline/preview/preview_view.dart';
 import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/library/save_dialogs.dart';
 import 'package:slugline/theme.dart';
@@ -455,15 +456,39 @@ class EditorPageState extends State<EditorPage> {
 
   Future<void> _showPreview() async {
     if (_output case final output?) {
+      final caret = _caretInOutput();
       await withModal(
         () => ExportDialog.show(
           context,
           _core,
           output,
           initialSetup: widget.initialPageSetup,
+          opensAt: caret,
         ),
       );
     }
+  }
+
+  /// Where the caret is, in the terms a pagination names a place in: its block
+  /// and which wrapped line of it, with the blocks above for a caret in one
+  /// that prints nothing.
+  ///
+  /// Not a page number. The status line's is the page of the top visible line,
+  /// from a snapshot that trails the text; the preview finds this place in the
+  /// pagination it is about to draw.
+  PreviewAnchor _caretInOutput() {
+    final controller = widget.controller;
+    final blocks = controller.blocks;
+    final anchor = controller.pageAnchorAtRow(controller.caretRow);
+    final index = blocks.indexWhere((block) => block.id == anchor.block);
+    return PreviewAnchor(
+      block: anchor.block,
+      sourceLine: anchor.sourceLine,
+      earlierBlocks: [
+        for (var earlier = index - 1; earlier >= 0; earlier--)
+          blocks[earlier].id,
+      ],
+    );
   }
 
   /// Called when the file changed on disk under this document.

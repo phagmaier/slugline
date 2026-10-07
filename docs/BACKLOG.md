@@ -1679,6 +1679,30 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-06 — W5, reproduced: the preview keeps its scroll offset in pixels
+  when the sheets change size, so it does not keep its page. Opened on page 47
+  of a 60-page pagination at the default 58%, "Actual size" leaves page 28 at
+  the top of the pane, "Fit width" page 29 and switching to A4 page 27
+  (`target/w5-found-along-the-way.log`). It was always so; it went unnoticed
+  while every preview began at the top, where the offset is zero at any size.
+  W5 opens on the caret's page and then leaves the view alone, as its item
+  asks, so the first zoom after opening now moves the writer some twenty pages.
+  Worth its own small item: `PreviewView` already knows the sheet extent, so
+  keeping the sheet at the top of the pane across a scale or paper change is
+  arithmetic on the existing controller. Left unchanged here.
+- 2026-10-06 — W5, reproduced: the status line's page for a block that prints
+  nothing is the page its predecessor *began* on. `PageIndicator._adopt` fills
+  `_pageAtBlock` from `firstPageAtBlock`, so a note under a paragraph running
+  from page 1 to page 3 reads "Page 1 of 3" between two lines that both read
+  "Page 3 of 3" (`target/w5-found-along-the-way.log`). The label flickers back
+  while scrolling past such a note. W5's own lookup uses the page the text
+  above ends on and does not go through the indicator; the indicator is
+  unchanged.
+- 2026-10-06 — W5, read: `CHANGELOG.md` has no entry for W1–W4. New, Open and
+  Close shortcuts, the added palette commands, `Shift+Enter` line breaks and
+  "Go to page…" are all user-visible and all absent from "Unreleased"; W5 adds
+  its own line and leaves theirs for whoever cuts the next release notes.
+
 - 2026-10-06 — W4's first release-process budget run failed idle: all three
   ten-second intervals had voluntary thread switches (1, 64, 1); the first
   also lost two threads. The outer intervals had zero CPU ticks and one wakeup
