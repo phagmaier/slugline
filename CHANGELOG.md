@@ -22,6 +22,9 @@ this file and the others to it.
 
 ### Fixed
 
+- On Hyprland and other non-GNOME Wayland desktops, the runner no longer adds
+  a GTK header bar above Slugline's own bar. GNOME keeps its header bar; other
+  desktops leave decoration to their compositor.
 - Launching another window no longer deletes or offers a running session's
   crash journal. Recovery and atomic journal replacement preserve its lock.
 - Previous versions now include changed-text autosave snapshots at ten-minute
