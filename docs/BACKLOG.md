@@ -75,7 +75,7 @@ This is the only place boxes are ticked.
 - [x] [F5](#f5) A `~` line under a cue prints its tilde
 - [x] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
-- [ ] [F8](#f8) Incremental repagination is not proven equal to a full one
+- [x] [F8](#f8) Incremental repagination is not proven equal to a full one
 - [ ] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
 
 **4. Everyday workflow**
@@ -1025,7 +1025,42 @@ owns the fingerprint design; if the test shows the hints are unsound, supersede
 the record rather than widening a tolerance.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `312c74e`. The test was written first and
+it failed, so this was a defect and not only a missing proof. Against the
+engine as it stood, 898 of 12,374 single-block edits of the corpus on short
+pages gave pages a full pagination does not, and on the reference feature at
+US Letter shortening the paragraph page 5 begins with left 119 pages and a
+break in the wrong place. Three causes, all in how reuse was licensed: a
+checkpoint was trusted even when its own first block was the one edited; the
+pages after an edit were kept on the strength of a script cut off at the next
+checkpoint and one matching row; and an empty forced page was credited with
+the first block of the script, which laid a 14-page script out as 22.
+The fingerprints were sound; the restart and the stop were not, so ADR 0049
+refines ADR 0022 rather than replacing it. The paginator now records which
+pages an element began and how far it had read by then, and an incremental run
+resumes and stops only on that record. A full pagination is unchanged: no
+golden, PDF hash or line-break fixture moved.
+`crates/layout/tests/incremental_differential.rs` is the test, 19 cases in
+about four seconds. What turned out differently from the item: it compares
+`PaginatedScript`'s pages, title page and checkpoints (there is no
+`PaginationView` in `crates/layout`, and `stats` legitimately differs between
+the paths). Corpus files are a page or two, so each is tiled and set on five-
+and eight-row pages to reach checkpoints, and the reference feature covers real
+paper. An insert can never take the incremental path, so the scene heading is
+pushed across the boundary by growing a block, and a second case makes the
+same push with an insert and holds the engine to a full pagination. Dual
+dialogue is not yet set side by side (X1), so “the partner moves” is the
+partner's speech crossing a page break and its `^` being removed.
+The second half of “done when” was checked rather than assumed. 16 of the 19
+tests fail against the old engine, 13 on differing pages. Reuse was then
+broken on purpose 17 ways and every one fails the file; two survived the first
+attempt, which produced the end-of-script heading case and took a redundant
+line out of the fix. Verification passed: 640 workspace tests, rustfmt, clippy
+with warnings denied, layering/version/docs/reference checks, Flutter lockfile,
+format, analysis and 539 tests, Linux release build, network isolation and all
+seven native integration suites (journalled keystroke p99 4.72 ms). The
+incremental budget holds at 0.42 ms release and 4.7 ms debug. The 1.85
+toolchain is not installed locally, so the MSRV check is left to CI's job.
 
 ---
 
@@ -1536,3 +1571,22 @@ not part of that item.
   past the writing suite since F3, and it failed in the export suite: CI's
   flutter job has no `poppler-utils`. Promoted to [B9](#b9) at once, since the
   push that exposed it left `main` red.
+- 2026-10-06 — F8, read: the break-rule loop in `paginate_internal` cannot fail
+  to converge. `paginate_flow` with the rules on never reads the previous
+  iteration's pages, so the second ruled pass always equals the first. Every
+  full pagination therefore lays the script out three times — once naively,
+  twice by the rules — for the pages one ruled pass gives;
+  `break_rule_iterations` is only ever 1 or 2, and `fell_back_to_naive` and
+  `BREAK_RULE_ITERATION_CAP` cannot be reached. Nothing is wrong on the page.
+  The cost is in the full-pagination budget (4.8 ms of 50 ms on the reference
+  feature). Left alone: ADR 0022's capped fixed point owns that loop, so
+  removing it wants its own record.
+- 2026-10-06 — F8, reproduced: a paragraph taller than a page that arrives when
+  the page is exactly full opens the next page with a blank row. `place_action`
+  skips its carry-over check for a block no page can hold, and `add_blank` then
+  starts the new page with the paragraph's leading blank, which
+  `top_aware_spacing` would have dropped. One row of that page is lost. It is
+  what a full pagination does, so it is outside F8;
+  `a_page_that_opens_on_a_blank_row_is_not_somewhere_to_resume` asserts the
+  blank because the incremental path has to agree with it, and will need
+  rewriting with any fix.
