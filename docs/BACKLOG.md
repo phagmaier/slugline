@@ -86,7 +86,7 @@ This is the only place boxes are ticked.
 - [x] [W4](#w4) No "go to page"
 - [x] [W5](#w5) The preview always opens at page 1
 - [x] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
-- [ ] [W7](#w7) The file chooser is minimal — *choose A or B yourself*
+- [x] [W7](#w7) The file chooser is minimal — *option A, ADR 0052*
 - [ ] [W8](#w8) Find highlights only the current match
 - [ ] [W9](#w9) Previous versions can be restored but not looked at
 - [ ] [W10](#w10) Slugline is not installed on the owner's machine
@@ -1506,17 +1506,50 @@ existing destination until asked twice; with a native dialog that asks about
 overwriting itself, make sure the writer is not asked twice. The choosers are
 already injectable for tests (`SavePathChooser`, `PathChooser`).
 
-**Choice:** 2026-10-07 — option A. Reproduced
-New on the real release window (`target/w7-before.png`): it starts in `$HOME`
-instead of beside the current script and offers only directory rows and a name
-field, without search, bookmarks or folder creation. A native GTK dialog reuses
-the existing toolkit and method channel, gaining its keyboard navigation,
-search, bookmarks and folder creation without a Dart dependency. Option B would
-keep a second file-browser implementation to maintain. GTK overwrite confirmation
-will stay disabled: Rust's `AlreadyExists` refusal and the existing shared
-Replace dialog remain the one confirmation, and `ScriptIsOpen` stays a refusal.
+**Result:** 2026-10-07 — verified in `c9d740f`; chose option A (ADR 0052).
+Reproduced New on the real release window (`target/w7-before.png`): it started
+in `$HOME`, with no search, bookmarks or folder creation. GTK already ships
+with the runner, so its native dialog supplies these features and keyboard
+navigation without a selector plugin, HTTP client or new dependency; option B
+would retain a second browser to maintain. ADR 0052 supersedes ADR 0015 and only
+ADR 0037's retained custom-chooser decision.
 
-**Result:** _open_
+The old browser is removed. `slugline/window` now performs asynchronous local
+selection with file-type/All files filters, directory selection, folder
+creation, a remembered parent folder and extensionless-save suffixes. New and
+Browse from the editor start beside its current script; Save As, Rename and
+Export retain their explicit folders. GTK overwrite confirmation is disabled:
+Rust's `AlreadyExists` refusal and Slugline's shared Replace prompt are the one
+confirmation; `ScriptIsOpen` is never retried. Existing save/export path
+injection contracts remain unchanged.
+
+A throwaway real-GTK Xvfb smoke passed Open, extensionless Fountain/PDF names,
+explicit extensions, an existing destination without a GTK overwrite prompt,
+TrueType selection, directories and Escape cancellation. On real Hyprland,
+New created an extensionless choice as a `.fountain` file; Save As displayed
+only Slugline's Replace prompt and wrote the selected destination after it.
+Closing the chooser preserved the editor; closing its parent with a chooser
+active exited 0. Screenshot evidence: `target/w7-native-new.png`,
+`target/w7-wayland-created.png`, `target/w7-save-as-confirmation.png`.
+GNOME remains unverified. The startup log included an OpenGL initial-size
+timeout warning; no duplicate chooser-response or teardown warning was observed.
+
+The initial smoke driver retained GTK's suggested suffix and produced
+`.fountain.fountain`; selecting the whole entry and accepting completion
+corrected the driver, not product code. One concurrently built debug/release
+smoke stalled and was cancelled; the isolated run passed. An old autosave test
+expected the removed chooser's title; its meaningful external-change/save-hold
+cancellation case now uses the native-selection seam. Incidental chooser-widget
+and copied-argument assertions were removed rather than repinned. Throwaway
+smoke scripts, fixtures and isolated desktop state were removed.
+
+Final verification: 646 Rust tests, 641 Flutter widget tests, all 67 native
+integration tests, Rust formatting/clippy, Dart formatting/analysis, enforced
+lockfile, layering/version/docs checks, Linux release build and headed
+network-isolation smoke passed. Bundle: 30,331,354 bytes (28.93 MiB).
+No Rust API, generated binding, dependency, lockfile or golden change. The
+pre-existing idle-gate failure and all previously recorded findings remain
+unchanged; no threshold or runtime-budget harness was changed or rerun.
 
 <a id="w8"></a>
 ### W8 — Find highlights only the current match
@@ -1745,6 +1778,12 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-07 — W7, observed on the native Hyprland release launch: GTK/Flutter
+  logged “Timed out waiting for OpenGL frame of size 1920x1080 (have 1280x720)”
+  during startup. The subsequent editor and
+  chooser rendered correctly in the recorded screenshots, and the session
+  exited 0. Startup-size/frame synchronization is outside W7; left unchanged,
+  with no claim that a correct later frame explains or fixes the warning.
 - 2026-10-06 — W5, reproduced: the preview keeps its scroll offset in pixels
   when the sheets change size, so it does not keep its page. Opened on page 47
   of a 60-page pagination at the default 58%, "Actual size" leaves page 28 at
