@@ -64,7 +64,7 @@ This is the only place boxes are ticked.
 - [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
 - [x] [B7](#b7) README names a Preferences section the dialog does not have
 - [x] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
-- [ ] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
+- [x] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
 
 **3. Fountain and output fidelity**
 
@@ -620,7 +620,14 @@ skip: reading the PDF back is what they are for.
 green.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `76c60b3`. GitHub run 37551294134 for that
+commit is green in all five jobs; the flutter job's export step passes all
+seven of its tests and the job goes on to meet the keystroke budget, which the
+earlier failure had also been hiding. Locally, with Poppler off the `PATH` the
+integration script stops at “required command not found: pdftotext”, and with
+it all seven suites pass. The tests were not changed and do not skip. This was
+the first green run on `main` since `40b1f1c`: the two pushes between failed in
+the writing suite (fixed by B5) and then here.
 
 ---
 
@@ -1525,7 +1532,7 @@ not part of that item.
   Bold scene headings, but the dialog's section is headed “Page defaults”.
   Left as it is; the sentence added for F6 does not repeat the label.
   Promoted to [B7](#b7) after the owner asked whether to address it.
-- 2026-10-07 — Pushing F6 and B6–B8 to `main` gave the first GitHub run to get
+- 2026-10-06 — Pushing F6 and B6–B8 to `main` gave the first GitHub run to get
   past the writing suite since F3, and it failed in the export suite: CI's
   flutter job has no `poppler-utils`. Promoted to [B9](#b9) at once, since the
   push that exposed it left `main` red.
