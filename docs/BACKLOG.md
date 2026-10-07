@@ -62,7 +62,7 @@ This is the only place boxes are ticked.
 - [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
 - [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
 - [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
-- [ ] [B7](#b7) README names a Preferences section the dialog does not have
+- [x] [B7](#b7) README names a Preferences section the dialog does not have
 
 **3. Fountain and output fidelity**
 
@@ -533,7 +533,11 @@ sees and what ADR 0048 already calls it, so the README moves, not the label.
 **Done when.** Every Preferences section the README names exists in the dialog.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `3307256`. The README now says
+Preferences → Page defaults. That is the only Preferences section it names;
+the sentence F6 added refers to “the same Preferences section” and needed no
+change. Checked against the dialog's five `_heading` calls by reading, which is
+all a label needs. No code changed; `tools/check_docs.py` passes.
 
 ---
 
