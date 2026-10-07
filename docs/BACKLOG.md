@@ -76,7 +76,7 @@ This is the only place boxes are ticked.
 - [x] [F6](#f6) Page 1 carries a page number
 - [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
 - [x] [F8](#f8) Incremental repagination is not proven equal to a full one
-- [ ] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
+- [x] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
 
 **4. Everyday workflow**
 
@@ -1109,7 +1109,48 @@ production code so a benchmark can find its startup marker is the wrong trade;
 measure what ships.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-06 — complete in `4d53a17` (ADR 0050). One release-process
+harness, `tools/check_runtime_budgets.py`, now measures all three properties in
+its own CI step, in the release workflow and in release preflight. Both jobs
+install `xdotool` and retain JSON measurements and full process logs on failure;
+the Dart suite inventory is unchanged. No production timing marker was needed.
+The shipped GTK runner shows its window on the first frame; fresh no-argument
+startup opens the library (read in the startup code), so the harness passes a
+zero-byte Fountain file and checks its journal separately. The caret is static,
+and the first frame precedes script adoption: this is process startup, not an
+editable-caret or evicted-file-cache claim. Direct X focus was established and
+read back under bare Xvfb, with no window manager.
+
+Startup remains < 500 ms, best of five. Idle requires two measured quiet seconds
+within 60 seconds, then zero CPU ticks, voluntary thread switches and changed
+threads in at least one of three consecutive ten-second intervals. Restarting
+for every idle sample initially repeated late engine cleanup and failed all
+three zero-CPU samples; that rejected control is retained. Consecutive intervals
+move past cleanup and the permitted 30-second status refresh without a fixed
+startup sleep or a percentage allowance. RSS reads the larger endpoint value
+per interval and the best of three. The new 320 MiB Xvfb ceiling is deliberate,
+with roughly 10% headroom above the initial 272–290 MiB baseline and
+`LP_NUM_THREADS=4` / scale 1 pinned; the numeric 250 desktop limit is preserved,
+with MiB units stated, in the same harness's manual profile and pending manual
+gate 5. A software-rendered pass does not establish whether there is a real GPU
+memory overrun.
+
+All three deliberate regressions were rejected after rebuilding the runner,
+one at a time: a 750 ms first-frame delay gave 1139 ms best startup; a 10 ms
+periodic timer never achieved quiet within 60 seconds; a touched and retained
+192 MiB allocation gave 458 MiB best RSS with the final sampling method. Every
+injection was reverted byte for byte and the clean bundle rebuilt. Final clean
+figures: 371 ms best startup, a ten-second interval with zero ticks/switches/
+thread changes, 285 MiB best RSS (all readings 285–307 MiB). Reports, injection
+patches and the rejected control remain under `target/f9/`.
+
+Verified: 640 Rust tests, rustfmt, clippy, layering/version/docs/reference
+checks; the pinned Flutter lockfile, formatting, analysis and 539 tests; Linux
+release build and bundle size, network-library and namespace-version checks;
+all seven native integration suites under Xvfb (journalled keystroke p99
+3.35 ms); preflight shell syntax and shellcheck. No golden or fixture changed.
+Rust 1.85 is not installed locally. The GPU manual gate and GitHub validation
+of these unpushed commits remain pending.
 
 ---
 
@@ -1590,3 +1631,12 @@ not part of that item.
   `a_page_that_opens_on_a_blank_row_is_not_somewhere_to_resume` asserts the
   blank because the incremental path has to agree with it, and will need
   rewriting with any fix.
+
+- 2026-10-06 — F9, read: the ordinary CI Flutter job enumerates seven native
+  suite steps directly instead of invoking `tools/test_linux_integration.sh`.
+  Its suite-versus-files inventory check therefore runs locally and in the
+  release workflow, but not in ordinary CI. All seven current suites are
+  listed and were run here; a future eighth could be omitted from that job
+  without exercising the guard. The guide's claim that ordinary CI runs the
+  script is inaccurate. Left outside F9; consider sharing the inventory check
+  while retaining separately named suite failures.
