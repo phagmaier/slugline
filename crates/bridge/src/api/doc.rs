@@ -747,6 +747,42 @@ pub fn doc_enter(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
     })
 }
 
+/// Shift+Enter: a hard line break in a multiline element, otherwise Enter.
+/// Selection replacement and the break are one isolated, journalled undo step.
+#[frb(sync)]
+pub fn doc_line_break(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        let document = session.interrupt();
+        let at = match to_model_selection(document, Some(at)) {
+            Ok(selection) => selection.expect("Some in, Some out"),
+            Err(rejection) => return rejection,
+        };
+        let result = document.apply_group(Some(at), |group| {
+            let (from, to) = ordered(group.document(), at);
+            let current = group
+                .document()
+                .block(from.block)
+                .ok_or(model::EditError::UnknownBlock(from.block))?;
+            if !current.kind().is_multiline() {
+                return enter(group, at);
+            }
+            if from != to {
+                group.apply(model::EditCommand::DeleteRange { from, to })?;
+            }
+            group.apply(model::EditCommand::ReplaceText {
+                block: from.block,
+                range: from.offset..from.offset,
+                with: "\n".into(),
+            })?;
+            Ok(())
+        });
+        inferring(session, Some(at), result)
+    })
+}
+
 /// Tab, or Shift+Tab, on the block the caret is in.
 ///
 /// `None` — not a rejection — where the table says Tab does nothing. There is
@@ -2462,6 +2498,136 @@ mod tests {
             true,
         );
         assert_eq!(doc.kinds(), [BlockKind::Action, BlockKind::Action]);
+    }
+
+    // --- Shift+Enter -----------------------------------------------------
+
+    #[test]
+    fn line_break_keeps_multiline_elements_and_unicode_caret() {
+        for (source, index, kind) in [
+            ("aé日🎬tail\n", 0, BlockKind::Action),
+            ("JOHN\naé日🎬tail\n", 1, BlockKind::Dialogue),
+            ("[[aé日🎬tail]]\n", 0, BlockKind::Note),
+        ] {
+            let doc = Doc::parse(source);
+            let before = doc.blocks();
+            let at = doc.caret(index, 5);
+            let EditOutcome::Applied { result } = doc_line_break(doc.handle(), at) else {
+                panic!("line break in {kind:?} applies");
+            };
+            assert_eq!(doc.blocks().len(), before.len());
+            assert_eq!(doc.blocks()[index].id, before[index].id);
+            assert_eq!(doc.blocks()[index].kind, kind);
+            assert_eq!(doc.blocks()[index].text, "aé日🎬\ntail");
+            assert_eq!(result.selection, Some(doc.caret(index, 6)));
+            assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+            assert_eq!(doc.text(), source);
+            assert_eq!(doc_redo(doc.handle()).unwrap().selection, result.selection);
+            assert_eq!(
+                model::Document::parse(&doc.text()).blocks()[index].text(),
+                "aé日🎬\ntail"
+            );
+        }
+    }
+
+    #[test]
+    fn line_break_falls_back_to_the_enter_workflow_in_single_line_kinds() {
+        for (source, index) in [
+            ("INT. HOUSE - DAY\n", 0),
+            ("JOHN\nHi.\n", 0),
+            ("JOHN\n(quietly)\nHi.\n", 1),
+            (">CUT TO:\n", 0),
+            (">Centred<\n", 0),
+            ("~A lyric\n", 0),
+            ("# Section\n", 0),
+            ("= Synopsis\n", 0),
+            ("===\n", 0),
+        ] {
+            let soft = Doc::parse(source);
+            let ordinary = Doc::parse(source);
+            assert!(!soft.blocks()[index].kind.eq(&BlockKind::Action));
+            assert!(matches!(
+                doc_line_break(soft.handle(), soft.end_of(index)),
+                EditOutcome::Applied { .. }
+            ));
+            ordinary.enter(ordinary.end_of(index));
+            assert_eq!(soft.text(), ordinary.text(), "{source:?}");
+            assert_eq!(soft.kinds(), ordinary.kinds(), "{source:?}");
+            doc_undo(soft.handle()).unwrap();
+            assert_eq!(soft.text(), source);
+        }
+    }
+
+    #[test]
+    fn line_break_is_separate_from_typing_on_both_sides() {
+        let doc = Doc::parse("Start.\n");
+        doc.types(0, " First.");
+        let before_break = doc.text();
+        let at = doc.end_of(0);
+        assert!(matches!(
+            doc_line_break(doc.handle(), at),
+            EditOutcome::Applied { .. }
+        ));
+        doc.types(0, "Second.");
+        doc_undo(doc.handle()).unwrap();
+        assert_eq!(doc.blocks()[0].text, "Start. First.\n");
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.text(), before_break);
+        doc_undo(doc.handle()).unwrap();
+        assert_eq!(doc.text(), "Start.\n");
+    }
+
+    #[test]
+    fn line_break_replaces_reversed_cross_block_selection_in_one_step() {
+        let source = "First line.\n\nINT. HOUSE - DAY\n";
+        let doc = Doc::parse(source);
+        let at = DocSelection {
+            anchor: doc.caret(1, 4).focus,
+            focus: doc.caret(0, 5).focus,
+        };
+        assert!(matches!(
+            doc_line_break(doc.handle(), at),
+            EditOutcome::Applied { .. }
+        ));
+        assert_eq!(doc.blocks().len(), 1);
+        assert_eq!(doc.blocks()[0].text, "First\n HOUSE - DAY");
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.text(), source);
+        doc_redo(doc.handle()).unwrap();
+        assert_eq!(doc.blocks()[0].text, "First\n HOUSE - DAY");
+    }
+
+    #[test]
+    fn line_break_refuses_invalid_offsets_and_read_only_content_without_changes() {
+        let doc = Doc::parse("a🎬b\n");
+        assert!(matches!(
+            doc_line_break(doc.handle(), doc.caret(0, 2)),
+            EditOutcome::Rejected { .. }
+        ));
+        assert_eq!(doc.text(), "a🎬b\n");
+        assert!(doc_undo(doc.handle()).is_none());
+
+        let doc = Doc::parse("Action.\n\n/* hidden */\n\nTail.\n");
+        let before = doc.text();
+        let opaque = doc
+            .kinds()
+            .iter()
+            .position(|kind| *kind == BlockKind::Opaque)
+            .unwrap();
+        assert!(matches!(
+            doc_line_break(doc.handle(), doc.caret(opaque, 0)),
+            EditOutcome::Rejected { .. }
+        ));
+        let spanning = DocSelection {
+            anchor: doc.caret(0, 3).focus,
+            focus: doc.caret(doc.blocks().len() - 1, 2).focus,
+        };
+        assert!(matches!(
+            doc_line_break(doc.handle(), spanning),
+            EditOutcome::Rejected { .. }
+        ));
+        assert_eq!(doc.text(), before);
+        assert!(doc_undo(doc.handle()).is_none());
     }
 
     // --- Enter -----------------------------------------------------------

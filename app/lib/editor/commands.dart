@@ -124,6 +124,12 @@ List<EditorCommand> editorCommands({
     ),
     EditorCommand(
       group: 'Edit',
+      label: 'Insert line break',
+      shortcut: 'Shift+Enter',
+      run: controller.insertLineBreak,
+    ),
+    EditorCommand(
+      group: 'Edit',
       label: 'Undo',
       shortcut: 'Ctrl+Z',
       run: controller.undo,

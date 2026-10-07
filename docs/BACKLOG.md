@@ -1606,6 +1606,14 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-06 — W3's native fixture exposed a zero-page presentation error:
+  a Note-only script has no printed pages, and `PageIndicator._updateCurrent`
+  (`app/lib/editor/page_indicator.dart:272`) throws while clamping 1 to a
+  zero upper bound. Observed in `target/w3-native-writing-retry.log`; left
+  unchanged because pagination presentation is outside W3. The Note fixture
+  now includes a printable Action paragraph. Investigate the zero-page case
+  separately, including empty scripts and content that prints nothing.
+
 - 2026-10-06 — While preparing B2's visual smoke, read a separate single-page
   presentation gap: `PageIndicator._resolvePageStarts` excludes page 1, and
   `EditorGeometry.sheeted` requires a nonempty start list. A one-page pagination

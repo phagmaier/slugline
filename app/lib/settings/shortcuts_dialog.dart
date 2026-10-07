@@ -123,6 +123,10 @@ const _sections = <(String, List<(String, String)>)>[
       ('Ctrl+Shift+V', 'Paste as plain Action text'),
       ('Ctrl+A', 'Select all'),
       ('Ctrl+Space', 'Show suggestions, including the cast in an empty cue'),
+      (
+        'Shift+Enter',
+        'Line break in Action, Dialogue or Note; Enter elsewhere',
+      ),
       ('Ctrl+Backspace / Ctrl+Delete', 'Delete one word'),
       ('Tab / Shift+Tab', 'Cycle the context-appropriate element'),
       ('Ctrl+1 … Ctrl+0', 'Set screenplay element type'),

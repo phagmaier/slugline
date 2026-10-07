@@ -153,6 +153,10 @@ abstract class DocumentCore {
   /// may be a delete, a split and a kind change.
   rust.EditOutcome enter(rust.DocSelection at);
 
+  /// Shift+Enter: Rust chooses a hard line break or the normal Enter workflow.
+  /// Replaces the selection in one isolated undo transaction.
+  rust.EditOutcome lineBreak(rust.DocSelection at);
+
   /// Tab, or Shift+Tab, on the block the caret is in. `null` where the table
   /// says Tab does nothing there — not a refusal, just no next element type.
   rust.EditOutcome? tab(rust.DocSelection at, {required bool shift});
@@ -368,6 +372,10 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   @override
   rust.EditOutcome enter(rust.DocSelection at) =>
       rust.docEnter(handle: _handle, at: at);
+
+  @override
+  rust.EditOutcome lineBreak(rust.DocSelection at) =>
+      rust.docLineBreak(handle: _handle, at: at);
 
   @override
   rust.EditOutcome? tab(rust.DocSelection at, {required bool shift}) =>

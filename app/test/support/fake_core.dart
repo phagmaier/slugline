@@ -377,6 +377,33 @@ class FakeCore implements DocumentCore {
   /// Every Enter, in order.
   final List<DocSelection> enters = [];
 
+  /// Only list surgery; Rust tests cover which kinds fall back to Enter.
+  @override
+  EditOutcome lineBreak(DocSelection at) {
+    lineBreaks.add(at);
+    final (start, end) = _ordered(at);
+    _undo.add(List.of(_blocks));
+    if (start != end) {
+      _deleteRange(start, end);
+    }
+    final command = EditCommand.replaceText(
+      block: start.block,
+      startUtf16: start.offsetUtf16,
+      endUtf16: start.offsetUtf16,
+      with_: '\n',
+    );
+    commands.add(command);
+    priorSelections.add(at);
+    return _replaceText(
+      start.block,
+      start.offsetUtf16,
+      start.offsetUtf16,
+      '\n',
+    );
+  }
+
+  final List<DocSelection> lineBreaks = [];
+
   /// Every Tab, as `(selection, shift)`.
   final List<(DocSelection, bool)> tabs = [];
 

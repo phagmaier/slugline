@@ -37,7 +37,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0014 | The autosave clock lives in Dart | `app/lib/editor/autosave.dart`, `app/lib/editor/editor_page.dart` | partly superseded by 0043 — "autosave writes no backup" |
 | 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | live |
 | 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
-| 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | live |
+| 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | refined by 0051 — Shift+Enter always edits |
 | 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — no page indication in the editor |
 | 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | partly superseded by 0044/0045 — printed alignment and shared output emphasis |
 | 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | live |
@@ -61,7 +61,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0038 | The save path checks the file it is replacing; the watcher only asks early | `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
 | 0039 | The release build unwinds; `panic = "abort"` is superseded | `Cargo.toml`, `app/linux/CMakeLists.txt` | live |
 | 0040 | The fluid editor shows output page position in its status bar | `app/lib/editor/page_indicator.dart`, `app/lib/editor/editor_page.dart`, `crates/bridge/src/api/layout.rs` | live |
-| 0041 | Suggestions follow writing intent, and narrow windows keep the page wide | `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/navigator_sidebar.dart` | live |
+| 0041 | Suggestions follow writing intent, and narrow windows keep the page wide | `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/navigator_sidebar.dart` | refined by 0051 — Shift+Enter always edits |
 | 0042 | Crash journals carry kernel ownership across publication | `crates/storage/src/journal.rs`, `crates/storage/Cargo.toml`, `crates/bridge/tests/persistence.rs` | live |
 | 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
 | 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | live |
@@ -71,6 +71,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0048 | Page 1 is counted, and prints its number only when the page setup asks | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/page_numbers.rs`, `crates/storage/src/prefs.rs`, `app/lib/editor/page_indicator.dart`, `app/lib/settings/preferences_dialog.dart` | live |
 | 0049 | An incremental run resumes and stops only where the paginator recorded that it could | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental_differential.rs` | live |
 | 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | live |
+| 0051 | Shift+Enter is a core-owned line break with its own undo transaction | `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/commands.dart` | live |
 
 ---
 
@@ -1180,6 +1181,9 @@ describes; that was checked by reinstating it.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 5 (repaired during the
 mid-project remediation)
+
+**Superseded by:** ADR 0051 for Shift+Enter's editing meaning; plain Enter and Tab
+retain the completion behavior below.
 
 ### Context
 
@@ -3151,6 +3155,9 @@ runs on the existing snapshot worker path, never on the keystroke path.
 **Supersedes:** ADR 0030's popup activation and fixed eight-row presentation;
 ADR 0035's permanently docked navigator presentation on narrow windows.
 
+**Superseded by:** ADR 0051 for Shift+Enter's editing meaning; the other
+suggestion and navigator decisions stand.
+
 ### Context
 
 Opening a scene heading displayed six prefix suggestions over the first page.
@@ -3882,3 +3889,47 @@ Acceptance includes deliberately delaying the runner's first-frame callback,
 adding a cheap 10 ms GTK timer, and retaining a touched 192 MiB allocation, one
 at a time. Each must fail its own budget against a rebuilt release bundle.
 All injections are reverted and the clean bundle rebuilt before completion.
+
+---
+
+## ADR 0051 — Shift+Enter is a core-owned line break with its own undo transaction
+
+**Date:** 2026-10-06 · **Status:** accepted · **Backlog:** W3
+**Refines:** ADR 0017 and ADR 0041 for Shift+Enter's interaction with completion
+acceptance. Plain Enter and Tab keep their existing behavior.
+
+### Context
+
+Enter splits elements, but Action, Dialogue and Note already accept embedded
+newlines. A plain ReplaceText insertion would coalesce with typing around it;
+a Dart kind table would duplicate `BlockKind::is_multiline`. A highlighted
+completion must not take the new line-break gesture away from writing.
+
+### Decision
+
+Shift+Enter, including numpad Enter, and the palette's "Insert line break"
+call `doc_line_break`. The bridge asks the earliest selected block's existing
+`is_multiline` rule: it replaces the selection with a newline for multiline
+kinds and runs the ordinary Enter plan otherwise. Selection direction does not
+change which element receives the edit. Read-only content and invalid UTF-16
+boundaries retain the core's normal refusals.
+
+The bridge groups selection deletion and newline insertion into one isolated
+undo transaction, then uses `inferring` to classify and journal its outcome.
+Undo restores the original selection and source provenance; redo reapplies the
+break. Typing before and after stays in separate transactions. No mutation or
+screenplay-kind policy is added to Dart.
+
+The Shift+Enter key case precedes completion acceptance, so it always edits.
+Plain Enter still accepts a deliberately navigated suggestion. Newlines from
+an input method continue through the surface's ordinary splitting path.
+
+### Verification
+
+Widget tests cover typing both lines, numpad Enter, selection replacement,
+completion priority, undo/redo and palette focus. Bridge tests cover all
+multiline and single-line kinds, Unicode boundaries, reversed cross-element
+selections, refusal atomicity and typing isolation. A persistence test replays
+the actual journal through break, undo and redo, then checks the saved bytes,
+retaining untouched BOM/CRLF title and opaque content. Native writing cases
+save and reopen Action, Dialogue and Note through the real core and filesystem.

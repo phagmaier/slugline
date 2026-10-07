@@ -497,6 +497,9 @@ class EditorSurfaceState extends State<EditorSurface>
     final control = keys.isControlPressed;
 
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
+          when shift:
+        _controller.insertLineBreak();
       case LogicalKeyboardKey.space when control:
         _controller.showCompletions();
       case LogicalKeyboardKey.arrowUp

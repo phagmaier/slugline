@@ -97,6 +97,77 @@ void main() {
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
 
+  for (final (kind, source, index, expected) in [
+    (BlockKind.action, 'Seed.\n', 0, 'First 🎬 line.\nSecond line.\n'),
+    (
+      BlockKind.dialogue,
+      'JOHN\nSeed.\n',
+      1,
+      'JOHN\nFirst 🎬 line.\nSecond line.\n',
+    ),
+    (
+      BlockKind.note,
+      '[[Seed.]]\n\nAnchor.\n',
+      0,
+      '[[First 🎬 line.\nSecond line.]]\n\nAnchor.\n',
+    ),
+  ]) {
+    testWidgets(
+      'Shift+Enter saves adjacent lines in ${kind.name} and reopens',
+      (tester) async {
+        final file = File('${scratch.path}/line-break-${kind.name}.fountain')
+          ..writeAsStringSync(source);
+        final core = (await Core.instance.openDocument(file.path))!;
+        final controller = EditorController(core);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(home: EditorPage(controller: controller)),
+        );
+        await tester.tap(find.byType(EditorSurface));
+        await tester.pump();
+        final block = controller.blocks[index];
+        final blockCount = controller.blocks.length;
+        controller.setSelection(
+          DocSelection(
+            anchor: DocPosition(block: block.id, offsetUtf16: 0),
+            focus: DocPosition(block: block.id, offsetUtf16: block.text.length),
+          ),
+        );
+        await tester.pump();
+        await type(tester, controller, 'First 🎬 line.');
+        final before = controller.source;
+        final selection = controller.selection;
+        final journalled = core.journalState.$1;
+
+        await press(tester, LogicalKeyboardKey.enter, shift: true);
+        expect(controller.blocks, hasLength(blockCount));
+        expect(controller.blocks[index].kind, kind);
+        expect(controller.blocks[index].text, 'First 🎬 line.\n');
+        expect(core.journalState, (journalled + 1, false));
+        controller.undo();
+        expect(controller.source, before);
+        expect(controller.selection, selection);
+        controller.redo();
+        await tester.pump();
+        await type(tester, controller, 'Second line.');
+        expect(controller.source, expected);
+        expect(await core.save(), isA<SaveOutcome_Saved>());
+        expect(file.readAsStringSync(), expected);
+
+        await tester.pumpWidget(const SizedBox());
+        core.close();
+        final reopened = (await Core.instance.openDocument(file.path))!;
+        expect(reopened.source(), expected);
+        expect(
+          reopened.blocks(index, index + 1).single.text,
+          'First 🎬 line.\nSecond line.',
+        );
+        expect(reopened.blocks(index, index + 1).single.kind, kind);
+        reopened.close();
+      },
+    );
+  }
+
   testWidgets(
     'palette display and dialog commands preserve native source and persist preferences',
     (tester) async {

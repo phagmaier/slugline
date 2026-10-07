@@ -89,6 +89,14 @@ memory of the previous keystroke, so there is no hidden state to get out of step
 A selection is replaced first, and the whole keystroke — delete, split, kind
 change — is **one** undo step.
 
+**Shift+Enter** inserts a hard line break inside Action, Dialogue and Note,
+keeping both lines in one element. In other kinds it follows the normal Enter
+workflow. It replaces any selection and is one undo step, separate from typing
+before or after it. Shift+Enter takes this editing meaning even when a completion
+has been highlighted with Up/Down; plain Enter still accepts that completion.
+An input-method newline continues to split elements. The command palette also
+offers "Insert line break", and F1 lists the shortcut.
+
 ---
 
 ## Tab

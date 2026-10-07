@@ -768,6 +768,9 @@ class EditorController extends ChangeNotifier {
   /// and written out in `docs/KEYMAP.md`.
   void splitBlock() => _outcome(core.enter(_selection));
 
+  /// Shift+Enter. The core owns which elements can contain a hard newline.
+  void insertLineBreak() => _outcome(core.lineBreak(_selection));
+
   /// Commits the highlighted item. This is deliberately the only completion
   /// method that writes text, and is called only from Tab/Enter key handling.
   bool acceptCompletion() {

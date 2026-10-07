@@ -2475,9 +2475,53 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    use crate::api::doc::{doc_apply, doc_blocks, doc_source, EditCommand};
+    use crate::api::doc::{
+        doc_apply, doc_blocks, doc_line_break, doc_redo, doc_source, doc_undo, DocPosition,
+        DocSelection, EditCommand, EditOutcome,
+    };
 
     const SCRIPT: &str = "The house is quiet.\n";
+
+    #[test]
+    fn line_break_save_and_recovery_replay_keep_the_exact_outcome() {
+        let source = "\u{feff}Title: Break\r\n\r\nFirst line.\r\n\r\n/* untouched */\r\n";
+        let it = Fixture::open_source("line-break", source);
+        let block = doc_blocks(it.handle, 0, 1)[0].id;
+        let at = DocPosition {
+            block,
+            offset_utf16: 5,
+        };
+        let selection = DocSelection {
+            anchor: at,
+            focus: at,
+        };
+        assert!(matches!(
+            doc_line_break(it.handle, selection),
+            EditOutcome::Applied { .. }
+        ));
+        let edited = it.in_memory();
+        assert!(edited.contains("First\r\n line."));
+        assert!(edited.starts_with("\u{feff}Title: Break\r\n\r\n"));
+        assert!(edited.ends_with("/* untouched */\r\n"));
+        assert_eq!(it.journalled(), 1, "one patch, despite a grouped edit");
+        assert_eq!(it.recovers_to(), edited);
+        assert_eq!(it.on_disk(), source, "editing has not saved the file");
+
+        doc_undo(it.handle).unwrap();
+        assert_eq!(it.in_memory(), source);
+        assert_eq!(it.recovers_to(), source);
+        doc_redo(it.handle).unwrap();
+        assert_eq!(it.recovers_to(), edited);
+
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), edited);
+        assert!(!it.dirty());
+        assert_eq!(it.recovers_to(), edited);
+        assert!(it.journal_agrees_with_the_file());
+    }
 
     #[test]
     fn a_new_script_starts_with_a_useful_valid_fountain_template() {

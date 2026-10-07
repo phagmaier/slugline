@@ -188,6 +188,13 @@ EditOutcome docEnter({
   required DocSelection at,
 }) => RustLib.instance.api.crateApiDocDocEnter(handle: handle, at: at);
 
+/// Shift+Enter: a hard line break in a multiline element, otherwise Enter.
+/// Selection replacement and the break are one isolated, journalled undo step.
+EditOutcome docLineBreak({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocLineBreak(handle: handle, at: at);
+
 /// Tab, or Shift+Tab, on the block the caret is in.
 ///
 /// `None` — not a rejection — where the table says Tab does nothing. There is
