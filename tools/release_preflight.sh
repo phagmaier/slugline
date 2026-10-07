@@ -8,7 +8,7 @@ cd "$ROOT"
 VERSION="$("$ROOT/tools/release_version.sh")"
 echo "==> Slugline $VERSION release preflight"
 
-for tool in cargo flutter python3 desktop-file-validate appstreamcli xvfb-run; do
+for tool in cargo flutter python3 desktop-file-validate appstreamcli xvfb-run xdotool; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "Required preflight tool is missing: $tool" >&2
     exit 2
@@ -42,6 +42,7 @@ else
 fi
 
 tools/package.sh
+xvfb-run -a python3 tools/check_runtime_budgets.py --output target/runtime-budgets.json
 tools/check_no_network.sh
 tools/smoke_test_tarball.sh
 tools/make_appimage.sh

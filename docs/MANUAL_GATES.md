@@ -87,3 +87,29 @@ windows at 1.5×). The compositor half needs eyes:
 3. Resize the window from fullscreen down to ~800px wide. Expected: the script
    shrinks to fit (fitted size), the element bar ellipsizes without overflow,
    the export dialog shrinks instead of striping (min 480px, then scrolls).
+
+
+## 5. Real-desktop runtime budgets
+
+F9's automated Xvfb/llvmpipe harness enforces a separate 320 MiB RSS regression
+ceiling. It cannot establish whether the original 250 MiB limit is exceeded on
+a GPU desktop. The same harness has a manual profile that keeps that limit:
+
+1. Build with `cd app && flutter build linux --release`, then return to the
+   repository root. Use a real desktop with GPU rendering (X11, or XWayland on
+   Wayland), scale 1 and `xdotool` installed. Unset `LIBGL_ALWAYS_SOFTWARE` and
+   `LP_NUM_THREADS` if previously set for headless tests; confirm hardware
+   rendering with the desktop's graphics diagnostics.
+2. Run `python3 tools/check_runtime_budgets.py --desktop --output target/runtime-budgets-desktop.json`.
+   Do not interact with or move focus from its disposable windows. It uses
+   isolated XDG directories and copies the reference script, leaving personal
+   scripts and preferences alone. The script establishes and checks X input
+   focus; a person must confirm the visible editor and caret and actual GPU use.
+3. Expected: best-of-five first-frame startup < 500 ms, a ten-second idle
+   interval with zero CPU ticks and voluntary switches, and best-of-three
+   reference-script RSS < 250 MiB over three consecutive observation intervals.
+   Inspect all recorded samples, not only the passing minimum. Record the date,
+   desktop/GPU, toolchain and report here.
+
+**Result:** pending. The 2026-10-06 Xvfb baseline exceeds 250 MiB and does not
+settle the real-desktop claim. A headless pass does not close this gate.

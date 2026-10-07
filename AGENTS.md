@@ -347,6 +347,22 @@ and the second number is what matters in a real session. `docs/BUDGETS.md` is
 the live list of thresholds and what measures each — never change one without
 changing its test in the same change.
 
+F9's process budgets measure the shipped release bundle separately from the
+Flutter integration suites (ADR 0050):
+
+```sh
+xvfb-run -a python3 tools/check_runtime_budgets.py --output target/runtime-budgets.json
+```
+
+It requires `xdotool`, installed in the CI flutter and release jobs. Startup is
+exec to the first-frame window with an empty script argument; no-argument startup
+opens the library, and the caret is static. Idle waits for measured quiet, then
+requires zero CPU ticks and zero voluntary thread switches over ten seconds.
+The Xvfb RSS ceiling is 320 MiB; the 250 MiB GPU-session budget remains manual
+gate 5. Do not claim that a software-rendered pass proves the real-desktop figure.
+`--only` selects a budget for deliberate failure checks; revert every injected
+regression and rebuild.
+
 ## Project constraints
 
 - Add a one-line justification to `docs/DEPENDENCIES.md` in the same change as

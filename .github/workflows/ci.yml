@@ -238,8 +238,20 @@ jobs:
       # poppler-utils as well: the export suite reads the PDFs it writes back
       # through `pdftotext` and `pdftohtml`, and unlike the Rust
       # text-extraction test it does not skip without them.
-      - name: Install xvfb and poppler-utils
-        run: sudo apt-get install --no-install-recommends -y xvfb poppler-utils
+      - name: Install xvfb, xdotool and poppler-utils
+        run: sudo apt-get install --no-install-recommends -y xvfb xdotool poppler-utils
+
+      # F9 measures the shipped release process, not a Flutter test runner.
+      - name: Cold start, idle and RSS budgets
+        run: xvfb-run -a python3 tools/check_runtime_budgets.py --output target/runtime-budgets.json
+
+      - name: Retain runtime budget measurements and process logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-budgets
+          path: target/runtime-budgets.json
+          if-no-files-found: ignore
 
       - name: Bridge integration tests
         working-directory: app

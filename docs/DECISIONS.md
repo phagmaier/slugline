@@ -70,6 +70,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0047 | Sung hard lines remain dialogue and carry lyric output metadata | `crates/fountain/src/syntax.rs`, `crates/fountain/src/lib.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/model.rs`, `crates/render_pdf/src/lib.rs` | live |
 | 0048 | Page 1 is counted, and prints its number only when the page setup asks | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/page_numbers.rs`, `crates/storage/src/prefs.rs`, `app/lib/editor/page_indicator.dart`, `app/lib/settings/preferences_dialog.dart` | live |
 | 0049 | An incremental run resumes and stops only where the paginator recorded that it could | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental_differential.rs` | live |
+| 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | live |
 
 ---
 
@@ -3795,3 +3796,89 @@ purpose seventeen ways, one at a time — resuming from a page whose first
 element was the one edited, forgetting what a speech or a heading read, stopping
 at a checkpoint page whatever began it, trusting the hint — and each made the
 file fail.
+
+
+---
+
+## ADR 0050 — Release-process budgets observe the shipped window and measured quiet
+
+**Date:** 2026-10-06 · **Status:** accepted · **Phase:** post-1.0, F9
+**Extends:** ADR 0014 with an observation of idle wakeups; Dart still owns timers
+and the actor still blocks on its channel.
+
+### Context
+
+Cold start, idle CPU and reference-script RSS had acceptance numbers and no
+harness. A release-process baseline under Xvfb reproduced about 272–290 MiB RSS,
+already above 250 MiB, and heavy startup work until roughly 12 seconds. The
+process then sleeps, except for occasional engine cleanup and the existing
+30-second status-age redraw. A fixed ten-second startup sleep can sample active
+initialisation and call it idle. CPU ticks can also miss a frequent but cheap
+poller entirely.
+
+The first frame needs no new instrumentation: `first_frame_cb` in the GTK
+runner shows the window on Flutter's first frame. A fresh no-argument launch
+shows the library, and script adoption follows that first frame. The caret is
+static. “Cold start to blinking cursor” cannot truthfully name that event.
+
+### Decision
+
+`tools/check_runtime_budgets.py` runs the built release bundle, using disposable
+script copies and fresh XDG directories on every launch. It has no test-only
+entry point in the application and changes no production source. CI runs it in
+its own step, as do the release workflow and release preflight after building
+the bundle. They install/check `xdotool`; the Dart integration-suite inventory
+is unchanged. JSON output retains every sample and full process logs even on a
+failure, and both workflows upload it even when the step fails.
+
+* Startup is the wall-clock time immediately before spawning to a PID-owned
+  visible window, found by `xdotool`. It includes fork/exec, query overhead and
+  up to 5 ms of query spacing. The startup file is zero bytes; its journal is
+  checked separately so a failed open cannot masquerade as a script launch.
+  Best of five must be < 500 ms. This is first-frame process startup, not the
+  editor-ready measurement or an evicted filesystem cache. ADR 0005's frame
+  build measurement still owns keystroke rendering; startup includes engine
+  initialisation and cannot be measured by that callback alone.
+* Idle and RSS use three consecutive ten-second intervals in one fresh
+  reference-script process. It waits for two consecutive seconds of zero
+  process CPU ticks, zero voluntary context switches across all threads, and a
+  stable thread set; a 60-second timeout fails rather than pretending that the
+  process settled. X input focus is set
+  directly (no window manager required), then read back before and after each
+  ten-second interval. Best of three must have zero ticks, switches and thread
+  changes. Fresh processes for all three intervals were rejected: they can
+  reproduce the same late engine-thread cleanup phase every time; consecutive
+  intervals move past it without a fixed startup sleep. Voluntary switches
+  expose even a poller too cheap to consume a CPU tick; involuntary switches
+  are scheduler preemption and are not charged as
+  application wakeups. This interval is shorter than the permitted 30-second
+  status refresh. Best of three admits one affected interval without granting
+  repeated wakeups a small-percent allowance. It cannot detect a poller slower
+  than the observation window and does not claim zero activity forever.
+* RSS reads `VmRSS` before and after that interval, keeps the larger reading
+  per interval and the best of three intervals. The original 250 MiB limit is
+  retained for a real GPU desktop in the same harness's `--desktop` profile,
+  and remains pending in manual gate 5. The Xvfb baseline exceeds it; no GPU
+  session has determined how much is software-renderer overhead. Add a
+  separate 320 MiB headless regression ceiling, deliberately with about 10%
+  headroom above the observed range. The default software profile sets X11,
+  scale 1, `LIBGL_ALWAYS_SOFTWARE=1` and `LP_NUM_THREADS=4` to reduce variation.
+  A passing headless ceiling cannot close the desktop budget.
+
+### Consequences
+
+No core timer, startup marker, benchmark allocation or production polling is
+added. The harness cleans up only disposable sessions by SIGTERM (SIGKILL if
+necessary); that is not evidence about clean shutdown. The X display and
+`xdotool` are harness prerequisites, not shipped dependencies.
+
+The original startup limit is unchanged. Idle's literal percentage becomes an
+observable no-wakeup interval that accounts for the existing status timer by
+name; RSS gains a separate environment-specific ceiling, rather than silently
+replacing the desktop figure. MiB states the units already used by the bundle
+check. Best-of-N and the observation limits are recorded in the live table.
+
+Acceptance includes deliberately delaying the runner's first-frame callback,
+adding a cheap 10 ms GTK timer, and retaining a touched 192 MiB allocation, one
+at a time. Each must fail its own budget against a rebuilt release bundle.
+All injections are reverted and the clean bundle rebuilt before completion.

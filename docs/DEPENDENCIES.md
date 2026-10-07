@@ -6,6 +6,12 @@ that adds the dependency; CI does not check this, reviewers do.
 
 Format: `name` — what it does — why we cannot reasonably do without it.
 
+## Verification tools
+
+`xdotool` — observes the release process's first-frame X window and establishes
+and checks input focus for F9's runtime budgets — avoids adding a production
+benchmark marker or a window-manager dependency; installed only on test hosts.
+
 ## Rust crates
 
 | Crate | Version | Used by | Justification |

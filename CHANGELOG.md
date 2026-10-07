@@ -8,6 +8,12 @@ this file and the others to it.
 
 ## Unreleased
 
+### Added
+
+- The release process now has automated cold-start, idle wakeup and memory
+  regression checks under Xvfb. The separate real-desktop memory budget remains
+  a manual verification gate.
+
 ### Fixed
 
 - Launching another window no longer deletes or offers a running session's
