@@ -86,6 +86,11 @@ Workspace layers enforced by `python3 tools/check_layering.py`:
 Update the workspace manifest and the script's tables together when adding a
 workspace crate or allowed edge.
 
+`docs/ARCHITECTURE.md` is the one-page map of these layers, the data flow
+and the entry points — start there when scoping a change. Each crate and
+`app/` carries a scoped `AGENTS.md` with its key files, invariants, verify
+command and ADRs — read the one for the subsystem being changed.
+
 Every crate takes `version.workspace = true`; the release version lives in
 `app/pubspec.yaml`. `python3 tools/check_version.py` fails if `Cargo.toml`,
 the AppStream metainfo or the changelog disagrees.

@@ -1,0 +1,39 @@
+# storage — scoped agent notes
+
+Scope: persistence. Atomic save, crash journal, backups, preferences,
+library index. Depends only on `document`. This is where "losing user text
+is a P0 bug" is cashed out.
+
+Key files: `src/journal.rs`, `src/atomic.rs`, `src/backup.rs`,
+`src/watch.rs` (`DiskState`), `src/library.rs`, `src/prefs.rs`,
+`src/paths.rs`.
+
+Invariants:
+
+- A write either happened or did not; a read never fails on bad input.
+  Corrupt journals, truncated indexes and mangled preferences each yield
+  what could be read.
+- Every file this project writes goes through `atomic::save_atomically`,
+  including the ones it writes about itself.
+- The journal records the outcome of an edit (a `Patch`), never the
+  command; replay is list surgery with no inference. Appends are not
+  `fsync`ed on purpose (ADR 0013).
+- A journal file's absence says the session ended cleanly. Only
+  `Journal::discard` removes it; live journals hold a kernel `flock` the
+  startup scan respects (ADR 0042). Report every journal-less outcome via
+  `JournalBroken`; never fail the open over it.
+- The watcher only asks early; the save path protects the file by comparing
+  against `DiskState` immediately before replacing it (ADR 0038).
+- Save As moves the session; an export copies text and moves nothing
+  (ADR 0029). Backups and the library index are caches: deleting them costs
+  only convenience (ADR 0043).
+- `storage` uses `libc::flock`, not `File::try_lock`, because the workspace
+  floor is Rust 1.85 (ADR 0042).
+
+Verify: `cargo test -p slugline_storage`. The full-disk test is only the
+real thing with a small filesystem in `SLUGLINE_FULL_DISK_DIR` (CI mounts a
+4 MB tmpfs); otherwise it proves error classification alone.
+
+Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043. Full rules
+in `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR
+changes this crate, update this file in the same change.
