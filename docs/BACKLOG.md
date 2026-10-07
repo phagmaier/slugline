@@ -81,7 +81,7 @@ This is the only place boxes are ticked.
 **4. Everyday workflow**
 
 - [x] [W1](#w1) Switching scripts needs the mouse: no new, open or close shortcuts
-- [ ] [W2](#w2) The command palette is missing commands
+- [x] [W2](#w2) The command palette is missing commands
 - [ ] [W3](#w3) No way to type a line break inside an element
 - [ ] [W4](#w4) No "go to page"
 - [ ] [W5](#w5) The preview always opens at page 1
@@ -1229,7 +1229,40 @@ library. The first three are in the overflow menu only.
 reach every command the app has.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `64c8d2e`. Reproduced all eight missing
+entries with failing widget assertions on command rows before changing the
+app. An initial assertion also counted the search field and passed incorrectly;
+the corrected failure and both logs are retained. Added Preferences, Spell
+checking, Keyboard shortcuts, show/hide navigator, enter/leave distraction-free
+mode, page/continuous view and increase/decrease text size. W1's file actions
+remain; W3 and W4 are still separate open items and will add their commands
+when implemented. Debug builds also reach the existing Pagination debug dialog.
+The product choice is to name the action for the current view and omit actions
+with no handler or at a text-size bound (12/24). Preferences and spelling open
+their existing dialogs; exports remain inside the preview. Navigator actions
+are available after leaving distraction-free mode. A narrow window offers Show
+navigator for its temporary drawer; Ctrl+K also works from the drawer's search,
+closes it and focuses the palette without changing the docked preference.
+Page-view changes use the existing atomic preference writer, and display actions
+leave screenplay output setup alone. Preferences/shortcut dialogs share modal
+autosave suppression across palette, keyboard and toolbar entry points.
+Widget tests prove action execution, both view directions, preference failure,
+limits and unavailable actions, 640/1200-pixel navigator behavior, focus return
+and autosave held until dialog dismissal; fullscreen request counts use a mocked
+window channel. A native Xvfb case drives the real preference writer and GTK
+channel, reads `prefs.json`, opens all four added dialog actions including debug,
+and checks unchanged source, selection, dirty state, output setup and exact
+BOM/CRLF Fountain bytes. Verified all 640 Rust tests, rustfmt, clippy, layering,
+version and docs checks; the enforced Flutter lockfile, 102-file format check,
+analysis and all 590 widget tests; the 28.91 MiB Linux release bundle, network
+library and isolated `--version` checks; all seven native suites, journalled
+keystroke p99 3.36 ms. Release-process budgets passed: best startup 371.548 ms,
+one 10.007-second interval with zero ticks/switches/thread changes, best RSS
+273.85 MiB against the 320 MiB Xvfb ceiling. All samples and earlier test/lint
+failures are retained under `target/w2-*`. The 250 MiB GPU claim stays pending
+manual gate 5. No dependency, binding, golden or line-breaking fixture changed.
+W2 is committed locally; W1's push passed CI run 37572492814. Stop here; W3 is
+next, and no adjacent item was started.
 
 <a id="w3"></a>
 ### W3 — No way to type a line break inside an element
