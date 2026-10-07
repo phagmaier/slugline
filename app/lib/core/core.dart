@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:slugline/identity.dart';
+import 'package:slugline/core/document_core.dart';
 import 'package:slugline/src/rust/api/events.dart' as bus;
 import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/src/rust/api/spell.dart' as spelling;
@@ -145,6 +146,15 @@ class Core implements LibraryCore {
 
   @override
   Future<List<files.ScriptView>> library() => files.libraryList();
+
+  /// Open a library path, creating it if it does not exist. The caller keeps
+  /// its current session until this succeeds.
+  Future<DocumentCore?> openDocument(String path) async {
+    final handle =
+        await files.libraryOpen(path: path) ??
+        await files.libraryCreate(path: path);
+    return handle == null ? null : RustDocumentCore.of(handle);
+  }
 
   Future<List<files.ScriptView>> sessionToRestore() => files.sessionRestore();
 

@@ -60,6 +60,8 @@ class EditorPage extends StatefulWidget {
     this.onDistractionFreeChanged,
     this.onTextSizeChanged,
     this.onClosed,
+    this.onNewScript,
+    this.onOpenScript,
     this.title,
     super.key,
   });
@@ -95,6 +97,8 @@ class EditorPage extends StatefulWidget {
   /// Back to the library. Null when the editor is the whole application, which
   /// is what a test pumping this page directly gets.
   final Future<void> Function()? onClosed;
+  final Future<void> Function()? onNewScript;
+  final Future<void> Function()? onOpenScript;
 
   final String? title;
 
@@ -122,6 +126,7 @@ class EditorPageState extends State<EditorPage> {
 
   int _externalChangeSerial = 0;
   int _modalSerial = 0;
+  bool _scriptActionActive = false;
   int _externalChangesActive = 0;
   Completer<void>? _externalChangesSettled;
   Timer? _navigatorRefresh;
@@ -148,6 +153,9 @@ class EditorPageState extends State<EditorPage> {
     _currentSceneBlock = _sceneAtBlock[widget.controller.selection.focus.block];
     widget.controller.addListener(_onControllerChanged);
     _createPageIndicator();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _editorFocus.requestFocus();
+    });
   }
 
   @override
@@ -509,6 +517,7 @@ class EditorPageState extends State<EditorPage> {
 
   KeyEventResult _onPageKey(KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (_scriptActionActive) return KeyEventResult.handled;
     final keys = HardwareKeyboard.instance;
     if (event.logicalKey == LogicalKeyboardKey.f11) {
       unawaited(widget.onDistractionFreeChanged?.call(!widget.distractionFree));
@@ -520,6 +529,12 @@ class EditorPageState extends State<EditorPage> {
     }
     if (!keys.isControlPressed) return KeyEventResult.ignored;
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.keyN when widget.onNewScript != null:
+        unawaited(_runScriptAction(widget.onNewScript!));
+      case LogicalKeyboardKey.keyO when widget.onOpenScript != null:
+        unawaited(_runScriptAction(widget.onOpenScript!));
+      case LogicalKeyboardKey.keyW when widget.onClosed != null:
+        unawaited(_runScriptAction(_closeScript));
       case LogicalKeyboardKey.keyS when keys.isShiftPressed:
         unawaited(save(forcePath: true));
       case LogicalKeyboardKey.keyS:
@@ -548,9 +563,33 @@ class EditorPageState extends State<EditorPage> {
     return KeyEventResult.handled;
   }
 
+  Future<void> _closeScript() async {
+    if (await confirmClose() && mounted) await widget.onClosed?.call();
+  }
+
+  Future<void> _runScriptAction(Future<void> Function() action) async {
+    if (_scriptActionActive) return;
+    setState(() => _scriptActionActive = true);
+    _dismiss();
+    widget.controller.dismissCompletions();
+    _scaffoldKey.currentState?.closeDrawer();
+    try {
+      await withModal(action);
+    } finally {
+      if (mounted) {
+        setState(() => _scriptActionActive = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _editorFocus.requestFocus();
+        });
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) =>
-      _buildEditor(context, MediaQuery.sizeOf(context).width);
+  Widget build(BuildContext context) => AbsorbPointer(
+    absorbing: _scriptActionActive,
+    child: _buildEditor(context, MediaQuery.sizeOf(context).width),
+  );
 
   Widget _buildEditor(BuildContext context, double width) {
     _compactLayout = width < 900;
@@ -566,6 +605,7 @@ class EditorPageState extends State<EditorPage> {
       // Desktop fields unfocus to their nearest scope. Keep that inside the
       // page's shortcut boundary; children still see editing keys first.
       debugLabel: 'editor page',
+      descendantsAreFocusable: !_scriptActionActive,
       onKeyEvent: (_, event) => _onPageKey(event),
       child: Scaffold(
         key: _scaffoldKey,
@@ -581,12 +621,8 @@ class EditorPageState extends State<EditorPage> {
                 leadingWidth: 44,
                 leading: _BarButton(
                   icon: Icons.arrow_back,
-                  tooltip: 'Back to the library',
-                  onPressed: () async {
-                    if (await confirmClose() && context.mounted) {
-                      await widget.onClosed?.call();
-                    }
-                  },
+                  tooltip: 'Back to the library (Ctrl+W)',
+                  onPressed: () => unawaited(_runScriptAction(_closeScript)),
                 ),
                 titleSpacing: 4,
                 title: _ScriptTitle(
@@ -719,6 +755,25 @@ class EditorPageState extends State<EditorPage> {
                                   child: CommandPalette(
                                     commands: editorCommands(
                                       controller: widget.controller,
+                                      newScript: widget.onNewScript == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onNewScript!,
+                                              ),
+                                            ),
+                                      openScript: widget.onOpenScript == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onOpenScript!,
+                                              ),
+                                            ),
+                                      closeScript: widget.onClosed == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(_closeScript),
+                                            ),
                                       openFind: () => _show(_Panel.find),
                                       openNavigator: _showNavigatorSearch,
                                       save: () => unawaited(save()),

@@ -11,6 +11,8 @@ import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
+import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/quick_open_dialog.dart';
 import 'package:slugline/library/recovery_dialog.dart';
 import 'package:slugline/settings/preferences_dialog.dart';
 import 'package:slugline/settings/shortcuts_dialog.dart';
@@ -86,7 +88,7 @@ class _SluglineAppState extends State<SluglineApp> {
   _OpenScript? _open;
 
   StreamSubscription<CoreEvent>? _events;
-  final GlobalKey<EditorPageState> _editorKey = GlobalKey<EditorPageState>();
+  GlobalKey<EditorPageState> _editorKey = GlobalKey<EditorPageState>();
   final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
 
   /// Catches the window's close button, so that a clean quit looks like one.
@@ -216,17 +218,54 @@ class _SluglineAppState extends State<SluglineApp> {
   // --- opening and closing ---------------------------------------------------
 
   Future<void> _openPath(String path, {int initialScrollRow = 0}) async {
-    final handle = await files.libraryOpen(path: path);
-    if (handle == null) {
-      final created = await files.libraryCreate(path: path);
-      if (created == null) return;
-      await _adopt(RustDocumentCore.of(created));
+    final core = await widget.core.openDocument(path);
+    if (core == null) {
+      _say('The script could not be opened or created.');
       return;
     }
-    await _adopt(
-      RustDocumentCore.of(handle),
-      initialScrollRow: initialScrollRow,
+    if (!mounted) {
+      core.close();
+      return;
+    }
+    await _adopt(core, initialScrollRow: initialScrollRow);
+  }
+
+  Future<void> _switchPath(String? path) async {
+    if (path == null || !mounted || path == _open?.core.path) return;
+    final editor = _editorKey.currentState;
+    if (editor != null && !await editor.confirmClose()) return;
+    if (!mounted) return;
+    // The page holds input and autosave for this action. Keep its session
+    // until the destination has loaded successfully.
+    final next = await widget.core.openDocument(path);
+    if (next == null) {
+      _say('The script could not be opened or created.');
+      return;
+    }
+    if (!mounted) {
+      next.close();
+      return;
+    }
+    await _adopt(next);
+  }
+
+  Future<void> _newScript() async {
+    final context = _navigator.currentContext;
+    if (context == null) return;
+    await _switchPath(
+      await FileChooser.show(
+        context,
+        title: 'New script',
+        action: 'Create',
+        suggestedName: 'untitled.fountain',
+      ),
     );
+  }
+
+  Future<void> _quickOpen() async {
+    final context = _navigator.currentContext;
+    if (context == null) return;
+    await _switchPath(await QuickOpenDialog.show(context, widget.core));
   }
 
   Future<void> _adopt(DocumentCore core, {int initialScrollRow = 0}) async {
@@ -251,6 +290,9 @@ class _SluglineAppState extends State<SluglineApp> {
     // which is exactly the moment they are least likely to.
     autosave.documentAdopted();
     setState(() {
+      // A different document gets a fresh page, including focus, scroll and
+      // panel state. Nothing from the closed script may survive the switch.
+      _editorKey = GlobalKey<EditorPageState>();
       _open = _OpenScript(
         core: core,
         controller: controller,
@@ -422,6 +464,8 @@ class _SluglineAppState extends State<SluglineApp> {
               onDistractionFreeChanged: _setDistractionFree,
               onTextSizeChanged: _setEditorTextSize,
               onClosed: _closeScript,
+              onNewScript: _newScript,
+              onOpenScript: _quickOpen,
               title: _titleOf(open.core),
             ),
     );

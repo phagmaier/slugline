@@ -12,12 +12,16 @@
 // prove is the whole chain at once: keystroke → EditCommand → re-classification →
 // patch → Fountain, and that the Fountain reads back as the scene that was typed.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:slugline/app.dart';
 import 'package:slugline/core/core.dart';
+import 'package:slugline/library/library_page.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
@@ -26,8 +30,18 @@ import 'package:slugline/editor/editor_surface.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  late Directory scratch;
   setUpAll(() async {
-    await Core.init();
+    scratch = Directory.systemTemp.createTempSync('slugline-writing-');
+    await Core.init(
+      configDir: '${scratch.path}/config',
+      dataDir: '${scratch.path}/data',
+      stateDir: '${scratch.path}/state',
+    );
+  });
+  tearDownAll(() async {
+    await Core.instance.shutdown();
+    scratch.deleteSync(recursive: true);
   });
 
   Future<EditorController> open(WidgetTester tester, [String? source]) async {
@@ -77,6 +91,90 @@ void main() {
 
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
+
+  testWidgets(
+    'keyboard script switching saves the native draft before leaving',
+    (tester) async {
+      final alpha = File('${scratch.path}/alpha.fountain')
+        ..writeAsStringSync('Original draft.\n');
+      final beta = File('${scratch.path}/beta.fountain')
+        ..writeAsStringSync('Another draft.\n');
+      for (final file in [alpha, beta]) {
+        final document = await Core.instance.openDocument(file.path);
+        expect(document, isNotNull);
+        document!.close();
+      }
+      await tester.pumpWidget(SluglineApp(core: Core.instance));
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryPage), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('library-search')),
+        'alpha.fountain',
+      );
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      EditorController current() =>
+          tester.widget<EditorPage>(find.byType(EditorPage)).controller;
+      expect(current().core.path, alpha.path);
+      expect(
+        tester
+            .widget<EditorSurface>(find.byType(EditorSurface))
+            .focusNode!
+            .hasFocus,
+        isTrue,
+      );
+      // The integration binding does not register TestTextInput. Deliver the
+      // input value directly to our client, as the IME suite does.
+      tester
+          .state<EditorSurfaceState>(find.byType(EditorSurface))
+          .updateEditingValue(
+            const TextEditingValue(
+              text: 'Native unsaved words.',
+              selection: TextSelection.collapsed(offset: 21),
+            ),
+          );
+      await tester.pump();
+      expect(current().core.dirty, isTrue);
+      await press(tester, LogicalKeyboardKey.keyO, control: true);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('quick-open-search')),
+        'beta.fountain',
+      );
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+      // Tab traverses the modal's controls; Enter activates Save.
+      bool saveFocused() {
+        final button = FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<FilledButton>();
+        return button?.child is Text && (button!.child as Text).data == 'Save';
+      }
+
+      for (var n = 0; n < 6 && !saveFocused(); n++) {
+        await press(tester, LogicalKeyboardKey.tab);
+      }
+      expect(saveFocused(), isTrue);
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(current().core.path, beta.path);
+      expect(alpha.readAsStringSync(), 'Native unsaved words.\n');
+      await press(tester, LogicalKeyboardKey.keyN, control: true);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'File name'),
+        '${scratch.path}/new.fountain',
+      );
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(current().core.path, '${scratch.path}/new.fountain');
+      await press(tester, LogicalKeyboardKey.keyW, control: true);
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryPage), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
 
   // --- the exit criterion ------------------------------------------------
 

@@ -182,6 +182,9 @@ classification says so.
 
 | Key | Action |
 | --- | --- |
+| `Ctrl+N` | New script… |
+| `Ctrl+O` | Quick-open a library script, or Browse… |
+| `Ctrl+W` | Back to the library |
 | `Ctrl+S` | Save |
 | `Ctrl+Shift+S` | Save as… |
 | `Ctrl+P` | Preview and export… |
@@ -190,11 +193,23 @@ classification says so.
 | `F1` | Keyboard shortcut reference |
 | `F11` | Distraction-free full screen |
 
-All three are also in the command palette, along with "Previous versions…" and
-"Title page…".
+New, Open, Back to the library, Save, Save as and Preview are also in the
+command palette, along with "Previous versions…" and "Title page…".
 
-There is no key for "open" or "new": both need a path, so both are a dialog
-either way, and the library is one Escape and one click away.
+`Ctrl+O` opens a searchable recent-script list. Type to filter by title or path,
+use `↑` / `↓` to select, and `Enter` to open. The last entry, "Browse…", opens
+the file chooser and remains available even when no scripts match. `Escape`
+closes either chooser without changing the draft. `Ctrl+N` asks where to create
+the new script. Choosing the current script in quick-open keeps its session and
+undo history.
+
+The library focuses its search field when it opens. Typing filters by title or
+path, `↑` / `↓` selects a row, and `Enter` opens it; a missing file cannot be
+opened. New and Open work there too. Leaving an editor through New, Open or
+`Ctrl+W` always checks unsaved changes with the same Save / Discard / Cancel
+dialog as the back arrow. Input and autosave are held during that action, and
+the current session stays open until the destination has loaded successfully.
+These keys also work in distraction-free mode.
 
 `Ctrl+P` opens the pages as they will print, and both exports are inside it:
 §Phase 7 wants a writer to have looked at the pages before they send them

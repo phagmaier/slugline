@@ -38,8 +38,32 @@ List<EditorCommand> editorCommands({
   VoidCallback? showBackups,
   VoidCallback? editTitlePage,
   VoidCallback? previewAndExport,
+  VoidCallback? newScript,
+  VoidCallback? openScript,
+  VoidCallback? closeScript,
 }) {
   return [
+    if (newScript case final run?)
+      EditorCommand(
+        group: 'File',
+        label: 'New script…',
+        shortcut: 'Ctrl+N',
+        run: run,
+      ),
+    if (openScript case final run?)
+      EditorCommand(
+        group: 'File',
+        label: 'Open script…',
+        shortcut: 'Ctrl+O',
+        run: run,
+      ),
+    if (closeScript case final run?)
+      EditorCommand(
+        group: 'File',
+        label: 'Back to the library',
+        shortcut: 'Ctrl+W',
+        run: run,
+      ),
     // Phase 4's file commands, and null where there is no persistence attached —
     // which is a widget test driving the palette on its own. A palette entry
     // that does nothing is worse than one that is not there.

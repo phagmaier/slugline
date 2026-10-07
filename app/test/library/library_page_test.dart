@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/core.dart';
 import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
+import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/theme.dart';
 
 class _FakeLibraryCore implements LibraryCore {
@@ -32,6 +34,7 @@ ScriptView _script({
   String title = 'Heat',
   required int modifiedMillis,
   int pageCount = 12,
+  bool missing = false,
 }) => ScriptView(
   id: id,
   path: path,
@@ -39,7 +42,7 @@ ScriptView _script({
   modifiedMillis: modifiedMillis,
   bytes: 1024,
   pageCount: pageCount,
-  missing: false,
+  missing: missing,
   open: false,
   scrollRow: 0,
 );
@@ -67,6 +70,93 @@ Future<List<String>> _pump(
 }
 
 void main() {
+  testWidgets('the library filters and opens a script without a pointer', (
+    tester,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final opened = await _pump(tester, [
+      _script(
+        id: 'heat',
+        title: 'Heat',
+        path: '/scripts/heat.fountain',
+        modifiedMillis: now,
+      ),
+      _script(
+        id: 'night',
+        title: 'Night',
+        path: '/scripts/night.fountain',
+        modifiedMillis: now - 1,
+      ),
+    ]);
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('library-search')),
+    );
+    expect(field.focusNode?.hasFocus, isTrue);
+    await tester.enterText(find.byKey(const Key('library-search')), 'night');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(opened, ['/scripts/night.fountain']);
+  });
+
+  testWidgets('Ctrl+N works when the library is empty', (tester) async {
+    await _pump(tester, []);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.byType(FileChooser), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('keyboard selection scrolls through a long library', (
+    tester,
+  ) async {
+    final opened = await _pump(
+      tester,
+      List.generate(
+        30,
+        (n) => _script(
+          id: '$n',
+          path: '/scripts/$n.fountain',
+          title: 'Script $n',
+          modifiedMillis: 100 - n,
+        ),
+      ),
+    );
+    for (var n = 0; n < 29; n++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.byKey(const ValueKey('library-row-29')).hitTestable(),
+      findsOneWidget,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(opened, ['/scripts/29.fountain']);
+  });
+
+  testWidgets('Enter leaves a missing script alone', (tester) async {
+    final opened = await _pump(tester, [
+      _script(id: 'gone', modifiedMillis: 2, missing: true),
+      _script(
+        id: 'available',
+        modifiedMillis: 1,
+        path: '/scripts/available.fountain',
+      ),
+    ]);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(opened, isEmpty);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(opened, ['/scripts/available.fountain']);
+  });
+
   testWidgets('recent scripts use a centred, full-row opening target', (
     tester,
   ) async {

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'package:slugline/core/core.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/quick_open_dialog.dart';
 import 'package:slugline/theme.dart';
 
 /// §Phase 4's library: create, open, rename, duplicate, remove, delete, and the
@@ -44,6 +45,10 @@ class _LibraryPageState extends State<LibraryPage> {
   Object? _error;
 
   final TextEditingController _search = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  final Map<String, GlobalKey> _rowKeys = {};
+  int _highlighted = 0;
+  bool _choosing = false;
   _LibrarySort _sort = _LibrarySort.recent;
 
   @override
@@ -55,6 +60,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -65,7 +71,9 @@ class _LibraryPageState extends State<LibraryPage> {
       setState(() {
         _scripts = scripts;
         _error = null;
+        _highlighted = 0;
       });
+      _searchFocus.requestFocus();
     } catch (error) {
       // Without this the spinner runs forever: `body` switches on `scripts`
       // alone and null means loading. Surface the failure with a retry.
@@ -75,27 +83,54 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _newScript() async {
-    final path = await FileChooser.show(
-      context,
-      title: 'New script',
-      action: 'Create',
-      suggestedName: 'untitled.fountain',
+    await _choose(
+      () => FileChooser.show(
+        context,
+        title: 'New script',
+        action: 'Create',
+        suggestedName: 'untitled.fountain',
+      ),
     );
-    if (path == null || !mounted) return;
-    await widget.onOpen(path);
-    if (mounted) await _refresh();
   }
 
   Future<void> _openScript() async {
-    final path = await FileChooser.show(
-      context,
-      title: 'Open script',
-      action: 'Open',
-      mustExist: true,
+    await _choose(() => QuickOpenDialog.show(context, widget.core));
+  }
+
+  Future<void> _choose(Future<String?> Function() choose) async {
+    if (_choosing) return;
+    _choosing = true;
+    try {
+      final path = await choose();
+      if (path == null || !mounted) return;
+      await widget.onOpen(path);
+      if (mounted) await _refresh();
+    } finally {
+      _choosing = false;
+      if (mounted) _searchFocus.requestFocus();
+    }
+  }
+
+  void _moveHighlight(int delta) {
+    final visible = _visible(_scripts ?? const []);
+    if (visible.isEmpty) return;
+    setState(
+      () => _highlighted = (_highlighted + delta).clamp(0, visible.length - 1),
     );
-    if (path == null || !mounted) return;
-    await widget.onOpen(path);
-    if (mounted) await _refresh();
+    final id = visible[_highlighted].id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final row = _rowKeys[id]?.currentContext;
+      if (row != null) Scrollable.ensureVisible(row);
+    });
+  }
+
+  void _openHighlighted() {
+    if (_choosing) return;
+    final visible = _visible(_scripts ?? const []);
+    if (visible.isEmpty) return;
+    final script = visible[_highlighted.clamp(0, visible.length - 1)];
+    if (!script.missing) unawaited(_choose(() async => script.path));
   }
 
   Future<void> _rename(ScriptView script) async {
@@ -170,10 +205,45 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scripts = _scripts;
-    return Focus(
+    return FocusScope(
       autofocus: true,
       onKeyEvent: (_, event) {
-        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        final keys = HardwareKeyboard.instance;
+        if (!keys.isControlPressed &&
+            !keys.isShiftPressed &&
+            _searchFocus.hasFocus &&
+            const [
+              LogicalKeyboardKey.arrowDown,
+              LogicalKeyboardKey.arrowUp,
+              LogicalKeyboardKey.enter,
+              LogicalKeyboardKey.numpadEnter,
+            ].contains(event.logicalKey)) {
+          switch (event.logicalKey) {
+            case LogicalKeyboardKey.arrowDown:
+              _moveHighlight(1);
+            case LogicalKeyboardKey.arrowUp:
+              _moveHighlight(-1);
+            case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
+              _openHighlighted();
+            default:
+              return KeyEventResult.ignored;
+          }
+          return KeyEventResult.handled;
+        }
+        if (event is KeyRepeatEvent) return KeyEventResult.ignored;
+        if (keys.isControlPressed &&
+            event.logicalKey == LogicalKeyboardKey.keyN) {
+          unawaited(_newScript());
+          return KeyEventResult.handled;
+        }
+        if (keys.isControlPressed &&
+            event.logicalKey == LogicalKeyboardKey.keyO) {
+          unawaited(_openScript());
+          return KeyEventResult.handled;
+        }
         if (event.logicalKey == LogicalKeyboardKey.f1) {
           unawaited(widget.onShowShortcuts?.call());
           return KeyEventResult.handled;
@@ -335,7 +405,9 @@ class _LibraryPageState extends State<LibraryPage> {
         child: TextField(
           key: const Key('library-search'),
           controller: _search,
-          onChanged: (_) => setState(() {}),
+          focusNode: _searchFocus,
+          autofocus: true,
+          onChanged: (_) => setState(() => _highlighted = 0),
           decoration: InputDecoration(
             isDense: true,
             hintText: 'Search scripts',
@@ -346,7 +418,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     key: const Key('library-search-clear'),
                     tooltip: 'Clear search',
                     iconSize: 16,
-                    onPressed: () => setState(_search.clear),
+                    onPressed: _clearSearch,
                     icon: const Icon(Icons.clear),
                   ),
           ),
@@ -358,7 +430,13 @@ class _LibraryPageState extends State<LibraryPage> {
         tooltip: 'Sort scripts (${_sort.label})',
         icon: const Icon(Icons.sort_outlined),
         initialValue: _sort,
-        onSelected: (sort) => setState(() => _sort = sort),
+        onSelected: (sort) {
+          setState(() {
+            _sort = sort;
+            _highlighted = 0;
+          });
+          _searchFocus.requestFocus();
+        },
         itemBuilder: (context) => [
           for (final sort in _LibrarySort.values)
             PopupMenuItem(
@@ -382,6 +460,10 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _scriptList(List<ScriptView> scripts) {
     final visible = _visible(scripts);
+    _highlighted = _highlighted.clamp(
+      0,
+      visible.isEmpty ? 0 : visible.length - 1,
+    );
     if (visible.isEmpty) {
       return Center(
         child: Column(
@@ -397,7 +479,7 @@ class _LibraryPageState extends State<LibraryPage> {
             const SizedBox(height: 12),
             TextButton(
               key: const Key('library-clear-search'),
-              onPressed: () => setState(_search.clear),
+              onPressed: _clearSearch,
               child: const Text('Clear search'),
             ),
           ],
@@ -407,7 +489,8 @@ class _LibraryPageState extends State<LibraryPage> {
     return ListView.separated(
       itemCount: visible.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, index) => _row(visible[index]),
+      itemBuilder: (context, index) =>
+          _row(visible[index], selected: index == _highlighted),
     );
   }
 
@@ -439,17 +522,28 @@ class _LibraryPageState extends State<LibraryPage> {
     return visible;
   }
 
-  Widget _row(ScriptView script) {
+  void _clearSearch() {
+    setState(() {
+      _search.clear();
+      _highlighted = 0;
+    });
+    _searchFocus.requestFocus();
+  }
+
+  Widget _row(ScriptView script, {required bool selected}) {
     final theme = Theme.of(context);
     final colours = context.colours;
     final metadataStyle = theme.textTheme.bodySmall?.copyWith(
       color: colours.textTertiary,
     );
     return Material(
-      color: Colors.transparent,
+      key: _rowKeys.putIfAbsent(script.id, () => GlobalKey()),
+      color: selected ? colours.accentSubtle : Colors.transparent,
       child: InkWell(
         key: ValueKey('library-row-${script.id}'),
-        onTap: script.missing ? null : () => widget.onOpen(script.path),
+        onTap: script.missing || _choosing
+            ? null
+            : () => unawaited(_choose(() async => script.path)),
         hoverColor: colours.surfaceRaised,
         highlightColor: colours.accentSubtle,
         mouseCursor: script.missing
