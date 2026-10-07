@@ -37,6 +37,12 @@ commit, which is how `tools/check_docs.py` tells a finished item from an
 abandoned one. Git history is the only record of a change no ADR covers, so
 `fixes` and `wip` cost the next agent real time.
 
+When several agents work in the tree at once, each takes its own
+worktree or branch named for its item (`w8-...`), one backlog item per
+branch, and never ticks or rewrites another agent's item — record
+out-of-scope findings under that item's "Found along the way" section
+instead.
+
 ## Architecture
 
 - **`crates/fountain`** — syntax: `BlockKind`, `TitlePage`, `Element`, parse,
@@ -257,8 +263,11 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   `libslugline_bridge.so`; do not add a separate Rust build step.
 - After changing `crates/bridge/src/api/`, run
   `cargo install flutter_rust_bridge_codegen cargo-expand` once, then
-  `cd app && flutter_rust_bridge_codegen generate`. Commit the generated
-  bindings in `app/lib/src/rust/`; never edit them by hand.
+   `cd app && flutter_rust_bridge_codegen generate`. Commit the generated
+   bindings in `app/lib/src/rust/`; never edit them by hand. CI holds them
+   with `tools/check_bridge_bindings.sh`, which regenerates to a temp dir
+   and diffs — a stale binding fails there instead of in the Xvfb suites. Run
+   `./tools/agent.sh bindings` for the same check locally.
 - Keep Rust `flutter_rust_bridge = "=2.12.0"` and Dart
   `flutter_rust_bridge: 2.12.0` exactly aligned. Bump both and regenerate
   bindings in the same change.
@@ -266,7 +275,11 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
 ## Verification
 
 While you work, run what your change can break; before calling it done, run the
-whole list.
+whole list. `tools/agent.sh` wraps the common invocations so every agent runs
+the same flags (`./tools/agent.sh quick <crate>`, `./tools/agent.sh docs`,
+`./tools/agent.sh lint`, `./tools/agent.sh backlog-next`, `./tools/agent.sh
+regen` for print-only goldens). Environment pre-flight is
+`./tools/doctor.sh`.
 
 One subsystem at a time:
 

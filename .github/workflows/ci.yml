@@ -193,6 +193,17 @@ jobs:
         working-directory: app/rust_builder/cargokit/build_tool
         run: dart pub get
 
+      # The committed bindings under app/lib/src/rust/ are generated, never
+      # hand-edited. This regenerates to a temp dir and diffs, so a stale
+      # binding fails here instead of surfacing in the Xvfb suites below.
+      # The codegen pin must match the flutter_rust_bridge pin in Cargo.toml
+      # and app/pubspec.yaml (ADR 0002), or the glue disagrees silently.
+      - name: Install bridge codegen
+        run: cargo install flutter_rust_bridge_codegen --version "=2.12.0" && cargo install cargo-expand
+
+      - name: Bridge bindings are current
+        run: ./tools/check_bridge_bindings.sh
+
       - name: Analyze
         working-directory: app
         run: flutter analyze
