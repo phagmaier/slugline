@@ -80,7 +80,7 @@ This is the only place boxes are ticked.
 
 **4. Everyday workflow**
 
-- [ ] [W1](#w1) Switching scripts needs the mouse: no new, open or close shortcuts
+- [x] [W1](#w1) Switching scripts needs the mouse: no new, open or close shortcuts
 - [ ] [W2](#w2) The command palette is missing commands
 - [ ] [W3](#w3) No way to type a line break inside an element
 - [ ] [W4](#w4) No "go to page"
@@ -1188,7 +1188,34 @@ a script, to another script, to a new script without a pointer event.
 panel is open at a time, and Escape never changes text.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `b102636`. Reproduced the missing library
+filter focus and Ctrl+W with failing widget tests before changing production.
+Ctrl+N uses the existing path-based New chooser; Ctrl+O opens a shared modal
+quick-open list, filtering title or path, with Browse always available; Ctrl+W
+returns to the library, including in distraction-free mode. Chose a modal so
+it uses the existing autosave suppression and owns its keyboard focus; Browse
+hands off to the current chooser, with no new dependency or W7 chooser change.
+The library focuses its filter, highlights and scrolls Up/Down selection, and
+opens with Enter; missing rows remain visible and cannot open. The palette,
+shortcut reference and keyboard map include all three actions. Choosing the
+current path keeps its dirty session and history. A departure checks
+`confirmClose` after the destination is selected, holds input and autosave,
+and retains the old session until the destination opens successfully; Cancel,
+a failed save/open, or edits later than a save keep the editor. Each new script
+gets a fresh editor page so focus, scroll and panels cannot carry over.
+Thirty new widget tests cover the keys, a complete pointer-free workflow,
+long/missing lists, palette/Browse, failures, cancellation, source/history,
+input and autosave. A new native writing case uses disposable XDG roots,
+Tab/Enter through the save confirmation, and exact saved Fountain bytes read
+back from disk; input values go directly to our TextInputClient as in the IME
+suite. Verified locally: 640 Rust tests, 569 Flutter tests, formatting, clippy,
+analysis, enforced lockfile, layering/version/docs, release build, 28.89 MiB
+bundle, static network-library and network-namespace version checks, and all
+seven Xvfb native suites (journalled keystroke p99 1.99 ms). Release-process
+budgets pass: 372.773 ms best startup, a 10.019-second zero-tick/zero-switch
+interval with no changed threads, and 275.51 MiB best RSS below the 320 MiB
+Xvfb ceiling. Logs and reports are retained under `target/w1`. The 250 MiB GPU
+budget remains pending manual gate 5. No binding or golden was regenerated.
 
 <a id="w2"></a>
 ### W2 — The command palette is missing commands
