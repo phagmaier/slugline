@@ -11,9 +11,10 @@ Live and binding: this file, `docs/BACKLOG.md`, `docs/DECISIONS.md`,
 `docs/BUDGETS.md`, `docs/KEYMAP.md`, `docs/LINE_BREAKING.md` and
 `docs/DEPENDENCIES.md`.
 
-`SPEC.md` and `REVIEW.md` are **provenance, not instructions** — frozen, partly
-false, their imperatives retired at 1.0. Read them for history; where any
-document disagrees with this one, this one wins. `README.md` and `CHANGELOG.md`
+`docs/archive/SPEC.md` and `docs/archive/REVIEW.md` are **provenance, not
+instructions** — frozen, partly false, their imperatives retired at 1.0.
+Read them for history; where any document disagrees with this one, this one
+wins. `README.md` and `CHANGELOG.md`
 are for users. `docs/MANUAL_GATES.md` lists the checks that need a person at a
 real desktop: an agent cannot perform or fake them, so report and move on.
 
@@ -55,8 +56,8 @@ instead.
 - **`crates/bridge`** — the actor thread (`actor.rs`) and the API surface under
   `src/api/` (`doc.rs`, `files.rs`, `layout.rs`, `events.rs`, `spell.rs`,
   `lifecycle.rs`); its generated Dart is `app/lib/src/rust/`. This directory is
-  the authority for what the bridge exposes — not `SPEC.md`, whose §6 listing
-  predates most of it. Depends on all other crates.
+  the authority for what the bridge exposes — not `docs/archive/SPEC.md`,
+  whose §6 listing predates most of it. Depends on all other crates.
 - **`crates/layout`** — pagination engine. Wired into the bridge at
   `crates/bridge/src/api/layout.rs`; `doc_paginate` runs it as an async
   snapshot job, and every successful save paginates the exact saved snapshot and

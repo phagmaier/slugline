@@ -52,8 +52,8 @@ DOCS = [
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "SPEC.md",
-    "REVIEW.md",
+    "docs/archive/SPEC.md",
+    "docs/archive/REVIEW.md",
     "docs/BACKLOG.md",
     "docs/BUDGETS.md",
     "docs/DECISIONS.md",
@@ -65,6 +65,15 @@ DOCS = [
 ]
 
 ROOT_FILES = {name for name in DOCS if "/" not in name}
+
+# Retired documents. Frozen provenance: their links describe the tree as it
+# was when they were retired, so links are never repaired and therefore never
+# checked. Existence and ADR references still are.
+ARCHIVED = {
+    "docs/archive/SPEC.md",
+    "docs/archive/REVIEW.md",
+}
+
 PATH_ROOTS = (
     "crates/",
     "app/",
@@ -385,7 +394,8 @@ def main() -> None:
     for name, text in texts.items():
         if not text:
             continue
-        links_and_anchors(name, text)
+        if name not in ARCHIVED:
+            links_and_anchors(name, text)
         adr_references(name, text, known)
 
     paths_in_agents(texts["AGENTS.md"])

@@ -5,7 +5,7 @@ nothing measures yet. These are acceptance thresholds rather than aspirations: a
 change that breaks one is a regression, and the number inside the test is the
 contract.
 
-The budgets were written in `SPEC.md` §1.3 at the start of the build. That table
+The budgets were written in `docs/archive/SPEC.md` §1.3 at the start of the build. That table
 is now provenance — it lives in a retired document, and it never carried the
 parse or serialise rows at all — so **this file is the live list**. Change a
 threshold by changing the test and this table together, and say in the commit
