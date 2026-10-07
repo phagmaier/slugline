@@ -63,7 +63,7 @@ This is the only place boxes are ticked.
 - [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
 - [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
 - [x] [B7](#b7) README names a Preferences section the dialog does not have
-- [ ] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
+- [x] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
 
 **3. Fountain and output fidelity**
 
@@ -572,7 +572,23 @@ keeps it passing; analysis, every Flutter test, the release build and the
 native integration suites — the keystroke budgets among them — still pass.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `76c7c36` (the reformat, and nothing
+else) and `e7dfd64` (the check). Reproduced first: 41 of 97 files changed. The
+reformat is whitespace and trailing commas only — for each of the 41 files the
+text before and after is identical once both are stripped out — and the
+generated bindings were already clean and are untouched. The default style was
+kept and nothing is configured. The check now runs as a CI step beside
+`flutter analyze`, in `tools/release_preflight.sh`, and is listed in
+`AGENTS.md` and `CONTRIBUTING.md`; `AGENTS.md` says to format the Dart a change
+touches. Verified under Flutter 3.44.8 / Dart 3.12.2: the check passes on the
+whole tree and again after regenerating the bindings; Flutter analysis and 539
+tests, the Linux release build and network isolation pass; all seven native
+integration suites pass under Xvfb, with both keystroke budgets met
+(journalled p99: 4.09 ms). No Rust changed. Not exercised: the CI step on
+GitHub; the same command was run locally under the same toolchain version.
+Differently from the item's first sketch, the reformat and the check are two
+commits, so that the mechanical one can be skipped in `git blame` — with a
+`.git-blame-ignore-revs` entry, if the branch is merged without squashing.
 
 ---
 
