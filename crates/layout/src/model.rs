@@ -198,13 +198,25 @@ pub struct Page {
 }
 
 /// Restart information retained every N pages for incremental repagination.
+///
+/// The paginator records it as it lays the page out; it is not worked out from
+/// the page's lines afterwards (ADR 0049).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaginationCheckpoint {
     pub page_index: usize,
     pub page_number: u32,
+    /// First block of the element that began this page: its first row is the
+    /// page's first row, and nothing was put on the page before it. `None`
+    /// when the page opens part-way through an element — a split paragraph, a
+    /// continued speech — or holds no rows at all, and so cannot be laid out
+    /// without the page before it.
     pub start_block: Option<BlockId>,
-    pub start_block_line: u16,
-    pub continued_character: Option<String>,
+    /// How many leading blocks of the snapshot the paginator had read when
+    /// that element began the page: the element itself and anything its
+    /// placement looked ahead to. A change at or beyond this index cannot
+    /// have moved an earlier page, or the decision to begin this one.
+    /// Meaningful only beside `start_block`.
+    pub settled_blocks: usize,
 }
 
 /// Cache and fixed-point diagnostics used by tests and debug tooling.

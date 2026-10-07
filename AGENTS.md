@@ -54,8 +54,8 @@ abandoned one. Git history is the only record of a change no ADR covers, so
 - **`crates/layout`** — pagination engine. Wired into the bridge at
   `crates/bridge/src/api/layout.rs`; `doc_paginate` runs it as an async
   snapshot job, and every successful save paginates the exact saved snapshot and
-  caches its page count in the library. An incremental path (ADR 0022) uses
-  per-block fingerprint hints.
+  caches its page count in the library. An incremental path (ADR 0022, refined
+  by ADR 0049) uses per-block fingerprint hints.
 - **`crates/render_pdf`** — writes PDF bytes itself: TrueType subsetter, sfnt
   writer, PDF object writer, SHA-256. No dependency outside the workspace (ADR
   0032). Courier Prime is vendored in `crates/render_pdf/fonts/`, and
@@ -156,6 +156,14 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   in points. `render_pdf::emphasis_runs` shares resolved inline emphasis with
   the bridge (ADR 0045): body rows pair across wraps/pages, title rows pair
   individually, and an unpaired marker stays an ordinary character.
+- **An incremental pagination is a full pagination, arrived at sooner** (ADR
+  0049). `repaginate` keeps pages only from a page the paginator recorded an
+  element beginning: before the edit, one it began before it had read the
+  edited block; after it, one it begins again. A break rule that looks at
+  anything beyond the element it is placing must be counted in `blocks_read`,
+  beside it in `crates/layout/src/engine.rs`.
+  `crates/layout/tests/incremental_differential.rs` holds the two paths to each
+  other, pages and checkpoints both; never relax it to a page count.
 - **The preview and PDF share the paginated snapshot and resolved runs.**
   `app/lib/preview/preview_view.dart` paints Rust's runs and makes no layout
   or emphasis-parsing decision. Raw row content and source identity stay intact.

@@ -51,6 +51,14 @@ this file and the others to it.
   actual name, for the heading-weight and first-page-number options.
 - The Dart sources are formatted with `dart format` throughout, and CI now
   checks it. No behaviour changed: only whitespace and trailing commas moved.
+- Page breaks no longer go wrong after an edit near the top of every fourth
+  page. Shortening or lengthening the paragraph, speech or heading that page 5,
+  9, 13… begins with, or retyping the line above it as a heading or a lyric,
+  could leave that block on the wrong side of the break — in page view, the
+  preview, an exported PDF and the saved page count — until the script was
+  reopened or a line was added or removed. A blank page made with two forced
+  breaks could, at such a page, repeat the script from there on. Repagination
+  after an edit now gives exactly the pages a freshly opened script has.
 
 ## 1.0.2 - 2026-09-13
 

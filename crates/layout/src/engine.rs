@@ -43,6 +43,8 @@ struct CachedBlock {
 
 #[derive(Debug, Clone)]
 struct PreparedBlock {
+    /// Position in the snapshot's block list.
+    index: usize,
     id: BlockId,
     kind: BlockKind,
     lines: Arc<[PreparedLine]>,
@@ -59,9 +61,64 @@ struct PreparedLine {
 
 #[derive(Debug, Clone)]
 enum FlowElement {
-    PageBreak,
+    /// An explicit break, and the snapshot index of the block that asks for it.
+    PageBreak(usize),
     Block(PreparedBlock),
     Speech(Speech),
+}
+
+impl FlowElement {
+    /// Snapshot index of the element's first block.
+    fn first_block(&self) -> usize {
+        match self {
+            FlowElement::PageBreak(index) => *index,
+            FlowElement::Block(block) => block.index,
+            FlowElement::Speech(speech) => speech.cue.index,
+        }
+    }
+}
+
+/// A page an element began: the paginator put that element's first row on the
+/// page's first row, having put nothing there before it. Laying the script out
+/// from that element on a fresh page reproduces the page and everything after
+/// it, which is what makes it somewhere to resume from and somewhere to stop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageStart {
+    /// Snapshot index of the element's first block.
+    block_index: usize,
+    /// Leading blocks the paginator had read by then — see [`blocks_read`].
+    settled_blocks: usize,
+}
+
+/// Where one run of the paginator begins.
+#[derive(Debug, Clone, Copy)]
+struct RunStart {
+    first_page_number: u32,
+    /// Leading blocks the pages before this run had already read.
+    settled_blocks: usize,
+    /// Blocks in the whole snapshot: reading past the last element reads them all.
+    total_blocks: usize,
+}
+
+/// What one run of the paginator produced.
+#[derive(Debug)]
+struct FlowRun {
+    pages: Vec<Page>,
+    /// One entry per page of `pages`.
+    starts: Vec<Option<PageStart>>,
+    /// Set when the run stopped early at a page the caller recognised. That
+    /// page and those after it are not in `pages`.
+    joined: Option<PageStart>,
+}
+
+/// Where an incremental run resumes.
+#[derive(Debug, Clone, Copy)]
+struct Restart {
+    page_index: usize,
+    page_number: u32,
+    block_index: usize,
+    settled_blocks: usize,
+    changed_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -120,10 +177,12 @@ impl LayoutEngine {
         self.paginate_internal(snapshot, config, None)
     }
 
-    /// Incremental pagination reuses the nearest prior checkpoint before the
-    /// changed block. Wrapped layout is still validated for every block, making
-    /// wrong caller hints harmless; unchanged prefix pages are retained only
-    /// after the newly computed output proves they are byte-for-byte equal.
+    /// Incremental pagination (ADR 0049). Every block's wrap is still
+    /// validated, so a wrong caller hint costs a full pagination and nothing
+    /// else. Pages before the changed block are kept only from a page the
+    /// paginator recorded beginning before it had read that block, and pages
+    /// after it only once the same rules, run over the same script a full
+    /// pagination sees, arrive at a page that begins as it did before.
     pub fn repaginate(
         &mut self,
         snapshot: &ScriptSnapshot,
@@ -142,79 +201,116 @@ impl LayoutEngine {
         let mut stats = CacheStats::default();
         let live_ids: HashSet<BlockId> = snapshot.blocks.iter().map(|block| block.id).collect();
         self.cache.retain(|id, _| live_ids.contains(id));
-        let incremental_start = changed_block.and_then(|changed| {
-            let (visible_blocks, missed_blocks) = self.cache_state(snapshot);
-            self.incremental_start(config, snapshot, changed, &missed_blocks)
-                .map(|start| (start, visible_blocks, missed_blocks.len()))
-        });
+        let (mut prepared, missed) = self.prepare_blocks(&snapshot.blocks, &mut stats);
+        let restart =
+            changed_block.and_then(|changed| self.restart(config, snapshot, changed, &missed));
+        let total_blocks = snapshot.blocks.len();
 
-        let pages =
-            if let Some(((page_index, page_number, block_index, changed_index), visible, misses)) =
-                incremental_start
-            {
-                // The prior output is already a fixed point. The rule transform is
-                // canonical and idempotent. Preserve the proved-unchanged prefix and
-                // run only from its block-boundary checkpoint (§5.4).
-                stats.break_rule_iterations = 1;
-                stats.reused_pages = page_index;
-                stats.block_misses = misses;
-                stats.block_hits = visible - misses;
-                let convergence = self.next_checkpoint(snapshot, page_index, changed_index);
-                let end_block = convergence
-                    .map(|(_, _, block)| block)
-                    .unwrap_or(snapshot.blocks.len());
-                let prepared = self.prepare_blocks(&snapshot.blocks[block_index..end_block], None);
-                let flow = group_speeches(prepared);
-                let candidate = paginate_flow(&flow, config, true, page_number);
-                let converged = {
-                    let previous = self.previous.as_ref().expect("checkpoint has prior output");
-                    convergence.is_some_and(|(end_page, _, _)| {
-                        candidate.len() == end_page - page_index
-                            && candidate
-                                .last()
-                                .zip(previous.output.pages.get(end_page - 1))
-                                .is_some_and(|(new, old)| same_page_end(new, old))
-                    })
-                };
+        let (pages, checkpoints) = if let Some(restart) = restart {
+            let old = &self
+                .previous
+                .as_ref()
+                .expect("a restart comes from prior output")
+                .output;
+            // The prior output is already a fixed point, and the rule transform
+            // is canonical and idempotent: one pass from the restart is what a
+            // full pagination would settle on (§5.4).
+            stats.break_rule_iterations = 1;
+            stats.reused_pages = restart.page_index;
+            // The restart's block begins an element now as it did then, so the
+            // blocks before it can be dropped before speeches are grouped.
+            let skip = prepared.partition_point(|block| block.index < restart.block_index);
+            let flow = group_speeches(prepared.split_off(skip));
+            let run = paginate_flow(
+                &flow,
+                config,
+                true,
+                RunStart {
+                    first_page_number: restart.page_number,
+                    settled_blocks: restart.settled_blocks,
+                    total_blocks,
+                },
+                // Stop at a page the prior output also began with this element,
+                // once the changed block is behind it: from there the script,
+                // the page and its number are what they were.
+                |page, block_index| {
+                    let page_index = restart.page_index + page;
+                    block_index > restart.changed_index
+                        && page_index % metrics::CHECKPOINT_INTERVAL_PAGES == 0
+                        && old
+                            .checkpoints
+                            .get(page_index / metrics::CHECKPOINT_INTERVAL_PAGES)
+                            .is_some_and(|checkpoint| {
+                                checkpoint.page_index == page_index
+                                    && checkpoint.start_block
+                                        == Some(snapshot.blocks[block_index].id)
+                            })
+                },
+            );
 
-                if converged {
-                    let end_page = convergence.expect("checked convergence").0;
-                    let previous = self.previous.as_ref().expect("checkpoint has prior output");
-                    stats.reused_tail_pages = previous.output.pages.len() - end_page;
-                    let mut pages = previous.output.pages[..page_index].to_vec();
-                    pages.extend(candidate);
-                    pages.extend_from_slice(&previous.output.pages[end_page..]);
-                    pages
-                } else {
-                    let prepared = self.prepare_blocks(&snapshot.blocks[block_index..], None);
-                    let flow = group_speeches(prepared);
-                    let previous = self.previous.as_ref().expect("checkpoint has prior output");
-                    let mut pages = previous.output.pages[..page_index].to_vec();
-                    pages.extend(paginate_flow(&flow, config, true, page_number));
-                    pages
-                }
-            } else {
-                let prepared = self.prepare_blocks(&snapshot.blocks, Some(&mut stats));
-                let flow = group_speeches(prepared);
-                let naive = paginate_flow(&flow, config, false, 1);
-                let mut prior_pages = naive;
-                let mut converged = None;
-                for iteration in 1..=metrics::BREAK_RULE_ITERATION_CAP {
-                    let candidate = paginate_flow(&flow, config, true, 1);
-                    stats.break_rule_iterations = iteration;
-                    if candidate == prior_pages {
-                        converged = Some(candidate);
-                        break;
-                    }
-                    prior_pages = candidate;
-                }
-                converged.unwrap_or_else(|| {
-                    stats.fell_back_to_naive = true;
-                    paginate_flow(&flow, config, false, 1)
-                })
+            let mut pages = old.pages[..restart.page_index].to_vec();
+            let mut checkpoints: Vec<_> = old
+                .checkpoints
+                .iter()
+                .take_while(|checkpoint| checkpoint.page_index < restart.page_index)
+                .cloned()
+                .collect();
+            checkpoints.extend(checkpoints_of(
+                restart.page_index,
+                &run.pages,
+                &run.starts,
+                snapshot,
+            ));
+            pages.extend(run.pages);
+            if let Some(join) = run.joined {
+                let join_page = pages.len();
+                stats.reused_tail_pages = old.pages.len() - join_page;
+                checkpoints.push(checkpoint(
+                    join_page,
+                    &old.pages[join_page],
+                    Some(join),
+                    snapshot,
+                ));
+                // The records further on stand. Each is how far the elements
+                // up to its page had read, and no element reads more than a
+                // few blocks past itself: by the next checkpoint that is all
+                // script from the join onwards, which is as it was.
+                checkpoints.extend(
+                    old.checkpoints
+                        .iter()
+                        .filter(|checkpoint| checkpoint.page_index > join_page)
+                        .cloned(),
+                );
+                pages.extend_from_slice(&old.pages[join_page..]);
+            }
+            (pages, checkpoints)
+        } else {
+            let flow = group_speeches(prepared);
+            let start = RunStart {
+                first_page_number: 1,
+                settled_blocks: 0,
+                total_blocks,
             };
+            let run = |rules| paginate_flow(&flow, config, rules, start, |_, _| false);
+            let mut prior = run(false);
+            let mut converged = None;
+            for iteration in 1..=metrics::BREAK_RULE_ITERATION_CAP {
+                let candidate = run(true);
+                stats.break_rule_iterations = iteration;
+                if candidate.pages == prior.pages {
+                    converged = Some(candidate);
+                    break;
+                }
+                prior = candidate;
+            }
+            let run = converged.unwrap_or_else(|| {
+                stats.fell_back_to_naive = true;
+                run(false)
+            });
+            let checkpoints = checkpoints_of(0, &run.pages, &run.starts, snapshot).collect();
+            (run.pages, checkpoints)
+        };
 
-        let checkpoints = checkpoints(&pages, snapshot);
         let output = PaginatedScript {
             revision: snapshot.revision,
             title_page: layout_title_page(snapshot, config),
@@ -230,17 +326,24 @@ impl LayoutEngine {
         output
     }
 
-    fn incremental_start(
+    /// Where an incremental run may resume, or `None` when the prior output
+    /// says nothing reliable about this snapshot and only a full pagination
+    /// will do: another page setup, another block list, or anything but
+    /// exactly the hinted block having changed.
+    fn restart(
         &self,
         config: &PageConfig,
         snapshot: &ScriptSnapshot,
         changed: BlockId,
-        missed_blocks: &[BlockId],
-    ) -> Option<(usize, u32, usize, usize)> {
-        let Some(previous) = &self.previous else {
-            return None;
-        };
-        if &previous.config != config || missed_blocks != [changed] {
+        missed: &[BlockId],
+    ) -> Option<Restart> {
+        let previous = self.previous.as_ref()?;
+        // A naive layout is not what the rules produce: none of its pages is
+        // somewhere a ruled run could resume or stop.
+        if &previous.config != config
+            || missed != [changed]
+            || previous.output.stats.fell_back_to_naive
+        {
             return None;
         }
         if !previous
@@ -255,107 +358,46 @@ impl LayoutEngine {
             .blocks
             .iter()
             .position(|block| block.id == changed)?;
-        let unchanged_order = previous
-            .block_order
-            .iter()
-            .take(changed_index)
-            .copied()
-            .eq(snapshot
-                .blocks
-                .iter()
-                .take(changed_index)
-                .map(|block| block.id));
-        if !unchanged_order {
-            return None;
-        }
 
-        previous
+        // The latest page that began before the paginator had read the changed
+        // block. A page whose own first element is the one edited is not such a
+        // page: whether that element starts a page at all is the question.
+        let resumable = previous
             .output
             .checkpoints
             .iter()
-            .filter(|checkpoint| {
-                checkpoint.start_block_line == 0
-                    && checkpoint.continued_character.is_none()
-                    && checkpoint
-                        .start_block
-                        .and_then(|id| snapshot.blocks.iter().position(|block| block.id == id))
-                        .is_some_and(|index| index <= changed_index)
-            })
-            .max_by_key(|checkpoint| checkpoint.page_index)
-            .and_then(|checkpoint| {
-                let start_block = checkpoint.start_block?;
-                let block_index = snapshot
-                    .blocks
-                    .iter()
-                    .position(|block| block.id == start_block)?;
-                Some((
-                    checkpoint.page_index,
-                    checkpoint.page_number,
+            .rev()
+            .filter(|checkpoint| checkpoint.settled_blocks <= changed_index)
+            .find_map(|checkpoint| {
+                let start = checkpoint.start_block?;
+                let block_index = snapshot.blocks.iter().position(|block| block.id == start)?;
+                Some(Restart {
+                    page_index: checkpoint.page_index,
+                    page_number: checkpoint.page_number,
                     block_index,
+                    settled_blocks: checkpoint.settled_blocks,
                     changed_index,
-                ))
-            })
+                })
+            });
+        // The top of the script is always somewhere to start.
+        Some(resumable.unwrap_or(Restart {
+            page_index: 0,
+            page_number: 1,
+            block_index: 0,
+            settled_blocks: 0,
+            changed_index,
+        }))
     }
 
-    fn next_checkpoint(
-        &self,
-        snapshot: &ScriptSnapshot,
-        start_page: usize,
-        changed_index: usize,
-    ) -> Option<(usize, u32, usize)> {
-        self.previous
-            .as_ref()?
-            .output
-            .checkpoints
-            .iter()
-            .filter(|checkpoint| {
-                checkpoint.page_index > start_page
-                    && checkpoint.start_block_line == 0
-                    && checkpoint.continued_character.is_none()
-            })
-            .filter_map(|checkpoint| {
-                let block = checkpoint.start_block?;
-                let block_index = snapshot
-                    .blocks
-                    .iter()
-                    .position(|candidate| candidate.id == block)?;
-                (block_index > changed_index).then_some((
-                    checkpoint.page_index,
-                    checkpoint.page_number,
-                    block_index,
-                ))
-            })
-            .min_by_key(|(page, _, _)| *page)
-    }
-
-    fn cache_state(&self, snapshot: &ScriptSnapshot) -> (usize, Vec<BlockId>) {
-        let mut visible = 0usize;
-        let mut missed = Vec::new();
-        for block in &snapshot.blocks {
-            let Some(layout) = layout_for(block.kind) else {
-                continue;
-            };
-            visible += 1;
-            let fingerprint = fingerprint(block, layout.width);
-            if self
-                .cache
-                .get(&block.id)
-                .is_none_or(|cached| cached.fingerprint != fingerprint)
-            {
-                missed.push(block.id);
-            }
-        }
-        (visible, missed)
-    }
-
+    /// Wraps every visible block, reusing a cached wrap only where the block's
+    /// fingerprint still matches. Returns the blocks whose wrap was not reused.
     fn prepare_blocks(
         &mut self,
         blocks: &[slugline_document::BlockSnapshot],
-        stats: Option<&mut CacheStats>,
-    ) -> Vec<PreparedBlock> {
-        let mut hits = 0usize;
-        let mut misses = 0usize;
-        let prepared = blocks
+        stats: &mut CacheStats,
+    ) -> (Vec<PreparedBlock>, Vec<BlockId>) {
+        let mut missed = Vec::new();
+        let prepared: Vec<PreparedBlock> = blocks
             .iter()
             .enumerate()
             .filter_map(|(index, block)| {
@@ -373,8 +415,8 @@ impl LayoutEngine {
                         && cached.layout.indent == layout.indent
                 });
                 if let Some(cached) = cached {
-                    hits += 1;
                     return Some(PreparedBlock {
+                        index,
                         id: block.id,
                         kind: block.kind,
                         lines: Arc::clone(&cached.lines),
@@ -383,7 +425,7 @@ impl LayoutEngine {
                     });
                 }
 
-                misses += 1;
+                missed.push(block.id);
                 let visible = without_notes_and_boneyards(&block.text);
                 let (text, scene_number) = if block.kind == BlockKind::SceneHeading {
                     let (heading, number) = split_scene_number(&visible);
@@ -403,6 +445,7 @@ impl LayoutEngine {
                     },
                 );
                 Some(PreparedBlock {
+                    index,
                     id: block.id,
                     kind: block.kind,
                     lines,
@@ -411,11 +454,9 @@ impl LayoutEngine {
                 })
             })
             .collect();
-        if let Some(stats) = stats {
-            stats.block_hits += hits;
-            stats.block_misses += misses;
-        }
-        prepared
+        stats.block_misses += missed.len();
+        stats.block_hits += prepared.len() - missed.len();
+        (prepared, missed)
     }
 }
 
@@ -457,24 +498,6 @@ fn prepare_lines(text: &str, width: u16, kind: BlockKind) -> Arc<[PreparedLine]>
             prepared
         })
         .collect()
-}
-
-fn same_page_end(new: &Page, old: &Page) -> bool {
-    let last_source = |page: &Page| {
-        page.lines
-            .iter()
-            .rev()
-            .find(|line| line.row >= 0 && line.block.is_some() && line.source_line.is_some())
-            .map(|line| (line.row, line.block, line.source_line))
-    };
-    let last_row = |page: &Page| {
-        page.lines
-            .iter()
-            .filter(|line| line.row >= 0)
-            .map(|line| line.row)
-            .max()
-    };
-    last_source(new) == last_source(old) && last_row(new) == last_row(old)
 }
 
 fn layout_for(kind: BlockKind) -> Option<ElementLayout> {
@@ -615,7 +638,7 @@ fn group_speeches(blocks: Vec<PreparedBlock>) -> Vec<FlowElement> {
     let mut blocks = blocks.into_iter().peekable();
     while let Some(block) = blocks.next() {
         if block.kind == BlockKind::PageBreak {
-            flow.push(FlowElement::PageBreak);
+            flow.push(FlowElement::PageBreak(block.index));
             continue;
         }
         if block.kind != BlockKind::Character {
@@ -635,18 +658,35 @@ fn group_speeches(blocks: Vec<PreparedBlock>) -> Vec<FlowElement> {
     flow
 }
 
+/// Lays `flow` out from a fresh page.
+///
+/// `joins` is asked, each time an element begins a page after the first, for
+/// the page's index within this run and the element's first block. Answering
+/// `true` ends the run there, leaving that page and the rest to the caller.
 fn paginate_flow(
     flow: &[FlowElement],
     config: &PageConfig,
     rules: bool,
-    first_page_number: u32,
-) -> Vec<Page> {
-    let mut paginator = Paginator::new(config, first_page_number);
+    start: RunStart,
+    mut joins: impl FnMut(usize, usize) -> bool,
+) -> FlowRun {
+    let mut paginator = Paginator::new(config, start);
     for (index, element) in flow.iter().enumerate() {
-        match element {
-            FlowElement::PageBreak => paginator.explicit_break(),
+        // A scene heading is the one element placed by what follows it, so it
+        // is the one whose placement reads past itself.
+        let (following, examined) = match element {
             FlowElement::Block(block) if rules && block.kind == BlockKind::SceneHeading => {
-                let following = following_scene_rows(&flow[index + 1..]);
+                following_scene_rows(&flow[index + 1..])
+            }
+            _ => (0, 0),
+        };
+        paginator.begin(
+            element.first_block(),
+            blocks_read(flow, index + examined, start.total_blocks),
+        );
+        match element {
+            FlowElement::PageBreak(_) => paginator.explicit_break(),
+            FlowElement::Block(block) if rules && block.kind == BlockKind::SceneHeading => {
                 paginator.place_scene_heading(block, following);
             }
             FlowElement::Block(block) if rules && block.kind == BlockKind::Action => {
@@ -659,20 +699,46 @@ fn paginate_flow(
             FlowElement::Speech(speech) if rules => paginator.place_speech(speech),
             FlowElement::Speech(speech) => paginator.place_speech_naively(speech),
         }
+        if let Some(page) = paginator.opened.filter(|&page| page > 0) {
+            if joins(page, element.first_block()) {
+                return paginator.join(page);
+            }
+        }
     }
     paginator.finish()
 }
 
-fn following_scene_rows(flow: &[FlowElement]) -> u16 {
+/// How many leading blocks of the snapshot decide what `flow[index]` is.
+///
+/// This is the paginator's account of its own reading, and a restart is only
+/// as sound as it is complete (ADR 0049): **a rule that looks at anything
+/// beyond the element it is placing must be counted here.** A block or a break
+/// is decided by the blocks up to itself. A speech also took the block after
+/// it, to learn that its body ends there. Past the last element there is
+/// nothing left that was not read, hidden blocks included.
+fn blocks_read(flow: &[FlowElement], index: usize, total_blocks: usize) -> usize {
+    match flow.get(index) {
+        None => total_blocks,
+        Some(FlowElement::Speech(_)) => flow
+            .get(index + 1)
+            .map_or(total_blocks, |next| next.first_block() + 1),
+        Some(element) => element.first_block() + 1,
+    }
+}
+
+/// Rows a scene heading keeps with it, and how many of the elements after it
+/// were read to count them. Running out of script counts one more than there
+/// are, because finding nothing further is itself something read.
+fn following_scene_rows(flow: &[FlowElement]) -> (u16, usize) {
     let mut content = 0u16;
     let mut rows = 0u16;
-    for element in flow {
+    for (index, element) in flow.iter().enumerate() {
         match element {
-            FlowElement::PageBreak
+            FlowElement::PageBreak(_)
             | FlowElement::Block(PreparedBlock {
                 kind: BlockKind::SceneHeading,
                 ..
-            }) => break,
+            }) => return (rows, index + 1),
             FlowElement::Block(block) => {
                 rows = rows.saturating_add(block.layout.blanks_before);
                 let take = (2 - content).min(block.lines.len() as u16);
@@ -693,31 +759,58 @@ fn following_scene_rows(flow: &[FlowElement]) -> u16 {
             }
         }
         if content >= 2 {
-            break;
+            return (rows, index + 1);
         }
     }
-    rows
+    (rows, flow.len() + 1)
 }
 
 struct Paginator<'a> {
     config: &'a PageConfig,
     capacity: u16,
     pages: Vec<Page>,
+    /// One entry per finished page, alongside `pages`.
+    starts: Vec<Option<PageStart>>,
     current: Vec<LayoutLine>,
+    /// The element that began the page being filled, if one did.
+    start: Option<PageStart>,
     used: u16,
     next_number: u32,
+    /// First block of the element being placed.
+    element: usize,
+    /// Leading blocks read so far, the element being placed and whatever its
+    /// placement looked ahead to among them.
+    read: usize,
+    /// Whether that element has put a line of its own down yet.
+    begun: bool,
+    /// The page that element began, if it began one.
+    opened: Option<usize>,
 }
 
 impl<'a> Paginator<'a> {
-    fn new(config: &'a PageConfig, first_page_number: u32) -> Self {
+    fn new(config: &'a PageConfig, start: RunStart) -> Self {
         Self {
             config,
             capacity: config.lines_per_page(),
             pages: Vec::new(),
+            starts: Vec::new(),
             current: Vec::new(),
+            start: None,
             used: 0,
-            next_number: first_page_number,
+            next_number: start.first_page_number,
+            element: 0,
+            read: start.settled_blocks,
+            begun: false,
+            opened: None,
         }
+    }
+
+    /// Announces the element about to be placed, and how far placing it reads.
+    fn begin(&mut self, first_block: usize, read: usize) {
+        self.element = first_block;
+        self.read = self.read.max(read);
+        self.begun = false;
+        self.opened = None;
     }
 
     fn remaining(&self) -> u16 {
@@ -728,9 +821,27 @@ impl<'a> Paginator<'a> {
         self.push_page(true);
     }
 
-    fn finish(mut self) -> Vec<Page> {
+    fn finish(mut self) -> FlowRun {
         self.push_page(false);
-        self.pages
+        FlowRun {
+            pages: self.pages,
+            starts: self.starts,
+            joined: None,
+        }
+    }
+
+    /// Ends the run at `page`, which the element just placed began.
+    fn join(mut self, page: usize) -> FlowRun {
+        self.pages.truncate(page);
+        self.starts.truncate(page);
+        FlowRun {
+            pages: self.pages,
+            starts: self.starts,
+            joined: Some(PageStart {
+                block_index: self.element,
+                settled_blocks: self.read,
+            }),
+        }
     }
 
     fn push_page(&mut self, force: bool) {
@@ -760,6 +871,7 @@ impl<'a> Paginator<'a> {
             number: Some(number),
             lines: std::mem::take(&mut self.current).into(),
         });
+        self.starts.push(self.start.take());
         self.used = 0;
         self.next_number += 1;
     }
@@ -788,6 +900,18 @@ impl<'a> Paginator<'a> {
         if self.used == self.capacity {
             self.push_page(false);
         }
+        // An element's first line on a page's first row: the page holds nothing
+        // an earlier element put there and nothing this one put before it. A
+        // page that opens on this element's blank has a row in it already, and
+        // is not one the element would begin if it were laid out afresh.
+        if !self.begun && self.used == 0 {
+            self.start = Some(PageStart {
+                block_index: self.element,
+                settled_blocks: self.read,
+            });
+            self.opened = Some(self.pages.len());
+        }
+        self.begun = true;
         row.fragments.retain(|fragment| match fragment.kind {
             LayoutLineKind::SceneNumberLeft => self.config.scene_numbers.left(),
             LayoutLineKind::SceneNumberRight => self.config.scene_numbers.right(),
@@ -1135,35 +1259,34 @@ fn continued_cue(cue: &str) -> String {
     }
 }
 
-fn checkpoints(pages: &[Page], snapshot: &ScriptSnapshot) -> Vec<PaginationCheckpoint> {
+/// The checkpoints among `pages`, whose first page is `first_page` of the script.
+fn checkpoints_of<'a>(
+    first_page: usize,
+    pages: &'a [Page],
+    starts: &'a [Option<PageStart>],
+    snapshot: &'a ScriptSnapshot,
+) -> impl Iterator<Item = PaginationCheckpoint> + 'a {
     pages
         .iter()
+        .zip(starts)
         .enumerate()
-        .filter(|(index, _)| index % metrics::CHECKPOINT_INTERVAL_PAGES == 0)
-        .map(|(page_index, page)| {
-            let first_source = page
-                .lines
-                .iter()
-                .find(|line| line.row >= 0 && line.block.is_some() && line.source_line.is_some());
-            let continued_character = page
-                .lines
-                .iter()
-                .find(|line| line.kind == LayoutLineKind::Continued)
-                .map(|line| line.content.clone());
-            let start_block = first_source
-                .and_then(|line| line.block)
-                .or_else(|| snapshot.blocks.first().map(|block| block.id));
-            PaginationCheckpoint {
-                page_index,
-                page_number: page.number.unwrap_or((page_index + 1) as u32),
-                start_block,
-                start_block_line: first_source
-                    .and_then(|line| line.source_line)
-                    .unwrap_or_default(),
-                continued_character,
-            }
-        })
-        .collect()
+        .map(move |(offset, entry)| (first_page + offset, entry))
+        .filter(|(page_index, _)| page_index % metrics::CHECKPOINT_INTERVAL_PAGES == 0)
+        .map(|(page_index, (page, start))| checkpoint(page_index, page, *start, snapshot))
+}
+
+fn checkpoint(
+    page_index: usize,
+    page: &Page,
+    start: Option<PageStart>,
+    snapshot: &ScriptSnapshot,
+) -> PaginationCheckpoint {
+    PaginationCheckpoint {
+        page_index,
+        page_number: page.number.unwrap_or((page_index + 1) as u32),
+        start_block: start.map(|start| snapshot.blocks[start.block_index].id),
+        settled_blocks: start.map_or(0, |start| start.settled_blocks),
+    }
 }
 
 fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<Page> {

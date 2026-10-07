@@ -42,7 +42,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | partly superseded by 0044/0045 — printed alignment and shared output emphasis |
 | 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | live |
 | 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live |
-| 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | live |
+| 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | refined by 0049 — what a checkpoint records, where a run resumes and stops |
 | 0023 | One crash recovery is offered per launch | `app/lib/app.dart`, `app/lib/library/recovery_dialog.dart`, `crates/bridge/src/api/files.rs` | live |
 | 0024 | The interval autosave keeps running while the writer types | `app/lib/editor/autosave.dart`, `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs` | superseded by 0028 — own-write suppression mechanism |
 | 0025 | The paginator's break rules get a focused review before Phase 7 | `crates/layout/src/engine.rs`, `crates/layout/tests/break_rules.rs` | historical — gate on a shipped phase; its record file is gone |
@@ -69,6 +69,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0046 | Consecutive lyric blocks share one leading blank | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart` | live |
 | 0047 | Sung hard lines remain dialogue and carry lyric output metadata | `crates/fountain/src/syntax.rs`, `crates/fountain/src/lib.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/model.rs`, `crates/render_pdf/src/lib.rs` | live |
 | 0048 | Page 1 is counted, and prints its number only when the page setup asks | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/page_numbers.rs`, `crates/storage/src/prefs.rs`, `app/lib/editor/page_indicator.dart`, `app/lib/settings/preferences_dialog.dart` | live |
+| 0049 | An incremental run resumes and stops only where the paginator recorded that it could | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental_differential.rs` | live |
 
 ---
 
@@ -1576,6 +1577,10 @@ sentence §Phase 5 specifies and unit-tests against a fixed corpus.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 (recorded during the
 mid-project remediation)
+**Superseded by:** ADR 0049 for what a checkpoint records and for where an
+incremental run resumes and stops, and for the gap under "Tests and invariants",
+which its differential test closes. The fingerprints, the advisory hint and the
+capped fixed point stand.
 
 ### Context
 
@@ -1812,9 +1817,9 @@ the mid-project remediation)
 rules. The plan that was to hold its findings (`REMEDIATION_PLAN.md`) is no
 longer in the tree, so whether the review was performed cannot be established
 from the repository. Nothing supersedes this record. One obligation it was meant
-to discharge is still open, and backlog item F8 now owns it: ADR 0022 defers a
-`repaginate`-versus-`paginate_snapshot` equivalence test to this review, and
-`crates/layout/tests/incremental.rs` has no such test.
+to discharge outlived it: ADR 0022 defers a `repaginate`-versus-`paginate_snapshot`
+equivalence test to this review. Backlog item F8 discharged it — see ADR 0049 and
+`crates/layout/tests/incremental_differential.rs`.
 
 ### Context
 
@@ -3630,3 +3635,163 @@ hashes changed; with the option on, all 22 reproduce the previously committed
 hashes exactly. Line-break fixtures are unchanged. A native test drives the real
 Preferences dialog, paginates through the bridge and reads the exported PDF
 back with Poppler under both settings.
+
+---
+
+## ADR 0049 — An incremental run resumes and stops only where the paginator recorded that it could
+
+**Date:** 2026-10-06 · **Status:** accepted
+**Refines:** ADR 0022 — what a checkpoint records, and where an incremental run
+resumes and stops. Its fingerprints, its advisory hint and its fixed point stand.
+
+### Context
+
+F8 asked for the test ADR 0022 deferred: `repaginate` of an edited snapshot
+against `paginate_snapshot` of the same snapshot. Written, it failed. Over the
+corpus on short pages, 898 of 12,374 single-block edits gave pages a full
+pagination does not. On the reference feature at US Letter, shortening the
+paragraph page 5 begins with left the page count at 119 and a page break in the
+wrong place — the defect the backlog item warned of, in the page view, the
+preview, an exported PDF and the page count a save records.
+
+Three things were wrong, and all three were in how reuse was licensed.
+
+1. **The restart read the page, not the paginator.** A checkpoint counted as
+   somewhere to resume if its first laid-out line was line 0 of a block and it
+   carried no `(CONT'D)`: a statement about what the page looks like. Whether
+   the paginator would begin that page there *again* depends on what it read to
+   decide so — the element itself, which is carried over whole because of its
+   own height; the rows a scene heading keeps with it; the whole of a speech.
+   The engine accepted a checkpoint whose first block was the block edited. So
+   a paragraph, a speech or a heading that had been carried over to page 5, 9,
+   13… stayed there after an edit that made it fit on the page before, or
+   stayed whole after one that let it split.
+2. **The stop compared against a script that ended early.** To keep the pages
+   after an edit, the engine laid out only the blocks up to the next checkpoint
+   and compared the last row with the old page's. A scene heading at the foot
+   of that range saw nothing under it and was left there; a lyric's place was
+   decided without the lyric before it. And agreeing about the last row of a
+   page is not agreeing about what begins the next.
+3. **Inferring a clean start had holes.** A forced page with nothing on it was
+   credited with the first block of the script, so an edit after two `===` in a
+   row laid the whole script out again from that page: 22 pages for a script of
+   14. A page that opens on a blank row above a paragraph taller than a page
+   was resumed without the blank.
+
+ADR 0022 says a prefix of pages "is retained only after the newly computed
+output proves it byte-for-byte equal". The code never did that, and cannot: the
+proof is laying the prefix out, which is the cost being avoided. What can be
+had for nothing is a record of what those pages were made from.
+
+### Decision
+
+**The paginator records, as it lays a page out, whether an element began that
+page and how far it had read by then. Reuse is licensed by that record and by
+nothing worked out from the page afterwards.**
+
+* A page is **begun by an element** when the element's first line is the page's
+  first row and the page held nothing before it. That page and every page after
+  it are then a function of the script from that element on, the page setup and
+  the page number. `Paginator::add_row` records it at the moment it happens. A
+  page that opens part-way through a paragraph, on a `(CONT'D)`, on a blank
+  row, or with no rows at all, is not one.
+* With it goes **`settled_blocks`**: how many leading blocks of the snapshot
+  the paginator had read when the element began the page — the element, and
+  whatever placing it looked ahead to. `blocks_read` is that account. A block or
+  a forced break is decided by the blocks up to itself. A speech also took the
+  block after it, which is how it learned its body ends. A scene heading reads
+  as far as the rows it keeps with it. Running out of script reads all of it,
+  blocks that are not laid out included.
+* **Resuming.** From the latest checkpoint whose `settled_blocks` is no greater
+  than the changed block's index, and otherwise from the top of the script. An
+  edit at or beyond that mark cannot have changed anything the earlier pages,
+  or the decision to begin this one, were made from. A checkpoint page whose
+  own first element was edited is therefore never resumed from; the one before
+  it is.
+* **Stopping.** The run lays out the whole of the remaining script, by the
+  rules a full pagination uses and over the same blocks — never a script cut
+  short. It stops when an element beyond the changed block begins a checkpoint
+  page that the previous output also records as begun by that element. The page
+  index is the same, so the number is; from there the script is what it was.
+  The pages after are kept, that page's checkpoint is taken from this run, and
+  later ones stand.
+* `PaginationCheckpoint` is now `page_index`, `page_number`, `start_block` and
+  `settled_blocks`. `start_block_line` and `continued_character` are gone: they
+  were the inference.
+* Every block is still fingerprinted on every run, and anything but exactly the
+  hinted block having changed is a full pagination, as ADR 0022 has it. That
+  validation and the wrapping are now one pass over the blocks instead of two.
+* What a full pagination returns is untouched. No layout golden and no PDF hash
+  changed.
+
+**For whoever changes the paginator: a rule that looks at anything beyond the
+element it is placing must be counted in `blocks_read`.** The rule and its
+account sit side by side in `paginate_flow`, and the differential test is what
+notices an omission.
+
+### Alternatives considered
+
+**Tighten the old conditions** — require the changed block to come after the
+checkpoint's first block, compare more of the last page. Each closes one case.
+A heading's look-ahead reaches two elements on, a speech is as long as it is, a
+lyric looks back one block, and a block that is not laid out can become one
+that is. That is a second description of what the paginator depends on, kept
+somewhere other than the paginator, which is how the first version went wrong.
+
+**Prove the prefix by laying out a little more of it** — resume a checkpoint
+early and compare. It moves the question back one checkpoint, where it is the
+same question. Only the top of the script is safe without an argument.
+
+**Drop the incremental path.** A full pagination of the reference feature is
+4.8 ms in a release build against a budget of 5 ms for the incremental one, and
+it grows with the script. `docs/BUDGETS.md` keeps both rows.
+
+**Resume exactly at a page that follows a forced break**, whatever was edited
+on it. Sound: such a page does not depend on its first element. Not done,
+because it is one more case to argue for a construct few scripts contain, and
+what it saves is resuming one checkpoint later.
+
+### Consequences
+
+* An edit inside the element a checkpoint page begins with, or inside what that
+  element read, resumes one checkpoint earlier than before: up to eight pages
+  laid out again instead of four. On the reference feature an incremental run
+  went from 0.35 ms to 0.42 ms in a release build and stayed at 4.7 ms in a
+  debug one, against budgets of 5 ms and 12 ms.
+* The run stops more often than it did. In three of the cases the backlog item
+  names — a block that grows a row, a heading pushed over a break, a dual
+  partner that moves — the old engine had the pages right and laid everything
+  after them out again; it now stops at the next checkpoint that begins as it
+  did.
+* An incremental result's checkpoints equal a full pagination's, and the test
+  compares them. What a run may do next therefore does not depend on how many
+  incremental runs came before it.
+* A layout that fell back to the naive fill is never resumed from.
+* `PaginationCheckpoint` changed shape. Nothing outside `crates/layout` read
+  it; `CacheStats`, which does cross the bridge, did not change, so no binding
+  was regenerated.
+
+### Verification
+
+`crates/layout/tests/incremental_differential.rs` compares pages, the title
+page and checkpoints — never the page count alone — and counts the runs that
+kept pages, so that it cannot pass by never taking the incremental path.
+
+* Every single-block edit of every corpus file, tiled and set on pages of five
+  and of eight rows: sixteen edits a block — the same height, taller, much
+  taller, shorter, hard lines, the dual mark, and each of ten kinds — each then
+  undone. 24,748 incremental runs, each against a full pagination from nothing.
+* A walk of 160 cumulative edits per corpus file, with blocks inserted, removed
+  and moved among them, so that incremental runs follow full ones and each
+  other.
+* The reference feature on US Letter and A4, edited at the blocks each
+  checkpoint page begins with and the last block of the page before.
+* Named cases on US Letter for the four the backlog item lists and for each
+  failure above, each asserting the row that moved and the pages kept.
+
+Against the engine as it was, thirteen of those nineteen tests fail on pages
+that differ and three more on the count of pages kept. Reuse was then broken on
+purpose seventeen ways, one at a time — resuming from a page whose first
+element was the one edited, forgetting what a speech or a heading read, stopping
+at a checkpoint page whatever began it, trusting the hint — and each made the
+file fail.
