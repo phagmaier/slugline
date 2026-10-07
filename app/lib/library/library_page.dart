@@ -224,11 +224,7 @@ class _LibraryPageState extends State<LibraryPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 48,
-            color: context.colours.danger,
-          ),
+          Icon(Icons.error_outline, size: 48, color: context.colours.danger),
           const SizedBox(height: 16),
           Text(
             'Could not load the library.',
@@ -435,8 +431,7 @@ class _LibraryPageState extends State<LibraryPage> {
         visible.sort((a, b) => b.modifiedMillis.compareTo(a.modifiedMillis));
       case _LibrarySort.name:
         visible.sort(
-          (a, b) =>
-              a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+          (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
         );
       case _LibrarySort.pages:
         visible.sort((a, b) => b.pageCount.compareTo(a.pageCount));

@@ -40,10 +40,13 @@ void main() {
     );
   });
 
-  test('the exception carries a sentence for the writer, not a stack trace', () {
-    const failure = CoreUnavailable('no home directory');
-    expect(failure.message, 'no home directory');
-    expect(failure.toString(), contains('no home directory'));
-    expect(failure, isA<Exception>());
-  });
+  test(
+    'the exception carries a sentence for the writer, not a stack trace',
+    () {
+      const failure = CoreUnavailable('no home directory');
+      expect(failure.message, 'no home directory');
+      expect(failure.toString(), contains('no home directory'));
+      expect(failure, isA<Exception>());
+    },
+  );
 }

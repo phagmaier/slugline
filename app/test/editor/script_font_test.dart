@@ -79,16 +79,19 @@ void main() {
       }
     });
 
-    test('the preference is a ceiling, and a wide window does not exceed it', () {
-      expect(
-        ScreenplayMetrics.fittedFontSize(
-          preferredFontSize: 15,
-          viewportWidth: 4000,
-          pageView: false,
-        ),
-        15,
-      );
-    });
+    test(
+      'the preference is a ceiling, and a wide window does not exceed it',
+      () {
+        expect(
+          ScreenplayMetrics.fittedFontSize(
+            preferredFontSize: 15,
+            viewportWidth: 4000,
+            pageView: false,
+          ),
+          15,
+        );
+      },
+    );
 
     test('a narrow window shrinks the script instead of clipping it', () {
       const viewport = 400.0;

@@ -38,90 +38,94 @@ Future<SaveFailureChoice> showSaveFailure(
     // Not click-away: §Phase 4's "blocking, explicit error … never a silent
     // toast". Phase 10 still gives the intentional Escape key a Cancel route.
     barrierDismissible: false,
-    builder: (context) => EscapeDismissible(child: AlertDialog(
-      icon: const Icon(Icons.error_outline),
-      title: Text(_headline(failure.failure)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_explanation(failure.failure, failure.path)),
-          const SizedBox(height: 12),
-          Text(
-            'Your work is still here, and nothing has been lost. '
-            'It just is not on disk yet.',
-            style: Theme.of(context).textTheme.bodySmall,
+    builder: (context) => EscapeDismissible(
+      child: AlertDialog(
+        icon: const Icon(Icons.error_outline),
+        title: Text(_headline(failure.failure)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_explanation(failure.failure, failure.path)),
+            const SizedBox(height: 12),
+            Text(
+              'Your work is still here, and nothing has been lost. '
+              'It just is not on disk yet.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            // The core's own words about what went wrong. Chrome, so the chrome's
+            // face: it used to be set in a monospace it had no need for, which
+            // read as script and made a one-line error look like a stack trace.
+            SelectableText(
+              failure.message,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(SaveFailureChoice.cancel),
+            child: const Text('Not now'),
           ),
-          const SizedBox(height: 12),
-          // The core's own words about what went wrong. Chrome, so the chrome's
-          // face: it used to be set in a monospace it had no need for, which
-          // read as script and made a one-line error look like a stack trace.
-          SelectableText(
-            failure.message,
-            style: Theme.of(context).textTheme.bodySmall,
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(SaveFailureChoice.saveAs),
+            child: const Text('Save as…'),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(SaveFailureChoice.cancel),
-          child: const Text('Not now'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(SaveFailureChoice.saveAs),
-          child: const Text('Save as…'),
-        ),
-      ],
-    )),
+    ),
   );
   return choice ?? SaveFailureChoice.cancel;
 }
 
 String _headline(SaveFailure failure) => switch (failure) {
-      SaveFailure.readOnly => 'That file is read-only',
-      SaveFailure.permissionDenied => 'No permission to write there',
-      SaveFailure.noSpace => 'The disk is full',
-      SaveFailure.noSuchDirectory => 'That folder is not there',
-      SaveFailure.noPath => 'This script has no file yet',
-      SaveFailure.noSuchDocument => 'That script is not open',
-      SaveFailure.alreadyExists => 'There is already a file there',
-      SaveFailure.scriptIsOpen => 'That script is open here',
-      SaveFailure.changedOnDisk => 'That file changed on disk',
-      SaveFailure.io => 'The file could not be written',
-    };
+  SaveFailure.readOnly => 'That file is read-only',
+  SaveFailure.permissionDenied => 'No permission to write there',
+  SaveFailure.noSpace => 'The disk is full',
+  SaveFailure.noSuchDirectory => 'That folder is not there',
+  SaveFailure.noPath => 'This script has no file yet',
+  SaveFailure.noSuchDocument => 'That script is not open',
+  SaveFailure.alreadyExists => 'There is already a file there',
+  SaveFailure.scriptIsOpen => 'That script is open here',
+  SaveFailure.changedOnDisk => 'That file changed on disk',
+  SaveFailure.io => 'The file could not be written',
+};
 
 String _explanation(SaveFailure failure, String path) => switch (failure) {
-      SaveFailure.readOnly =>
-        '$path is marked read-only, so $applicationName did not overwrite it.',
-      SaveFailure.permissionDenied =>
-        'The folder holding $path will not accept a new file from this account.',
-      SaveFailure.noSpace =>
-        'There is no room left on the filesystem holding $path. '
-            'Saving somewhere else will work; so will freeing some space and trying again.',
-      SaveFailure.noSuchDirectory =>
-        'The folder that $path would go in does not exist any more.',
-      SaveFailure.noPath =>
-        'Choose where this script should live and it will be written there.',
-      SaveFailure.noSuchDocument =>
-        'The editor and the core disagree about what is open. Reopening the '
-            'script will fix it.',
-      // The two refusals an export and a Save As share. The first is a question
-      // rather than a fault and is normally answered by [confirmReplace] before
-      // it ever gets here; this sentence is what a writer sees if they declined
-      // and the failure came back up.
-      SaveFailure.alreadyExists =>
-        '$path is already there, and $applicationName did not replace it.',
-      SaveFailure.scriptIsOpen =>
-        '$path is open here. Save that script rather than writing this one over it.',
-      // Normally never seen: [saveWithDialogs] returns this one to the caller
-      // because the external-modification prompt is already coming. The
-      // sentence is here for the same reason the two above are — the enum is
-      // one enum, and a dialog that had nothing to say would be worse.
-      SaveFailure.changedOnDisk =>
-        'Something else has written to $path since it was last read here, so '
-            '$applicationName did not replace it.',
-      SaveFailure.io => 'The operating system refused to write $path.',
-    };
+  SaveFailure.readOnly =>
+    '$path is marked read-only, so $applicationName did not overwrite it.',
+  SaveFailure.permissionDenied =>
+    'The folder holding $path will not accept a new file from this account.',
+  SaveFailure.noSpace =>
+    'There is no room left on the filesystem holding $path. '
+        'Saving somewhere else will work; so will freeing some space and trying again.',
+  SaveFailure.noSuchDirectory =>
+    'The folder that $path would go in does not exist any more.',
+  SaveFailure.noPath =>
+    'Choose where this script should live and it will be written there.',
+  SaveFailure.noSuchDocument =>
+    'The editor and the core disagree about what is open. Reopening the '
+        'script will fix it.',
+  // The two refusals an export and a Save As share. The first is a question
+  // rather than a fault and is normally answered by [confirmReplace] before
+  // it ever gets here; this sentence is what a writer sees if they declined
+  // and the failure came back up.
+  SaveFailure.alreadyExists =>
+    '$path is already there, and $applicationName did not replace it.',
+  SaveFailure.scriptIsOpen =>
+    '$path is open here. Save that script rather than writing this one over it.',
+  // Normally never seen: [saveWithDialogs] returns this one to the caller
+  // because the external-modification prompt is already coming. The
+  // sentence is here for the same reason the two above are — the enum is
+  // one enum, and a dialog that had nothing to say would be worse.
+  SaveFailure.changedOnDisk =>
+    'Something else has written to $path since it was last read here, so '
+        '$applicationName did not replace it.',
+  SaveFailure.io => 'The operating system refused to write $path.',
+};
 
 /// §Phase 4's external-modification prompt.
 enum ExternalChangeChoice { keepMine, takeTheirs, saveAs }
@@ -139,39 +143,45 @@ Future<ExternalChangeChoice?> showExternalChange(
   return showDialog<ExternalChangeChoice>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => EscapeDismissible(child: AlertDialog(
-      icon: const Icon(Icons.compare_arrows),
-      title: const Text('This file changed on disk'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Something else has written to $path since you opened it, '
-              'and you have unsaved changes here.'),
-          const SizedBox(height: 12),
-          Text(
-            'Keep mine leaves the file alone until you next save. '
-            'Take theirs discards your unsaved changes and the undo history with them.',
-            style: Theme.of(context).textTheme.bodySmall,
+    builder: (context) => EscapeDismissible(
+      child: AlertDialog(
+        icon: const Icon(Icons.compare_arrows),
+        title: const Text('This file changed on disk'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Something else has written to $path since you opened it, '
+              'and you have unsaved changes here.',
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Keep mine leaves the file alone until you next save. '
+              'Take theirs discards your unsaved changes and the undo history with them.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(ExternalChangeChoice.takeTheirs),
+            child: const Text('Take theirs'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(ExternalChangeChoice.saveAs),
+            child: const Text('Save as…'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(ExternalChangeChoice.keepMine),
+            child: const Text('Keep mine'),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).pop(ExternalChangeChoice.takeTheirs),
-          child: const Text('Take theirs'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(ExternalChangeChoice.saveAs),
-          child: const Text('Save as…'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(ExternalChangeChoice.keepMine),
-          child: const Text('Keep mine'),
-        ),
-      ],
-    )),
+    ),
   );
 }
 
@@ -180,28 +190,35 @@ enum UnsavedChoice { save, discard, cancel }
 
 /// §10: "must never silently discard unsaved changes". This is the prompt that
 /// makes that true when a script is closed or the window is shut.
-Future<UnsavedChoice> showUnsavedChanges(BuildContext context, String title) async {
+Future<UnsavedChoice> showUnsavedChanges(
+  BuildContext context,
+  String title,
+) async {
   final choice = await showDialog<UnsavedChoice>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => EscapeDismissible(child: AlertDialog(
-      title: Text('Save changes to $title?'),
-      content: const Text('There are edits here that are not in the file yet.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(UnsavedChoice.cancel),
-          child: const Text('Cancel'),
+    builder: (context) => EscapeDismissible(
+      child: AlertDialog(
+        title: Text('Save changes to $title?'),
+        content: const Text(
+          'There are edits here that are not in the file yet.',
         ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(UnsavedChoice.discard),
-          child: const Text('Discard'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(UnsavedChoice.save),
-          child: const Text('Save'),
-        ),
-      ],
-    )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(UnsavedChoice.cancel),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(UnsavedChoice.discard),
+            child: const Text('Discard'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(UnsavedChoice.save),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
   );
   return choice ?? UnsavedChoice.cancel;
 }
@@ -265,21 +282,23 @@ Future<SaveOutcome> saveWithDialogs(
 Future<bool> confirmReplace(BuildContext context, String path) async {
   final replace = await showDialog<bool>(
     context: context,
-    builder: (context) => EscapeDismissible(child: AlertDialog(
-      icon: const Icon(Icons.help_outline),
-      title: const Text('There is already a file there'),
-      content: Text('$path exists. Replacing it cannot be undone.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Replace'),
-        ),
-      ],
-    )),
+    builder: (context) => EscapeDismissible(
+      child: AlertDialog(
+        icon: const Icon(Icons.help_outline),
+        title: const Text('There is already a file there'),
+        content: Text('$path exists. Replacing it cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    ),
   );
   return replace ?? false;
 }

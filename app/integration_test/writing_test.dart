@@ -32,7 +32,9 @@ void main() {
 
   Future<EditorController> open(WidgetTester tester, [String? source]) async {
     final controller = EditorController(
-      source == null ? RustDocumentCore.create() : RustDocumentCore.parse(source),
+      source == null
+          ? RustDocumentCore.create()
+          : RustDocumentCore.parse(source),
     );
     addTearDown(controller.dispose);
     await tester.pumpWidget(
@@ -48,7 +50,11 @@ void main() {
   /// Types [text] a character at a time, as a writer does — so that automatic
   /// classification is asked the same question on every keystroke that it will be
   /// asked in the application.
-  Future<void> type(WidgetTester tester, EditorController controller, String text) async {
+  Future<void> type(
+    WidgetTester tester,
+    EditorController controller,
+    String text,
+  ) async {
     for (final character in text.characters) {
       controller.insertText(character);
     }
@@ -74,15 +80,19 @@ void main() {
 
   // --- the exit criterion ------------------------------------------------
 
-  testWidgets('a whole scene, keyboard only, with nothing set by hand',
-      (tester) async {
+  testWidgets('a whole scene, keyboard only, with nothing set by hand', (
+    tester,
+  ) async {
     final controller = await open(tester);
 
     // The slug line promotes itself as it is typed.
     await type(tester, controller, 'INT. HOUSE - DAY');
     expect(kinds(controller), [BlockKind.sceneHeading]);
-    expect(controller.blocks.single.forced, isFalse,
-        reason: 'inference never pins; only the writer does');
+    expect(
+      controller.blocks.single.forced,
+      isFalse,
+      reason: 'inference never pins; only the writer does',
+    );
 
     // Enter after a heading gives action.
     await press(tester, LogicalKeyboardKey.enter);
@@ -137,13 +147,16 @@ void main() {
 
     // And reopening that file gives back the same elements, which is the whole
     // point of inference agreeing with the parser.
-    final reopened = EditorController(RustDocumentCore.parse(controller.source));
+    final reopened = EditorController(
+      RustDocumentCore.parse(controller.source),
+    );
     addTearDown(reopened.dispose);
     expect(kinds(reopened), kinds(controller));
   });
 
-  testWidgets('the real entity index and scene parser drive the navigator',
-      (tester) async {
+  testWidgets('the real entity index and scene parser drive the navigator', (
+    tester,
+  ) async {
     final controller = await open(
       tester,
       'INT. HOUSE - DAY #1#\n\n'
@@ -181,13 +194,23 @@ void main() {
     expect(controller.selection.focus.block, street.id);
   });
 
-  testWidgets('double-Enter after a speech asks for the next cue', (tester) async {
+  testWidgets('double-Enter after a speech asks for the next cue', (
+    tester,
+  ) async {
     final controller = await open(tester, 'JOHN\nHello.\n');
     final dialogue = controller.blocks[1];
-    controller.setSelection(DocSelection(
-      anchor: DocPosition(block: dialogue.id, offsetUtf16: dialogue.text.length),
-      focus: DocPosition(block: dialogue.id, offsetUtf16: dialogue.text.length),
-    ));
+    controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(
+          block: dialogue.id,
+          offsetUtf16: dialogue.text.length,
+        ),
+        focus: DocPosition(
+          block: dialogue.id,
+          offsetUtf16: dialogue.text.length,
+        ),
+      ),
+    );
 
     await press(tester, LogicalKeyboardKey.enter);
     expect(kinds(controller).last, BlockKind.action);
@@ -204,17 +227,20 @@ void main() {
 
   // --- element-type changes are non-destructive ---------------------------
 
-  testWidgets('every element shortcut leaves the text and the caret alone',
-      (tester) async {
+  testWidgets('every element shortcut leaves the text and the caret alone', (
+    tester,
+  ) async {
     const text = 'The café is quiet. 日本 🎬';
     final controller = await open(tester, '!$text\n');
     final id = controller.blocks.single.id;
     // Mid-text, and after the astral-plane character, so that a caret the core
     // moved would be obvious.
-    controller.setSelection(DocSelection(
-      anchor: DocPosition(block: id, offsetUtf16: 4),
-      focus: DocPosition(block: id, offsetUtf16: 4),
-    ));
+    controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(block: id, offsetUtf16: 4),
+        focus: DocPosition(block: id, offsetUtf16: 4),
+      ),
+    );
 
     for (final digit in [
       LogicalKeyboardKey.digit1,
@@ -229,11 +255,17 @@ void main() {
       LogicalKeyboardKey.digit0,
     ]) {
       await press(tester, digit, control: true);
-      expect(controller.blocks.single.text, text,
-          reason: 'Ctrl+${digit.keyLabel} changed the text');
+      expect(
+        controller.blocks.single.text,
+        text,
+        reason: 'Ctrl+${digit.keyLabel} changed the text',
+      );
       expect(controller.blocks.single.forced, isTrue);
-      expect(controller.selection.focus.offsetUtf16, 4,
-          reason: 'Ctrl+${digit.keyLabel} moved the caret');
+      expect(
+        controller.selection.focus.offsetUtf16,
+        4,
+        reason: 'Ctrl+${digit.keyLabel} moved the caret',
+      );
       // Whatever the type, the bytes come back: the text survives a round trip
       // through Fountain in every one of these element types.
       final written = controller.source;
@@ -243,8 +275,9 @@ void main() {
     }
   });
 
-  testWidgets('a shortcut straight after an automatic change overrules it',
-      (tester) async {
+  testWidgets('a shortcut straight after an automatic change overrules it', (
+    tester,
+  ) async {
     final controller = await open(tester);
     await type(tester, controller, 'INT. HOUSE');
     expect(kinds(controller), [BlockKind.sceneHeading]);
@@ -261,30 +294,35 @@ void main() {
     expect(controller.source, '!INT. HOUSE - DAY\n');
   });
 
-  testWidgets('an automatic promotion is undone with the typing that caused it',
-      (tester) async {
-    final controller = await open(tester);
-    await type(tester, controller, 'INT. HOUSE - DAY');
-    expect(kinds(controller), [BlockKind.sceneHeading]);
+  testWidgets(
+    'an automatic promotion is undone with the typing that caused it',
+    (tester) async {
+      final controller = await open(tester);
+      await type(tester, controller, 'INT. HOUSE - DAY');
+      expect(kinds(controller), [BlockKind.sceneHeading]);
 
-    controller.undo();
-    await tester.pump();
+      controller.undo();
+      await tester.pump();
 
-    expect(controller.blocks.single.text, isEmpty);
-    expect(kinds(controller), [BlockKind.action]);
-  });
+      expect(controller.blocks.single.text, isEmpty);
+      expect(kinds(controller), [BlockKind.action]);
+    },
+  );
 
-  testWidgets('a paragraph that stops being a cue takes its speech with it',
-      (tester) async {
+  testWidgets('a paragraph that stops being a cue takes its speech with it', (
+    tester,
+  ) async {
     final controller = await open(tester, 'JOHN\nHello.\n');
     expect(kinds(controller), [BlockKind.character, BlockKind.dialogue]);
 
     // Lower-case letters take the line out of §4.1's cue character set.
     final cue = controller.blocks.first;
-    controller.setSelection(DocSelection(
-      anchor: DocPosition(block: cue.id, offsetUtf16: cue.text.length),
-      focus: DocPosition(block: cue.id, offsetUtf16: cue.text.length),
-    ));
+    controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(block: cue.id, offsetUtf16: cue.text.length),
+        focus: DocPosition(block: cue.id, offsetUtf16: cue.text.length),
+      ),
+    );
     await type(tester, controller, 'ny');
 
     expect(kinds(controller), [BlockKind.action, BlockKind.action]);
@@ -293,7 +331,9 @@ void main() {
 
   testWidgets('a plain paste is still inferred from nothing', (tester) async {
     final controller = await open(tester);
-    await Clipboard.setData(const ClipboardData(text: 'INT. HOUSE - DAY\nCUT TO:'));
+    await Clipboard.setData(
+      const ClipboardData(text: 'INT. HOUSE - DAY\nCUT TO:'),
+    );
     await controller.paste(plain: true);
     await tester.pump();
 
@@ -303,60 +343,75 @@ void main() {
 
   // --- find and replace --------------------------------------------------
 
-  testWidgets('find, replace and replace all, through the real core',
-      (tester) async {
-    const script = 'INT. HOUSE - DAY\n\nJohn leaves the house. The house is quiet.\n';
+  testWidgets('find, replace and replace all, through the real core', (
+    tester,
+  ) async {
+    const script =
+        'INT. HOUSE - DAY\n\nJohn leaves the house. The house is quiet.\n';
     final controller = await open(tester, script);
     controller.moveToDocumentEdge(start: true);
 
     // Case-insensitive by default, so the slug line counts too.
-    controller.search(const FindQuery(
-      text: 'house',
-      caseSensitive: false,
-      wholeWord: false,
-      kinds: [],
-    ));
+    controller.search(
+      const FindQuery(
+        text: 'house',
+        caseSensitive: false,
+        wholeWord: false,
+        kinds: [],
+      ),
+    );
     await tester.pump();
     expect(controller.matches, hasLength(3));
     expect(controller.matchIndex, 0);
     // The match is the selection, and taking it back out gives the matched text.
     expect(controller.selectedText(), 'HOUSE');
 
-    controller.search(const FindQuery(
-      text: 'house',
-      caseSensitive: true,
-      wholeWord: false,
-      kinds: [],
-    ));
+    controller.search(
+      const FindQuery(
+        text: 'house',
+        caseSensitive: true,
+        wholeWord: false,
+        kinds: [],
+      ),
+    );
     await tester.pump();
     expect(controller.matches, hasLength(2), reason: 'HOUSE is not house');
 
-    controller.search(const FindQuery(
-      text: 'house',
-      caseSensitive: false,
-      wholeWord: true,
-      kinds: [],
-    ));
+    controller.search(
+      const FindQuery(
+        text: 'house',
+        caseSensitive: false,
+        wholeWord: true,
+        kinds: [],
+      ),
+    );
     await tester.pump();
-    expect(controller.matches, hasLength(3),
-        reason: 'all three sit against non-word characters');
+    expect(
+      controller.matches,
+      hasLength(3),
+      reason: 'all three sit against non-word characters',
+    );
 
-    controller.search(const FindQuery(
-      text: 'hous',
-      caseSensitive: false,
-      wholeWord: true,
-      kinds: [],
-    ));
+    controller.search(
+      const FindQuery(
+        text: 'hous',
+        caseSensitive: false,
+        wholeWord: true,
+        kinds: [],
+      ),
+    );
     await tester.pump();
     expect(controller.matches, isEmpty, reason: '"hous" is inside a word');
 
     // Restricted to one element type.
-    controller.search(const FindQuery(
-      text: 'house',
-      caseSensitive: false,
-      wholeWord: false,
-      kinds: [BlockKind.action],
-    ));
+    controller.search(
+      const FindQuery(
+        text: 'house',
+        caseSensitive: false,
+        wholeWord: false,
+        kinds: [BlockKind.action],
+      ),
+    );
     await tester.pump();
     expect(controller.matches, hasLength(2));
 
@@ -374,14 +429,18 @@ void main() {
     expect(controller.source, script);
   });
 
-  testWidgets('replacing inside a scene heading keeps it readable', (tester) async {
+  testWidgets('replacing inside a scene heading keeps it readable', (
+    tester,
+  ) async {
     final controller = await open(tester, 'INT. HOUSE - DAY\n');
-    controller.search(const FindQuery(
-      text: 'INT.',
-      caseSensitive: true,
-      wholeWord: false,
-      kinds: [],
-    ));
+    controller.search(
+      const FindQuery(
+        text: 'INT.',
+        caseSensitive: true,
+        wholeWord: false,
+        kinds: [],
+      ),
+    );
     await tester.pump();
     controller.replaceAll('A ROOM IN');
     await tester.pump();
@@ -390,7 +449,9 @@ void main() {
     // marker §4.1 gives it, so nothing is lost either way.
     expect(controller.blocks.single.kind, BlockKind.sceneHeading);
     expect(controller.blocks.single.text, 'A ROOM IN HOUSE - DAY');
-    final reopened = EditorController(RustDocumentCore.parse(controller.source));
+    final reopened = EditorController(
+      RustDocumentCore.parse(controller.source),
+    );
     addTearDown(reopened.dispose);
     expect(reopened.blocks.single.text, 'A ROOM IN HOUSE - DAY');
     expect(reopened.blocks.single.kind, BlockKind.sceneHeading);
@@ -401,16 +462,21 @@ void main() {
   testWidgets('an existing cue is suggested but never applied', (tester) async {
     final controller = await open(tester, 'JOHN\nHello.\n\nAction.\n');
     final last = controller.blocks.last;
-    controller.setSelection(DocSelection(
-      anchor: DocPosition(block: last.id, offsetUtf16: 0),
-      focus: DocPosition(block: last.id, offsetUtf16: last.text.length),
-    ));
+    controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(block: last.id, offsetUtf16: 0),
+        focus: DocPosition(block: last.id, offsetUtf16: last.text.length),
+      ),
+    );
     await type(tester, controller, 'JOHN');
     await tester.pump();
 
     expect(controller.characterSuggestion, 'JOHN');
-    expect(controller.blocks.last.kind, BlockKind.action,
-        reason: 'a suggestion is not a change');
+    expect(
+      controller.blocks.last.kind,
+      BlockKind.action,
+      reason: 'a suggestion is not a change',
+    );
     expect(find.byKey(const Key('tab-hint')), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const Key('tab-hint'))).data,
@@ -424,8 +490,9 @@ void main() {
 
   // --- Escape ------------------------------------------------------------
 
-  testWidgets('Escape closes each panel and never changes the document',
-      (tester) async {
+  testWidgets('Escape closes each panel and never changes the document', (
+    tester,
+  ) async {
     const script = 'INT. HOUSE - DAY\n\nJohn enters.\n';
     final controller = await open(tester, script);
 

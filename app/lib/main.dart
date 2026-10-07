@@ -25,7 +25,10 @@ import 'package:slugline/core/core.dart';
 /// index, the crash journal's name and the backup directory's name are all
 /// derived from, so `./heat.fountain` and `heat.fountain` must not become two
 /// different scripts.
-String? scriptFromArguments(List<String> arguments, {required String workingDirectory}) {
+String? scriptFromArguments(
+  List<String> arguments, {
+  required String workingDirectory,
+}) {
   var optionsEnded = false;
   for (final argument in arguments) {
     if (!optionsEnded && argument == '--') {
@@ -34,8 +37,9 @@ String? scriptFromArguments(List<String> arguments, {required String workingDire
     }
     if (!optionsEnded && argument.startsWith('-')) continue;
     if (argument.isEmpty) continue;
-    final absolute =
-        argument.startsWith('/') ? argument : '$workingDirectory/$argument';
+    final absolute = argument.startsWith('/')
+        ? argument
+        : '$workingDirectory/$argument';
     return Uri.file(absolute).normalizePath().toFilePath();
   }
   return null;

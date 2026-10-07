@@ -25,7 +25,10 @@ void main() {
   /// Giving the test a window the dialog fits in is the alternative to
   /// scrolling to every button before tapping it.
   setUp(() {
-    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .views
+        .first;
     view.physicalSize = const Size(1280, 960);
     view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -43,54 +46,60 @@ void main() {
   ];
 
   /// Where every fragment is drawn, at a given size.
-  List<String> screenOf(PaginationView pagination, PreviewGeometry geometry) => [
-    for (final sheet in PreviewView.sheetsOf(pagination))
-      for (final line in sheet.page.lines)
-        '${geometry.at(line.row, line.column)} ${line.content}',
-  ];
+  List<String> screenOf(PaginationView pagination, PreviewGeometry geometry) =>
+      [
+        for (final sheet in PreviewView.sheetsOf(pagination))
+          for (final line in sheet.page.lines)
+            '${geometry.at(line.row, line.column)} ${line.content}',
+      ];
 
-  testWidgets('changing the preview size leaves the pages exactly as they were', (
-    tester,
-  ) async {
-    final output = FakeOutput(samplePagination(pages: 3));
-    final core = FakeCore.single(BlockKind.action, 'Something happens.')
-      ..filePath = '/scripts/heat.fountain';
+  testWidgets(
+    'changing the preview size leaves the pages exactly as they were',
+    (tester) async {
+      final output = FakeOutput(samplePagination(pages: 3));
+      final core = FakeCore.single(BlockKind.action, 'Something happens.')
+        ..filePath = '/scripts/heat.fountain';
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => ExportDialog.show(context, core, output),
-              child: const Text('open'),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => ExportDialog.show(context, core, output),
+                child: const Text('open'),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    final before = gridOf(output.pagination);
-    final pageCount = output.pagination.pageCount;
-    final requests = List.of(output.setups);
+      final before = gridOf(output.pagination);
+      final pageCount = output.pagination.pageCount;
+      final requests = List.of(output.setups);
 
-    // Drag the preview-size slider from one end to the other.
-    final slider = find.byKey(const Key('preview-scale'));
-    expect(slider, findsOneWidget);
-    await tester.drag(slider, const Offset(-200, 0));
-    await tester.pumpAndSettle();
-    await tester.drag(slider, const Offset(400, 0));
-    await tester.pumpAndSettle();
+      // Drag the preview-size slider from one end to the other.
+      final slider = find.byKey(const Key('preview-scale'));
+      expect(slider, findsOneWidget);
+      await tester.drag(slider, const Offset(-200, 0));
+      await tester.pumpAndSettle();
+      await tester.drag(slider, const Offset(400, 0));
+      await tester.pumpAndSettle();
 
-    expect(
-      output.setups,
-      requests,
-      reason: 'the size the preview is drawn at is not part of the request',
-    );
-    expect(output.pagination.pageCount, pageCount);
-    expect(gridOf(output.pagination), before, reason: 'the golden layout holds');
-  });
+      expect(
+        output.setups,
+        requests,
+        reason: 'the size the preview is drawn at is not part of the request',
+      );
+      expect(output.pagination.pageCount, pageCount);
+      expect(
+        gridOf(output.pagination),
+        before,
+        reason: 'the golden layout holds',
+      );
+    },
+  );
 
   test('a preview size scales the drawing and nothing else', () {
     final pagination = samplePagination(pages: 2);
@@ -98,7 +107,10 @@ void main() {
     const large = PreviewGeometry(paper: PaperSize.usLetter, scale: 12);
 
     // Same fragments, same order, same grid — four times the size on screen.
-    expect(screenOf(pagination, small).length, screenOf(pagination, large).length);
+    expect(
+      screenOf(pagination, small).length,
+      screenOf(pagination, large).length,
+    );
     expect(large.width, small.width * 4);
     expect(large.at(7, 22).dx, small.at(7, 22).dx * 4);
     expect(large.at(7, 22).dy, small.at(7, 22).dy * 4);
@@ -115,7 +127,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: ExportDialog(core: core, output: output)),
+        home: Scaffold(
+          body: ExportDialog(core: core, output: output),
+        ),
       ),
     );
     await tester.pumpAndSettle();

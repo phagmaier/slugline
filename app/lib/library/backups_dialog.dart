@@ -85,31 +85,32 @@ class _BackupsDialogState extends State<BackupsDialog> {
               child: switch (backups) {
                 null => const Center(child: CircularProgressIndicator()),
                 [] => Center(
-                    child: Text(
-                      'No previous versions yet. Opening preserves changed '
-                      'on-disk text. Autosave snapshots changed text at most '
-                      'every ten minutes. Saving by hand records a version '
-                      'every time.',
-                      style: theme.textTheme.bodySmall,
-                      textAlign: TextAlign.center,
-                    ),
+                  child: Text(
+                    'No previous versions yet. Opening preserves changed '
+                    'on-disk text. Autosave snapshots changed text at most '
+                    'every ten minutes. Saving by hand records a version '
+                    'every time.',
+                    style: theme.textTheme.bodySmall,
+                    textAlign: TextAlign.center,
                   ),
+                ),
                 final found => ListView.builder(
-                    itemCount: found.length,
-                    itemBuilder: (context, index) {
-                      final backup = found[index];
-                      return ListTile(
-                        dense: true,
-                        title: Text(formatTimestamp(backup.writtenMillis)),
-                        subtitle: Text(formatBytes(backup.bytes)),
-                        trailing: TextButton(
-                          onPressed:
-                              _working ? null : () => unawaitedRestore(backup),
-                          child: const Text('Restore'),
-                        ),
-                      );
-                    },
-                  ),
+                  itemCount: found.length,
+                  itemBuilder: (context, index) {
+                    final backup = found[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(formatTimestamp(backup.writtenMillis)),
+                      subtitle: Text(formatBytes(backup.bytes)),
+                      trailing: TextButton(
+                        onPressed: _working
+                            ? null
+                            : () => unawaitedRestore(backup),
+                        child: const Text('Restore'),
+                      ),
+                    );
+                  },
+                ),
               },
             ),
             if (_error case final message?)
@@ -117,8 +118,9 @@ class _BackupsDialogState extends State<BackupsDialog> {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   message,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: context.colours.danger),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: context.colours.danger,
+                  ),
                 ),
               ),
           ],

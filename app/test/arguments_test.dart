@@ -10,8 +10,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slugline/main.dart';
 
 void main() {
-  String? script(List<String> arguments, {String cwd = '/home/writer/scripts'}) =>
-      scriptFromArguments(arguments, workingDirectory: cwd);
+  String? script(
+    List<String> arguments, {
+    String cwd = '/home/writer/scripts',
+  }) => scriptFromArguments(arguments, workingDirectory: cwd);
 
   group('the file named on the command line:', () {
     test('no arguments means the library', () {
@@ -43,21 +45,27 @@ void main() {
     test('an unrecognised option is ignored, not opened as a file', () {
       // Creating `--colour` as a screenplay is not what anybody meant.
       expect(script(['--colour']), isNull);
-      expect(script(['--colour', 'heat.fountain']),
-          '/home/writer/scripts/heat.fountain');
+      expect(
+        script(['--colour', 'heat.fountain']),
+        '/home/writer/scripts/heat.fountain',
+      );
     });
 
     test('a bare -- ends the options', () {
       // So a screenplay honestly called `-heat.fountain` is still openable.
-      expect(script(['--', '-heat.fountain']),
-          '/home/writer/scripts/-heat.fountain');
+      expect(
+        script(['--', '-heat.fountain']),
+        '/home/writer/scripts/-heat.fountain',
+      );
       expect(script(['--', '--help']), '/home/writer/scripts/--help');
     });
 
     test('an empty argument is not a file name', () {
       expect(script(['']), isNull);
-      expect(script(['', 'heat.fountain']),
-          '/home/writer/scripts/heat.fountain');
+      expect(
+        script(['', 'heat.fountain']),
+        '/home/writer/scripts/heat.fountain',
+      );
     });
 
     test('a name with spaces and non-ASCII survives intact', () {

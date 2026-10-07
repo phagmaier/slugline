@@ -19,22 +19,22 @@ const _fontSize = 12.0;
 final _metrics = ScreenplayMetrics.forFontSize(_fontSize);
 
 BlockView _block(BlockKind kind, String text, {int id = 1}) => BlockView(
-      id: id,
-      kind: kind,
-      sectionLevel: 0,
-      text: text,
-      forced: false,
-      dual: false,
-      readOnly: false,
-    );
+  id: id,
+  kind: kind,
+  sectionLevel: 0,
+  text: text,
+  forced: false,
+  dual: false,
+  readOnly: false,
+);
 
 /// The geometry a document of [totalRows] rows is drawn through, in continuous
 /// view — no `pageStarts`, so no sheet gaps land inside a measurement.
 EditorGeometry _geometry(int totalRows) => EditorGeometry(
-      metrics: _metrics,
-      viewportWidth: 1600,
-      totalRows: totalRows,
-    );
+  metrics: _metrics,
+  viewportWidth: 1600,
+  totalRows: totalRows,
+);
 
 /// Text that wraps to exactly [lines] full lines of the measure: each word is
 /// the measure wide, so each takes a line of its own and the space between them
@@ -102,7 +102,9 @@ void main() {
     });
 
     test('a paragraph is exactly as tall as its lines', () {
-      final layout = DocumentLayout([_block(BlockKind.action, _wrappingTo(12))]);
+      final layout = DocumentLayout([
+        _block(BlockKind.action, _wrappingTo(12)),
+      ]);
       final geometry = _geometry(layout.totalRows);
       expect(
         geometry.yOfRow(layout.endRowOf(0)) - geometry.yOfRow(0),
@@ -127,26 +129,29 @@ void main() {
       expect(secondBegins - firstEnds, closeTo(_metrics.lineHeight, 1e-9));
     });
 
-    test('between elements a scene heading takes one and dialogue takes none', () {
-      // Element separation is exactly one blank line — a bottom margin equal
-      // to one line height. Dialogue and parentheticals carry zero because
-      // a cue must not come apart from the line it introduces.
-      final layout = DocumentLayout([
-        _block(BlockKind.action, 'She waits.', id: 1),
-        _block(BlockKind.sceneHeading, 'INT. HALL - DAY', id: 2),
-        _block(BlockKind.character, 'ANNA', id: 3),
-        _block(BlockKind.dialogue, 'Not yet.', id: 4),
-      ]);
-      final geometry = _geometry(layout.totalRows);
+    test(
+      'between elements a scene heading takes one and dialogue takes none',
+      () {
+        // Element separation is exactly one blank line — a bottom margin equal
+        // to one line height. Dialogue and parentheticals carry zero because
+        // a cue must not come apart from the line it introduces.
+        final layout = DocumentLayout([
+          _block(BlockKind.action, 'She waits.', id: 1),
+          _block(BlockKind.sceneHeading, 'INT. HALL - DAY', id: 2),
+          _block(BlockKind.character, 'ANNA', id: 3),
+          _block(BlockKind.dialogue, 'Not yet.', id: 4),
+        ]);
+        final geometry = _geometry(layout.totalRows);
 
-      double gapAbove(int index) =>
-          geometry.yOfRow(layout.firstRowOf(index)) -
-          geometry.yOfRow(layout.endRowOf(index - 1));
+        double gapAbove(int index) =>
+            geometry.yOfRow(layout.firstRowOf(index)) -
+            geometry.yOfRow(layout.endRowOf(index - 1));
 
-      expect(gapAbove(1), closeTo(_metrics.lineHeight, 1e-9));
-      expect(gapAbove(2), closeTo(_metrics.lineHeight, 1e-9));
-      expect(gapAbove(3), 0);
-    });
+        expect(gapAbove(1), closeTo(_metrics.lineHeight, 1e-9));
+        expect(gapAbove(2), closeTo(_metrics.lineHeight, 1e-9));
+        expect(gapAbove(3), 0);
+      },
+    );
   });
 
   group('a page holds its lines', () {
@@ -175,8 +180,9 @@ void main() {
       // count by the row height and asserting arithmetic. At the old 1.4 this
       // came out at 907 against a page of 648.
       const lines = ScreenplayMetrics.linesPerPage;
-      final layout =
-          DocumentLayout([_block(BlockKind.action, _wrappingTo(lines))]);
+      final layout = DocumentLayout([
+        _block(BlockKind.action, _wrappingTo(lines)),
+      ]);
       expect(layout.totalRows, lines);
 
       final geometry = _geometry(layout.totalRows);
@@ -190,7 +196,8 @@ void main() {
       // The other half of the same statement: 54 fills the body, so 55 overruns
       // it. Without this the assertion above would still pass if the page grew.
       final geometry = _geometry(ScreenplayMetrics.linesPerPage + 1);
-      final rendered = geometry.yOfRow(ScreenplayMetrics.linesPerPage + 1) -
+      final rendered =
+          geometry.yOfRow(ScreenplayMetrics.linesPerPage + 1) -
           geometry.yOfRow(0);
       expect(rendered, greaterThan(_metrics.pageBodyHeight));
       expect(

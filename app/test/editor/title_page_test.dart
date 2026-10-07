@@ -23,7 +23,9 @@ void main() {
 
   Future<void> open(WidgetTester tester) async {
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: TitlePageDialog(core: core))),
+      MaterialApp(
+        home: Scaffold(body: TitlePageDialog(core: core)),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -53,7 +55,10 @@ void main() {
     await open(tester);
 
     expect(tester.widget<TextField>(box('Title')).controller!.text, 'Big Fish');
-    expect(tester.widget<TextField>(box('Author')).controller!.text, 'Ed Bloom');
+    expect(
+      tester.widget<TextField>(box('Author')).controller!.text,
+      'Ed Bloom',
+    );
     expect(tester.widget<TextField>(box('Source')).controller!.text, '');
   });
 
@@ -102,9 +107,7 @@ void main() {
   testWidgets('a key the form does not name is shown and kept', (tester) async {
     // The format allows any key, and a writer who typed `Revision Colour:` into
     // their script has said something the application does not get to forget.
-    core.title.add(
-      const TitleEntryView(key: 'Revision Colour', value: 'Blue'),
-    );
+    core.title.add(const TitleEntryView(key: 'Revision Colour', value: 'Blue'));
     await open(tester);
 
     expect(find.text('Also in this file'), findsOneWidget);

@@ -112,7 +112,8 @@ class PageIndicator extends ChangeNotifier {
     if (_firstLineOfPage.isEmpty) return const [];
     final blocks = controller.blocks;
     final indexOfBlock = <int, int>{
-      for (var index = 0; index < blocks.length; index++) blocks[index].id: index,
+      for (var index = 0; index < blocks.length; index++)
+        blocks[index].id: index,
     };
 
     final starts = <PageStart>[];
@@ -125,10 +126,7 @@ class PageIndicator extends ChangeNotifier {
       // answer in the meantime.
       if (index == null) continue;
       starts.add(
-        PageStart(
-          row: controller.rowOfLine(index, sourceLine),
-          number: number,
-        ),
+        PageStart(row: controller.rowOfLine(index, sourceLine), number: number),
       );
     }
     starts.sort((a, b) => a.row.compareTo(b.row));

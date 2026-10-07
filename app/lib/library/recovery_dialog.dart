@@ -36,9 +36,8 @@ class RecoveryDialog extends StatelessWidget {
     final chosen = await showDialog<Map<String, RecoveryChoice>>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => EscapeDismissible(
-        child: RecoveryDialog(offers: offers),
-      ),
+      builder: (context) =>
+          EscapeDismissible(child: RecoveryDialog(offers: offers)),
     );
     return chosen ?? const {};
   }
@@ -83,10 +82,7 @@ class RecoveryDialog extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       const SizedBox(height: 6),
-                      Text(
-                        summaryOf(offer),
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                      Text(summaryOf(offer), style: theme.textTheme.bodyMedium),
                       if (offer.blocked case final why?) ...[
                         const SizedBox(height: 6),
                         Text(
@@ -112,7 +108,8 @@ class RecoveryDialog extends StatelessWidget {
                             onPressed: offer.blocked != null
                                 ? null
                                 : () {
-                                    choices[offer.journal] = RecoveryChoice.recover;
+                                    choices[offer.journal] =
+                                        RecoveryChoice.recover;
                                     Navigator.of(context).pop(choices);
                                   },
                             child: const Text('Recover'),
@@ -140,7 +137,9 @@ class RecoveryDialog extends StatelessWidget {
   /// was cut off.
   static String summaryOf(RecoveryOffer offer) {
     final edits = offer.edits == 1 ? '1 edit' : '${offer.edits} edits';
-    final since = offer.script.isEmpty ? 'in a script never saved' : 'since the last save';
+    final since = offer.script.isEmpty
+        ? 'in a script never saved'
+        : 'since the last save';
     final damaged = offer.damaged
         ? ' The very last keystroke was not written in full and is gone.'
         : '';
@@ -158,42 +157,41 @@ enum RecoveryChoice { recover, discard }
 /// recorded by anything. Saying so is the whole point — §Phase 4 treats losing
 /// user text as a P0 defect, and a session that has quietly stopped journalling
 /// looks exactly like one that has not.
-Future<void> showRecoveryNotJournalled(
-  BuildContext context,
-  String message,
-) {
+Future<void> showRecoveryNotJournalled(BuildContext context, String message) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => EscapeDismissible(child: AlertDialog(
-      icon: const Icon(Icons.warning_amber_outlined),
-      title: const Text('Recovered, but not protected'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Your recovered text is here and the crash journal it came from is '
-            'still on disk. But a new journal could not be written, so nothing '
-            'you type from now on would survive another crash.',
-          ),
-          const SizedBox(height: 12),
-          Text(message, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          Text(
-            'Save this script somewhere writable, or restart $applicationName — the '
-            'recovery will be offered again.',
-            style: Theme.of(context).textTheme.bodySmall,
+    builder: (context) => EscapeDismissible(
+      child: AlertDialog(
+        icon: const Icon(Icons.warning_amber_outlined),
+        title: const Text('Recovered, but not protected'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Your recovered text is here and the crash journal it came from is '
+              'still on disk. But a new journal could not be written, so nothing '
+              'you type from now on would survive another crash.',
+            ),
+            const SizedBox(height: 12),
+            Text(message, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 12),
+            Text(
+              'Save this script somewhere writable, or restart $applicationName — the '
+              'recovery will be offered again.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Continue'),
           ),
         ],
       ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Continue'),
-        ),
-      ],
-    )),
+    ),
   );
 }
 
@@ -204,28 +202,30 @@ Future<void> showRecoveryFailed(BuildContext context, String message) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => EscapeDismissible(child: AlertDialog(
-      icon: const Icon(Icons.error_outline),
-      title: const Text('That recovery could not be opened'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(message),
-          const SizedBox(height: 12),
-          Text(
-            'Nothing was changed and nothing was deleted. The crash journal is '
-            'still on disk and will be offered again next time you start.',
-            style: Theme.of(context).textTheme.bodySmall,
+    builder: (context) => EscapeDismissible(
+      child: AlertDialog(
+        icon: const Icon(Icons.error_outline),
+        title: const Text('That recovery could not be opened'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 12),
+            Text(
+              'Nothing was changed and nothing was deleted. The crash journal is '
+              'still on disk and will be offered again next time you start.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-      ],
-    )),
+    ),
   );
 }

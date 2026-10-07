@@ -58,12 +58,10 @@ class LineTextCache {
       return hit;
     }
     misses++;
-    final painter =
-        TextPainter(
-            text: TextSpan(text: text, style: style),
-            textDirection: TextDirection.ltr,
-          )
-          ..layout();
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
     _entries[key] = painter;
     while (_entries.length > maxEntries) {
       _entries.remove(_entries.keys.first)?.dispose();

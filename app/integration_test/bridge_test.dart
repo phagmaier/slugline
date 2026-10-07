@@ -103,7 +103,11 @@ void main() {
     // And Rust agrees with Dart about how long it is. `String.length` is UTF-16
     // code units, which is the coordinate the whole bridge speaks (§2.4).
     expect(proof.length, 10);
-    expect(proof.runes.length, 9, reason: 'the emoji is one character, two units');
+    expect(
+      proof.runes.length,
+      9,
+      reason: 'the emoji is one character, two units',
+    );
   });
 
   test('UTF-16 offsets mean the same thing on both sides', () {
@@ -113,9 +117,9 @@ void main() {
     addTearDown(core.close);
 
     String? slice(int start, int end) => core.extract(
-          DocPosition(block: block, offsetUtf16: start),
-          DocPosition(block: block, offsetUtf16: end),
-        );
+      DocPosition(block: block, offsetUtf16: start),
+      DocPosition(block: block, offsetUtf16: end),
+    );
 
     expect(slice(0, 4), 'café');
     expect(slice(5, 7), '日本');

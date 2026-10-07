@@ -322,13 +322,10 @@ VisualLine _line(
       hardBreakOffsetUtf16: hardBreakOffsetUtf16,
     );
   }
-  return VisualLine.mapped(
-    start,
+  return VisualLine.mapped(start, end, to - from, [
+    for (var cell = from; cell < to; cell++) cells.offsets[cell],
     end,
-    to - from,
-    [for (var cell = from; cell < to; cell++) cells.offsets[cell], end],
-    hardBreakOffsetUtf16: hardBreakOffsetUtf16,
-  );
+  ], hardBreakOffsetUtf16: hardBreakOffsetUtf16);
 }
 
 bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;

@@ -38,12 +38,16 @@ void main() {
 
   Future<EditorController> open(WidgetTester tester, [String? source]) async {
     final controller = EditorController(
-      source == null ? RustDocumentCore.create() : RustDocumentCore.parse(source),
+      source == null
+          ? RustDocumentCore.create()
+          : RustDocumentCore.parse(source),
     );
     addTearDown(controller.dispose);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: EditorSurface(controller: controller)),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: EditorSurface(controller: controller)),
+      ),
+    );
     await tester.tap(find.byType(EditorSurface));
     // The tap took the focus, and put the caret wherever it landed. Every test
     // below starts from the top of the script.
@@ -65,25 +69,30 @@ void main() {
     required int to,
     int? caret,
   }) async {
-    client(tester).updateEditingValue(TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: caret ?? text.length),
-      composing: TextRange(start: from, end: to),
-    ));
+    client(tester).updateEditingValue(
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: caret ?? text.length),
+        composing: TextRange(start: from, end: to),
+      ),
+    );
     await tester.pump();
   }
 
   /// The commit: the same text, with nothing provisional left in it.
   Future<void> commit(WidgetTester tester, String text) async {
-    client(tester).updateEditingValue(TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    ));
+    client(tester).updateEditingValue(
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ),
+    );
     await tester.pump();
   }
 
-  testWidgets('a CJK composition reaches the core as the characters it produced',
-      (tester) async {
+  testWidgets('a CJK composition reaches the core as the characters it produced', (
+    tester,
+  ) async {
     final controller = await open(tester);
 
     // Typing "nihao" on a Pinyin input method: the Latin letters are provisional,
@@ -92,8 +101,11 @@ void main() {
     await compose(tester, 'ni', from: 0, to: 2);
     await compose(tester, 'niha', from: 0, to: 4);
     await compose(tester, 'nihao', from: 0, to: 5);
-    expect(controller.blocks.single.text, 'nihao',
-        reason: 'provisional text is still text, and still the core\'s');
+    expect(
+      controller.blocks.single.text,
+      'nihao',
+      reason: 'provisional text is still text, and still the core\'s',
+    );
 
     await compose(tester, '你好', from: 0, to: 2);
     expect(controller.blocks.single.text, '你好');
@@ -115,14 +127,17 @@ void main() {
     expect(controller.blocks.single.text, isEmpty);
   });
 
-  testWidgets('a composition inside existing text lands at the caret',
-      (tester) async {
+  testWidgets('a composition inside existing text lands at the caret', (
+    tester,
+  ) async {
     final controller = await open(tester, 'ab\n');
     final id = controller.blocks.single.id;
-    controller.setSelection(DocSelection(
-      anchor: DocPosition(block: id, offsetUtf16: 1),
-      focus: DocPosition(block: id, offsetUtf16: 1),
-    ));
+    controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(block: id, offsetUtf16: 1),
+        focus: DocPosition(block: id, offsetUtf16: 1),
+      ),
+    );
     await tester.pump();
 
     await compose(tester, 'ani b', from: 1, to: 4, caret: 4);
@@ -132,8 +147,9 @@ void main() {
     expect(controller.blocks.single.text, 'a你 b');
   });
 
-  testWidgets('a dead-key accent produces one character, not two',
-      (tester) async {
+  testWidgets('a dead-key accent produces one character, not two', (
+    tester,
+  ) async {
     final controller = await open(tester);
 
     // `´` then `e` on a dead-key layout: the accent is composed, then replaced.
@@ -148,8 +164,9 @@ void main() {
     expect(controller.source, 'café\n');
   });
 
-  testWidgets('a composition of an astral-plane character keeps its offsets',
-      (tester) async {
+  testWidgets('a composition of an astral-plane character keeps its offsets', (
+    tester,
+  ) async {
     final controller = await open(tester);
 
     // An emoji is two UTF-16 code units and four bytes. A composition that ends
@@ -164,8 +181,9 @@ void main() {
     expect(controller.source, '🎬\n');
   });
 
-  testWidgets('a composition abandoned mid-way leaves what was typed',
-      (tester) async {
+  testWidgets('a composition abandoned mid-way leaves what was typed', (
+    tester,
+  ) async {
     final controller = await open(tester);
     await compose(tester, 'ni', from: 0, to: 2);
     // The input method gives up — Escape at the ibus level — and hands back the
@@ -176,8 +194,9 @@ void main() {
     expect(controller.blocks.single.text, 'ni');
   });
 
-  testWidgets('a composition does not survive the caret leaving its block',
-      (tester) async {
+  testWidgets('a composition does not survive the caret leaving its block', (
+    tester,
+  ) async {
     // ADR 0005 hands the platform one block at a time and records a composition
     // spanning a block boundary as Phase 3 work. This is that work: the session
     // belongs to a block, and moving out of it ends the session rather than
@@ -207,8 +226,9 @@ void main() {
     expect(controller.source, 'firstni\n\nsecond你\n');
   });
 
-  testWidgets('Enter during a composition splits after the composed text',
-      (tester) async {
+  testWidgets('Enter during a composition splits after the composed text', (
+    tester,
+  ) async {
     final controller = await open(tester);
     await compose(tester, 'ni', from: 0, to: 2);
     await compose(tester, '你', from: 0, to: 1);
@@ -224,31 +244,43 @@ void main() {
     expect(client(tester).currentTextEditingValue.composing, TextRange.empty);
   });
 
-  testWidgets('a newline from the input method splits rather than being smuggled in',
-      (tester) async {
-    final controller = await open(tester);
-    // Some input methods send the newline as text rather than as an action. A
-    // `\n` inside a block's text is not something the model can represent for
-    // most element types, so it has to become a split.
-    client(tester).updateEditingValue(const TextEditingValue(
-      text: 'one\ntwo',
-      selection: TextSelection.collapsed(offset: 7),
-    ));
-    await tester.pump();
+  testWidgets(
+    'a newline from the input method splits rather than being smuggled in',
+    (tester) async {
+      final controller = await open(tester);
+      // Some input methods send the newline as text rather than as an action. A
+      // `\n` inside a block's text is not something the model can represent for
+      // most element types, so it has to become a split.
+      client(tester).updateEditingValue(
+        const TextEditingValue(
+          text: 'one\ntwo',
+          selection: TextSelection.collapsed(offset: 7),
+        ),
+      );
+      await tester.pump();
 
-    expect(controller.blocks.length, 2);
-    expect(controller.blocks.map((block) => block.text).toList(), ['one', 'two']);
-    expect(controller.source, 'one\n\ntwo\n');
-  });
+      expect(controller.blocks.length, 2);
+      expect(controller.blocks.map((block) => block.text).toList(), [
+        'one',
+        'two',
+      ]);
+      expect(controller.source, 'one\n\ntwo\n');
+    },
+  );
 
-  testWidgets('non-ASCII text survives the clipboard in both directions',
-      (tester) async {
+  testWidgets('non-ASCII text survives the clipboard in both directions', (
+    tester,
+  ) async {
     const script = 'INT. CAFÉ - DAY\n\nJOSÉ\n(quietly)\n你好。🎬\n';
     final controller = await open(tester, script);
 
     controller.selectAll();
     final copied = controller.selectedText();
-    expect(copied, script, reason: 'copying the whole script gives its bytes back');
+    expect(
+      copied,
+      script,
+      reason: 'copying the whole script gives its bytes back',
+    );
 
     await Clipboard.setData(ClipboardData(text: copied!));
     // Straight back out of the platform clipboard, which is where a real IME's
@@ -261,14 +293,11 @@ void main() {
     addTearDown(fresh.dispose);
     await fresh.paste();
     expect(fresh.source, script);
-    expect(
-      fresh.blocks.map((block) => block.kind).toList(),
-      [
-        BlockKind.sceneHeading,
-        BlockKind.character,
-        BlockKind.parenthetical,
-        BlockKind.dialogue,
-      ],
-    );
+    expect(fresh.blocks.map((block) => block.kind).toList(), [
+      BlockKind.sceneHeading,
+      BlockKind.character,
+      BlockKind.parenthetical,
+      BlockKind.dialogue,
+    ]);
   });
 }

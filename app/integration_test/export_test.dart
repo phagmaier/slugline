@@ -447,10 +447,7 @@ void main() {
       final pdf = path('numbering-$numbered.pdf');
       final existing = File(pdf);
       if (existing.existsSync()) existing.deleteSync();
-      expect(
-        await core.exportPdf(pdf, setup: setup),
-        isA<SaveOutcome_Saved>(),
-      );
+      expect(await core.exportPdf(pdf, setup: setup), isA<SaveOutcome_Saved>());
       Future<String> sheet(int number) async {
         final extracted = await Process.run('pdftotext', [
           '-f',

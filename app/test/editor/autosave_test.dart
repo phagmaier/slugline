@@ -19,8 +19,13 @@ import '../support/fake_core.dart';
 /// (ADR 0011).
 void main() {
   /// A driver over a one-block script, with short timers so the test is quick.
-  ({AutosaveDriver driver, FakeCore core, _Ticker changes, List<SaveOutcome> outcomes})
-      setUpDriver({
+  ({
+    AutosaveDriver driver,
+    FakeCore core,
+    _Ticker changes,
+    List<SaveOutcome> outcomes,
+  })
+  setUpDriver({
     Duration idle = const Duration(milliseconds: 20),
     Duration interval = const Duration(milliseconds: 100),
     bool enabled = true,
@@ -106,8 +111,9 @@ void main() {
     expect(it.core.saves.length, 1, reason: 'the dirty document was re-armed');
   });
 
-  testWidgets('a writer who never pauses is still saved by the interval',
-      (tester) async {
+  testWidgets('a writer who never pauses is still saved by the interval', (
+    tester,
+  ) async {
     // The reason the interval exists: a good session has no two-second pause in
     // it, and the debounce alone would never fire.
     final it = setUpDriver(
@@ -122,8 +128,9 @@ void main() {
     expect(it.core.saves, isNotEmpty, reason: 'the hard interval fired');
   });
 
-  testWidgets('no autosave while a modal is open, and one the moment it closes',
-      (tester) async {
+  testWidgets('no autosave while a modal is open, and one the moment it closes', (
+    tester,
+  ) async {
     final it = setUpDriver();
     it.driver.suppress('modal');
     type(it.core, it.changes, 'a');
@@ -136,7 +143,8 @@ void main() {
     expect(
       it.core.saves.length,
       1,
-      reason: '§10 does not allow a save to be dropped because the timing was awkward',
+      reason:
+          '§10 does not allow a save to be dropped because the timing was awkward',
     );
   });
 
@@ -240,9 +248,11 @@ void main() {
     final it = setUpDriver();
     final controller = EditorController(it.core);
     addTearDown(controller.dispose);
-    await tester.pumpWidget(MaterialApp(
-      home: EditorPage(controller: controller, autosave: it.driver),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EditorPage(controller: controller, autosave: it.driver),
+      ),
+    );
     final page = tester.state<EditorPageState>(find.byType(EditorPage));
     final first = Completer<void>();
     final second = Completer<void>();
@@ -311,8 +321,9 @@ void main() {
     expect(it.driver.pending, isFalse);
   });
 
-  testWidgets('an undo back to the saved state stops the pending save',
-      (tester) async {
+  testWidgets('an undo back to the saved state stops the pending save', (
+    tester,
+  ) async {
     final it = setUpDriver();
     type(it.core, it.changes, 'a');
     // Whatever the writer did, the core now says there is nothing to write.
@@ -325,8 +336,9 @@ void main() {
     expect(it.driver.pending, isFalse);
   });
 
-  testWidgets('a failed autosave is reported and the document stays dirty',
-      (tester) async {
+  testWidgets('a failed autosave is reported and the document stays dirty', (
+    tester,
+  ) async {
     final it = setUpDriver();
     it.core.refuseSaveWith = SaveFailure.noSpace;
     type(it.core, it.changes, 'a');
@@ -338,12 +350,18 @@ void main() {
 
     expect(it.outcomes, isNotEmpty);
     expect(it.outcomes.first, isA<SaveOutcome_Failed>());
-    expect((it.outcomes.first as SaveOutcome_Failed).failure, SaveFailure.noSpace);
+    expect(
+      (it.outcomes.first as SaveOutcome_Failed).failure,
+      SaveFailure.noSpace,
+    );
     expect(it.core.dirty, isTrue, reason: 'nothing reached the file');
     // And it keeps trying: the document is still dirty, so the interval keeps
     // ticking. A disk that frees up gets written to without the writer doing
     // anything.
-    expect(it.outcomes.every((outcome) => outcome is SaveOutcome_Failed), isTrue);
+    expect(
+      it.outcomes.every((outcome) => outcome is SaveOutcome_Failed),
+      isTrue,
+    );
   });
 
   testWidgets('turning autosave off means no timers at all', (tester) async {
@@ -354,15 +372,20 @@ void main() {
     expect(it.driver.pending, isFalse);
   });
 
-  testWidgets('saveNow writes immediately and cancels what was pending',
-      (tester) async {
+  testWidgets('saveNow writes immediately and cancels what was pending', (
+    tester,
+  ) async {
     final it = setUpDriver();
     type(it.core, it.changes, 'a');
     await it.driver.saveNow();
     expect(it.core.saves.length, 1);
 
     await tester.pump(const Duration(milliseconds: 200));
-    expect(it.core.saves.length, 1, reason: 'the pending timer did not fire too');
+    expect(
+      it.core.saves.length,
+      1,
+      reason: 'the pending timer did not fire too',
+    );
   });
 
   // --- adopting a document that is already dirty -----------------------------
@@ -373,31 +396,45 @@ void main() {
   // until the writer typed. Reading what was recovered before touching the
   // keyboard is exactly what a person does at that moment (F2).
 
-  testWidgets('a document adopted dirty is saved without waiting for a keystroke',
-      (tester) async {
-    final it = setUpDriver();
-    // Dirty on arrival, and nothing notified: this is what recovery looks like.
-    type(it.core, it.changes, 'recovered');
-    it.core.saves.clear();
-    it.driver.dispose();
+  testWidgets(
+    'a document adopted dirty is saved without waiting for a keystroke',
+    (tester) async {
+      final it = setUpDriver();
+      // Dirty on arrival, and nothing notified: this is what recovery looks like.
+      type(it.core, it.changes, 'recovered');
+      it.core.saves.clear();
+      it.driver.dispose();
 
-    final adopted = AutosaveDriver(
-      core: it.core,
-      changes: it.changes,
-      idle: const Duration(milliseconds: 20),
-      interval: const Duration(milliseconds: 100),
-      onOutcome: (_) {},
-    );
-    addTearDown(adopted.dispose);
-    expect(it.core.dirty, isTrue, reason: 'the recovered document arrives unsaved');
+      final adopted = AutosaveDriver(
+        core: it.core,
+        changes: it.changes,
+        idle: const Duration(milliseconds: 20),
+        interval: const Duration(milliseconds: 100),
+        onOutcome: (_) {},
+      );
+      addTearDown(adopted.dispose);
+      expect(
+        it.core.dirty,
+        isTrue,
+        reason: 'the recovered document arrives unsaved',
+      );
 
-    adopted.documentAdopted();
-    expect(adopted.pending, isTrue, reason: 'the idle timer is armed at once');
+      adopted.documentAdopted();
+      expect(
+        adopted.pending,
+        isTrue,
+        reason: 'the idle timer is armed at once',
+      );
 
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.pumpAndSettle();
-    expect(it.core.saves.length, 1, reason: 'and it fires without an edit event');
-  });
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pumpAndSettle();
+      expect(
+        it.core.saves.length,
+        1,
+        reason: 'and it fires without an edit event',
+      );
+    },
+  );
 
   testWidgets('adopting a clean document arms nothing', (tester) async {
     final it = setUpDriver();
@@ -410,28 +447,30 @@ void main() {
     expect(it.core.saves, isEmpty, reason: 'an ordinary open writes nothing');
   });
 
-  testWidgets('adopting dirty still leaves the interval running for a writer who never pauses',
-      (tester) async {
-    final it = setUpDriver(idle: const Duration(milliseconds: 200));
-    type(it.core, it.changes, 'recovered');
-    it.core.saves.clear();
-    it.driver.dispose();
+  testWidgets(
+    'adopting dirty still leaves the interval running for a writer who never pauses',
+    (tester) async {
+      final it = setUpDriver(idle: const Duration(milliseconds: 200));
+      type(it.core, it.changes, 'recovered');
+      it.core.saves.clear();
+      it.driver.dispose();
 
-    final adopted = AutosaveDriver(
-      core: it.core,
-      changes: it.changes,
-      idle: const Duration(milliseconds: 200),
-      interval: const Duration(milliseconds: 50),
-      onOutcome: (_) {},
-    );
-    addTearDown(adopted.dispose);
-    adopted.documentAdopted();
+      final adopted = AutosaveDriver(
+        core: it.core,
+        changes: it.changes,
+        idle: const Duration(milliseconds: 200),
+        interval: const Duration(milliseconds: 50),
+        onOutcome: (_) {},
+      );
+      addTearDown(adopted.dispose);
+      adopted.documentAdopted();
 
-    // The idle timer has not come due, so this is the interval's doing.
-    await tester.pump(const Duration(milliseconds: 60));
-    await tester.pumpAndSettle();
-    expect(it.core.saves.length, 1);
-  });
+      // The idle timer has not come due, so this is the interval's doing.
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pumpAndSettle();
+      expect(it.core.saves.length, 1);
+    },
+  );
 
   // --- a save that arrives while another is in flight (Phase 4A) -------------
   //
@@ -440,33 +479,44 @@ void main() {
   // Dart's, and what these check, is that the driver neither forgets the save
   // it declined nor stops its clock for text the file does not have.
 
-  testWidgets('an autosave that collides with one in flight is owed, not dropped',
-      (tester) async {
-    final it = setUpDriver();
-    final held = Completer<void>();
-    it.core.holdWrites = held;
+  testWidgets(
+    'an autosave that collides with one in flight is owed, not dropped',
+    (tester) async {
+      final it = setUpDriver();
+      final held = Completer<void>();
+      it.core.holdWrites = held;
 
-    type(it.core, it.changes, 'a');
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(it.core.saves.length, 1, reason: 'the first save is at the disk');
+      type(it.core, it.changes, 'a');
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(it.core.saves.length, 1, reason: 'the first save is at the disk');
 
-    type(it.core, it.changes, 'b');
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(
-      it.core.saves.length,
-      1,
-      reason: 'the second does not pile on top of the first',
-    );
+      type(it.core, it.changes, 'b');
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(
+        it.core.saves.length,
+        1,
+        reason: 'the second does not pile on top of the first',
+      );
 
-    held.complete();
-    await tester.pumpAndSettle();
-    expect(it.core.saves.length, 2, reason: 'it happens once the first is done');
-    expect(it.core.onDisk, it.core.source(), reason: 'and it wrote the newest text');
-    expect(it.core.dirty, isFalse);
-  });
+      held.complete();
+      await tester.pumpAndSettle();
+      expect(
+        it.core.saves.length,
+        2,
+        reason: 'it happens once the first is done',
+      );
+      expect(
+        it.core.onDisk,
+        it.core.source(),
+        reason: 'and it wrote the newest text',
+      );
+      expect(it.core.dirty, isFalse);
+    },
+  );
 
-  testWidgets('an edit that lands mid-write does not stop the clock',
-      (tester) async {
+  testWidgets('an edit that lands mid-write does not stop the clock', (
+    tester,
+  ) async {
     final it = setUpDriver();
     final held = Completer<void>();
     it.core.holdWrites = held;

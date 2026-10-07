@@ -38,7 +38,8 @@ class _CommandPaletteState extends State<CommandPalette> {
   final ScrollController _scroll = ScrollController();
   int _highlighted = 0;
 
-  List<EditorCommand> get _visible => filterCommands(widget.commands, _query.text);
+  List<EditorCommand> get _visible =>
+      filterCommands(widget.commands, _query.text);
 
   @override
   void initState() {
@@ -216,7 +217,9 @@ class _PaletteRow extends StatelessWidget {
                 ),
               ),
             ),
-            Expanded(child: Text(command.label, style: theme.textTheme.bodyMedium)),
+            Expanded(
+              child: Text(command.label, style: theme.textTheme.bodyMedium),
+            ),
             if (command.shortcut.isNotEmpty)
               Text(
                 command.shortcut,

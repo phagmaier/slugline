@@ -19,28 +19,32 @@ import '../support/pump_editor.dart';
 const _line = "John enters the café. He doesn't speak.";
 
 FakeCore twoBlocks() => FakeCore([
-      const BlockView(
-        id: 1,
-        kind: BlockKind.action,
-        sectionLevel: 0,
-        text: _line,
-        forced: false,
-        dual: false,
-        readOnly: false,
-      ),
-      const BlockView(
-        id: 2,
-        kind: BlockKind.action,
-        sectionLevel: 0,
-        text: 'Second paragraph.',
-        forced: false,
-        dual: false,
-        readOnly: false,
-      ),
-    ]);
+  const BlockView(
+    id: 1,
+    kind: BlockKind.action,
+    sectionLevel: 0,
+    text: _line,
+    forced: false,
+    dual: false,
+    readOnly: false,
+  ),
+  const BlockView(
+    id: 2,
+    kind: BlockKind.action,
+    sectionLevel: 0,
+    text: 'Second paragraph.',
+    forced: false,
+    dual: false,
+    readOnly: false,
+  ),
+]);
 
-Future<void> press(WidgetTester tester, LogicalKeyboardKey key,
-    {bool control = false, bool shift = false}) async {
+Future<void> press(
+  WidgetTester tester,
+  LogicalKeyboardKey key, {
+  bool control = false,
+  bool shift = false,
+}) async {
   if (control) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
   if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
   await tester.sendKeyEvent(key);
@@ -123,19 +127,28 @@ void main() {
       expect(controller.selection.focus.offsetUtf16, 5);
     });
 
-    testWidgets('stops at the end of a block before crossing it', (tester) async {
+    testWidgets('stops at the end of a block before crossing it', (
+      tester,
+    ) async {
       final controller = await pumpEditor(tester, twoBlocks());
       // Inside the last word, "speak".
       caretAt(controller, 0, 35);
 
       await press(tester, LogicalKeyboardKey.arrowRight, control: true);
       expect(controller.selection.focus.block, 1);
-      expect(controller.selection.focus.offsetUtf16, 38, reason: 'past "speak"');
+      expect(
+        controller.selection.focus.offsetUtf16,
+        38,
+        reason: 'past "speak"',
+      );
 
       await press(tester, LogicalKeyboardKey.arrowRight, control: true);
       expect(controller.selection.focus.block, 1);
-      expect(controller.selection.focus.offsetUtf16, _line.length,
-          reason: 'past the full stop, and no further');
+      expect(
+        controller.selection.focus.offsetUtf16,
+        _line.length,
+        reason: 'past the full stop, and no further',
+      );
 
       // Only the next press crosses.
       await press(tester, LogicalKeyboardKey.arrowRight, control: true);
@@ -160,7 +173,12 @@ void main() {
       final controller = await pumpEditor(tester, twoBlocks());
       caretAt(controller, 0, 0);
 
-      await press(tester, LogicalKeyboardKey.arrowRight, control: true, shift: true);
+      await press(
+        tester,
+        LogicalKeyboardKey.arrowRight,
+        control: true,
+        shift: true,
+      );
       expect(controller.hasSelection, isTrue);
       expect(controller.selection.anchor.offsetUtf16, 0);
       expect(controller.selection.focus.offsetUtf16, 4);
@@ -299,8 +317,9 @@ void main() {
       }
     }
 
-    testWidgets('once places the caret in the block that was clicked',
-        (tester) async {
+    testWidgets('once places the caret in the block that was clicked', (
+      tester,
+    ) async {
       final controller = await pumpEditor(tester, twoBlocks());
       await click(tester);
 

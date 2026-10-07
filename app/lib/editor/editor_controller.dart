@@ -465,7 +465,8 @@ class EditorController extends ChangeNotifier {
   void setSelection(DocSelection selection, {bool keepStickyColumn = false}) {
     // Drags and redundant placements call this with the selection already in
     // force; notifying anyway repaints and re-drives the IME for nothing.
-    if (selection == _selection && (keepStickyColumn || _stickyColumn == null)) {
+    if (selection == _selection &&
+        (keepStickyColumn || _stickyColumn == null)) {
       return;
     }
     if (!keepStickyColumn) _stickyColumn = null;

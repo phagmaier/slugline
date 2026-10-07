@@ -35,25 +35,25 @@ const editableKinds = [
 ];
 
 FakeCore twoBlocks(BlockKind kind) => FakeCore([
-      BlockView(
-        id: 1,
-        kind: kind,
-        sectionLevel: kind == BlockKind.section ? 1 : 0,
-        text: 'Hello world',
-        forced: false,
-        dual: false,
-        readOnly: false,
-      ),
-      const BlockView(
-        id: 2,
-        kind: BlockKind.action,
-        sectionLevel: 0,
-        text: 'Second.',
-        forced: false,
-        dual: false,
-        readOnly: false,
-      ),
-    ]);
+  BlockView(
+    id: 1,
+    kind: kind,
+    sectionLevel: kind == BlockKind.section ? 1 : 0,
+    text: 'Hello world',
+    forced: false,
+    dual: false,
+    readOnly: false,
+  ),
+  const BlockView(
+    id: 2,
+    kind: BlockKind.action,
+    sectionLevel: 0,
+    text: 'Second.',
+    forced: false,
+    dual: false,
+    readOnly: false,
+  ),
+]);
 
 void main() {
   for (final kind in editableKinds) {
@@ -80,8 +80,9 @@ void main() {
         expect(controller.selection.focus.offsetUtf16, 0);
       });
 
-      testWidgets('Enter at the end of a block leaves an empty one after it',
-          (tester) async {
+      testWidgets('Enter at the end of a block leaves an empty one after it', (
+        tester,
+      ) async {
         final core = twoBlocks(kind);
         final controller = await pumpEditor(tester, core);
         caretAt(controller, 0, 11);
@@ -95,8 +96,9 @@ void main() {
         expect(controller.selection.focus.block, controller.blocks[1].id);
       });
 
-      testWidgets('Backspace at offset 0 merges with the block above',
-          (tester) async {
+      testWidgets('Backspace at offset 0 merges with the block above', (
+        tester,
+      ) async {
         final core = FakeCore([
           const BlockView(
             id: 1,
@@ -133,8 +135,9 @@ void main() {
         expect(controller.selection.focus.offsetUtf16, 'Above.'.length);
       });
 
-      testWidgets('Backspace inside the text deletes one character',
-          (tester) async {
+      testWidgets('Backspace inside the text deletes one character', (
+        tester,
+      ) async {
         final core = twoBlocks(kind);
         final controller = await pumpEditor(tester, core);
         caretAt(controller, 0, 5);
@@ -153,8 +156,9 @@ void main() {
         expect(controller.selection.focus.offsetUtf16, 4);
       });
 
-      testWidgets('Delete at the end of a block pulls the next one up',
-          (tester) async {
+      testWidgets('Delete at the end of a block pulls the next one up', (
+        tester,
+      ) async {
         final core = twoBlocks(kind);
         final controller = await pumpEditor(tester, core);
         caretAt(controller, 0, 11);
@@ -172,8 +176,9 @@ void main() {
     });
   }
 
-  testWidgets('Backspace at the very start of the script does nothing',
-      (tester) async {
+  testWidgets('Backspace at the very start of the script does nothing', (
+    tester,
+  ) async {
     final core = FakeCore.single(BlockKind.action, 'Only.');
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 0);
@@ -185,8 +190,9 @@ void main() {
     expect(controller.blocks[0].text, 'Only.');
   });
 
-  testWidgets('Delete at the very end of the script does nothing',
-      (tester) async {
+  testWidgets('Delete at the very end of the script does nothing', (
+    tester,
+  ) async {
     final core = FakeCore.single(BlockKind.action, 'Only.');
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 5);
@@ -198,8 +204,9 @@ void main() {
     expect(controller.blocks[0].text, 'Only.');
   });
 
-  testWidgets('a refused edit leaves the document alone and says so',
-      (tester) async {
+  testWidgets('a refused edit leaves the document alone and says so', (
+    tester,
+  ) async {
     final core = FakeCore.single(BlockKind.action, 'Verbatim.');
     final controller = await pumpEditor(tester, core);
     caretAt(controller, 0, 3);
@@ -212,8 +219,9 @@ void main() {
     expect(controller.lastRejection, EditRejection.notEditable);
   });
 
-  testWidgets('Enter over a selection replaces it and then splits',
-      (tester) async {
+  testWidgets('Enter over a selection replaces it and then splits', (
+    tester,
+  ) async {
     final core = twoBlocks(BlockKind.action);
     final controller = await pumpEditor(tester, core);
     selectFromTo(controller, 0, 5, 0, 11);
@@ -226,8 +234,9 @@ void main() {
     expect(controller.blocks[1].text, isEmpty);
   });
 
-  testWidgets('Backspace over a selection deletes it in one command',
-      (tester) async {
+  testWidgets('Backspace over a selection deletes it in one command', (
+    tester,
+  ) async {
     final core = twoBlocks(BlockKind.action);
     final controller = await pumpEditor(tester, core);
     selectFromTo(controller, 0, 5, 1, 6);

@@ -61,7 +61,10 @@ Offset editorCell(int row, int column, {double textSize = 15}) {
 }
 
 /// Puts a focused editor on screen over [core] and hands back its controller.
-Future<EditorController> pumpEditor(WidgetTester tester, DocumentCore core) async {
+Future<EditorController> pumpEditor(
+  WidgetTester tester,
+  DocumentCore core,
+) async {
   final controller = EditorController(core);
   addTearDown(controller.dispose);
   await tester.pumpWidget(
@@ -83,7 +86,10 @@ Future<EditorController> pumpEditor(WidgetTester tester, DocumentCore core) asyn
 
 /// The same, but the whole page: the surface, the element bar, and the two
 /// panels `Ctrl+K` and `Ctrl+F` open. For anything that involves them.
-Future<EditorController> pumpEditorPage(WidgetTester tester, DocumentCore core) async {
+Future<EditorController> pumpEditorPage(
+  WidgetTester tester,
+  DocumentCore core,
+) async {
   final controller = EditorController(core);
   addTearDown(controller.dispose);
   await tester.pumpWidget(
@@ -102,8 +108,10 @@ Future<EditorController> pumpEditorPage(WidgetTester tester, DocumentCore core) 
 
 /// Puts the caret in [blockIndex] at [offset], with no selection.
 void caretAt(EditorController controller, int blockIndex, int offset) {
-  final position =
-      DocPosition(block: controller.blocks[blockIndex].id, offsetUtf16: offset);
+  final position = DocPosition(
+    block: controller.blocks[blockIndex].id,
+    offsetUtf16: offset,
+  );
   controller.setSelection(DocSelection(anchor: position, focus: position));
 }
 

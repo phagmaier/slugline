@@ -151,10 +151,7 @@ void main() {
     await _finishInitialCheck(tester);
 
     final topLeft = tester.getTopLeft(find.byType(EditorSurface));
-    await tester.tapAt(
-      topLeft + editorCell(0, 2),
-      buttons: kSecondaryButton,
-    );
+    await tester.tapAt(topLeft + editorCell(0, 2), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
     expect(find.text('wurld-suggestion'), findsOneWidget);

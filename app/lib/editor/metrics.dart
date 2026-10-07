@@ -33,12 +33,12 @@ class ScreenplayMetrics {
 
   /// The grid the script face draws at [fontSize].
   ScreenplayMetrics.forFontSize(double fontSize)
-      : advance = fontSize * advanceRatio,
-        lineHeight = fontSize * lineHeightRatio;
+    : advance = fontSize * advanceRatio,
+      lineHeight = fontSize * lineHeightRatio;
 
   /// The grid whose measure — sixty characters — is exactly [columnWidth] wide.
   ScreenplayMetrics.forColumnWidth(double columnWidth)
-      : this.forFontSize(fontSizeForColumn(columnWidth));
+    : this.forFontSize(fontSizeForColumn(columnWidth));
 
   /// The width of one character cell, measured from the editor's own font.
   final double advance;
@@ -272,8 +272,8 @@ class ElementMetrics {
     required this.blankLinesBefore,
     this.alignment = ColumnAlignment.left,
     this.upperCase = false,
-  })  : indent = ScreenplayMetrics.columnsIn(indentInches),
-        width = ScreenplayMetrics.columnsIn(widthInches);
+  }) : indent = ScreenplayMetrics.columnsIn(indentInches),
+       width = ScreenplayMetrics.columnsIn(widthInches);
 
   /// Columns from the left edge of the text area (1.5" on the page).
   final int indent;
@@ -408,17 +408,17 @@ String displayText(BlockKind kind, String text) {
 
 /// The label the UI shows for an element type.
 String kindLabel(BlockKind kind, int sectionLevel) => switch (kind) {
-      BlockKind.sceneHeading => 'Scene heading',
-      BlockKind.action => 'Action',
-      BlockKind.character => 'Character',
-      BlockKind.dialogue => 'Dialogue',
-      BlockKind.parenthetical => 'Parenthetical',
-      BlockKind.transition => 'Transition',
-      BlockKind.centered => 'Centred',
-      BlockKind.lyric => 'Lyric',
-      BlockKind.section => 'Section $sectionLevel',
-      BlockKind.synopsis => 'Synopsis',
-      BlockKind.note => 'Note',
-      BlockKind.pageBreak => 'Page break',
-      BlockKind.opaque => 'Verbatim',
-    };
+  BlockKind.sceneHeading => 'Scene heading',
+  BlockKind.action => 'Action',
+  BlockKind.character => 'Character',
+  BlockKind.dialogue => 'Dialogue',
+  BlockKind.parenthetical => 'Parenthetical',
+  BlockKind.transition => 'Transition',
+  BlockKind.centered => 'Centred',
+  BlockKind.lyric => 'Lyric',
+  BlockKind.section => 'Section $sectionLevel',
+  BlockKind.synopsis => 'Synopsis',
+  BlockKind.note => 'Note',
+  BlockKind.pageBreak => 'Page break',
+  BlockKind.opaque => 'Verbatim',
+};

@@ -5,7 +5,8 @@ import 'package:slugline/app.dart' show scriptToRestore;
 import 'package:slugline/core/core.dart' show RecoveryOffer, ScriptView;
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/save_status.dart';
-import 'package:slugline/library/backups_dialog.dart' show formatBytes, formatTimestamp;
+import 'package:slugline/library/backups_dialog.dart'
+    show formatBytes, formatTimestamp;
 import 'package:slugline/library/recovery_dialog.dart';
 import 'package:slugline/library/save_dialogs.dart';
 
@@ -22,9 +23,14 @@ import '../support/fake_core.dart';
 ///   changed with unsaved edits prompts;
 /// * §10's "must never silently discard unsaved changes".
 void main() {
-  Future<void> pumpWith(WidgetTester tester, Widget Function(BuildContext) body) {
+  Future<void> pumpWith(
+    WidgetTester tester,
+    Widget Function(BuildContext) body,
+  ) {
     return tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: Builder(builder: body))),
+      MaterialApp(
+        home: Scaffold(body: Builder(builder: body)),
+      ),
     );
   }
 
@@ -35,7 +41,9 @@ void main() {
       (SaveFailure.permissionDenied, 'No permission'),
       (SaveFailure.noSuchDirectory, 'not there'),
     ]) {
-      testWidgets('$failure says "$expected" and offers Save as', (tester) async {
+      testWidgets('$failure says "$expected" and offers Save as', (
+        tester,
+      ) async {
         SaveFailureChoice? choice;
         await pumpWith(
           tester,
@@ -44,10 +52,11 @@ void main() {
               choice = await showSaveFailure(
                 context,
                 SaveOutcome.failed(
-                  failure: failure,
-                  path: '/scripts/heat.fountain',
-                  message: 'os said no',
-                ) as SaveOutcome_Failed,
+                      failure: failure,
+                      path: '/scripts/heat.fountain',
+                      message: 'os said no',
+                    )
+                    as SaveOutcome_Failed,
               );
             },
             child: const Text('save'),
@@ -57,8 +66,11 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.textContaining(expected, findRichText: true), findsWidgets);
-        expect(find.text('/scripts/heat.fountain'), findsNothing,
-            reason: 'the path is in a sentence, not on its own');
+        expect(
+          find.text('/scripts/heat.fountain'),
+          findsNothing,
+          reason: 'the path is in a sentence, not on its own',
+        );
         expect(find.textContaining('/scripts/heat.fountain'), findsWidgets);
 
         // Every failure offers the escape hatch.
@@ -69,7 +81,9 @@ void main() {
       });
     }
 
-    testWidgets('the dialog cannot be dismissed by clicking away', (tester) async {
+    testWidgets('the dialog cannot be dismissed by clicking away', (
+      tester,
+    ) async {
       // §Phase 4: "blocking, explicit … never a silent toast". Clicking the
       // barrier away would be the silent version.
       await pumpWith(
@@ -78,10 +92,11 @@ void main() {
           onPressed: () => showSaveFailure(
             context,
             SaveOutcome.failed(
-              failure: SaveFailure.noSpace,
-              path: '/x.fountain',
-              message: 'ENOSPC',
-            ) as SaveOutcome_Failed,
+                  failure: SaveFailure.noSpace,
+                  path: '/x.fountain',
+                  message: 'ENOSPC',
+                )
+                as SaveOutcome_Failed,
           ),
           child: const Text('save'),
         ),
@@ -102,10 +117,11 @@ void main() {
           onPressed: () => showSaveFailure(
             context,
             SaveOutcome.failed(
-              failure: SaveFailure.noSpace,
-              path: '/x.fountain',
-              message: 'ENOSPC',
-            ) as SaveOutcome_Failed,
+                  failure: SaveFailure.noSpace,
+                  path: '/x.fountain',
+                  message: 'ENOSPC',
+                )
+                as SaveOutcome_Failed,
           ),
           child: const Text('save'),
         ),
@@ -138,8 +154,11 @@ void main() {
               core,
               forcePath: true,
               chooseFile:
-                  (context, {required directory, required suggestedName}) async =>
-                      answers.removeAt(0),
+                  (
+                    context, {
+                    required directory,
+                    required suggestedName,
+                  }) async => answers.removeAt(0),
             );
           },
           child: const Text('save as'),
@@ -150,8 +169,9 @@ void main() {
       return () => outcome;
     }
 
-    testWidgets('an occupied destination is confirmed before it is replaced',
-        (tester) async {
+    testWidgets('an occupied destination is confirmed before it is replaced', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'John enters.')
         ..filePath = '/scripts/heat.fountain'
         ..existingFiles.add('/scripts/other.fountain');
@@ -167,26 +187,27 @@ void main() {
       await tester.tap(find.text('Replace'));
       await tester.pumpAndSettle();
 
-      expect(core.saveAsCalls, [
-        ('/scripts/other.fountain', false),
-        ('/scripts/other.fountain', true),
-      ], reason: 'replacing is the same call said again, explicitly');
+      expect(
+        core.saveAsCalls,
+        [('/scripts/other.fountain', false), ('/scripts/other.fountain', true)],
+        reason: 'replacing is the same call said again, explicitly',
+      );
       expect(saved(), isA<SaveOutcome_Saved>());
       expect(core.filePath, '/scripts/other.fountain');
     });
 
-    testWidgets('declining goes back to the chooser and writes nothing',
-        (tester) async {
+    testWidgets('declining goes back to the chooser and writes nothing', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'John enters.')
         ..filePath = '/scripts/heat.fountain'
         ..onDisk = 'John enters.\n'
         ..existingFiles.add('/scripts/other.fountain');
 
-      final saved = await saveAsking(
-        tester,
-        core,
-        ['/scripts/other.fountain', '/scripts/new.fountain'],
-      );
+      final saved = await saveAsking(tester, core, [
+        '/scripts/other.fountain',
+        '/scripts/new.fountain',
+      ]);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
@@ -202,17 +223,17 @@ void main() {
       expect(core.filePath, '/scripts/new.fountain');
     });
 
-    testWidgets('closing the chooser at the replace question saves nothing',
-        (tester) async {
+    testWidgets('closing the chooser at the replace question saves nothing', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'John enters.')
         ..filePath = '/scripts/heat.fountain'
         ..existingFiles.add('/scripts/other.fountain');
 
-      final saved = await saveAsking(
-        tester,
-        core,
-        ['/scripts/other.fountain', null],
-      );
+      final saved = await saveAsking(tester, core, [
+        '/scripts/other.fountain',
+        null,
+      ]);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
@@ -226,8 +247,9 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
     });
 
-    testWidgets('a script open here is refused, and not by asking',
-        (tester) async {
+    testWidgets('a script open here is refused, and not by asking', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'John enters.')
         ..filePath = '/scripts/heat.fountain'
         ..existingFiles.add('/scripts/open.fountain')
@@ -253,8 +275,9 @@ void main() {
   });
 
   group('unsaved changes', () {
-    testWidgets('closing with unsaved work asks, and Cancel means cancel',
-        (tester) async {
+    testWidgets('closing with unsaved work asks, and Cancel means cancel', (
+      tester,
+    ) async {
       UnsavedChoice? choice;
       await pumpWith(
         tester,
@@ -274,8 +297,9 @@ void main() {
       expect(choice, UnsavedChoice.cancel);
     });
 
-    testWidgets('discarding is a deliberate choice, not the default',
-        (tester) async {
+    testWidgets('discarding is a deliberate choice, not the default', (
+      tester,
+    ) async {
       await pumpWith(
         tester,
         (context) => TextButton(
@@ -293,7 +317,9 @@ void main() {
   });
 
   group('external modification', () {
-    testWidgets('an unmodified document reloads without asking', (tester) async {
+    testWidgets('an unmodified document reloads without asking', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'John enters.')
         ..filePath = '/scripts/heat.fountain'
         ..onDisk = 'Somebody else wrote this.\n';
@@ -305,13 +331,18 @@ void main() {
       // is only reached in the other case, which the next test covers.
     });
 
-    testWidgets('a modified document prompts with three answers', (tester) async {
+    testWidgets('a modified document prompts with three answers', (
+      tester,
+    ) async {
       ExternalChangeChoice? choice;
       await pumpWith(
         tester,
         (context) => TextButton(
           onPressed: () async {
-            choice = await showExternalChange(context, '/scripts/heat.fountain');
+            choice = await showExternalChange(
+              context,
+              '/scripts/heat.fountain',
+            );
           },
           child: const Text('changed'),
         ),
@@ -323,7 +354,10 @@ void main() {
       expect(find.text('Take theirs'), findsOneWidget);
       expect(find.text('Save as…'), findsOneWidget);
       // The one that loses work says so.
-      expect(find.textContaining('discards your unsaved changes'), findsOneWidget);
+      expect(
+        find.textContaining('discards your unsaved changes'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Keep mine'));
       await tester.pumpAndSettle();
@@ -334,36 +368,42 @@ void main() {
     /// must not put up the generic failure dialog: the core pushed the same
     /// `FileChangedOnDisk` the watcher would have, so the external-modification
     /// prompt — the one with the three answers that fit — is already coming.
-    testWidgets('a refusal over an external edit does not stack a second dialog', (
-      tester,
-    ) async {
-      final core = FakeCore.single(BlockKind.action, 'John enters.')
-        ..filePath = '/scripts/heat.fountain'
-        ..refuseSaveWith = SaveFailure.changedOnDisk;
-      core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
-      );
+    testWidgets(
+      'a refusal over an external edit does not stack a second dialog',
+      (tester) async {
+        final core = FakeCore.single(BlockKind.action, 'John enters.')
+          ..filePath = '/scripts/heat.fountain'
+          ..refuseSaveWith = SaveFailure.changedOnDisk;
+        core.apply(
+          EditCommand.replaceText(
+            block: 1,
+            startUtf16: 0,
+            endUtf16: 0,
+            with_: 'a',
+          ),
+        );
 
-      SaveOutcome? outcome;
-      await pumpWith(
-        tester,
-        (context) => TextButton(
-          onPressed: () async {
-            outcome = await saveWithDialogs(context, core);
-          },
-          child: const Text('save'),
-        ),
-      );
-      await tester.tap(find.text('save'));
-      await tester.pumpAndSettle();
+        SaveOutcome? outcome;
+        await pumpWith(
+          tester,
+          (context) => TextButton(
+            onPressed: () async {
+              outcome = await saveWithDialogs(context, core);
+            },
+            child: const Text('save'),
+          ),
+        );
+        await tester.tap(find.text('save'));
+        await tester.pumpAndSettle();
 
-      expect(find.byType(AlertDialog), findsNothing);
-      expect(
-        (outcome as SaveOutcome_Failed).failure,
-        SaveFailure.changedOnDisk,
-        reason: 'and the caller is told, so the status line can say it',
-      );
-    });
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(
+          (outcome as SaveOutcome_Failed).failure,
+          SaveFailure.changedOnDisk,
+          reason: 'and the caller is told, so the status line can say it',
+        );
+      },
+    );
 
     /// "Keep mine leaves the file alone until you next save" — so the core is
     /// told the writer has seen this version of the file, and the next save is
@@ -378,7 +418,12 @@ void main() {
         ..onDisk = 'Somebody else wrote this.\n'
         ..refuseSaveWith = SaveFailure.changedOnDisk;
       core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+        EditCommand.replaceText(
+          block: 1,
+          startUtf16: 0,
+          endUtf16: 0,
+          with_: 'a',
+        ),
       );
       expect((await core.save()) is SaveOutcome_Failed, isTrue);
 
@@ -398,15 +443,14 @@ void main() {
       bool damaged = false,
       String script = '/scripts/heat.fountain',
       String? blocked,
-    }) =>
-        RecoveryOffer(
-          journal: '/state/journal/abc.log',
-          script: script,
-          title: script.isEmpty ? 'Untitled' : 'heat.fountain',
-          edits: edits,
-          damaged: damaged,
-          blocked: blocked,
-        );
+    }) => RecoveryOffer(
+      journal: '/state/journal/abc.log',
+      script: script,
+      title: script.isEmpty ? 'Untitled' : 'heat.fountain',
+      edits: edits,
+      damaged: damaged,
+      blocked: blocked,
+    );
 
     test('the summary is §Phase 4\'s "14 edits since last save"', () {
       expect(
@@ -427,33 +471,35 @@ void main() {
       );
     });
 
-    testWidgets('Recover and Discard are both offered, and nothing is automatic',
-        (tester) async {
-      Map<String, RecoveryChoice>? chosen;
-      await pumpWith(
-        tester,
-        (context) => TextButton(
-          onPressed: () async {
-            chosen = await RecoveryDialog.show(context, [offer()]);
-          },
-          child: const Text('start'),
-        ),
-      );
-      await tester.tap(find.text('start'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'Recover and Discard are both offered, and nothing is automatic',
+      (tester) async {
+        Map<String, RecoveryChoice>? chosen;
+        await pumpWith(
+          tester,
+          (context) => TextButton(
+            onPressed: () async {
+              chosen = await RecoveryDialog.show(context, [offer()]);
+            },
+            child: const Text('start'),
+          ),
+        );
+        await tester.tap(find.text('start'));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('closed unexpectedly'), findsOneWidget);
-      expect(
-        find.textContaining('Nothing has been written to any of your files'),
-        findsOneWidget,
-      );
-      expect(find.text('Recover'), findsOneWidget);
-      expect(find.text('Discard'), findsOneWidget);
+        expect(find.textContaining('closed unexpectedly'), findsOneWidget);
+        expect(
+          find.textContaining('Nothing has been written to any of your files'),
+          findsOneWidget,
+        );
+        expect(find.text('Recover'), findsOneWidget);
+        expect(find.text('Discard'), findsOneWidget);
 
-      await tester.tap(find.text('Recover'));
-      await tester.pumpAndSettle();
-      expect(chosen, {'/state/journal/abc.log': RecoveryChoice.recover});
-    });
+        await tester.tap(find.text('Recover'));
+        await tester.pumpAndSettle();
+        expect(chosen, {'/state/journal/abc.log': RecoveryChoice.recover});
+      },
+    );
 
     testWidgets('closing the dialog decides nothing', (tester) async {
       // The safe answer. A journal left alone is offered again next launch; a
@@ -475,22 +521,25 @@ void main() {
       expect(chosen, isEmpty);
     });
 
-    testWidgets('an offer that cannot be taken says why and is not offered',
-        (tester) async {
+    testWidgets('an offer that cannot be taken says why and is not offered', (
+      tester,
+    ) async {
       await pumpWith(
         tester,
         (context) => TextButton(
-          onPressed: () => RecoveryDialog.show(
-            context,
-            [offer(blocked: 'heat.fountain has changed since it was last open')],
-          ),
+          onPressed: () => RecoveryDialog.show(context, [
+            offer(blocked: 'heat.fountain has changed since it was last open'),
+          ]),
           child: const Text('start'),
         ),
       );
       await tester.tap(find.text('start'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('has changed since it was last open'), findsOneWidget);
+      expect(
+        find.textContaining('has changed since it was last open'),
+        findsOneWidget,
+      );
       final recover = tester.widget<FilledButton>(
         find.widgetWithText(FilledButton, 'Recover'),
       );
@@ -503,16 +552,16 @@ void main() {
     // journal at exactly that name, which is where the offer's records went.
     group('the session restore and an undecided offer', () {
       ScriptView script(String path) => ScriptView(
-            id: path,
-            path: path,
-            title: path,
-            modifiedMillis: 0,
-            bytes: 0,
-            pageCount: 0,
-            missing: false,
-            open: true,
-            scrollRow: 0,
-          );
+        id: path,
+        path: path,
+        title: path,
+        modifiedMillis: 0,
+        bytes: 0,
+        pageCount: 0,
+        missing: false,
+        open: true,
+        scrollRow: 0,
+      );
 
       test('a script with a pending offer is not reopened', () {
         expect(
@@ -537,7 +586,10 @@ void main() {
 
       test('the next script in the session is restored instead', () {
         final restored = scriptToRestore(
-          session: [script('/scripts/heat.fountain'), script('/scripts/b.fountain')],
+          session: [
+            script('/scripts/heat.fountain'),
+            script('/scripts/b.fountain'),
+          ],
           offers: [offer()],
           resolved: const {},
         );
@@ -563,7 +615,12 @@ void main() {
 
       expect(status.label, 'saved');
       core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+        EditCommand.replaceText(
+          block: 1,
+          startUtf16: 0,
+          endUtf16: 0,
+          with_: 'a',
+        ),
       );
       expect(status.label, 'not saved · 1 edits recorded');
 
@@ -580,7 +637,12 @@ void main() {
 
       core.refuseSaveWith = SaveFailure.noSpace;
       core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+        EditCommand.replaceText(
+          block: 1,
+          startUtf16: 0,
+          endUtf16: 0,
+          with_: 'a',
+        ),
       );
       status.record(await core.save());
       expect(status.isError, isTrue);
@@ -608,7 +670,12 @@ void main() {
 
       expect(status.label, 'saved · recovery record unavailable');
       core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+        EditCommand.replaceText(
+          block: 1,
+          startUtf16: 0,
+          endUtf16: 0,
+          with_: 'a',
+        ),
       );
       expect(status.label, 'not saved · recovery record unavailable');
 
@@ -633,47 +700,65 @@ void main() {
     /// and every `watch` call into a `let _`. Saving is still safe — the core
     /// checks the file before replacing it — so the wording is about warning
     /// rather than about danger.
-    testWidgets('a session whose file cannot be watched says so in every state', (
-      tester,
-    ) async {
-      final core = FakeCore.single(BlockKind.action, 'John enters.')
-        ..filePath = '/scripts/heat.fountain'
-        ..watchUnavailable = true;
-      final status = SaveStatus(core: core);
+    testWidgets(
+      'a session whose file cannot be watched says so in every state',
+      (tester) async {
+        final core = FakeCore.single(BlockKind.action, 'John enters.')
+          ..filePath = '/scripts/heat.fountain'
+          ..watchUnavailable = true;
+        final status = SaveStatus(core: core);
 
-      expect(status.label, 'saved · external changes not watched');
-      core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
-      );
-      expect(
-        status.label,
-        'not saved · 1 edits recorded · external changes not watched',
-      );
+        expect(status.label, 'saved · external changes not watched');
+        core.apply(
+          EditCommand.replaceText(
+            block: 1,
+            startUtf16: 0,
+            endUtf16: 0,
+            with_: 'a',
+          ),
+        );
+        expect(
+          status.label,
+          'not saved · 1 edits recorded · external changes not watched',
+        );
 
-      await core.save();
-      expect(status.label, 'saved · external changes not watched');
+        await core.save();
+        expect(status.label, 'saved · external changes not watched');
 
-      // And it survives a failure, which outranks everything else it says.
-      core.refuseSaveWith = SaveFailure.noSpace;
-      core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'b'),
-      );
-      status.record(await core.save());
-      expect(status.label, contains('disk is full'));
-      expect(status.label, contains('external changes not watched'));
-    });
+        // And it survives a failure, which outranks everything else it says.
+        core.refuseSaveWith = SaveFailure.noSpace;
+        core.apply(
+          EditCommand.replaceText(
+            block: 1,
+            startUtf16: 0,
+            endUtf16: 0,
+            with_: 'b',
+          ),
+        );
+        status.record(await core.save());
+        expect(status.label, contains('disk is full'));
+        expect(status.label, contains('external changes not watched'));
+      },
+    );
 
     /// The refusal the save path answers with when the file is not the one it
     /// last read. Short, because the modal that is already on its way says the
     /// rest — and present, because a writer who dismisses that modal without
     /// deciding must still see that their text is not on disk.
-    testWidgets('a save refused over an external edit says why', (tester) async {
+    testWidgets('a save refused over an external edit says why', (
+      tester,
+    ) async {
       final core = FakeCore.single(BlockKind.action, 'x')
         ..filePath = '/scripts/heat.fountain'
         ..refuseSaveWith = SaveFailure.changedOnDisk;
       final status = SaveStatus(core: core);
       core.apply(
-        EditCommand.replaceText(block: 1, startUtf16: 0, endUtf16: 0, with_: 'a'),
+        EditCommand.replaceText(
+          block: 1,
+          startUtf16: 0,
+          endUtf16: 0,
+          with_: 'a',
+        ),
       );
 
       status.record(await core.save());
@@ -691,14 +776,20 @@ void main() {
 
     test('today and yesterday are named rather than dated', () {
       final now = DateTime.now();
-      expect(formatTimestamp(now.millisecondsSinceEpoch), startsWith('Today at '));
+      expect(
+        formatTimestamp(now.millisecondsSinceEpoch),
+        startsWith('Today at '),
+      );
       final yesterday = now.subtract(const Duration(days: 1));
       expect(
         formatTimestamp(yesterday.millisecondsSinceEpoch),
         startsWith('Yesterday at '),
       );
       final old = DateTime(2024, 3, 7, 9, 5);
-      expect(formatTimestamp(old.millisecondsSinceEpoch), '2024-03-07 at 09:05');
+      expect(
+        formatTimestamp(old.millisecondsSinceEpoch),
+        '2024-03-07 at 09:05',
+      );
     });
   });
 }

@@ -489,9 +489,10 @@ class _CaretPosition extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       semanticsLabel: 'Line $line, column $column',
-      style: _statusStyle(theme, colours.textTertiary)?.copyWith(
-        fontFeatures: const [FontFeature.tabularFigures()],
-      ),
+      style: _statusStyle(
+        theme,
+        colours.textTertiary,
+      )?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
     );
   }
 }
@@ -515,9 +516,10 @@ class _ZoomControl extends StatelessWidget {
     final theme = Theme.of(context);
     final colours = context.colours;
     final percent = (size / _defaultSize * 100).round();
-    final style = _statusStyle(theme, colours.textTertiary)?.copyWith(
-      fontFeatures: const [FontFeature.tabularFigures()],
-    );
+    final style = _statusStyle(
+      theme,
+      colours.textTertiary,
+    )?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     Widget step(IconData icon, String tooltip, int delta, String key) =>
         SizedBox(
           width: 24,

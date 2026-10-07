@@ -51,11 +51,16 @@ void main() {
       '09-whitespace',
       '10-malformed',
     ]) {
-      expect(cases.any((c) => c.name.startsWith('$file#')), isTrue,
-          reason: '$file contributed no block to the fixture');
+      expect(
+        cases.any((c) => c.name.startsWith('$file#')),
+        isTrue,
+        reason: '$file contributed no block to the fixture',
+      );
     }
-    expect(cases.where((c) => c.name.startsWith('reference-feature#')).length,
-        greaterThan(500));
+    expect(
+      cases.where((c) => c.name.startsWith('reference-feature#')).length,
+      greaterThan(500),
+    );
     expect(cases.where((c) => c.uppercase).isNotEmpty, isTrue);
   });
 
@@ -72,10 +77,14 @@ void main() {
   });
 
   test('every block of every corpus file wraps identically', () {
-    _compare(cases.where((c) =>
-        !c.name.startsWith('edge/') &&
-        !c.name.startsWith('sweep/') &&
-        !c.name.startsWith('reference-feature#')));
+    _compare(
+      cases.where(
+        (c) =>
+            !c.name.startsWith('edge/') &&
+            !c.name.startsWith('sweep/') &&
+            !c.name.startsWith('reference-feature#'),
+      ),
+    );
   });
 
   test('every block of the reference feature wraps identically', () {
@@ -96,10 +105,12 @@ void _compare(Iterable<_Case> cases) {
     final display = displayText(kind, testCase.text);
     final casing = _casingDifference(testCase.text, testCase.display, display);
     if (casing != null) {
-      failures.add('${testCase.name}: $casing\n'
-          '  source: ${_escape(testCase.text)}\n'
-          '    rust: ${_escape(testCase.display)}\n'
-          '    dart: ${_escape(display)}');
+      failures.add(
+        '${testCase.name}: $casing\n'
+        '  source: ${_escape(testCase.text)}\n'
+        '    rust: ${_escape(testCase.display)}\n'
+        '    dart: ${_escape(display)}',
+      );
       continue;
     }
 
@@ -121,10 +132,12 @@ void _compare(Iterable<_Case> cases) {
           // A boundary inside a surrogate pair is not an offset the bridge
           // would accept (ADR 0001), so it cannot be compared: it is already
           // wrong.
-          failures.add('${testCase.name} at width ${run.width}: '
-              'a row boundary lands inside a scalar\n'
-              '  source: ${_escape(testCase.text)}\n'
-              '    dart: ${_rows(_utf16Rows(rows))}');
+          failures.add(
+            '${testCase.name} at width ${run.width}: '
+            'a row boundary lands inside a scalar\n'
+            '  source: ${_escape(testCase.text)}\n'
+            '    dart: ${_rows(_utf16Rows(rows))}',
+          );
           addressable = false;
           break;
         }
@@ -140,8 +153,10 @@ void _compare(Iterable<_Case> cases) {
 
   expect(compared, greaterThan(0), reason: 'no case was compared');
   if (failures.isNotEmpty) {
-    fail('${failures.length} line-breaking divergence(s) from '
-        'testdata/line-breaking.json:\n\n${failures.join('\n\n')}');
+    fail(
+      '${failures.length} line-breaking divergence(s) from '
+      'testdata/line-breaking.json:\n\n${failures.join('\n\n')}',
+    );
   }
 }
 
@@ -181,7 +196,8 @@ String? _casingDifference(String source, String rust, String dart) {
   }
   for (var scalar = 0; scalar < left.length; scalar++) {
     if (left[scalar] == right[scalar]) continue;
-    final where = 'at scalar $scalar (${_codePoint(typed[scalar])}: '
+    final where =
+        'at scalar $scalar (${_codePoint(typed[scalar])}: '
         'rust ${_codePoint(left[scalar])}, dart ${_codePoint(right[scalar])})';
     if (typed[scalar] <= _casingGuaranteedThrough) {
       return 'display casing differs $where';
@@ -207,16 +223,22 @@ String _report(_Case testCase, _Run run, List<List<int?>> actual) {
     ..writeln('  source: ${_escape(testCase.text)}')
     ..writeln('    rust: ${_rows(run.lines)}')
     ..writeln('    dart: ${_rows(actual)}');
-  final shared = run.lines.length < actual.length ? run.lines.length : actual.length;
+  final shared = run.lines.length < actual.length
+      ? run.lines.length
+      : actual.length;
   for (var row = 0; row < shared; row++) {
     if (!_sameRow(actual[row], run.lines[row])) {
-      buffer.writeln('  first mismatch at row $row: '
-          'rust ${_row(run.lines[row])}, dart ${_row(actual[row])}');
+      buffer.writeln(
+        '  first mismatch at row $row: '
+        'rust ${_row(run.lines[row])}, dart ${_row(actual[row])}',
+      );
       return buffer.toString().trimRight();
     }
   }
-  buffer.writeln('  first mismatch at row $shared: '
-      'rust has ${run.lines.length} rows, dart has ${actual.length}');
+  buffer.writeln(
+    '  first mismatch at row $shared: '
+    'rust has ${run.lines.length} rows, dart has ${actual.length}',
+  );
   return buffer.toString().trimRight();
 }
 
@@ -241,9 +263,9 @@ String _row(List<int?> row) =>
 String _rows(List<List<int?>> rows) => rows.map(_row).join(' ');
 
 List<List<int?>> _utf16Rows(List<VisualLine> rows) => [
-      for (final row in rows)
-        [row.start, row.end, row.columns, row.hardBreakOffsetUtf16],
-    ];
+  for (final row in rows)
+    [row.start, row.end, row.columns, row.hardBreakOffsetUtf16],
+];
 
 /// UTF-16 offset to Unicode-scalar index, for every boundary in the string.
 ///
@@ -333,22 +355,16 @@ _Case _case(Map<String, dynamic> entry) {
   );
 }
 
-_Run _run(Map<String, dynamic> run) => _Run(
-      run['width'] as int,
-      [
-        for (final line in run['lines'] as List<dynamic>)
-          [
-            for (final value in line as List<dynamic>) value as int?,
-          ],
-      ],
-    );
+_Run _run(Map<String, dynamic> run) => _Run(run['width'] as int, [
+  for (final line in run['lines'] as List<dynamic>)
+    [for (final value in line as List<dynamic>) value as int?],
+]);
 
 /// The fixture, found by walking up from wherever the test runner started.
 File _fixture() {
   var directory = Directory.current.absolute;
   while (true) {
-    final candidate =
-        File('${directory.path}/testdata/line-breaking.json');
+    final candidate = File('${directory.path}/testdata/line-breaking.json');
     if (candidate.existsSync()) return candidate;
     final parent = directory.parent;
     if (parent.path == directory.path) {

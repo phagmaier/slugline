@@ -16,7 +16,11 @@ void main() {
     addTearDown(cache.dispose);
     final first = cache.line('INT. HOUSE - DAY', style());
     final second = cache.line('INT. HOUSE - DAY', style());
-    expect(identical(first, second), isTrue, reason: 'a scroll frame must not re-lay');
+    expect(
+      identical(first, second),
+      isTrue,
+      reason: 'a scroll frame must not re-lay',
+    );
     expect(cache.hits, 1);
     expect(cache.misses, 1);
     expect(first.width, greaterThan(0));
@@ -39,16 +43,10 @@ void main() {
       identical(cache.line('NADIA', style(color: Colors.red)), original),
       isFalse,
     );
-    expect(
-      identical(cache.line('NADIA', style(size: 18)), original),
-      isFalse,
-    );
+    expect(identical(cache.line('NADIA', style(size: 18)), original), isFalse);
     expect(
       identical(
-        cache.line(
-          'NADIA',
-          style().copyWith(fontStyle: FontStyle.italic),
-        ),
+        cache.line('NADIA', style().copyWith(fontStyle: FontStyle.italic)),
         original,
       ),
       isFalse,

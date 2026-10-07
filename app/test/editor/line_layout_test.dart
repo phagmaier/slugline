@@ -15,14 +15,14 @@ import 'package:slugline/editor/line_layout.dart';
 import 'package:slugline/editor/metrics.dart';
 
 BlockView block(BlockKind kind, String text, {int id = 1}) => BlockView(
-      id: id,
-      kind: kind,
-      sectionLevel: 0,
-      text: text,
-      forced: false,
-      dual: false,
-      readOnly: false,
-    );
+  id: id,
+  kind: kind,
+  sectionLevel: 0,
+  text: text,
+  forced: false,
+  dual: false,
+  readOnly: false,
+);
 
 void main() {
   group('wrapping', () {
@@ -42,8 +42,10 @@ void main() {
 
     test('breaks on a space and drops it', () {
       final lines = wrapText('aaa bbb ccc', 7);
-      expect([for (final l in lines) 'aaa bbb ccc'.substring(l.start, l.end)],
-          ['aaa bbb', 'ccc']);
+      expect(
+        [for (final l in lines) 'aaa bbb ccc'.substring(l.start, l.end)],
+        ['aaa bbb', 'ccc'],
+      );
     });
 
     test('never breaks mid-word when a space is available', () {
@@ -70,8 +72,11 @@ void main() {
       const text = 'aaaaaaaaa🎬aaaaaaaaaa';
       final lines = wrapText(text, 10);
       for (final line in lines) {
-        expect(_isLowSurrogate(text.codeUnitAt(line.start)), isFalse,
-            reason: 'line starts inside a surrogate pair');
+        expect(
+          _isLowSurrogate(text.codeUnitAt(line.start)),
+          isFalse,
+          reason: 'line starts inside a surrogate pair',
+        );
       }
     });
 
@@ -221,22 +226,14 @@ void main() {
       expect(line.textIn(text), 'a   bc');
       // Every cell of the expansion answers with the tab itself, so a click in
       // the middle of it puts the caret before the tab, never inside it.
-      expect([for (var c = 0; c <= 6; c++) line.offsetAtColumn(c)], [
-        0,
-        1,
-        1,
-        1,
-        2,
-        3,
-        4,
-      ]);
-      expect([for (var o = 0; o <= 4; o++) line.columnAtOffset(o)], [
-        0,
-        1,
-        4,
-        5,
-        6,
-      ]);
+      expect(
+        [for (var c = 0; c <= 6; c++) line.offsetAtColumn(c)],
+        [0, 1, 1, 1, 2, 3, 4],
+      );
+      expect(
+        [for (var o = 0; o <= 4; o++) line.columnAtOffset(o)],
+        [0, 1, 4, 5, 6],
+      );
     });
 
     test('an astral scalar is two offsets and one column', () {
@@ -297,8 +294,10 @@ void main() {
     });
 
     test('headings, cues and transitions are shown in capitals', () {
-      expect(displayText(BlockKind.sceneHeading, 'int. house - day'),
-          'INT. HOUSE - DAY');
+      expect(
+        displayText(BlockKind.sceneHeading, 'int. house - day'),
+        'INT. HOUSE - DAY',
+      );
       expect(displayText(BlockKind.character, 'john'), 'JOHN');
       expect(displayText(BlockKind.transition, 'cut to:'), 'CUT TO:');
       expect(displayText(BlockKind.action, 'john enters'), 'john enters');
@@ -312,8 +311,11 @@ void main() {
       // case.
       for (var scalar = 0; scalar <= 0x024F; scalar++) {
         final source = String.fromCharCode(scalar);
-        expect(displayText(BlockKind.sceneHeading, source), source.toUpperCase(),
-            reason: 'U+${scalar.toRadixString(16).padLeft(4, '0')}');
+        expect(
+          displayText(BlockKind.sceneHeading, source),
+          source.toUpperCase(),
+          reason: 'U+${scalar.toRadixString(16).padLeft(4, '0')}',
+        );
       }
       // The three letters Dart's own upper-casing declines are the three whose
       // capital is more than one scalar, which is the set `layout::engine`'s
@@ -330,8 +332,10 @@ void main() {
       // scalar is left as the writer wrote it and the rest is capitalised.
       expect(displayText(BlockKind.character, 'straße'), 'STRAßE');
       expect(displayText(BlockKind.character, 'STRAßE'), 'STRAßE');
-      expect(displayText(BlockKind.sceneHeading, 'int. ﬁnca - day'),
-          'INT. ﬁNCA - DAY');
+      expect(
+        displayText(BlockKind.sceneHeading, 'int. ﬁnca - day'),
+        'INT. ﬁNCA - DAY',
+      );
     });
   });
 
@@ -345,8 +349,10 @@ void main() {
         block(BlockKind.action, 'Interlude.', id: 5),
         block(BlockKind.lyric, 'Next verse.', id: 6),
       ]);
-      expect([for (var i = 0; i < 6; i++) layout.firstRowOf(i)],
-          [0, 2, 3, 4, 6, 8]);
+      expect(
+        [for (var i = 0; i < 6; i++) layout.firstRowOf(i)],
+        [0, 2, 3, 4, 6, 8],
+      );
       expect(layout.totalRows, 9);
       expect(layout.blockAtRow(3), 2);
       expect(layout.rowAt(3, 0), 4);
@@ -412,9 +418,7 @@ void main() {
     });
 
     test('a wrapped block reports the line an offset is on', () {
-      final layout = DocumentLayout([
-        block(BlockKind.dialogue, 'a' * 40),
-      ]);
+      final layout = DocumentLayout([block(BlockKind.dialogue, 'a' * 40)]);
       // 35 columns for dialogue, so this is two lines.
       expect(layout.linesOf(0).length, 2);
       expect(layout.lineIndexAt(0, 10), 0);
@@ -445,13 +449,13 @@ void main() {
 }
 
 List<(int, int)> _ranges(List<VisualLine> lines) => [
-      for (final line in lines) (line.start, line.end),
-    ];
+  for (final line in lines) (line.start, line.end),
+];
 
 /// What the rows draw — the same shape `layout::break_lines` returns, so its
 /// expectations can be asserted here character for character.
 List<String> _rendered(String text, int width) => [
-      for (final line in wrapText(text, width)) line.textIn(text),
-    ];
+  for (final line in wrapText(text, width)) line.textIn(text),
+];
 
 bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;

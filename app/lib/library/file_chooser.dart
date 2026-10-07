@@ -79,8 +79,9 @@ class FileChooser extends StatefulWidget {
 
 class _FileChooserState extends State<FileChooser> {
   late String _directory = widget.directory;
-  late final TextEditingController _name =
-      TextEditingController(text: widget.suggestedName ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.suggestedName ?? '',
+  );
   final FocusNode _nameFocus = FocusNode();
 
   List<FileSystemEntity> _entries = const [];
@@ -114,7 +115,9 @@ class _FileChooserState extends State<FileChooser> {
         final aDir = a is Directory;
         final bDir = b is Directory;
         if (aDir != bDir) return aDir ? -1 : 1;
-        return _basename(a.path).toLowerCase().compareTo(_basename(b.path).toLowerCase());
+        return _basename(
+          a.path,
+        ).toLowerCase().compareTo(_basename(b.path).toLowerCase());
       });
       setState(() {
         _entries = entries;
@@ -209,7 +212,9 @@ class _FileChooserState extends State<FileChooser> {
                         return ListTile(
                           dense: true,
                           leading: Icon(
-                            isDirectory ? Icons.folder : Icons.description_outlined,
+                            isDirectory
+                                ? Icons.folder
+                                : Icons.description_outlined,
                             size: 18,
                           ),
                           title: Text(name),
@@ -228,34 +233,35 @@ class _FileChooserState extends State<FileChooser> {
             if (!widget.selectDirectory) ...[
               const Divider(height: 1),
               Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Shortcuts(
-                shortcuts: const {
-                  SingleActivator(LogicalKeyboardKey.enter): _ConfirmIntent(),
-                  SingleActivator(LogicalKeyboardKey.numpadEnter): _ConfirmIntent(),
-                },
-                child: Actions(
-                  actions: {
-                    _ConfirmIntent: CallbackAction<_ConfirmIntent>(
-                      onInvoke: (_) {
-                        _confirm();
-                        return null;
-                      },
-                    ),
+                padding: const EdgeInsets.only(top: 8),
+                child: Shortcuts(
+                  shortcuts: const {
+                    SingleActivator(LogicalKeyboardKey.enter): _ConfirmIntent(),
+                    SingleActivator(LogicalKeyboardKey.numpadEnter):
+                        _ConfirmIntent(),
                   },
-                  child: TextField(
-                    controller: _name,
-                    focusNode: _nameFocus,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: 'File name',
-                      errorText: _error,
-                      isDense: true,
+                  child: Actions(
+                    actions: {
+                      _ConfirmIntent: CallbackAction<_ConfirmIntent>(
+                        onInvoke: (_) {
+                          _confirm();
+                          return null;
+                        },
+                      ),
+                    },
+                    child: TextField(
+                      controller: _name,
+                      focusNode: _nameFocus,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'File name',
+                        errorText: _error,
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setState(() => _error = null),
                     ),
-                    onChanged: (_) => setState(() => _error = null),
                   ),
                 ),
-              ),
               ),
             ],
           ],

@@ -166,10 +166,11 @@ void main() {
 
       await tester.tap(find.text('Replace'));
       await tester.pumpAndSettle();
-      expect(core.exports.single, (
-        '/scripts/copy.fountain',
-        true,
-      ), reason: 'the second call is the answer to the question');
+      expect(
+        core.exports.single,
+        ('/scripts/copy.fountain', true),
+        reason: 'the second call is the answer to the question',
+      );
     },
   );
 

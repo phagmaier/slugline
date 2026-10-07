@@ -112,22 +112,22 @@ class SaveStatus extends ChangeNotifier {
   }
 
   static String _shortReason(SaveFailure failure) => switch (failure) {
-        SaveFailure.readOnly => 'the file is read-only',
-        SaveFailure.permissionDenied => 'no permission',
-        SaveFailure.noSpace => 'the disk is full',
-        SaveFailure.noSuchDirectory => 'the folder is gone',
-        SaveFailure.noSuchDocument => 'the core lost this script',
-        SaveFailure.noPath => 'no file yet',
-        // Neither can reach a *save*: both are answers `doc_export_fountain`
-        // gives about a destination, and an export never touches this status.
-        // They are here because the enum is one enum, and a status line that
-        // said nothing would be worse than one that says something short.
-        SaveFailure.alreadyExists => 'there is a file there already',
-        SaveFailure.scriptIsOpen => 'that script is open here',
-        // The prompt that is already on its way says the rest of it. This line
-        // is what the writer sees behind it, and what they go on seeing if they
-        // dismiss it without deciding.
-        SaveFailure.changedOnDisk => 'the file changed on disk',
-        SaveFailure.io => 'the write failed',
-      };
+    SaveFailure.readOnly => 'the file is read-only',
+    SaveFailure.permissionDenied => 'no permission',
+    SaveFailure.noSpace => 'the disk is full',
+    SaveFailure.noSuchDirectory => 'the folder is gone',
+    SaveFailure.noSuchDocument => 'the core lost this script',
+    SaveFailure.noPath => 'no file yet',
+    // Neither can reach a *save*: both are answers `doc_export_fountain`
+    // gives about a destination, and an export never touches this status.
+    // They are here because the enum is one enum, and a status line that
+    // said nothing would be worse than one that says something short.
+    SaveFailure.alreadyExists => 'there is a file there already',
+    SaveFailure.scriptIsOpen => 'that script is open here',
+    // The prompt that is already on its way says the rest of it. This line
+    // is what the writer sees behind it, and what they go on seeing if they
+    // dismiss it without deciding.
+    SaveFailure.changedOnDisk => 'the file changed on disk',
+    SaveFailure.io => 'the write failed',
+  };
 }

@@ -345,10 +345,11 @@ void main() {
       expect(await core.externalChange(), (false, false), reason: 'in step');
 
       File(file).writeAsStringSync('EXT. STREET - NIGHT\n');
-      expect(await core.externalChange(), (
-        false,
-        true,
-      ), reason: 'unmodified here and different there — reload silently');
+      expect(
+        await core.externalChange(),
+        (false, true),
+        reason: 'unmodified here and different there — reload silently',
+      );
 
       await core.reload();
       expect(core.source(), 'EXT. STREET - NIGHT\n');

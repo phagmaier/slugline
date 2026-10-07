@@ -14,18 +14,21 @@ import 'package:slugline/editor/elements.dart';
 import '../support/fake_core.dart';
 import '../support/pump_editor.dart';
 
-FakeCore oneBlock(BlockKind kind, {String text = 'Hello world', bool readOnly = false}) =>
-    FakeCore([
-      BlockView(
-        id: 1,
-        kind: kind,
-        sectionLevel: kind == BlockKind.section ? 2 : 0,
-        text: text,
-        forced: false,
-        dual: false,
-        readOnly: readOnly,
-      ),
-    ]);
+FakeCore oneBlock(
+  BlockKind kind, {
+  String text = 'Hello world',
+  bool readOnly = false,
+}) => FakeCore([
+  BlockView(
+    id: 1,
+    kind: kind,
+    sectionLevel: kind == BlockKind.section ? 2 : 0,
+    text: text,
+    forced: false,
+    dual: false,
+    readOnly: readOnly,
+  ),
+]);
 
 Future<void> pressCtrl(WidgetTester tester, LogicalKeyboardKey key) async {
   await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -97,13 +100,21 @@ void main() {
             .having((c) => c.kind, 'kind', BlockKind.transition)
             .having((c) => c.forced, 'forced', isTrue),
       );
-      expect(controller.blocks[0].text, 'Hello world',
-          reason: 'changing an element type never alters the text');
+      expect(
+        controller.blocks[0].text,
+        'Hello world',
+        reason: 'changing an element type never alters the text',
+      );
     });
 
-    testWidgets('offers nothing for a block that round-trips verbatim',
-        (tester) async {
-      final core = oneBlock(BlockKind.opaque, text: '/* hidden */', readOnly: true);
+    testWidgets('offers nothing for a block that round-trips verbatim', (
+      tester,
+    ) async {
+      final core = oneBlock(
+        BlockKind.opaque,
+        text: '/* hidden */',
+        readOnly: true,
+      );
       await pumpEditorPage(tester, core);
 
       await tester.tap(find.byKey(const Key('element-selector')));
@@ -124,8 +135,9 @@ void main() {
       );
     });
 
-    testWidgets('shows the cue the core suggests, without applying it',
-        (tester) async {
+    testWidgets('shows the cue the core suggests, without applying it', (
+      tester,
+    ) async {
       final core = oneBlock(BlockKind.action, text: 'JOHN');
       core.suggestion = 'JOHN';
       final controller = await pumpEditorPage(tester, core);
@@ -140,8 +152,9 @@ void main() {
   });
 
   group('the command palette:', () {
-    testWidgets('Ctrl+K opens it and Escape closes it, losing no text',
-        (tester) async {
+    testWidgets('Ctrl+K opens it and Escape closes it, losing no text', (
+      tester,
+    ) async {
       final core = oneBlock(BlockKind.action);
       final controller = await pumpEditorPage(tester, core);
 
@@ -157,7 +170,9 @@ void main() {
       expect(core.commands, isEmpty);
     });
 
-    testWidgets('Escape closes it after another panel had focus', (tester) async {
+    testWidgets('Escape closes it after another panel had focus', (
+      tester,
+    ) async {
       final core = oneBlock(BlockKind.action)
         ..completions = const [
           Completion(
@@ -208,8 +223,9 @@ void main() {
       }
     });
 
-    testWidgets('filtering then Enter runs the highlighted command',
-        (tester) async {
+    testWidgets('filtering then Enter runs the highlighted command', (
+      tester,
+    ) async {
       final core = oneBlock(BlockKind.action);
       final controller = await pumpEditorPage(tester, core);
       caretAt(controller, 0, 3);
@@ -223,8 +239,11 @@ void main() {
 
       expect(
         core.commands.single,
-        isA<EditCommand_SetKind>()
-            .having((c) => c.kind, 'kind', BlockKind.transition),
+        isA<EditCommand_SetKind>().having(
+          (c) => c.kind,
+          'kind',
+          BlockKind.transition,
+        ),
       );
       // The palette closes itself out of the way first, so the caret comes back
       // to the surface.
@@ -243,8 +262,9 @@ void main() {
       expect(find.text('Element or command'), findsNothing);
     });
 
-    testWidgets('closing it gives the keyboard back to the editor',
-        (tester) async {
+    testWidgets('closing it gives the keyboard back to the editor', (
+      tester,
+    ) async {
       final core = oneBlock(BlockKind.action);
       final controller = await pumpEditorPage(tester, core);
       caretAt(controller, 0, 5);
@@ -257,8 +277,11 @@ void main() {
       // A key the surface owns has to work again straight away.
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump();
-      expect(controller.selection.focus.offsetUtf16, 4,
-          reason: 'the surface never got the focus back');
+      expect(
+        controller.selection.focus.offsetUtf16,
+        4,
+        reason: 'the surface never got the focus back',
+      );
     });
 
     testWidgets('a query that matches nothing says so', (tester) async {
@@ -275,9 +298,9 @@ void main() {
 
   group('the command list:', () {
     List<EditorCommand> commands() => editorCommands(
-          controller: EditorController(oneBlock(BlockKind.action)),
-          openFind: () {},
-        );
+      controller: EditorController(oneBlock(BlockKind.action)),
+      openFind: () {},
+    );
 
     test('an empty query keeps the declared order', () {
       final all = commands();
@@ -329,7 +352,10 @@ void main() {
     test('the two a writer can act on get a sentence of their own', () {
       expect(rejectionMessage(EditRejection.notEditable), contains('verbatim'));
       expect(rejectionMessage(EditRejection.noBlockAfter), contains('join'));
-      expect(rejectionMessage(EditRejection.badOffset), 'That edit was refused.');
+      expect(
+        rejectionMessage(EditRejection.badOffset),
+        'That edit was refused.',
+      );
     });
   });
 
@@ -438,8 +464,9 @@ void main() {
       }
     });
 
-    testWidgets('keeps the counts, which are the shortest thing on it',
-        (tester) async {
+    testWidgets('keeps the counts, which are the shortest thing on it', (
+      tester,
+    ) async {
       await pumpAt(tester, 480);
       expect(find.textContaining('1 scene'), findsOneWidget);
     });
