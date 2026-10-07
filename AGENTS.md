@@ -319,7 +319,9 @@ UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_dif
 ```
 
 `crates/render_pdf/tests/text_extraction.rs` needs `poppler-utils`; without it
-the test prints `SKIPPED` and stops. CI installs it.
+the test prints `SKIPPED` and stops. CI installs it. The export integration
+suite needs it too (`pdftotext`, `pdftohtml`) and does not skip: the script
+above refuses to start without them, and CI's flutter job installs them.
 
 To look at a PDF rather than a hash:
 `cargo run -p slugline_render_pdf --example dump -- script.fountain out.pdf [a4]`

@@ -64,6 +64,7 @@ This is the only place boxes are ticked.
 - [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
 - [x] [B7](#b7) README names a Preferences section the dialog does not have
 - [x] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
+- [ ] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
 
 **3. Fountain and output fidelity**
 
@@ -589,6 +590,37 @@ GitHub; the same command was run locally under the same toolchain version.
 Differently from the item's first sketch, the reformat and the check are two
 commits, so that the mechanical one can be skipped in `git blame` — with a
 `.git-blame-ignore-revs` entry, if the branch is merged without squashing.
+
+<a id="b9"></a>
+### B9 — CI's flutter job cannot run the export suite: no Poppler
+
+**Problem.** Two tests in `app/integration_test/export_test.dart` read an
+exported PDF back through Poppler — `pdftohtml` in F3's heading-weight test,
+`pdftotext` in F6's first-page-number test. CI's flutter job installs xvfb and
+not `poppler-utils`, so both throw `ProcessException: No such file or
+directory` there while passing on any machine that has it.
+
+**Evidence (observed on GitHub, run 37550528288, `main` at `4b79cce`).** The
+export step reports “5 tests passed, 2 failed”, both failures being that
+exception at the `Process.run` call. Every other step of the job passes,
+including the writing suite. F3's test had never run on GitHub: the push before
+this one (`e4503f4`) failed in the writing suite — the bug B5 fixed — and each
+suite is its own step, so the job stopped before reaching the export suite.
+The Rust job and the release workflow already install `poppler-utils`; only
+this job was missed. `tools/test_linux_integration.sh` checks for `flutter` and
+`xvfb-run` and not for these, so a local machine without Poppler fails in the
+same way, mid-suite.
+
+**Change.** Install `poppler-utils` in the flutter job beside xvfb. Have the
+integration script require `pdftotext` and `pdftohtml` up front, so that their
+absence is one legible line rather than two exceptions. Do not make the tests
+skip: reading the PDF back is what they are for.
+
+**Done when.** The export step passes on GitHub and the run for `main` is
+green.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -1493,3 +1525,7 @@ not part of that item.
   Bold scene headings, but the dialog's section is headed “Page defaults”.
   Left as it is; the sentence added for F6 does not repeat the label.
   Promoted to [B7](#b7) after the owner asked whether to address it.
+- 2026-10-07 — Pushing F6 and B6–B8 to `main` gave the first GitHub run to get
+  past the writing suite since F3, and it failed in the export suite: CI's
+  flutter job has no `poppler-utils`. Promoted to [B9](#b9) at once, since the
+  push that exposed it left `main` red.

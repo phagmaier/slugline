@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 APP="$ROOT/app"
 
-for tool in flutter xvfb-run; do
+# pdftotext and pdftohtml: export_test.dart reads its PDFs back through them.
+for tool in flutter xvfb-run pdftotext pdftohtml; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'error: required command not found: %s\n' "$tool" >&2
     exit 1
