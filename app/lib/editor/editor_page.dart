@@ -12,6 +12,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/element_bar.dart';
 import 'package:slugline/editor/find_bar.dart';
+import 'package:slugline/editor/go_to_page_dialog.dart';
 import 'package:slugline/editor/navigator_sidebar.dart';
 import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
@@ -121,6 +122,8 @@ class EditorPageState extends State<EditorPage> {
   /// contract, and "can the writer type?" is not a question to leave to one. The
   /// tests in `test/editor/` assert the outcome rather than the mechanism.
   final FocusNode _editorFocus = FocusNode(debugLabel: 'editor surface');
+  final GlobalKey<EditorSurfaceState> _surfaceKey =
+      GlobalKey<EditorSurfaceState>();
   final GlobalKey<NavigatorSidebarState> _navigatorKey =
       GlobalKey<NavigatorSidebarState>();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -401,6 +404,27 @@ class EditorPageState extends State<EditorPage> {
     if (widget.onShowShortcuts case final action?) await withModal(action);
   }
 
+  Future<void> _showGoToPage() async {
+    final indicator = _pageIndicator;
+    if (indicator == null) return;
+    final controller = widget.controller;
+    _dismiss();
+    _scaffoldKey.currentState?.closeDrawer();
+    controller.dismissCompletions();
+    final page = await withModal(() => GoToPageDialog.show(context, indicator));
+    if (!mounted ||
+        widget.controller != controller ||
+        _pageIndicator != indicator) {
+      return;
+    }
+    final position = page == null ? null : indicator.positionForPage(page);
+    if (position != null) {
+      controller.setSelection(DocSelection(anchor: position, focus: position));
+      _surfaceKey.currentState?.revealPageTarget(documentStart: page == 1);
+    }
+    _editorFocus.requestFocus();
+  }
+
   void _changeTextSize(int delta) {
     final size = (widget.textSize.round() + delta).clamp(12, 24);
     if (size != widget.textSize.round()) {
@@ -566,6 +590,8 @@ class EditorPageState extends State<EditorPage> {
         unawaited(_showPreview());
       case LogicalKeyboardKey.keyJ:
         _showNavigatorSearch();
+      case LogicalKeyboardKey.keyL when _pageIndicator != null:
+        unawaited(_showGoToPage());
       case LogicalKeyboardKey.comma:
         unawaited(_openPreferences());
       case LogicalKeyboardKey.equal || LogicalKeyboardKey.numpadAdd:
@@ -726,6 +752,7 @@ class EditorPageState extends State<EditorPage> {
                             children: [
                               Positioned.fill(
                                 child: EditorSurface(
+                                  key: _surfaceKey,
                                   controller: widget.controller,
                                   textSize: widget.textSize,
                                   pageView: widget.pageView,
@@ -792,6 +819,9 @@ class EditorPageState extends State<EditorPage> {
                                       openNavigator: widget.distractionFree
                                           ? null
                                           : _showNavigatorSearch,
+                                      goToPage: _pageIndicator == null
+                                          ? null
+                                          : () => unawaited(_showGoToPage()),
                                       save: () => unawaited(save()),
                                       saveAs: () =>
                                           unawaited(save(forcePath: true)),

@@ -51,6 +51,7 @@ void main() {
       'Use continuous view',
       'Increase text size',
       'Preview and export…',
+      'Go to page…',
       'Pagination debug',
     ]) {
       await _filter(tester, label);

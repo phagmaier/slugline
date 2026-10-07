@@ -31,6 +31,7 @@ import 'package:slugline/settings/preferences_dialog.dart';
 import 'package:slugline/settings/shortcuts_dialog.dart';
 import 'package:slugline/editor/spell_dialog.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
+import 'package:slugline/editor/go_to_page_dialog.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -96,6 +97,114 @@ void main() {
 
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
+
+  for (final pageView in [false, true]) {
+    testWidgets('go to page uses real pagination, pageView=$pageView', (
+      tester,
+    ) async {
+      final source =
+          '\uFEFFTitle: Reader notes\r\n\r\n'
+          '[[A private opening note.]]\r\n\r\n'
+          '${List.generate(150, (line) => 'Action line $line with 🎬.').join('\r\n')}\r\n';
+      final file = File('${scratch.path}/go-to-page-$pageView.fountain')
+        ..writeAsStringSync(source);
+      final bytes = file.readAsBytesSync();
+      final core = (await Core.instance.openDocument(file.path))!;
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditorPage(controller: controller, pageView: pageView),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final snapshot = switch (await (core as ScreenplayOutput).paginate(
+        const PageSetup(
+          paper: PaperSize.usLetter,
+          sceneNumbers: SceneNumbers.off,
+          boldSceneHeadings: false,
+          numberFirstPage: false,
+          debugLinesPerPage: null,
+        ),
+      )) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        _ => throw StateError(
+          'An unedited document must have current pagination',
+        ),
+      };
+      expect(snapshot.pageCount, greaterThanOrEqualTo(3));
+      expect(snapshot.titlePage, isNotNull);
+      final journal = core.journalState;
+      final revision = controller.documentRevision;
+      final before = controller.source;
+      final scroll = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(EditorSurface),
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position;
+      for (final page in [2, snapshot.pageCount]) {
+        // Exercise the palette and shortcut independently against the same Rust
+        // snapshot that supplies Preview and PDF, including an intra-block page.
+        if (page == 2) {
+          await press(tester, LogicalKeyboardKey.keyK, control: true);
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.widgetWithText(TextField, 'Element or command'),
+            'Go to page',
+          );
+          await press(tester, LogicalKeyboardKey.enter);
+        } else {
+          await press(tester, LogicalKeyboardKey.keyL, control: true);
+        }
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Page number'),
+          '$page',
+        );
+        await press(tester, LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(find.byType(GoToPageDialog), findsNothing);
+        final first = snapshot.pages[page - 1].lines.firstWhere(
+          (line) => line.block != null && line.sourceLine != null,
+        );
+        final index = controller.blocks.indexWhere(
+          (block) => block.id == first.block,
+        );
+        final offset = controller.layout
+            .linesOf(index)[first.sourceLine!]
+            .start;
+        expect(
+          controller.selection.focus,
+          DocPosition(block: first.block!, offsetUtf16: offset),
+        );
+        expect(controller.hasSelection, isFalse);
+        expect(scroll.pixels, greaterThan(0));
+      }
+      await press(tester, LogicalKeyboardKey.keyL, control: true);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Page number'),
+        '1',
+      );
+      await press(tester, LogicalKeyboardKey.numpadEnter);
+      await tester.pumpAndSettle();
+      expect(
+        controller.selection.focus,
+        DocPosition(block: controller.blocks.first.id, offsetUtf16: 0),
+      );
+      expect(scroll.pixels, 0);
+      expect(controller.source, before);
+      expect(controller.documentRevision, revision);
+      expect(core.journalState, journal);
+      expect(core.dirty, isFalse);
+      expect(file.readAsBytesSync(), bytes);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(controller.selection.focus.offsetUtf16, 1);
+    });
+  }
 
   for (final (kind, source, index, expected) in [
     (BlockKind.action, 'Seed.\n', 0, 'First 🎬 line.\nSecond line.\n'),

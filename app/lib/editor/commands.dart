@@ -33,6 +33,7 @@ List<EditorCommand> editorCommands({
   required EditorController controller,
   required VoidCallback openFind,
   VoidCallback? openNavigator,
+  VoidCallback? goToPage,
   VoidCallback? save,
   VoidCallback? saveAs,
   VoidCallback? showBackups,
@@ -199,6 +200,13 @@ List<EditorCommand> editorCommands({
         group: 'Go to',
         label: 'Jump to scene…',
         shortcut: 'Ctrl+J',
+        run: run,
+      ),
+    if (goToPage case final run?)
+      EditorCommand(
+        group: 'Go to',
+        label: 'Go to page…',
+        shortcut: 'Ctrl+L',
         run: run,
       ),
     EditorCommand(

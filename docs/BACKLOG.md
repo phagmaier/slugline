@@ -1641,6 +1641,33 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-06 — W4's first release-process budget run failed idle: all three
+  ten-second intervals had voluntary thread switches (1, 64, 1); the first
+  also lost two threads. The outer intervals had zero CPU ticks and one wakeup
+  each on the main GTK/Flutter thread. Startup and RSS passed. The failed
+  report and full samples remain in `target/w4-runtime-budgets.json` and
+  `target/w4-runtime-budgets.log`; `target/w4-idle-inspection.txt` records the
+  bounded source inspection. W4 adds no clock, and its page-command methods
+  are not called during this harness. The isolated wakeups are not attributed;
+  the unchanged W4 retry reproduced the same outer one-switch intervals, and
+  a clean, isolated W3 checkout at `351dada` reproduced them without W4.
+  The retry and W3 reports are `target/w4-runtime-budgets-retry.json` and
+  `target/w4-runtime-budgets-w3-control.json`, with matching log files. The
+  control bundle is retained at `target/w4-w3-control-bundle`; component
+  digests, clean checkout receipt and build logs are under `target/w4-*`.
+  This is a pre-existing failure in the current environment, not a passed idle
+  gate. Investigate the wakeups separately; no threshold, harness or production
+  code was changed for the controls.
+
+- 2026-10-06 — W4's restored-viewport page-one case led to a separate code-read
+  navigation gap: `Ctrl+Home` calls `moveToDocumentEdge`, but
+  `EditorSurface._onDocumentChanged` clears `_restoreInProgress` only when the
+  caret differs from `_initialFocus`. If a session restores a scrolled viewport
+  while its caret is still at document start, `Ctrl+Home` leaves that guard in
+  place and `_ensureCaretVisible` returns. W4 explicitly reveals its own page
+  target; the general shortcut behavior is unchanged. Reproduce and investigate
+  separately.
+
 - 2026-10-06 — W3's native fixture exposed a zero-page presentation error:
   a Note-only script has no printed pages, and `PageIndicator._updateCurrent`
   (`app/lib/editor/page_indicator.dart:272`) throws while clamping 1 to a

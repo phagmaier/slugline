@@ -139,6 +139,7 @@ const _sections = <(String, List<(String, String)>)>[
       ('Ctrl+F', 'Find and replace'),
       ('Ctrl+G / Ctrl+Shift+G', 'Next / previous match'),
       ('Ctrl+J', 'Scene and character navigator'),
+      ('Ctrl+L', 'Go to page…'),
       ('Ctrl+Home / Ctrl+End', 'Start / end of script'),
       ('PageUp / PageDown', 'Move one screen'),
       ('Escape', 'Dismiss the open surface; never delete text'),

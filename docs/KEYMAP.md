@@ -270,6 +270,7 @@ earlier hour, though a newer copy can replace an older one within the same hour.
 | `PageUp` `PageDown` | One screen |
 | `Home` `End` | Start and end of the visual line |
 | `Ctrl+Home` `Ctrl+End` | Start and end of the script |
+| `Ctrl+L` | Go to an output page by number |
 | `Shift` + any of the above | Extend the selection |
 
 A word is a run of letters, digits, marks, `_` and the apostrophe, so `café` is
@@ -306,6 +307,13 @@ want the focus, and neither question has a good answer.
 Inside the find bar, `Enter` and `Shift+Enter` step through the matches.
 
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
+
+“Go to page…” is also in the palette. Enter a page number and press `Enter` or
+choose Go; `Escape` cancels and returns to the script. Page 1 is the document
+start, including any opening notes or other source-only elements. Later pages
+place the caret at their first source line from the last paginated snapshot,
+in continuous view or page view. Until a snapshot is available, no jump is made.
+The title page is not part of the script's page numbering.
 
 In windows narrower than 900 logical pixels, the navigator opens temporarily
 over the editor and closes when you choose a scene or character. Wider windows

@@ -81,6 +81,31 @@ class PageIndicator extends ChangeNotifier {
   int? get current => _current;
   int? get total => _total;
 
+  /// The first source position of [page] in the last paginated snapshot.
+  ///
+  /// Page one means the document start, including any non-printing opening
+  /// material. Later pages use the paginator's first source line, resolved
+  /// against the editor's current wrapping. A missing block or shortened line
+  /// is an unavailable target until the next snapshot, never a guessed one.
+  DocPosition? positionForPage(int page) {
+    final total = _total;
+    final blocks = controller.blocks;
+    if (total == null || page < 1 || page > total || blocks.isEmpty) {
+      return null;
+    }
+    if (page == 1) return DocPosition(block: blocks.first.id, offsetUtf16: 0);
+    final firstLine = _firstLineOfPage[page];
+    if (firstLine == null) return null;
+    final (block, sourceLine) = firstLine;
+    final index = blocks.indexWhere((candidate) => candidate.id == block);
+    if (index < 0 ||
+        sourceLine < 0 ||
+        sourceLine >= controller.layout.linesOf(index).length) {
+      return null;
+    }
+    return controller.positionAt(controller.rowOfLine(index, sourceLine), 0);
+  }
+
   /// How many words the script contains, or null before the first pagination.
   ///
   /// Counted from the paginated snapshot rather than from the blocks, which is

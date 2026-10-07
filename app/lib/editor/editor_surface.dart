@@ -840,6 +840,17 @@ class EditorSurfaceState extends State<EditorSurface>
 
   // --- scrolling -----------------------------------------------------------
 
+  /// Reveals the caret after an explicit page jump, even if it stayed at the
+  /// initial position of a session whose viewport was restored elsewhere.
+  void revealPageTarget({required bool documentStart}) {
+    _restoreInProgress = false;
+    if (documentStart && _scroll.hasClients) {
+      _scroll.jumpTo(0);
+    } else {
+      _ensureCaretVisible();
+    }
+  }
+
   /// Keeps the caret on screen with a few rows of air around it.
   void _ensureCaretVisible() {
     if (_initialScrollPending || _restoreInProgress || !_scroll.hasClients) {
