@@ -85,7 +85,7 @@ This is the only place boxes are ticked.
 - [x] [W3](#w3) No way to type a line break inside an element
 - [x] [W4](#w4) No "go to page"
 - [x] [W5](#w5) The preview always opens at page 1
-- [ ] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
+- [x] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
 - [ ] [W7](#w7) The file chooser is minimal — *choose A or B yourself*
 - [ ] [W8](#w8) Find highlights only the current match
 - [ ] [W9](#w9) Previous versions can be restored but not looked at
@@ -1464,7 +1464,21 @@ decoration when the compositor does not offer server-side decoration. Test
 rather than assume.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-07 — verified in `4910ab2`. Reproduced on the real Hyprland
+Wayland session: the release window stacked a GTK header bar above the app bar
+(`target/w6-before.png`). The runner now recognizes GNOME in the colon-separated
+`XDG_CURRENT_DESKTOP` list and keeps the existing X11 GNOME Shell check; other
+Wayland desktops leave decoration to the compositor. Screenshot inspection of
+the rebuilt native Wayland window confirms no GTK bar (`target/w6-after.png`).
+F11 entered full screen (Hyprland reported both fullscreen states as 2), then
+left it (both 0); compositor movement and resizing produced an undecorated
+1100 × 700 floating window (`target/w6-fullscreen.png`,
+`target/w6-move-resize.png`). GNOME is unverified: no GNOME session was available.
+No forced undecoration, environment override, preference, or dependency was
+added. Passed 646 Rust tests, 641 Flutter widget tests, all 67 native integration
+tests, Rust formatting/clippy, Dart formatting/analysis, enforced lockfile,
+layering/version/docs checks, Linux release build and network-isolation smoke.
+The pre-existing W4/W5 idle-gate failure was not rerun or changed.
 
 <a id="w7"></a>
 ### W7 — The file chooser is minimal
