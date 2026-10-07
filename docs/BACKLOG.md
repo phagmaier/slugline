@@ -83,7 +83,7 @@ This is the only place boxes are ticked.
 - [x] [W1](#w1) Switching scripts needs the mouse: no new, open or close shortcuts
 - [x] [W2](#w2) The command palette is missing commands
 - [x] [W3](#w3) No way to type a line break inside an element
-- [ ] [W4](#w4) No "go to page"
+- [x] [W4](#w4) No "go to page"
 - [ ] [W5](#w5) The preview always opens at page 1
 - [ ] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
 - [ ] [W7](#w7) The file chooser is minimal — *choose A or B yourself*
@@ -1347,7 +1347,45 @@ the document start.
 snapshot, and do nothing rather than estimate when there is none yet.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — W4's navigation is verified in `831f98b`, with the
+separate pre-existing idle-gate failure below still open. Reproduced the absent
+palette command and shortcut with two failing widget cases retained in
+`target/w4-widget-red.log`. The palette now offers “Go to page…” and `Ctrl+L`
+opens the same prompt; `Ctrl+G` remains Find next. KEYMAP and F1 teach it.
+`PageIndicator.positionForPage` maps the paginator's first source line to the
+editor's wrapped UTF-16 start, without deriving a boundary. Page 1 means the
+first document block, including source-only opening material, and explicitly
+scrolls to zero even when the caret is unchanged in a restored viewport. Three
+failing scroll cases are retained in `target/w4-widget-scroll-red.log`.
+The existing page-break map and single-page sheet behavior are unchanged.
+The prompt validates against the live page count, disables Go before a snapshot
+arrives and refuses absent blocks or shortened source lines. Invalid input and
+cancellation preserve selection and source; successful navigation collapses
+the selection, reveals the target and returns focus to the editor. The modal
+uses the page's existing autosave suppression. Native cases use actual Rust
+pagination in both views, with a title page, opening Note and one Action block
+spanning several pages; palette, shortcut and numpad Enter navigation preserve
+source, BOM/CRLF disk bytes, revision and journal state. Widget cases also cover
+soft wraps, astral UTF-16 offsets, pending and refreshed snapshots, stale
+targets, validation, cancellation, input-method submission and autosave.
+Verified all 646 Rust tests, rustfmt, clippy, layering/version/docs; the enforced
+Flutter lockfile, 105-file format check, analysis and all 616 widget tests;
+all seven native suites (65 tests), with journalled keystroke p99 3.78 ms; and
+the 28.93 MiB Linux release bundle, network-library and isolated-version checks.
+Startup and Xvfb RSS passed: the first report's best values were 371.220 ms and
+260.73 MiB; the retry's were 368.433 ms and 278.60 MiB against the 320 MiB
+headless ceiling. **Idle did not pass:** both W4 runs, and a clean isolated W3
+control at `351dada`, had the same one-switch main-thread intervals. The failed
+reports, source inspection, control bundle and component digests are retained
+under `target/w4-*` and recorded under Found along the way. No threshold or
+harness was changed, and no all-green runtime/release-candidate claim is made.
+Earlier compile and fixture failures also remain in the evidence logs.
+The zero-page and single-page findings remain unchanged; the separate
+code-read `Ctrl+Home` restore issue is recorded for investigation. Manual
+gate 5's real-GPU 250 MiB claim remains pending. No Rust API, binding,
+dependency, lockfile, golden or line-breaking fixture changed. W2+W3 were
+pushed before W4; CI run 37577185534 passed on `351dada`. W4 is committed
+locally, unpushed. Stop here; W5 and adjacent implementation were not started.
 
 <a id="w5"></a>
 ### W5 — The preview always opens at page 1
