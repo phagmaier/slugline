@@ -84,7 +84,7 @@ This is the only place boxes are ticked.
 - [x] [W2](#w2) The command palette is missing commands
 - [x] [W3](#w3) No way to type a line break inside an element
 - [x] [W4](#w4) No "go to page"
-- [ ] [W5](#w5) The preview always opens at page 1
+- [x] [W5](#w5) The preview always opens at page 1
 - [ ] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
 - [ ] [W7](#w7) The file chooser is minimal — *choose A or B yourself*
 - [ ] [W8](#w8) Find highlights only the current match
@@ -1397,7 +1397,49 @@ the caret is.
 **Change.** Open the preview scrolled to the page the caret is on.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-06 — verified in `5385380`, with the pre-existing idle-gate
+failure below still open. Reproduced first: six failing widget cases
+(`target/w5-widget-red.log`) and, against the real core, the preview opening at
+offset 0 with the caret on the last line of page 2 (`target/w5-native-red.log`).
+The editor now hands the dialog the caret's block id and wrapped line, with the
+blocks above it nearest first, and `PreviewView.sheetOf` finds that line in the
+pagination the preview is about to draw. It is not the status line's page: that
+is the page of the top visible line, from a snapshot that trails the text and
+may be absent — the release smoke shows "Page 6 of 20" with the caret on page 7.
+Choices: page 1 opens at the top with the title page, which has no caret
+position of its own and would otherwise sit above the fold; a caret in
+something that prints nothing opens where the text above it ends; a line the
+pagination lacks falls to the nearest line above in its block, and `(MORE)` /
+`CONT'D` furniture is nobody's line; the offset is clamped before the first
+frame so the last page is not sprung back into range; and it happens once — a
+later pagination, paper or size leaves the view alone. Differently from the
+item: the sheet list became a fixed-extent `ListView.builder`. Left to measure
+its children it laid out every sheet above the target — 89–148 ms for the last
+of 120 pages in the test VM against 19 ms — and over-reported its length by 30%
+from the top (`target/w5-first-frame.log`); sheet size, margins and gaps are
+unchanged and a test holds them. Thirteen deliberate mistakes each fail a test
+(`target/w5-mutations.log`). KEYMAP, README and CHANGELOG say what it does.
+Verified all 646 Rust tests, rustfmt, clippy, layering/version/docs and the
+reference script; the enforced Flutter lockfile, 106-file format check,
+analysis and all 641 widget tests (25 new); all seven native suites (67 tests,
+2 new, real pagination with a title page, CRLF and astral text), with
+journalled keystroke p99 4.42 ms; and the 28.93 MiB Linux release bundle,
+network-library and isolated-version checks. The release bundle was driven
+under Xvfb with real keys: `Ctrl+L` to page 7 then `Ctrl+P` shows sheet 7 at
+the top, and page 1 shows the title page (`target/w5-smoke/`). Startup and Xvfb
+RSS passed: best 370.723 ms and 266.29 MiB against the 320 MiB headless
+ceiling. **Idle did not pass:** the same one-switch outer intervals W4 recorded
+and reproduced on a clean W3 control, in a harness that never opens the
+preview (`target/w5-runtime-budgets.json`, `.log`). No threshold or harness was
+changed, and no all-green runtime or release-candidate claim is made. Manual
+gate 5's real-GPU 250 MiB claim remains pending. Three findings are recorded
+under Found along the way and left unchanged: the preview keeps its pixel
+offset rather than its page across a zoom or paper change, the status line
+gives a non-printing block the page its predecessor began on, and W1–W4 have
+no changelog entries. No Rust API, binding, dependency, lockfile, golden or
+line-breaking fixture changed; no ADR, since nothing an accepted record decided
+is altered. W4 and W5 are committed locally, unpushed. Stop here; W6 is next,
+and no adjacent item was started.
 
 <a id="w6"></a>
 ### W6 — A GTK title bar is stacked above the app's own bar on Hyprland
