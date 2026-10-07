@@ -369,6 +369,15 @@ class _SluglineAppState extends State<SluglineApp> {
     if (mounted) setState(() => _preferences = widget.core.preferences());
   }
 
+  Future<void> _setPageView(bool enabled) async {
+    final next = _copyPreferences(_preferences, pageView: enabled);
+    if (!await widget.core.setPreferences(next)) {
+      _say('The display preference could not be saved.');
+      return;
+    }
+    if (mounted) setState(() => _preferences = widget.core.preferences());
+  }
+
   Future<void> _showShortcuts() async {
     final context = _navigator.currentContext;
     if (context != null && context.mounted) {
@@ -463,6 +472,7 @@ class _SluglineAppState extends State<SluglineApp> {
               onShowShortcuts: _showShortcuts,
               onDistractionFreeChanged: _setDistractionFree,
               onTextSizeChanged: _setEditorTextSize,
+              onPageViewChanged: _setPageView,
               onClosed: _closeScript,
               onNewScript: _newScript,
               onOpenScript: _quickOpen,
@@ -541,6 +551,7 @@ files.PreferencesView _copyPreferences(
   bool? navigatorVisible,
   int? editorTextSize,
   bool? distractionFree,
+  bool? pageView,
 }) => files.PreferencesView(
   autosaveEnabled: value.autosaveEnabled,
   autocompleteEnabled: value.autocompleteEnabled,
@@ -555,7 +566,7 @@ files.PreferencesView _copyPreferences(
   numberFirstPage: value.numberFirstPage,
   pdfFontPath: value.pdfFontPath,
   distractionFree: distractionFree ?? value.distractionFree,
-  pageView: value.pageView,
+  pageView: pageView ?? value.pageView,
   autosaveIdleMs: value.autosaveIdleMs,
   autosaveIntervalMs: value.autosaveIntervalMs,
   backupDir: value.backupDir,

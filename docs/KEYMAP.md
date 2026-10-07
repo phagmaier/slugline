@@ -195,6 +195,15 @@ classification says so.
 
 New, Open, Back to the library, Save, Save as and Preview are also in the
 command palette, along with "Previous versions…" and "Title page…".
+Preferences, Spell checking, Keyboard shortcuts, navigator visibility,
+distraction-free mode, page/continuous view and text-size changes are there too.
+View entries name the action available now: "Hide navigator", "Leave
+distraction-free mode", or "Use continuous view" when those modes are active.
+Text-size changes stop at 12 and 24. In distraction-free mode, leave it first
+to show the navigator. In narrow windows "Show navigator" opens the temporary
+drawer; `Ctrl+K` closes it and focuses the palette without changing the saved
+docked preference. Debug builds also offer "Pagination debug" when output is
+attached.
 
 `Ctrl+O` opens a searchable recent-script list. Type to filter by title or path,
 use `↑` / `↓` to select, and `Enter` to open. The last entry, "Browse…", opens

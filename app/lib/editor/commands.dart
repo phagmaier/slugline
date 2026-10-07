@@ -41,6 +41,18 @@ List<EditorCommand> editorCommands({
   VoidCallback? newScript,
   VoidCallback? openScript,
   VoidCallback? closeScript,
+  VoidCallback? openPreferences,
+  VoidCallback? showSpelling,
+  VoidCallback? showShortcuts,
+  VoidCallback? toggleNavigator,
+  bool navigatorVisible = false,
+  VoidCallback? toggleDistractionFree,
+  bool distractionFree = false,
+  VoidCallback? togglePageView,
+  bool pageView = true,
+  VoidCallback? increaseTextSize,
+  VoidCallback? decreaseTextSize,
+  VoidCallback? showPaginationDebug,
 }) {
   return [
     if (newScript case final run?)
@@ -195,6 +207,59 @@ List<EditorCommand> editorCommands({
       shortcut: 'Ctrl+End',
       run: () => controller.moveToDocumentEdge(start: false),
     ),
+    if (toggleNavigator case final run?)
+      EditorCommand(
+        group: 'View',
+        label: navigatorVisible ? 'Hide navigator' : 'Show navigator',
+        run: run,
+      ),
+    if (toggleDistractionFree case final run?)
+      EditorCommand(
+        group: 'View',
+        label: distractionFree
+            ? 'Leave distraction-free mode'
+            : 'Enter distraction-free mode',
+        shortcut: 'F11',
+        run: run,
+      ),
+    if (togglePageView case final run?)
+      EditorCommand(
+        group: 'View',
+        label: pageView ? 'Use continuous view' : 'Use page view',
+        run: run,
+      ),
+    if (increaseTextSize case final run?)
+      EditorCommand(
+        group: 'View',
+        label: 'Increase text size',
+        shortcut: 'Ctrl++',
+        run: run,
+      ),
+    if (decreaseTextSize case final run?)
+      EditorCommand(
+        group: 'View',
+        label: 'Decrease text size',
+        shortcut: 'Ctrl+-',
+        run: run,
+      ),
+    if (showSpelling case final run?)
+      EditorCommand(group: 'Tools', label: 'Spell checking…', run: run),
+    if (openPreferences case final run?)
+      EditorCommand(
+        group: 'Tools',
+        label: 'Preferences…',
+        shortcut: 'Ctrl+,',
+        run: run,
+      ),
+    if (showShortcuts case final run?)
+      EditorCommand(
+        group: 'Help',
+        label: 'Keyboard shortcuts',
+        shortcut: 'F1',
+        run: run,
+      ),
+    if (showPaginationDebug case final run?)
+      EditorCommand(group: 'Debug', label: 'Pagination debug', run: run),
   ];
 }
 

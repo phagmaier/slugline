@@ -12,6 +12,10 @@ import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/library/quick_open_dialog.dart';
+import 'package:slugline/settings/preferences_dialog.dart';
+import 'package:slugline/settings/shortcuts_dialog.dart';
+import 'package:slugline/editor/spell_dialog.dart';
+import 'package:slugline/editor/navigator_sidebar.dart';
 
 import 'support/fake_core.dart';
 
@@ -54,11 +58,29 @@ class _AppCore implements Core {
   final requests = <String>[];
   bool failOpen = false;
   Completer<void>? holdOpen;
+  PreferencesView currentPreferences = _preferences;
+  final preferenceWrites = <PreferencesView>[];
+  bool failPreferences = false;
 
   @override
   Stream<CoreEvent> get events => const Stream.empty();
   @override
-  PreferencesView preferences() => _preferences;
+  PreferencesView preferences() => currentPreferences;
+  @override
+  Future<bool> setPreferences(PreferencesView value) async {
+    preferenceWrites.add(value);
+    if (failPreferences) return false;
+    currentPreferences = value;
+    return true;
+  }
+
+  @override
+  SpellStatus spellStatus() => const SpellStatus(
+    enabled: false,
+    language: null,
+    languages: [],
+    message: 'Spell checking is off.',
+  );
   @override
   Future<List<RecoveryOffer>> pendingRecoveries() async => [];
   @override
@@ -115,7 +137,168 @@ Future<void> _chooseBeta(WidgetTester tester) async {
   await _key(tester, LogicalKeyboardKey.enter);
 }
 
+Future<void> _runPalette(WidgetTester tester, String label) async {
+  await _key(tester, LogicalKeyboardKey.keyK, control: true);
+  await tester.enterText(
+    find.widgetWithText(TextField, 'Element or command'),
+    label,
+  );
+  await tester.pumpAndSettle();
+  expect(
+    find.descendant(
+      of: find.descendant(
+        of: find.byType(CommandPalette),
+        matching: find.byType(ListView),
+      ),
+      matching: find.text(label),
+    ),
+    findsOneWidget,
+  );
+  await _key(tester, LogicalKeyboardKey.enter);
+  expect(find.byType(CommandPalette), findsNothing);
+}
+
 void main() {
+  for (final width in [640.0, 1200.0]) {
+    testWidgets(
+      'palette navigator actions work at width $width and keep the draft',
+      (tester) async {
+        final core = await _pump(tester);
+        tester.view.physicalSize = Size(width, 800);
+        await tester.pumpAndSettle();
+        final controller = _editor(tester).controller;
+        final source = controller.source;
+        await _runPalette(tester, 'Show navigator');
+        expect(find.byType(NavigatorSidebar), findsOneWidget);
+        if (width >= 900) {
+          await _runPalette(tester, 'Hide navigator');
+          expect(find.byType(NavigatorSidebar), findsNothing);
+          expect(core.preferenceWrites.map((p) => p.navigatorVisible), [
+            true,
+            false,
+          ]);
+        } else {
+          // Ctrl+K also works from the drawer's search field. Opening the palette
+          // closes that temporary drawer without changing the docked preference.
+          await _key(tester, LogicalKeyboardKey.keyJ, control: true);
+          await _key(tester, LogicalKeyboardKey.keyK, control: true);
+          expect(find.byType(CommandPalette), findsOneWidget);
+          expect(find.byType(NavigatorSidebar), findsNothing);
+          await tester.enterText(
+            find.widgetWithText(TextField, 'Element or command'),
+            'Keyboard shortcuts',
+          );
+          await _key(tester, LogicalKeyboardKey.enter);
+          expect(find.byType(ShortcutsDialog), findsOneWidget);
+          await _key(tester, LogicalKeyboardKey.escape);
+          expect(core.preferenceWrites, isEmpty);
+        }
+        expect(controller.source, source);
+        expect(controller.core.dirty, isFalse);
+        await _key(tester, LogicalKeyboardKey.arrowRight);
+        expect(controller.selection.focus.offsetUtf16, 1);
+      },
+    );
+  }
+
+  testWidgets(
+    'palette view changes persist without changing the draft or output setup',
+    (tester) async {
+      const channel = MethodChannel('slugline/window');
+      final fullscreen = <bool>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        fullscreen.add(call.arguments as bool);
+        return null;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      final core = await _pump(tester);
+      final controller = _editor(tester).controller;
+      final source = controller.source;
+      final selection = controller.selection;
+      final setup = _editor(tester).initialPageSetup;
+      await _runPalette(tester, 'Use page view');
+      expect(_editor(tester).pageView, isTrue);
+      expect(core.currentPreferences.pageView, isTrue);
+      await _runPalette(tester, 'Use continuous view');
+      expect(_editor(tester).pageView, isFalse);
+      await _runPalette(tester, 'Increase text size');
+      expect(_editor(tester).textSize, 16);
+      await _runPalette(tester, 'Decrease text size');
+      expect(_editor(tester).textSize, 15);
+      await _runPalette(tester, 'Enter distraction-free mode');
+      expect(_editor(tester).distractionFree, isTrue);
+      await _runPalette(tester, 'Leave distraction-free mode');
+      expect(_editor(tester).distractionFree, isFalse);
+      expect(core.preferenceWrites, hasLength(6));
+      expect(fullscreen, [true, false]);
+      expect(controller.source, source);
+      expect(controller.selection, selection);
+      expect(controller.core.dirty, isFalse);
+      expect(_editor(tester).initialPageSetup, setup);
+      expect(
+        core.currentPreferences.autosaveIdleMs,
+        _preferences.autosaveIdleMs,
+      );
+      expect(
+        core.currentPreferences.autosaveIntervalMs,
+        _preferences.autosaveIntervalMs,
+      );
+      await _key(tester, LogicalKeyboardKey.arrowRight);
+      expect(
+        controller.selection.focus.offsetUtf16,
+        1,
+        reason: 'typing focus returns to the script',
+      );
+    },
+  );
+
+  testWidgets(
+    'a failed palette display preference keeps the saved view and reports failure',
+    (tester) async {
+      final core = await _pump(tester);
+      core.failPreferences = true;
+      await _runPalette(tester, 'Use page view');
+      expect(_editor(tester).pageView, isFalse);
+      expect(core.currentPreferences.pageView, isFalse);
+      expect(
+        find.text('The display preference could not be saved.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  for (final entry in <(String, Type)>[
+    ('Preferences…', PreferencesDialog),
+    ('Keyboard shortcuts', ShortcutsDialog),
+    ('Spell checking…', SpellDialog),
+  ]) {
+    testWidgets(
+      'the palette opens ${entry.$1} and Escape returns to the draft',
+      (tester) async {
+        await _pump(tester);
+        final controller = _editor(tester).controller;
+        final source = controller.source;
+        await _key(tester, LogicalKeyboardKey.arrowRight);
+        final selection = controller.selection;
+        await _runPalette(tester, entry.$1);
+        expect(find.byType(entry.$2), findsOneWidget);
+        await _key(tester, LogicalKeyboardKey.escape);
+        expect(find.byType(entry.$2), findsNothing);
+        expect(controller.source, source);
+        expect(controller.selection, selection);
+        await _key(tester, LogicalKeyboardKey.arrowLeft);
+        expect(controller.selection.focus.offsetUtf16, 0);
+      },
+    );
+  }
+
   testWidgets(
     'library to script to another script to new script needs no pointer',
     (tester) async {

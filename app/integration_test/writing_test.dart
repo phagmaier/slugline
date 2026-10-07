@@ -26,6 +26,11 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
+import 'package:slugline/editor/command_palette.dart';
+import 'package:slugline/settings/preferences_dialog.dart';
+import 'package:slugline/settings/shortcuts_dialog.dart';
+import 'package:slugline/editor/spell_dialog.dart';
+import 'package:slugline/editor/pagination_debug_dialog.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -91,6 +96,93 @@ void main() {
 
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
+
+  testWidgets(
+    'palette display and dialog commands preserve native source and persist preferences',
+    (tester) async {
+      final file = File('${scratch.path}/palette.fountain')
+        ..writeAsStringSync(
+          '\uFEFFTitle: Palette\r\n\r\nINT. ROOM - DAY\r\n\r\nDraft **text**.  \r\n',
+        );
+      final bytes = file.readAsBytesSync();
+      final originalPreferences = Core.instance.preferences();
+      await tester.pumpWidget(
+        SluglineApp(core: Core.instance, initialPath: file.path),
+      );
+      await tester.pumpAndSettle();
+      EditorPage current() =>
+          tester.widget<EditorPage>(find.byType(EditorPage));
+      final controller = current().controller;
+      final source = controller.source;
+      final selection = controller.selection;
+      final setup = current().initialPageSetup;
+      Future<void> run(String label) async {
+        await press(tester, LogicalKeyboardKey.keyK, control: true);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Element or command'),
+          label,
+        );
+        await press(tester, LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(find.byType(CommandPalette), findsNothing);
+      }
+
+      final pageView = current().pageView;
+      await run(pageView ? 'Use continuous view' : 'Use page view');
+      expect(current().pageView, !pageView);
+      expect(Core.instance.preferences().pageView, !pageView);
+      final stored = File(
+        '${scratch.path}/config/prefs.json',
+      ).readAsStringSync();
+      expect(stored, contains('"page_view": ${!pageView}'));
+      await run(pageView ? 'Use page view' : 'Use continuous view');
+      final textSize = current().textSize;
+      final increase = textSize < 24;
+      await run(increase ? 'Increase text size' : 'Decrease text size');
+      expect(current().textSize, textSize + (increase ? 1 : -1));
+      await run(increase ? 'Decrease text size' : 'Increase text size');
+      final distractionFree = current().distractionFree;
+      await run(
+        distractionFree
+            ? 'Leave distraction-free mode'
+            : 'Enter distraction-free mode',
+      );
+      expect(current().distractionFree, !distractionFree);
+      await run(
+        distractionFree
+            ? 'Enter distraction-free mode'
+            : 'Leave distraction-free mode',
+      );
+      for (final entry in <(String, Type)>[
+        ('Preferences…', PreferencesDialog),
+        ('Keyboard shortcuts', ShortcutsDialog),
+        ('Spell checking…', SpellDialog),
+        ('Pagination debug', PaginationDebugDialog),
+      ]) {
+        await run(entry.$1);
+        expect(find.byType(entry.$2), findsOneWidget);
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byType(entry.$2), findsNothing);
+      }
+      expect(controller.source, source);
+      expect(controller.selection, selection);
+      expect(controller.core.dirty, isFalse);
+      expect(current().initialPageSetup, setup);
+      expect(file.readAsBytesSync(), bytes);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(
+        controller.selection.focus.offsetUtf16,
+        selection.focus.offsetUtf16 + 1,
+      );
+      await press(tester, LogicalKeyboardKey.keyW, control: true);
+      await tester.pumpAndSettle();
+      expect(await Core.instance.setPreferences(originalPreferences), isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 
   testWidgets(
     'keyboard script switching saves the native draft before leaving',

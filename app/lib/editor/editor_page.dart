@@ -59,6 +59,7 @@ class EditorPage extends StatefulWidget {
     this.onShowShortcuts,
     this.onDistractionFreeChanged,
     this.onTextSizeChanged,
+    this.onPageViewChanged,
     this.onClosed,
     this.onNewScript,
     this.onOpenScript,
@@ -93,6 +94,7 @@ class EditorPage extends StatefulWidget {
   final Future<void> Function()? onShowShortcuts;
   final Future<void> Function(bool enabled)? onDistractionFreeChanged;
   final Future<void> Function(int size)? onTextSizeChanged;
+  final Future<void> Function(bool enabled)? onPageViewChanged;
 
   /// Back to the library. Null when the editor is the whole application, which
   /// is what a test pumping this page directly gets.
@@ -329,6 +331,7 @@ class EditorPageState extends State<EditorPage> {
 
   void _show(_Panel panel) {
     if (_panel == panel) return;
+    _scaffoldKey.currentState?.closeDrawer();
     setState(() => _panel = panel);
   }
 
@@ -389,6 +392,24 @@ class EditorPageState extends State<EditorPage> {
 
   Future<void> _showSpelling() =>
       withModal(() => SpellDialog.show(context, widget.controller));
+
+  Future<void> _openPreferences() async {
+    if (widget.onOpenPreferences case final action?) await withModal(action);
+  }
+
+  Future<void> _showShortcuts() async {
+    if (widget.onShowShortcuts case final action?) await withModal(action);
+  }
+
+  void _changeTextSize(int delta) {
+    final size = (widget.textSize.round() + delta).clamp(12, 24);
+    if (size != widget.textSize.round()) {
+      unawaited(widget.onTextSizeChanged?.call(size));
+    }
+  }
+
+  Future<void> _showPaginationDebug() =>
+      withModal(() => PaginationDebugDialog.show(context, _output!));
 
   /// §Phase 7's preview-before-export. Null when the core cannot paginate,
   /// which is every widget test driving the editor through the double: a
@@ -524,11 +545,13 @@ class EditorPageState extends State<EditorPage> {
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.f1) {
-      unawaited(widget.onShowShortcuts?.call());
+      unawaited(_showShortcuts());
       return KeyEventResult.handled;
     }
     if (!keys.isControlPressed) return KeyEventResult.ignored;
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.keyK:
+        _show(_Panel.palette);
       case LogicalKeyboardKey.keyN when widget.onNewScript != null:
         unawaited(_runScriptAction(widget.onNewScript!));
       case LogicalKeyboardKey.keyO when widget.onOpenScript != null:
@@ -544,19 +567,11 @@ class EditorPageState extends State<EditorPage> {
       case LogicalKeyboardKey.keyJ:
         _showNavigatorSearch();
       case LogicalKeyboardKey.comma:
-        unawaited(widget.onOpenPreferences?.call());
+        unawaited(_openPreferences());
       case LogicalKeyboardKey.equal || LogicalKeyboardKey.numpadAdd:
-        unawaited(
-          widget.onTextSizeChanged?.call(
-            (widget.textSize.round() + 1).clamp(12, 24),
-          ),
-        );
+        _changeTextSize(1);
       case LogicalKeyboardKey.minus || LogicalKeyboardKey.numpadSubtract:
-        unawaited(
-          widget.onTextSizeChanged?.call(
-            (widget.textSize.round() - 1).clamp(12, 24),
-          ),
-        );
+        _changeTextSize(-1);
       default:
         return KeyEventResult.ignored;
     }
@@ -613,7 +628,7 @@ class EditorPageState extends State<EditorPage> {
             ? Drawer(width: 288, child: SafeArea(child: _navigatorSidebar()))
             : null,
         onDrawerChanged: (open) {
-          if (!open) _editorFocus.requestFocus();
+          if (!open && _panel == _Panel.none) _editorFocus.requestFocus();
         },
         appBar: widget.onClosed == null || widget.distractionFree
             ? null
@@ -674,21 +689,20 @@ class EditorPageState extends State<EditorPage> {
                     onBackups: () => unawaited(_showBackups()),
                     onSave: () => unawaited(save()),
                     onSaveAs: () => unawaited(save(forcePath: true)),
-                    onShortcuts: widget.onShowShortcuts,
+                    onShortcuts: widget.onShowShortcuts == null
+                        ? null
+                        : _showShortcuts,
                     onPaginationDebug: kDebugMode && _output != null
-                        ? () => unawaited(
-                            withModal(
-                              () =>
-                                  PaginationDebugDialog.show(context, _output!),
-                            ),
-                          )
+                        ? () => unawaited(_showPaginationDebug())
                         : null,
                   ),
                   const _BarDivider(),
                   _BarButton(
                     icon: Icons.settings_outlined,
                     tooltip: 'Preferences (Ctrl+,)',
-                    onPressed: widget.onOpenPreferences,
+                    onPressed: widget.onOpenPreferences == null
+                        ? null
+                        : _openPreferences,
                   ),
                   const SizedBox(width: 6),
                 ],
@@ -775,7 +789,9 @@ class EditorPageState extends State<EditorPage> {
                                               _runScriptAction(_closeScript),
                                             ),
                                       openFind: () => _show(_Panel.find),
-                                      openNavigator: _showNavigatorSearch,
+                                      openNavigator: widget.distractionFree
+                                          ? null
+                                          : _showNavigatorSearch,
                                       save: () => unawaited(save()),
                                       saveAs: () =>
                                           unawaited(save(forcePath: true)),
@@ -786,6 +802,59 @@ class EditorPageState extends State<EditorPage> {
                                       previewAndExport: _output == null
                                           ? null
                                           : () => unawaited(_showPreview()),
+                                      openPreferences:
+                                          widget.onOpenPreferences == null
+                                          ? null
+                                          : () => unawaited(_openPreferences()),
+                                      showSpelling: () =>
+                                          unawaited(_showSpelling()),
+                                      showShortcuts:
+                                          widget.onShowShortcuts == null
+                                          ? null
+                                          : () => unawaited(_showShortcuts()),
+                                      toggleNavigator: widget.distractionFree
+                                          ? null
+                                          : () => _setNavigatorVisible(
+                                              _compactLayout ||
+                                                  !_navigatorVisible,
+                                            ),
+                                      navigatorVisible:
+                                          !_compactLayout && _navigatorVisible,
+                                      toggleDistractionFree:
+                                          widget.onDistractionFreeChanged ==
+                                              null
+                                          ? null
+                                          : () => unawaited(
+                                              widget.onDistractionFreeChanged!(
+                                                !widget.distractionFree,
+                                              ),
+                                            ),
+                                      distractionFree: widget.distractionFree,
+                                      togglePageView:
+                                          widget.onPageViewChanged == null
+                                          ? null
+                                          : () => unawaited(
+                                              widget.onPageViewChanged!(
+                                                !widget.pageView,
+                                              ),
+                                            ),
+                                      pageView: widget.pageView,
+                                      increaseTextSize:
+                                          widget.onTextSizeChanged != null &&
+                                              widget.textSize.round() < 24
+                                          ? () => _changeTextSize(1)
+                                          : null,
+                                      decreaseTextSize:
+                                          widget.onTextSizeChanged != null &&
+                                              widget.textSize.round() > 12
+                                          ? () => _changeTextSize(-1)
+                                          : null,
+                                      showPaginationDebug:
+                                          kDebugMode && _output != null
+                                          ? () => unawaited(
+                                              _showPaginationDebug(),
+                                            )
+                                          : null,
                                     ),
                                     onDismiss: _dismiss,
                                   ),
