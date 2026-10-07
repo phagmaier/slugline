@@ -33,6 +33,8 @@ import 'package:slugline/editor/spell_dialog.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/go_to_page_dialog.dart';
 
+import '../test/support/pending_file_choice.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -367,6 +369,7 @@ void main() {
   testWidgets(
     'keyboard script switching saves the native draft before leaving',
     (tester) async {
+      final choice = pendingFileChoice(tester);
       final alpha = File('${scratch.path}/alpha.fountain')
         ..writeAsStringSync('Original draft.\n');
       final beta = File('${scratch.path}/beta.fountain')
@@ -433,11 +436,7 @@ void main() {
       expect(alpha.readAsStringSync(), 'Native unsaved words.\n');
       await press(tester, LogicalKeyboardKey.keyN, control: true);
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.widgetWithText(TextField, 'File name'),
-        '${scratch.path}/new.fountain',
-      );
-      await press(tester, LogicalKeyboardKey.enter);
+      choice.complete('${scratch.path}/new.fountain');
       await tester.pumpAndSettle();
       expect(current().core.path, '${scratch.path}/new.fountain');
       await press(tester, LogicalKeyboardKey.keyW, control: true);

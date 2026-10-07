@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slugline/core/core.dart';
 import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
-import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/theme.dart';
+
+import '../support/pending_file_choice.dart';
 
 class _FakeLibraryCore implements LibraryCore {
   _FakeLibraryCore(this.scripts);
@@ -101,14 +102,15 @@ void main() {
   });
 
   testWidgets('Ctrl+N works when the library is empty', (tester) async {
-    await _pump(tester, []);
+    final choice = pendingFileChoice(tester);
+    final opened = await _pump(tester, []);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
-    expect(find.byType(FileChooser), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    choice.complete('/scripts/first.fountain');
     await tester.pumpAndSettle();
+    expect(opened, ['/scripts/first.fountain']);
   });
 
   testWidgets('keyboard selection scrolls through a long library', (

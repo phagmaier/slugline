@@ -88,6 +88,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
       title: 'Choose a TrueType monospace font',
       action: 'Choose',
       mustExist: true,
+      extension: 'ttf',
     );
     if (path != null && mounted) setState(() => _font.text = path);
   }

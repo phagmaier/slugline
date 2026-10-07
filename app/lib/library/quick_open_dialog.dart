@@ -14,7 +14,11 @@ class QuickOpenDialog extends StatefulWidget {
 
   final LibraryCore core;
 
-  static Future<String?> show(BuildContext context, LibraryCore core) async {
+  static Future<String?> show(
+    BuildContext context,
+    LibraryCore core, {
+    String? directory,
+  }) async {
     final chosen = await showDialog<Object>(
       context: context,
       builder: (_) => QuickOpenDialog(core: core),
@@ -26,6 +30,7 @@ class QuickOpenDialog extends StatefulWidget {
       title: 'Open script',
       action: 'Open',
       mustExist: true,
+      directory: directory,
     );
   }
 

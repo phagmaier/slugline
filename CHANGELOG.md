@@ -19,6 +19,11 @@ this file and the others to it.
 - Preview and export opens on the page the caret is on instead of always at the
   top. Page 1 still opens at the top, with the title page. The preview's scroll
   bar now reflects the script's real length from the moment it opens.
+- New, Browse, Save As, Rename, Export and the font/backup preferences now use
+  GTK's local file dialog, with system bookmarks, search, keyboard navigation,
+  folder creation and file-type filters. Dialogs start beside the current script
+  or remember the last accepted folder during the launch. Extensionless save
+  names gain the format's extension; replacement still asks only once in Slugline.
 
 ### Fixed
 

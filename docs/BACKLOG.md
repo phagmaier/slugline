@@ -1506,6 +1506,16 @@ existing destination until asked twice; with a native dialog that asks about
 overwriting itself, make sure the writer is not asked twice. The choosers are
 already injectable for tests (`SavePathChooser`, `PathChooser`).
 
+**Choice:** 2026-10-07 — option A. Reproduced
+New on the real release window (`target/w7-before.png`): it starts in `$HOME`
+instead of beside the current script and offers only directory rows and a name
+field, without search, bookmarks or folder creation. A native GTK dialog reuses
+the existing toolkit and method channel, gaining its keyboard navigation,
+search, bookmarks and folder creation without a Dart dependency. Option B would
+keep a second file-browser implementation to maintain. GTK overwrite confirmation
+will stay disabled: Rust's `AlreadyExists` refusal and the existing shared
+Replace dialog remain the one confirmation, and `ScriptIsOpen` stays a refusal.
+
 **Result:** _open_
 
 <a id="w8"></a>

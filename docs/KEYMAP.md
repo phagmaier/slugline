@@ -220,6 +220,15 @@ closes either chooser without changing the draft. `Ctrl+N` asks where to create
 the new script. Choosing the current script in quick-open keeps its session and
 undo history.
 
+New, Browse, Save As, Rename and Export use GTK's local file dialog, with system
+bookmarks, search, keyboard navigation and folder creation. File dialogs start
+beside the current script when one is open; otherwise they remember the last
+accepted folder during this launch, falling back to home. Fountain/PDF/font
+filters have an All files choice. Extensionless save names gain the selected
+format's extension. GTK does not ask about replacement: Save As and Export
+still ask once in Slugline after the core refuses an occupied destination.
+Preferences uses the same dialog for a TrueType font or a backup folder.
+
 The library focuses its search field when it opens. Typing filters by title or
 path, `↑` / `↓` selects a row, and `Enter` opens it; a missing file cannot be
 opened. New and Open work there too. Leaving an editor through New, Open or

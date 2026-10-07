@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
@@ -258,6 +259,7 @@ class _SluglineAppState extends State<SluglineApp> {
         title: 'New script',
         action: 'Create',
         suggestedName: 'untitled.fountain',
+        directory: _scriptDirectory,
       ),
     );
   }
@@ -265,7 +267,18 @@ class _SluglineAppState extends State<SluglineApp> {
   Future<void> _quickOpen() async {
     final context = _navigator.currentContext;
     if (context == null) return;
-    await _switchPath(await QuickOpenDialog.show(context, widget.core));
+    await _switchPath(
+      await QuickOpenDialog.show(
+        context,
+        widget.core,
+        directory: _scriptDirectory,
+      ),
+    );
+  }
+
+  String? get _scriptDirectory {
+    final path = _open?.core.path;
+    return path == null ? null : File(path).parent.path;
   }
 
   Future<void> _adopt(DocumentCore core, {int initialScrollRow = 0}) async {

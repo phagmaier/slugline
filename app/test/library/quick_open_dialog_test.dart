@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slugline/core/core.dart';
-import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/library/quick_open_dialog.dart';
 import 'package:slugline/theme.dart';
+
+import '../support/pending_file_choice.dart';
 
 class _Library implements LibraryCore {
   _Library(this.scripts);
@@ -58,6 +59,7 @@ void main() {
   testWidgets('the highlight scrolls to Browse after a long recent list', (
     tester,
   ) async {
+    final choice = pendingFileChoice(tester);
     await tester.pumpWidget(
       MaterialApp(
         theme: sluglineTheme(Brightness.light),
@@ -79,13 +81,13 @@ void main() {
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byType(FileChooser), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    choice.complete(null);
     await tester.pumpAndSettle();
     expect(await chosen, isNull);
   });
 
   testWidgets('a failed library still offers Browse', (tester) async {
+    final choice = pendingFileChoice(tester);
     await tester.pumpWidget(
       MaterialApp(
         theme: sluglineTheme(Brightness.light),
@@ -104,10 +106,9 @@ void main() {
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byType(FileChooser), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    choice.complete('/scripts/browsed.fountain');
     await tester.pumpAndSettle();
-    expect(await chosen, isNull);
+    expect(await chosen, '/scripts/browsed.fountain');
   });
 
   testWidgets('Escape during a library load leaves no late state update', (

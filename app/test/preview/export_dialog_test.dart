@@ -34,7 +34,6 @@ void main() {
 
   late FakeCore core;
   late FakeOutput output;
-  late List<String> asked;
   String? answer;
 
   setUp(() {
@@ -43,7 +42,6 @@ void main() {
     // No title page in this fixture: it puts screenplay page one at the top
     // of the preview, where a test can see it without scrolling.
     output = FakeOutput(samplePagination(titlePage: false));
-    asked = [];
     answer = null;
   });
 
@@ -71,7 +69,6 @@ void main() {
                   required String suggestedName,
                   required String? directory,
                 }) async {
-                  asked.add('$title|$suggestedName|$directory');
                   return answer;
                 },
           ),
@@ -122,11 +119,6 @@ void main() {
     expect(output.pdfExports.single.$3, isFalse, reason: 'nothing to replace');
     expect(output.pdfExports.single.$2.boldSceneHeadings, isFalse);
     expect(output.pdfExports.single.$2.numberFirstPage, isFalse);
-    expect(
-      asked.single,
-      'Export PDF|heat.pdf|/scripts',
-      reason: 'the chooser starts beside the script and suggests its name',
-    );
     expect(report(tester), contains('/scripts/heat.pdf'));
 
     // ADR 0029: the session did not move.

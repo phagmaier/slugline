@@ -35,7 +35,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0012 | The custom surface's semantics tree is a render object per block | `app/lib/editor/surface_semantics.dart`, `app/test/editor/accessibility_test.dart` | live |
 | 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0014 | The autosave clock lives in Dart | `app/lib/editor/autosave.dart`, `app/lib/editor/editor_page.dart` | partly superseded by 0043 — "autosave writes no backup" |
-| 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | live |
+| 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | superseded by 0052 — GTK chooser through the runner |
 | 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
 | 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | refined by 0051 — Shift+Enter always edits |
 | 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — no page indication in the editor |
@@ -57,7 +57,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | refined by 0046 — spacing belongs to lyric runs |
 | 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041 — navigator drawer below 900 px |
 | 0036 | Spell checking is an immutable Rust snapshot and a Dart overlay | `crates/spell/src/lib.rs`, `crates/bridge/src/api/spell.rs`, `app/lib/editor/spell_dialog.dart` | live |
-| 0037 | Preferences split display policy from screenplay output | `crates/storage/src/prefs.rs`, `app/lib/settings/preferences_dialog.dart`, `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` | live |
+| 0037 | Preferences split display policy from screenplay output | `crates/storage/src/prefs.rs`, `app/lib/settings/preferences_dialog.dart`, `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` | partly superseded by 0052 — retained in-app chooser |
 | 0038 | The save path checks the file it is replacing; the watcher only asks early | `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
 | 0039 | The release build unwinds; `panic = "abort"` is superseded | `Cargo.toml`, `app/linux/CMakeLists.txt` | live |
 | 0040 | The fluid editor shows output page position in its status bar | `app/lib/editor/page_indicator.dart`, `app/lib/editor/editor_page.dart`, `crates/bridge/src/api/layout.rs` | live |
@@ -72,6 +72,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0049 | An incremental run resumes and stops only where the paginator recorded that it could | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental_differential.rs` | live |
 | 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | live |
 | 0051 | Shift+Enter is a core-owned line break with its own undo transaction | `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/commands.dart` | live |
+| 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live |
 
 ---
 
@@ -1018,6 +1019,7 @@ wakeups, and neither is created for a document with nothing to save.
 ## ADR 0015 — The file chooser is ours, because `file_selector` brings `http`
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4
+**Superseded by:** ADR 0052.
 
 ### Context
 
@@ -2904,6 +2906,7 @@ central invariant.
 **Status:** Accepted
 **Date:** 2026-07-27
 **Phase:** 10
+**Superseded by:** ADR 0052 for the retained in-app chooser only.
 
 ### Context
 
@@ -3933,3 +3936,74 @@ selections, refusal atomicity and typing isolation. A persistence test replays
 the actual journal through break, undo and redo, then checks the saved bytes,
 retaining untouched BOM/CRLF title and opaque content. Native writing cases
 save and reopen Action, Dialogue and Note through the real core and filesystem.
+
+---
+
+## ADR 0052 — GTK owns local file selection; the core still authorizes replacement
+
+**Date:** 2026-10-07 · **Status:** accepted · **Backlog:** W7
+**Supersedes:** ADR 0015, and ADR 0037's retained in-app chooser decision only.
+
+### Context
+
+The in-app chooser starts at home, with no bookmarks, search, folder creation
+or list keyboard navigation. Backlog W7 offers native GTK selection (A) or
+building those features ourselves (B). The Linux runner already links GTK 3
+and has a `slugline/window` method channel for full screen.
+
+### Decision
+
+Choose A: GTK's `GtkFileChooserDialog`, called directly from the runner, not
+through `file_selector`. Reuse the toolkit already shipped, with no new Dart
+or Rust dependency. B would retain a second file-browser implementation and
+keyboard model to maintain without improving document safety.
+
+`FileChooser.show` is an async Dart adapter, not a Flutter widget or fallback
+browser. The runner shows a modal, transient dialog and completes the method
+on response or destruction, without a nested `gtk_dialog_run`. Only one chooser
+may be active. Cancellation returns null; platform failures are shown in Dart.
+
+File modes use an extension filter with an All files choice; the font chooser
+uses `.ttf`, exports use `.pdf` or `.fountain`, and backup preferences select a
+directory. GTK owns navigation, search, bookmarks and folder creation. Selection
+is local-only. An explicit folder takes precedence over the last accepted
+folder remembered in runner memory, then home. New and Browse from the editor,
+Save As, Rename and Export supply the current script's folder. No new preference,
+cache or persisted path is introduced. A save name with no dot gains the
+caller's extension before it is returned; an explicit extension is preserved.
+
+Disable GTK overwrite confirmation. A chosen path is not permission to replace
+its bytes: the core still refuses `AlreadyExists`, and Save As and Export
+still use their one shared Replace dialog before retrying with `overwrite:
+true`. `ScriptIsOpen` is never retried. New and Rename retain their existing
+core behavior. `SavePathChooser` and `PathChooser` keep their injection contracts.
+
+### Consequences
+
+The old custom directory browser and its incidental widget assertions are
+removed. Widget tests select or cancel through the method-channel seam; native
+chooser interaction must also be exercised against the real runner, because a
+mocked path cannot prove GTK behavior.
+
+The zero-network requirement is unchanged. No selector plugin, HTTP client,
+portal or remote-location chooser is added. `tools/check_no_network.sh` remains
+the packaging smoke proof. GTK's appearance follows the system theme rather
+than Slugline's Flutter theme.
+
+### Verification
+
+A throwaway native integration smoke exercised the real runner under Xvfb:
+Open, extensionless Fountain/PDF save names, explicit suffix preservation,
+an existing destination without a GTK overwrite prompt, TrueType selection,
+directory selection and Escape cancellation. The script was removed after
+passing. Its initial input driver retained GTK's selected-name suffix and
+produced `.fountain.fountain`; selecting the complete entry and accepting its
+completion corrected the driver without changing product code.
+
+The release window was also exercised on native Wayland under Hyprland: New
+created an extensionless choice as a real `.fountain` file; Save As selected an
+occupied path, displayed only Slugline's confirmation, and wrote after Replace.
+Closing the dialog preserved the editor; closing its parent with a chooser
+active exited with status 0. Screenshot evidence is under `target/w7-*`.
+The startup log included an OpenGL initial-size timeout warning; no duplicate
+chooser-response or teardown warning was observed.

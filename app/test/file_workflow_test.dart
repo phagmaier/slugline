@@ -9,7 +9,6 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/command_palette.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/find_bar.dart';
-import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/library/quick_open_dialog.dart';
 import 'package:slugline/settings/preferences_dialog.dart';
@@ -18,6 +17,7 @@ import 'package:slugline/editor/spell_dialog.dart';
 import 'package:slugline/editor/navigator_sidebar.dart';
 
 import 'support/fake_core.dart';
+import 'support/pending_file_choice.dart';
 
 const _preferences = PreferencesView(
   autosaveEnabled: false,
@@ -302,6 +302,7 @@ void main() {
   testWidgets(
     'library to script to another script to new script needs no pointer',
     (tester) async {
+      final choice = pendingFileChoice(tester);
       final core = await _pump(tester, open: false);
       await _key(tester, LogicalKeyboardKey.arrowDown);
       await _key(tester, LogicalKeyboardKey.arrowUp);
@@ -315,12 +316,8 @@ void main() {
       expect(tester.testTextInput.hasAnyClients, isTrue);
       await _key(tester, LogicalKeyboardKey.keyN, control: true);
       expect(find.byType(QuickOpenDialog), findsNothing);
-      expect(find.byType(FileChooser), findsOneWidget);
-      await tester.enterText(
-        find.widgetWithText(TextField, 'File name'),
-        '/scripts/new.fountain',
-      );
-      await _key(tester, LogicalKeyboardKey.enter);
+      choice.complete('/scripts/new.fountain');
+      await tester.pumpAndSettle();
       expect(_editor(tester).controller.core.path, '/scripts/new.fountain');
       expect(core.opened[1].closes, 1);
       await _key(tester, LogicalKeyboardKey.keyW, control: true);
@@ -337,21 +334,24 @@ void main() {
   );
 
   for (final key in [LogicalKeyboardKey.keyN, LogicalKeyboardKey.keyO]) {
-    testWidgets('${key.keyLabel} works in the library; Escape cancels it', (
-      tester,
-    ) async {
-      final core = await _pump(tester, open: false);
-      await _key(tester, key, control: true);
-      expect(
-        find.byType(
-          key == LogicalKeyboardKey.keyN ? FileChooser : QuickOpenDialog,
-        ),
-        findsOneWidget,
-      );
-      await _key(tester, LogicalKeyboardKey.escape);
-      expect(core.requests, isEmpty);
-      expect(find.byType(LibraryPage), findsOneWidget);
-    });
+    testWidgets(
+      '${key.keyLabel} works in the library; cancellation leaves it open',
+      (tester) async {
+        final core = await _pump(tester, open: false);
+        final choice = key == LogicalKeyboardKey.keyN
+            ? pendingFileChoice(tester)
+            : null;
+        await _key(tester, key, control: true);
+        if (choice != null) {
+          choice.complete(null);
+          await tester.pumpAndSettle();
+        } else {
+          await _key(tester, LogicalKeyboardKey.escape);
+        }
+        expect(core.requests, isEmpty);
+        expect(find.byType(LibraryPage), findsOneWidget);
+      },
+    );
   }
 
   for (final key in [
@@ -363,6 +363,9 @@ void main() {
       tester,
     ) async {
       final core = await _pump(tester);
+      final choice = key == LogicalKeyboardKey.keyN
+          ? pendingFileChoice(tester)
+          : null;
       final controller = _editor(tester).controller;
       controller.insertText('Unsaved words. ');
       final source = controller.source;
@@ -374,11 +377,8 @@ void main() {
         );
         await _key(tester, LogicalKeyboardKey.enter);
       } else if (key == LogicalKeyboardKey.keyN) {
-        await tester.enterText(
-          find.widgetWithText(TextField, 'File name'),
-          '/scripts/new.fountain',
-        );
-        await _key(tester, LogicalKeyboardKey.enter);
+        choice!.complete('/scripts/new.fountain');
+        await tester.pumpAndSettle();
       }
       expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
       // A second shortcut belongs to the modal, not to the editor below it.
@@ -473,16 +473,22 @@ void main() {
     tester,
   ) async {
     final core = await _pump(tester);
+    final choice = pendingFileChoice(tester);
     final controller = _editor(tester).controller;
     core.holdOpen = Completer<void>();
     await _chooseBeta(tester);
     expect(tester.testTextInput.hasAnyClients, isFalse);
     await _key(tester, LogicalKeyboardKey.keyN, control: true);
-    expect(find.byType(FileChooser), findsNothing);
+    choice.complete('/scripts/new.fountain');
+    await tester.pumpAndSettle();
     core.holdOpen!.complete();
     await tester.pumpAndSettle();
     expect(_editor(tester).controller, isNot(same(controller)));
     expect(tester.testTextInput.hasAnyClients, isTrue);
+    expect(core.requests, [
+      '/scripts/alpha.fountain',
+      '/scripts/beta.fountain',
+    ]);
   });
 
   testWidgets(
@@ -526,6 +532,7 @@ void main() {
   for (final label in ['New script…', 'Open script…', 'Back to the library']) {
     testWidgets('the palette runs $label', (tester) async {
       await _pump(tester);
+      final choice = label == 'New script…' ? pendingFileChoice(tester) : null;
       await _key(tester, LogicalKeyboardKey.keyK, control: true);
       await tester.enterText(
         find.widgetWithText(TextField, 'Element or command'),
@@ -533,18 +540,22 @@ void main() {
       );
       await _key(tester, LogicalKeyboardKey.enter);
       expect(find.byType(CommandPalette), findsNothing);
-      expect(
-        find.byType(
-          label == 'New script…'
-              ? FileChooser
-              : label == 'Open script…'
-              ? QuickOpenDialog
-              : LibraryPage,
-        ),
-        findsOneWidget,
-      );
-      if (label != 'Back to the library') {
-        await _key(tester, LogicalKeyboardKey.escape);
+      if (choice != null) {
+        choice.complete('/scripts/palette-new.fountain');
+        await tester.pumpAndSettle();
+        expect(
+          _editor(tester).controller.core.path,
+          '/scripts/palette-new.fountain',
+        );
+      } else if (label == 'Open script…') {
+        await tester.enterText(
+          find.byKey(const Key('quick-open-search')),
+          'beta',
+        );
+        await _key(tester, LogicalKeyboardKey.enter);
+        expect(_editor(tester).controller.core.path, '/scripts/beta.fountain');
+      } else {
+        expect(find.byType(LibraryPage), findsOneWidget);
       }
     });
   }
@@ -553,6 +564,7 @@ void main() {
     tester,
   ) async {
     await _pump(tester);
+    final choice = pendingFileChoice(tester);
     await _key(tester, LogicalKeyboardKey.keyO, control: true);
     await tester.enterText(
       find.byKey(const Key('quick-open-search')),
@@ -560,7 +572,8 @@ void main() {
     );
     await _key(tester, LogicalKeyboardKey.enter);
     expect(find.byType(QuickOpenDialog), findsNothing);
-    expect(find.byType(FileChooser), findsOneWidget);
-    await _key(tester, LogicalKeyboardKey.escape);
+    choice.complete('/scripts/browsed.fountain');
+    await tester.pumpAndSettle();
+    expect(_editor(tester).controller.core.path, '/scripts/browsed.fountain');
   });
 }

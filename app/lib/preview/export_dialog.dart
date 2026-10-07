@@ -106,6 +106,7 @@ class ExportDialog extends StatefulWidget {
     action: 'Export',
     directory: directory,
     suggestedName: suggestedName,
+    extension: suggestedName.endsWith('.pdf') ? 'pdf' : 'fountain',
   );
 
   @override

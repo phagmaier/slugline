@@ -9,6 +9,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 
 import '../support/fake_core.dart';
+import '../support/pending_file_choice.dart';
 
 /// §Phase 4's autosave rules, tested where they live.
 ///
@@ -181,6 +182,7 @@ void main() {
     tester,
   ) async {
     final it = setUpDriver();
+    final choice = pendingFileChoice(tester);
     type(it.core, it.changes, 'Mine. ');
     it.core.onDisk = 'Somebody else wrote this.\n';
     final hold = Completer<void>();
@@ -211,8 +213,7 @@ void main() {
 
     await tester.tap(find.text('Save as…'));
     await tester.pumpAndSettle();
-    expect(find.text('Save script as'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    choice.complete(null);
     await tester.pumpAndSettle();
     expect(find.text('Keep mine'), findsOneWidget);
     expect(
