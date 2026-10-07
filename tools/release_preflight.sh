@@ -26,6 +26,7 @@ cargo test --workspace
 (
   cd app
   flutter pub get
+  dart format --output=none --set-exit-if-changed lib test integration_test test_driver
   flutter analyze
   flutter test
 )

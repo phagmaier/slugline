@@ -63,6 +63,7 @@ This is the only place boxes are ticked.
 - [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
 - [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
 - [x] [B7](#b7) README names a Preferences section the dialog does not have
+- [ ] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
 
 **3. Fountain and output fidelity**
 
@@ -538,6 +539,40 @@ Preferences → Page defaults. That is the only Preferences section it names;
 the sentence F6 added refers to “the same Preferences section” and needed no
 change. Checked against the dialog's five `_heading` calls by reading, which is
 all a label needs. No code changed; `tools/check_docs.py` passes.
+
+<a id="b8"></a>
+### B8 — The Dart tree is not formatter-clean, and nothing checks it
+
+**Problem.** `dart format` rewrites 41 of the application's 97 Dart files, so
+formatting a file a change touches reformats lines the change has nothing to
+do with, and a tree-wide run buries the change in thousands of them. Each item
+that edits Dart either leaves its own code unformatted or spends time
+separating its diff from the formatter's. F4 recorded the first and F6 the
+second.
+
+**Evidence (reproduced under Flutter 3.44.8 / Dart 3.12.2).**
+`dart format --output=none --set-exit-if-changed lib test integration_test
+test_driver` reports “Formatted 97 files (41 changed)”: 1,757 insertions and
+1,275 deletions. Rust is held by `cargo fmt --all --check` in CI; Dart had
+only `flutter analyze`, which does not look at layout. A configuration
+that keeps trailing commas (`formatter: trailing_commas: preserve`) was tried
+and still changes 36 files and about as many lines, so the default style costs
+nothing extra and needs no configuration to explain. The generated bindings in
+`app/lib/src/rust/` are already formatter-clean.
+
+**Change.** Format the tree once with the pinned toolchain's default style, in
+a commit that does nothing else, and check it where `cargo fmt` is checked: a
+CI step, `tools/release_preflight.sh`, and the Flutter list in `AGENTS.md`.
+The vendored Cargokit build tool under `app/rust_builder/` is not ours and is
+left out.
+
+**Done when.** The check passes on the whole tree; the formatting commit
+changes nothing but whitespace and trailing commas; regenerating the bindings
+keeps it passing; analysis, every Flutter test, the release build and the
+native integration suites — the keystroke budgets among them — still pass.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -1414,6 +1449,7 @@ not part of that item.
   files, including existing constructors, switch arms and test assertions under
   the installed formatter. Kept the surrounding style rather than reformatting
   unrelated code; Flutter analysis and tests remain the required Dart checks.
+  Promoted to [B8](#b8) with F6's note below.
 - 2026-10-06 — F4's full native integration run passed bridge and editor suites,
   then failed `writing_test.dart` at line 174: “the real entity index and scene
   parser drive the navigator” expected visible `STREET` and found none.
@@ -1427,6 +1463,8 @@ not part of that item.
   gates Dart formatting, so a tree-wide run buries a change in thousands of
   unrelated lines; it was undone here file by file. Either format the tree once
   in its own change and check it in CI, or have `AGENTS.md` say to leave it.
+  Promoted to [B8](#b8) after the owner asked whether to address it; the tree
+  is formatted once and the check added.
 - 2026-10-06 — F6: `flutter_rust_bridge_codegen generate` ran `pub get` and
   rewrote `app/pubspec.lock` under the pinned Flutter 3.44.8, moving `matcher`
   0.12.20 to 0.12.19, `meta` 1.19.0 to 1.18.0 and `test_api` 0.7.12 to 0.7.11.

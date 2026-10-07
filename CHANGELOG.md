@@ -49,6 +49,8 @@ this file and the others to it.
   The application is unchanged: those builds were already using these versions.
 - The README now sends readers to Preferences → Page defaults, the section's
   actual name, for the heading-weight and first-page-number options.
+- The Dart sources are formatted with `dart format` throughout, and CI now
+  checks it. No behaviour changed: only whitespace and trailing commas moved.
 
 ## 1.0.2 - 2026-09-13
 

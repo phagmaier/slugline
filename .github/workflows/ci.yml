@@ -197,6 +197,13 @@ jobs:
         working-directory: app
         run: flutter analyze
 
+      # The Dart tree is formatter-clean, generated bindings included, and this
+      # keeps it so. The point is not the style: it is that formatting the one
+      # file a change touches then reformats nothing else in it.
+      - name: Formatting
+        working-directory: app
+        run: dart format --output=none --set-exit-if-changed lib test integration_test test_driver
+
       # Includes the editor half of the line-breaking differential test, which
       # wraps every case in testdata/line-breaking.json with the editor's own
       # wrapText and compares boundaries. It needs the repository, not the .so,

@@ -283,10 +283,16 @@ Flutter checks from `app/`:
 
 ```sh
 flutter pub get --enforce-lockfile   # fails if the lockfile is not this toolchain's
+dart format --output=none --set-exit-if-changed lib test integration_test test_driver
 flutter analyze
 flutter test
 flutter build linux --release
 ```
+
+The Dart tree is formatter-clean, generated bindings included, and CI fails if
+`dart format` would change anything. Run `dart format` on the Dart you touch;
+on a clean tree that reformats nothing else. The style is the formatter's
+default for the package's language version; there is no project configuration.
 
 Integration tests open real windows and go through Xvfb; this is the script CI
 runs, one test at a time, and it fails if its list and the files on disk
@@ -300,7 +306,8 @@ disagree:
 bundle. `./tools/release_preflight.sh` runs everything on this page plus
 packaging and the metadata validators — the one command that proves a release
 candidate, needing `LINUXDEPLOY` set — and is overkill for anything that is not
-a release.
+a release. Its one difference is a plain `flutter pub get`, so that a newer
+local Flutter can still run it; CI is what holds the lockfile.
 
 Golden regeneration (each needs a sentence in the commit message saying whether
 the change was deliberate):

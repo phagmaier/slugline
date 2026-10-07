@@ -77,10 +77,11 @@ linuxdeploy AppImage's type-2 runtime header so AppImage assembly stays offline.
    ```
 
    This runs Rust formatting, Clippy and tests; version, layering and reference
-   checks; Flutter analysis, unit tests and all Linux integration tests under
-   Xvfb; metadata and shell checks; the offline gate; both artifact builds and
-   smoke tests; and checksum generation. The real 4 MB full-disk test remains a
-   CI gate because mounting its tmpfs is intentionally not done by local tools.
+   checks; Dart formatting, Flutter analysis, unit tests and all Linux
+   integration tests under Xvfb; metadata and shell checks; the offline gate;
+   both artifact builds and smoke tests; and checksum generation. The real 4 MB
+   full-disk test remains a CI gate because mounting its tmpfs is intentionally
+   not done by local tools.
 
 4. Review and commit the release changes:
 

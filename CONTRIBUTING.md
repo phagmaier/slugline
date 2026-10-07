@@ -21,6 +21,7 @@ Before opening a pull request:
    python3 tools/check_layering.py
    python3 tools/check_version.py
    cd app && flutter analyze && flutter test
+   dart format --output=none --set-exit-if-changed lib test integration_test test_driver
    ```
 
 Linux integration tests need Xvfb:
