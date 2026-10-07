@@ -156,7 +156,7 @@ command palette.
 
 Preview and PDF render Fountain's italic, bold and underline emphasis; the
 editor keeps inline markers visible while you write. Preferences
-(<kbd>Ctrl</kbd>+<kbd>,</kbd>) → Output → **Bold scene headings** changes heading
+(<kbd>Ctrl</kbd>+<kbd>,</kbd>) → Page defaults → **Bold scene headings** changes heading
 weight in all three views. It is off by default and does not change wrapping.
 
 Page 1 is left unnumbered, as is conventional; **Number the first page** in the

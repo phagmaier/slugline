@@ -62,6 +62,7 @@ This is the only place boxes are ticked.
 - [x] [B4](#b4) The native navigator test assumes a permanently docked sidebar
 - [x] [B5](#b5) Navigator tab clicks disable the scene quick-jump shortcut
 - [x] [B6](#b6) The committed Dart lockfile is not the pinned toolchain's
+- [ ] [B7](#b7) README names a Preferences section the dialog does not have
 
 **3. Fountain and output fidelity**
 
@@ -515,6 +516,24 @@ workflow files on GitHub. They carry the same one-flag change, and the command
 was run locally under the same toolchain version. Left alone on purpose:
 `tools/release_preflight.sh` still runs a plain `pub get`, so a newer local
 Flutter can run it; if that rewrites the lockfile, CI now says so on push.
+
+<a id="b7"></a>
+### B7 — README names a Preferences section the dialog does not have
+
+**Evidence (read).** `README.md` sends the reader to Preferences → “Output” →
+**Bold scene headings**. `PreferencesDialog` has five sections — Appearance,
+Writing, Autosave, Page defaults and Backups (`_heading` in
+`app/lib/settings/preferences_dialog.dart`) — and the option is under Page
+defaults. There is no “Output”. Found during F6, which added a second option
+to the same section.
+
+**Change.** Name the section the dialog has. The heading is what the writer
+sees and what ADR 0048 already calls it, so the README moves, not the label.
+
+**Done when.** Every Preferences section the README names exists in the dialog.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -1415,3 +1434,4 @@ not part of that item.
 - 2026-10-06 — F6: `README.md` sends the reader to Preferences → “Output” for
   Bold scene headings, but the dialog's section is headed “Page defaults”.
   Left as it is; the sentence added for F6 does not repeat the label.
+  Promoted to [B7](#b7) after the owner asked whether to address it.

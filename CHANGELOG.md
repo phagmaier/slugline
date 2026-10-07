@@ -47,6 +47,8 @@ this file and the others to it.
 - The committed Dart lockfile is again the one the supported Flutter toolchain
   (3.44.8) resolves, and CI and the release build now refuse one that is not.
   The application is unchanged: those builds were already using these versions.
+- The README now sends readers to Preferences → Page defaults, the section's
+  actual name, for the heading-weight and first-page-number options.
 
 ## 1.0.2 - 2026-09-13
 
