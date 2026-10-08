@@ -87,7 +87,7 @@ This is the only place boxes are ticked.
 - [x] [W5](#w5) The preview always opens at page 1
 - [x] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
 - [x] [W7](#w7) The file chooser is minimal — *option A, ADR 0052*
-- [ ] [W8](#w8) Find highlights only the current match
+- [x] [W8](#w8) Find highlights only the current match
 - [ ] [W9](#w9) Previous versions can be restored but not looked at
 - [ ] [W10](#w10) Slugline is not installed on the owner's machine
 
@@ -1561,7 +1561,73 @@ controller already holds every match (`EditorController.matches`).
 opened with a selection inside one block, start with that text.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-07 — verified in `7acce51`, with the pre-existing idle-gate
+failure below still open. Reproduced first: 14 widget cases failing on the
+unchanged tree (`target/w8-widget-red.log`), and the release bundle built
+before the change, driven with real keys under Xvfb — `house` matching seven
+times with one of them marked, and Find opening on the last query with another
+word selected (`target/w8-smoke/before-dark-*.png`).
+
+The page tells the surface the bar is open (`EditorSurface.highlightMatches`)
+and the painter tints `EditorController.matchesIn(block)` for the rows in its
+band: grid cells through `EditorGeometry`, every row a wrapped match touches,
+under the selection and under the text. `EditorController.startFind`, which the
+page calls before it builds the bar, makes a selection inside one block the
+query and otherwise resumes the last search; the toggles and the element filter
+carry over either way. Rust still decides what matches; Dart adds no rule.
+
+Choices. The tint is a 16% wash of the text colour, not the accent: the theme
+keeps the accent for one thing at a time, and the match the caret is on is
+already the selection, painted over its tint. The query outlives the bar for
+`Ctrl+G`, so with the bar closed nothing is tinted. The seed is the block's
+stored text — not the capitals a heading is drawn in, and not the clipboard's
+Fountain. A selection across blocks does not seed, since no match crosses one;
+nor does one across a `Shift+Enter` line break, which the one-line field cannot
+show; nor does one that is already a match of the last search, so a reopened
+search keeps the query as it was typed instead of respelling `house` as the
+`HOUSE` it stopped on.
+
+Differently from the item, two things the tint would otherwise have shown
+wrongly. The search on opening moved out of the bar's first post-frame callback
+into `startFind`, so the bar's first frame is never drawn over the previous
+query's matches; that also corrects a count that went stale when Find reopened
+on a match selected by hand ("2 of 7" on the first match,
+`target/w8-smoke/before-dark-find-over-selection.png`). And `_selectMatch` now
+notifies when a search lands on the selection already in force: "Match case"
+could drop matches without moving the caret, and nothing was told to redraw.
+
+Twenty new widget tests read the rectangles off the surface's own painter with
+a recording canvas — a widget test has no script face, so its pixels say
+nothing about what is behind the text. Two native tests read the real pixels,
+in the face the script is set in, over the real core: a lower-case heading
+drawn in capitals, offsets past an astral character, and the toggle case.
+Twenty deliberate mistakes each fail a widget test and three fail the native
+one (`target/w8-mutations.log`, `target/w8-native-mutations.log`). One early
+mutation revert used `git checkout` and discarded the uncommitted work in
+`editor_controller.dart`; it was re-applied before any result here was taken,
+and every later revert restores from a copy. KEYMAP and CHANGELOG say what Find
+does now.
+
+Verified all 646 Rust tests, rustfmt, clippy, layering/version/docs and the
+reference script; the enforced Flutter lockfile, 108-file format check,
+analysis and all 661 widget tests; all seven native suites (69 tests), with
+journalled keystroke p99 4.56 ms; the Linux release build, 30,331,399 bytes
+(28.93 MiB), and the headed network-isolation smoke. The rebuilt bundle was
+driven with real keys in the dark and the light theme
+(`target/w8-smoke/after-*.png`): every match on screen tinted, the current one
+selected over its tint, and `DAY` selected then `Ctrl+F` giving "DAY", "1 of
+2". That was Xvfb with software rendering, not the Hyprland session. Startup
+and Xvfb RSS passed: best 374.894 ms and 279.03 MiB against the 320 MiB
+headless ceiling. **Idle did not pass:** the same one-switch outer intervals
+(1, 64, 1) W4 recorded and reproduced on a clean W3 control, in a harness that
+never opens Find (`target/w8-runtime-budgets.json`, `.log`). No threshold or
+harness was changed, and no all-green runtime or release-candidate claim is
+made. Manual gate 5's real-GPU 250 MiB claim remains pending.
+
+Five findings are recorded under Found along the way and left unchanged. No
+Rust API, binding, dependency, lockfile, golden or line-breaking fixture
+changed; no ADR, since no accepted record decides how Find is presented.
+Committed locally, unpushed. W9 is next; no adjacent item was started.
 
 <a id="w9"></a>
 ### W9 — Previous versions can be restored but not looked at
@@ -1778,6 +1844,47 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-07 — W8, reproduced on the release bundle with a real pointer and
+  real keys: after a click on "Match case", "Whole word" or the element filter,
+  Escape no longer closes the find bar and Enter no longer steps
+  (`target/w8-smoke/found-escape-after-toggle.png`; the first run of W8's native
+  test failed on it too). Read, not proven: a desktop text field gives up the
+  keyboard on a click outside it, to the page's focus scope; the bar's key
+  handler sees keys only while something inside the bar has it, and
+  `EditorPage._onPageKey` has no Escape. The close button still works. It
+  predates W8, which changes no focus handling. Left unchanged.
+- 2026-10-07 — W8, reproduced on the release bundle: text typed after Find
+  opens is appended to what the field holds rather than replacing it — `DAY`
+  seeded, `x` typed, "DAYx", "No matches"
+  (`target/w8-smoke/found-typed-after-seed.png`). The same goes for a resumed
+  query. Flutter's desktop default is to select a one-line field's text when it
+  takes the keyboard, and here it does not; the cause is not established. Not
+  exercised on the pre-W8 build, though W8 changes only what text the field
+  starts with. More noticeable since W8: a writer who opens Find over a
+  selection and then wants something else has to clear the field first. Worth
+  its own small item. Left unchanged.
+- 2026-10-07 — W8, read: `Ctrl+F` with the find bar already open does nothing.
+  `EditorPage._show` returns when the panel asked for is the one showing, so
+  from the script it neither moves the keyboard to the find field nor takes a
+  new selection, and from inside the field the page's key handler has no
+  `Ctrl+F` case. W8 seeds on opening, as its item says; a writer who selects
+  other text with the bar still open and presses `Ctrl+F` gets no new search.
+  Not exercised. Left unchanged.
+- 2026-10-07 — W8, observed in its release frames: the find bar floats over the
+  top right of the script and hides the matches under it. At 1400 px it covers
+  the right of the first seven rows, and with them three of the seven matches
+  (`target/w8-smoke/after-dark-find-open.png`). The surface scrolls a selected
+  match into the viewport, not out from under the bar. It predates W8 and shows
+  more now that every other match is tinted. Left unchanged.
+- 2026-10-07 — W8, read and not measured: every edit re-runs the last search
+  for as long as a query exists, with the bar open or closed.
+  `EditorController._outcome` calls `refreshSearch`, and `core.find` is a
+  synchronous whole-document scan across the bridge, on the keystroke path, so
+  that `Ctrl+G` never steps through stale ranges. The keystroke benchmark never
+  opens Find, so its budget does not see it. W8's per-block grouping is built
+  only when the painter asks, so it adds nothing with the bar closed. Marking
+  the list stale and rescanning on the next use would take the scan off the
+  keystroke; measure before changing it. Left unchanged.
 - 2026-10-07 — W7, observed on the native Hyprland release launch: GTK/Flutter
   logged “Timed out waiting for OpenGL frame of size 1920x1080 (have 1280x720)”
   during startup. The subsequent editor and
