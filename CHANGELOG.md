@@ -10,6 +10,11 @@ this file and the others to it.
 
 ### Added
 
+- Dual dialogue prints adjacent speeches side by side in preview and PDF.
+  On the second Character cue, use Ctrl+K → “Toggle dual dialogue”; the element
+  bar identifies marked cues. Both speeches wrap to the printed column widths
+  in the linear editor. Pairs stay together when they fit a page; longer pairs
+  continue each speaker independently with (MORE) and (CONT'D).
 - Previous versions can be viewed as selectable, read-only Fountain text,
   including the title page, before restoring. “Open as copy…” saves the viewed
   version under a new filename and opens it in a separate window without

@@ -78,6 +78,18 @@ pub const DIALOGUE_WIDTH: u16 = 35;
 /// SPEC §5.2: dialogue follows without a blank line.
 pub const DIALOGUE_BLANKS_BEFORE: u16 = 0;
 
+/// Dual dialogue occupies two 28-cell lanes separated by a four-cell gutter.
+pub const DUAL_DIALOGUE_WIDTH: u16 = 28;
+pub const DUAL_DIALOGUE_LEFT_ORIGIN: i16 = 0;
+pub const DUAL_DIALOGUE_RIGHT_ORIGIN: i16 = 32;
+/// Cues and parentheticals stay inside their own dialogue lane.
+pub const DUAL_CHARACTER_WIDTH: u16 = 20;
+pub const DUAL_CHARACTER_LEFT_ORIGIN: i16 = 8;
+pub const DUAL_CHARACTER_RIGHT_ORIGIN: i16 = 40;
+pub const DUAL_PARENTHETICAL_WIDTH: u16 = 20;
+pub const DUAL_PARENTHETICAL_LEFT_ORIGIN: i16 = 4;
+pub const DUAL_PARENTHETICAL_RIGHT_ORIGIN: i16 = 36;
+
 /// SPEC §5.2: transitions occupy the full 60-column text area.
 pub const TRANSITION_WIDTH: u16 = 60;
 /// SPEC §5.2: transitions have one blank line before them.

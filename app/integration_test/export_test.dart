@@ -473,6 +473,153 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets(
+    'dual cue command reaches paired preview, PDF and saved Fountain',
+    (tester) async {
+      const text =
+          'STEEL\n'
+          'Left **emphasis stretches across the narrower dialogue measure**.\n\n'
+          'BRICK\n'
+          '(interrupting)\n'
+          '~Right words overlap the other speaker.\n';
+      final source = File(path('dual.fountain'))..writeAsStringSync(text);
+      final core = (await Core.instance.openDocument(source.path))!;
+      addTearDown(core.close);
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(home: EditorPage(controller: controller)),
+      );
+      await tester.tap(find.byType(EditorSurface));
+      final cue = controller.blocks.singleWhere(
+        (block) => block.text == 'BRICK',
+      );
+      final caret = DocPosition(block: cue.id, offsetUtf16: 2);
+      controller.setSelection(DocSelection(anchor: caret, focus: caret));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Element or command'),
+        'Toggle dual dialogue',
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        controller.blocks.singleWhere((block) => block.id == cue.id).dual,
+        true,
+      );
+      expect(controller.selection.focus, caret);
+      expect(
+        controller.blocks.singleWhere((block) => block.id == cue.id).text,
+        'BRICK',
+      );
+      expect(core.source(), contains('BRICK ^\n'));
+      expect(core.journalState.$1, greaterThan(0));
+
+      final pdf = path('dual.pdf');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ExportDialog(
+              core: core,
+              output: core as ScreenplayOutput,
+              initialSetup: letter,
+              chooseFile:
+                  (
+                    context, {
+                    required title,
+                    required suggestedName,
+                    required directory,
+                  }) async => pdf,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final preview = tester.widget<PreviewView>(find.byType(PreviewView));
+      final lines = preview.pagination.pages.single.lines;
+      final steel = lines.singleWhere((line) => line.content == 'STEEL');
+      final brick = lines.singleWhere((line) => line.content == 'BRICK');
+      expect((steel.column, brick.column), (8, 40));
+      expect(steel.row, brick.row);
+      expect(
+        lines.singleWhere((line) => line.content == '(interrupting)').column,
+        36,
+      );
+      for (var index = 0; index < controller.blocks.length; index++) {
+        final block = controller.blocks[index];
+        final printed = lines.where(
+          (line) => line.block == block.id && line.sourceLine != null,
+        );
+        expect(
+          printed.map((line) => line.sourceLine).toList(),
+          List.generate(
+            controller.layout.linesOf(index).length,
+            (line) => line,
+          ),
+          reason:
+              'editor anchors name every narrow printed row of ${block.text}',
+        );
+      }
+      expect(
+        lines
+            .expand((line) => line.runs)
+            .where((run) => run.bold)
+            .map((run) => run.text)
+            .join(' '),
+        'emphasis stretches across the narrower dialogue measure',
+      );
+      expect(
+        lines
+            .where((line) => line.block == controller.blocks.last.id)
+            .expand((line) => line.runs)
+            .every((run) => run.italic),
+        true,
+      );
+      await tester.tap(find.byKey(const Key('export-pdf')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('export-report')), findsOneWidget);
+      final extracted = await Process.run('pdftotext', ['-bbox', pdf, '-']);
+      expect(extracted.exitCode, 0);
+      final html = extracted.stdout as String;
+      (double, double) at(String word) {
+        final match = RegExp(
+          '<word xMin="([^"]+)" yMin="([^"]+)"[^>]*>$word</word>',
+        ).firstMatch(html)!;
+        return (double.parse(match[1]!), double.parse(match[2]!));
+      }
+
+      expect(at('STEEL').$1, closeTo(165.6, 0.001));
+      expect(at('BRICK').$1, closeTo(396, 0.001));
+      expect(at('STEEL').$2, at('BRICK').$2);
+      expect(at('Left').$1, closeTo(108, 0.001));
+      expect(at('Right').$1, closeTo(338.4, 0.001));
+      expect(html, isNot(contains('~Right')));
+      expect(html, isNot(contains('**')));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      final saved = source.readAsStringSync();
+      expect(saved, contains('BRICK ^\n'));
+      expect(core.dirty, false);
+      core.close();
+      final reopened = (await Core.instance.openDocument(source.path))!;
+      expect(
+        reopened
+            .blocks(0, reopened.blockCount)
+            .singleWhere((block) => block.text == 'BRICK')
+            .dual,
+        true,
+      );
+      expect(reopened.source(), saved);
+      reopened.close();
+    },
+  );
+
   // W5. The widget tests hold the lookup and the scrolling to a pagination
   // written by hand. What only this can show is that the place the editor names
   // — a block id and a wrapped line of its own layout — is a place the real

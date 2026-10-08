@@ -235,6 +235,12 @@ class ScreenplayMetrics {
   int get hashCode => Object.hash(advance, lineHeight);
 }
 
+/// Paired speech widths shared with `layout::metrics`. The linear editor keeps
+/// ordinary element indents; only the wrapping measure follows the print lanes.
+const int dualDialogueWidth = 28;
+const int dualCharacterWidth = 20;
+const int dualParentheticalWidth = 20;
+
 /// Where each element sits on the screenplay grid, in characters.
 ///
 /// **These numbers are a copy, and the copy stays.** §5.2 puts them in the Rust

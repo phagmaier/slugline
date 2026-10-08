@@ -358,7 +358,9 @@ class _ElementSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colours = context.colours;
-    final label = kindLabel(block.kind, block.sectionLevel);
+    final label = block.kind == BlockKind.character && block.dual
+        ? '${kindLabel(block.kind, block.sectionLevel)} · Dual dialogue'
+        : kindLabel(block.kind, block.sectionLevel);
     return PopupMenuButton<ElementChoice>(
       key: const Key('element-selector'),
       tooltip: 'Element type',

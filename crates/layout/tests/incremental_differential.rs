@@ -773,15 +773,14 @@ fn an_insert_that_pushes_a_scene_heading_is_a_full_pagination() {
 
 #[test]
 fn dual_dialogue_whose_partner_moves_agrees_with_a_full_pagination() {
-    // 23 one-row blocks, then two speeches that fill the page to its last row.
-    // The second is the dual partner, and three rows of dialogue cannot be
-    // split, so one more row above sends it over whole.
-    let mut case = around_a_checkpoint(23, |script| {
+    // A six-row paired unit (including its leading blank) fits below 24
+    // one-row actions. Growing the left lane moves both partners together.
+    let mut case = around_a_checkpoint(24, |script| {
         script
             .paragraph(&format!("MARTHA\n{}", "You missed the turning."))
             .paragraph(&format!(
                 "DEREK ^\n(not looking)\n{}",
-                tall("Partner", 3, metrics::DIALOGUE_WIDTH)
+                tall("Partner", 3, metrics::DUAL_DIALOGUE_WIDTH)
             ))
     });
     let first = block(&case.script, "You missed the turning.");
@@ -793,17 +792,122 @@ fn dual_dialogue_whose_partner_moves_agrees_with_a_full_pagination() {
     assert_eq!(pages_of(&case.before, &case.script, partner), 7..8);
 
     let output = case.edit(first, |block| {
-        block.text = tall("Longer", 2, metrics::DIALOGUE_WIDTH)
+        block.text = tall("Longer", 6, metrics::DUAL_DIALOGUE_WIDTH)
     });
     assert_eq!(pages_of(&output, &case.script, partner), 8..9);
     assert_eq!(pages_of(&output, &case.script, partner + 2), 8..9);
     assert_kept(&output, 4, 2);
 
-    // The mark itself is in the fingerprint. Taking it off moves no row yet
-    // (dual dialogue prints as two speeches), and has to agree all the same.
+    // Removing the mark restores both ordinary widths and columns. The
+    // contextual cache misses deliberately require a full pagination.
     let output = case.edit(partner, |block| block.dual = false);
     assert_eq!(pages_of(&output, &case.script, partner), 8..9);
+    assert_kept(&output, 0, 0);
+    let output = case.edit(partner, |block| block.dual = true);
+    assert_eq!(pages_of(&output, &case.script, partner), 8..9);
+    assert_kept(&output, 0, 0);
+    let output = case.edit(first, |block| {
+        block.text = "You missed the turning.".to_owned()
+    });
+    assert_eq!(pages_of(&output, &case.script, partner), 7..8);
     assert_kept(&output, 4, 2);
+    let output = case.edit(partner + 2, |block| {
+        block.text = tall("Partner", 80, metrics::DUAL_DIALOGUE_WIDTH);
+    });
+    assert!(pages_of(&output, &case.script, partner + 2).len() >= 2);
+}
+
+#[test]
+fn paired_membership_and_rejected_partner_lookahead_agree_across_checkpoints() {
+    use BlockKind::*;
+    let unit = ScriptSnapshot {
+        revision: 0,
+        title_page: Default::default(),
+        blocks: [
+            (Action, "Opening.", false),
+            (Character, "MARTHA", false),
+            (
+                Dialogue,
+                "A reply with enough words to wrap in either dialogue width.",
+                false,
+            ),
+            (Character, "DEREK", true),
+            (Parenthetical, "(not looking)", false),
+            (Dialogue, "One.\nTwo.\nThree.\nFour.\nFive.\nSix.", false),
+            (Character, "ALICE", false),
+            (Dialogue, "An ordinary reply.", false),
+            (Character, "BOB", true),
+            (Note, "A hidden interruption.", false),
+            (Character, "CAROL", false),
+            (Dialogue, "Another reply.", false),
+            (Character, "DAN", true),
+            (Dialogue, "Last reply.", false),
+            (PageBreak, "", false),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (kind, text, dual))| BlockSnapshot {
+            id: BlockId(index as u64 + 1),
+            kind,
+            text: text.to_owned(),
+            forced: false,
+            dual,
+        })
+        .collect(),
+    };
+    let base = tiled(&unit, 180);
+    for capacity in [4, 6, 9, 54] {
+        let config = PageConfig::us_letter().with_line_capacity(capacity);
+        let mut engine = LayoutEngine::new();
+        let untouched = engine.paginate_snapshot(&base, &config);
+        let mut snapshot = base.clone();
+        for index in 0..base.blocks.len() {
+            for edit in [
+                Edit::Dual,
+                Edit::Shorter,
+                Edit::MuchTaller,
+                Edit::HardLines,
+                Edit::Kind(BlockKind::Dialogue),
+                Edit::Kind(BlockKind::Character),
+                Edit::Kind(BlockKind::Note),
+                Edit::Kind(BlockKind::Action),
+            ] {
+                if !edit.apply(&mut snapshot.blocks[index]) {
+                    continue;
+                }
+                snapshot.revision += 1;
+                let context = format!(
+                    "paired/rejected candidate, capacity {capacity}, block {index}, {edit:?}"
+                );
+                let changed = snapshot.blocks[index].id;
+                let actual = engine.repaginate(&snapshot, &config, changed);
+                assert_agrees(&actual, &full(&snapshot, &config), &context);
+                snapshot.blocks[index] = base.blocks[index].clone();
+                snapshot.revision += 1;
+                let actual = engine.repaginate(&snapshot, &config, changed);
+                let mut expected = untouched.clone();
+                expected.revision = snapshot.revision;
+                assert_agrees(&actual, &expected, &format!("{context}, undone"));
+            }
+        }
+        // Source-order surgery can change both partners without touching text.
+        for at in (1..base.blocks.len() - 1).step_by(11) {
+            let mut moved = base.clone();
+            moved.blocks.swap(at, at + 1);
+            moved.revision += 1;
+            let actual = engine.repaginate(&moved, &config, moved.blocks[at].id);
+            assert_agrees(&actual, &full(&moved, &config), "partner moved");
+            let mut removed = base.clone();
+            removed.blocks.remove(at);
+            removed.revision += 1;
+            let actual = engine.repaginate(&removed, &config, removed.blocks[at].id);
+            assert_agrees(
+                &actual,
+                &full(&removed, &config),
+                "interruption/partner removed",
+            );
+        }
+    }
 }
 
 // --- What the engine got wrong before ADR 0049 ------------------------------

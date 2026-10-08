@@ -124,6 +124,21 @@ Dart stores these offsets as UTF-16 code units and Rust may store byte offsets.
 The differential test normalizes both to source Unicode-scalar indices before
 comparison. Different native numbers are not a semantic difference.
 
+## Contextual Speech Widths
+
+Ordinary cues, dialogue and parentheticals wrap at 33, 35 and 20 cells.
+ADR 0054 gives both members of a dual pair cue/dialogue/parenthetical widths
+of 20/28/20 cells. Pair adjacent Character-plus-body speeches greedily and
+without overlap when the second cue carries `dual` and both bodies contain
+Dialogue/Parenthetical blocks. Any other source block interrupts the pair.
+An unmatched flag uses ordinary widths. Empty body text still occupies a row.
+
+Rust applies those widths before caching wraps; the linear editor mirrors
+only this wrapping context, not two-column placement or page breaks.
+Membership changes invalidate unchanged partners' cached wraps. Both sides
+retain per-block source-line indices for preview/page-position anchors.
+
+
 ## How This Is Enforced
 
 `layout::line_spans` and `wrapText` return the canonical result above;
@@ -132,7 +147,7 @@ implementation. Neither language runs the other, so the comparison is a
 generated fixture:
 
 - `crates/layout/tests/line_break_differential.rs` builds every case — the rules
-  above one at a time at eleven widths, casing sweeps over whole Unicode blocks,
+  above one at a time at twelve widths, casing sweeps over whole Unicode blocks,
   every block of every file in `testdata/corpus/` both as typed and as the
   paginator prepares it, and every block of the 120-page reference feature — and
   fails unless `testdata/line-breaking.json` is exactly what this crate now

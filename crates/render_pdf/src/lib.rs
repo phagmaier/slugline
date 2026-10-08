@@ -337,20 +337,19 @@ pub fn emphasis_runs(
     scanned
 }
 
-/// Reads body rows together, without letting generated continuations interrupt
-/// their paragraph. Title and continuation rows keep independent pairing.
+/// Reads each source block's rows together, even when dual-dialogue lanes
+/// interleave across rows or pages. Title and continuation rows pair alone.
 fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
     let mut scanned: Vec<Vec<Vec<emphasis::EmphasisRun>>> = sheets
         .iter()
         .map(|page| (0..page.lines.len()).map(|_| Vec::new()).collect())
         .collect();
 
-    // A paragraph is a block's rows, in order, with none missing. A `(MORE)` or
-    // a page break between two of them does not end it; a different block, or a
-    // row index that does not follow, does.
-    let mut paragraph: Vec<(usize, usize)> = Vec::new();
-    let mut open: Option<(u64, u16)> = None;
-    let close = |paragraph: &mut Vec<(usize, usize)>,
+    // Output order is spatial, not paragraph order: dual lanes can alternate
+    // on a page and across pages. Group references by source identity without
+    // copying text; a missing source row still ends an emphasis paragraph.
+    let mut body = Vec::new();
+    let close = |paragraph: &[(u64, u16, usize, usize)],
                  scanned: &mut Vec<Vec<Vec<emphasis::EmphasisRun>>>| {
         if paragraph.is_empty() {
             return;
@@ -360,7 +359,7 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
         let unmarked: Vec<(usize, String)> = paragraph
             .iter()
             .enumerate()
-            .filter_map(|(index, (sheet, row))| {
+            .filter_map(|(index, (_, _, sheet, row))| {
                 let line = &sheets[*sheet].lines[*row];
                 line.lyric_marker_utf8.map(|marker| {
                     debug_assert_eq!(line.content.as_bytes()[marker], b'~');
@@ -373,13 +372,13 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
             .collect();
         let mut rows: Vec<&str> = paragraph
             .iter()
-            .map(|(sheet, line)| sheets[*sheet].lines[*line].content.as_str())
+            .map(|(_, _, sheet, line)| sheets[*sheet].lines[*line].content.as_str())
             .collect();
         for (index, text) in &unmarked {
             rows[*index] = text;
         }
-        for ((sheet, line), runs) in paragraph.drain(..).zip(emphasis::scan(&rows)) {
-            scanned[sheet][line] = runs;
+        for ((_, _, sheet, line), runs) in paragraph.iter().zip(emphasis::scan(&rows)) {
+            scanned[*sheet][*line] = runs;
         }
     };
 
@@ -390,14 +389,11 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
             }
             match line.kind {
                 LayoutLineKind::Content => {
-                    let source_line = line.source_line.unwrap_or(0);
-                    let here = line.block.map(|block| (block.0, source_line));
-                    let continues = matches!((open, here), (Some(was), Some(now)) if was.0 == now.0 && was.1 + 1 == now.1);
-                    if !continues {
-                        close(&mut paragraph, &mut scanned);
+                    if let Some(block) = line.block {
+                        body.push((block.0, line.source_line.unwrap_or(0), sheet, index));
+                    } else {
+                        scanned[sheet][index] = emphasis::scan_row(&line.content);
                     }
-                    open = here;
-                    paragraph.push((sheet, index));
                 }
                 // Generated from a block's text but not one of its rows, so it
                 // is read on its own and does not interrupt the paragraph the
@@ -417,7 +413,17 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
             }
         }
     }
-    close(&mut paragraph, &mut scanned);
+    body.sort_unstable_by_key(|&(block, source_line, _, _)| (block, source_line));
+    let mut start = 0;
+    for end in 1..=body.len() {
+        if end == body.len()
+            || body[end].0 != body[end - 1].0
+            || body[end - 1].1.checked_add(1) != Some(body[end].1)
+        {
+            close(&body[start..end], &mut scanned);
+            start = end;
+        }
+    }
     scanned
 }
 
@@ -863,6 +869,57 @@ mod tests {
         assert!(
             more > 0 && continued > 0,
             "furniture did not end the paragraph"
+        );
+    }
+
+    #[test]
+    fn dual_lanes_keep_separate_emphasis_across_interleaved_pages() {
+        let config = PageConfig::us_letter().with_line_capacity(8);
+        let left: Vec<String> = (0..15).map(|n| format!("Left message {n:02}.")).collect();
+        let right: Vec<String> = (0..15).map(|n| format!("Right message {n:02}.")).collect();
+        let document = Document::parse(&format!(
+            "STEEL\n*{}*\n\nBRICK ^\n**_{}_**\n",
+            left.join("\n"),
+            right.join("\n")
+        ));
+        let left_id = document.blocks()[1].id();
+        let right_id = document.blocks()[3].id();
+        let script = paginate(&document, &config);
+        let runs = emphasis_runs(&script, &config);
+        let mut printed_left = Vec::new();
+        let mut printed_right = Vec::new();
+        for (page, rows) in script.pages.iter().zip(runs) {
+            for (line, runs) in page.lines.iter().zip(rows) {
+                if line.kind != LayoutLineKind::Content {
+                    continue;
+                }
+                if line.block == Some(left_id) {
+                    assert!(runs.iter().all(|run| {
+                        run.emphasis.italic && !run.emphasis.bold && !run.emphasis.underline
+                    }));
+                    printed_left.push(runs.iter().map(|run| run.text.as_str()).collect::<String>());
+                } else if line.block == Some(right_id) {
+                    assert!(runs.iter().all(|run| {
+                        !run.emphasis.italic && run.emphasis.bold && run.emphasis.underline
+                    }));
+                    printed_right
+                        .push(runs.iter().map(|run| run.text.as_str()).collect::<String>());
+                }
+            }
+        }
+        assert_eq!(printed_left, left);
+        assert_eq!(printed_right, right);
+        assert_eq!(
+            script
+                .pages
+                .iter()
+                .filter(|page| {
+                    page.lines.iter().any(|line| line.block == Some(left_id))
+                        && page.lines.iter().any(|line| line.block == Some(right_id))
+                })
+                .count(),
+            3,
+            "both lanes cross the same three sheets"
         );
     }
 

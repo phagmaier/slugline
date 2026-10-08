@@ -237,6 +237,9 @@ class FakeCore implements DocumentCore {
         message: 'refused by the test',
       );
     }
+    if (command case EditCommand_SetDual(:final block, :final dual)) {
+      return _setDual(block, dual, before);
+    }
     _undo.add(List.of(_blocks));
     return switch (command) {
       EditCommand_ReplaceText(
@@ -512,19 +515,26 @@ class FakeCore implements DocumentCore {
 
   final List<List<BlockView>> _undo = [];
   final List<List<BlockView>> _redo = [];
+  final Expando<DocSelection> _dualSelections = Expando<DocSelection>();
 
   @override
   EditResult? undo() {
     if (_undo.isEmpty) return null;
-    _redo.add(List.of(_blocks));
-    return _restore(_undo.removeLast());
+    final snapshot = _undo.removeLast();
+    final current = List<BlockView>.of(_blocks);
+    _dualSelections[current] = _dualSelections[snapshot];
+    _redo.add(current);
+    return _restore(snapshot);
   }
 
   @override
   EditResult? redo() {
     if (_redo.isEmpty) return null;
-    _undo.add(List.of(_blocks));
-    return _restore(_redo.removeLast());
+    final snapshot = _redo.removeLast();
+    final current = List<BlockView>.of(_blocks);
+    _dualSelections[current] = _dualSelections[snapshot];
+    _undo.add(current);
+    return _restore(snapshot);
   }
 
   /// How many times this session has been closed. One is the only right answer:
@@ -580,6 +590,34 @@ class FakeCore implements DocumentCore {
       changed: [_blocks[index]],
       removed: [second.id],
       caret: DocPosition(block: id, offsetUtf16: first.text.length),
+    );
+  }
+
+  EditOutcome _setDual(int id, bool dual, DocSelection? before) {
+    final index = _indexOf(id);
+    if (index < 0) {
+      return const EditOutcome.rejected(
+        reason: EditRejection.unknownBlock,
+        message: 'unknown block',
+      );
+    }
+    final block = _blocks[index];
+    if (block.kind != BlockKind.character || block.readOnly) {
+      return EditOutcome.rejected(
+        reason: block.readOnly
+            ? EditRejection.notEditable
+            : EditRejection.invalidBlock,
+        message: 'dual requires an editable Character',
+      );
+    }
+    final snapshot = List<BlockView>.of(_blocks);
+    _dualSelections[snapshot] = before;
+    _undo.add(snapshot);
+    _redo.clear();
+    _blocks[index] = _copy(block, dual: dual);
+    return _applied(
+      changed: [_blocks[index]],
+      caret: before?.focus ?? DocPosition(block: id, offsetUtf16: 0),
     );
   }
 
@@ -871,10 +909,12 @@ class FakeCore implements DocumentCore {
               moved.contains(_blocks[i].id))
             InsertedBlock(index: i, block: _blocks[i]),
       ],
-      selection: DocSelection(
-        anchor: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
-        focus: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
-      ),
+      selection:
+          _dualSelections[snapshot] ??
+          DocSelection(
+            anchor: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
+            focus: DocPosition(block: _blocks.first.id, offsetUtf16: 0),
+          ),
       blockCount: _blocks.length,
     );
   }
@@ -921,13 +961,14 @@ class FakeCore implements DocumentCore {
     BlockKind? kind,
     String? text,
     bool? forced,
+    bool? dual,
   }) => BlockView(
     id: id ?? block.id,
     kind: kind ?? block.kind,
     sectionLevel: block.sectionLevel,
     text: text ?? block.text,
     forced: forced ?? block.forced,
-    dual: block.dual,
+    dual: dual ?? block.dual,
     readOnly: block.readOnly,
   );
 }

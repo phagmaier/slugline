@@ -28,6 +28,9 @@ class ElementChoice {
   String get shortcut => digit == null ? '' : 'Ctrl+$digit';
 }
 
+/// Palette-only cue command: no keyboard shortcut is assigned.
+const String toggleDualDialogueLabel = 'Toggle dual dialogue';
+
 /// The element types a writer can set, in the order the selector lists them:
 /// the six that make up a scene first, then the rest.
 ///

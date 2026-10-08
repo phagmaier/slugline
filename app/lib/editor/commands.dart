@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/elements.dart';
 
@@ -110,6 +111,12 @@ List<EditorCommand> editorCommands({
         shortcut: choice.shortcut,
         run: () =>
             controller.setKind(choice.kind, sectionLevel: choice.sectionLevel),
+      ),
+    if (controller.focusedBlock.kind == BlockKind.character)
+      EditorCommand(
+        group: 'Element',
+        label: toggleDualDialogueLabel,
+        run: controller.toggleDual,
       ),
     EditorCommand(
       group: 'Element',

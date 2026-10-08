@@ -924,6 +924,16 @@ class EditorController extends ChangeNotifier {
     _restoreCaret(was);
   }
 
+  /// Changes the cue flag through the core, without inserting a marker into
+  /// editable text or moving the writer's selection.
+  void toggleDual() {
+    final block = focusedBlock;
+    if (block.kind != BlockKind.character) return;
+    final was = _selection;
+    _apply(EditCommand.setDual(block: block.id, dual: !block.dual));
+    _restoreCaret(was);
+  }
+
   /// Tab, or Shift+Tab: the next element type at this position, or nothing at
   /// all where the table has none. See `docs/KEYMAP.md`.
   void cycleElement({bool reverse = false}) {

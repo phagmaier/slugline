@@ -38,6 +38,8 @@ struct CachedBlock {
     fingerprint: u64,
     lines: Arc<[PreparedLine]>,
     scene_number: Option<String>,
+    /// Complete paired cue for continuation labels, before narrow wrapping.
+    cue_text: Option<Arc<str>>,
     layout: ElementLayout,
 }
 
@@ -49,7 +51,9 @@ struct PreparedBlock {
     kind: BlockKind,
     lines: Arc<[PreparedLine]>,
     scene_number: Option<String>,
+    cue_text: Option<Arc<str>>,
     layout: ElementLayout,
+    context: SpeechContext,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +69,7 @@ enum FlowElement {
     PageBreak(usize),
     Block(PreparedBlock),
     Speech(Speech),
+    Pair(Speech, Speech),
 }
 
 impl FlowElement {
@@ -74,6 +79,7 @@ impl FlowElement {
             FlowElement::PageBreak(index) => *index,
             FlowElement::Block(block) => block.index,
             FlowElement::Speech(speech) => speech.cue.index,
+            FlowElement::Pair(left, _) => left.cue.index,
         }
     }
 }
@@ -125,6 +131,14 @@ struct Restart {
 struct Speech {
     cue: PreparedBlock,
     body: Vec<PreparedBlock>,
+    read_until: usize,
+}
+
+/// Source-order pairing decisions, including the lookahead that rejected a pair.
+#[derive(Debug, Clone, Copy, Default)]
+struct SpeechContext {
+    right_lane: Option<bool>,
+    read_until: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,11 +411,42 @@ impl LayoutEngine {
         stats: &mut CacheStats,
     ) -> (Vec<PreparedBlock>, Vec<BlockId>) {
         let mut missed = Vec::new();
+        let contexts = speech_contexts(blocks);
         let prepared: Vec<PreparedBlock> = blocks
             .iter()
             .enumerate()
             .filter_map(|(index, block)| {
                 let mut layout = layout_for(block.kind)?;
+                let context = contexts[index];
+                if let Some(right) = context.right_lane {
+                    match block.kind {
+                        BlockKind::Character => {
+                            layout.width = metrics::DUAL_CHARACTER_WIDTH;
+                            layout.indent = if right {
+                                metrics::DUAL_CHARACTER_RIGHT_ORIGIN
+                            } else {
+                                metrics::DUAL_CHARACTER_LEFT_ORIGIN
+                            };
+                        }
+                        BlockKind::Dialogue => {
+                            layout.width = metrics::DUAL_DIALOGUE_WIDTH;
+                            layout.indent = if right {
+                                metrics::DUAL_DIALOGUE_RIGHT_ORIGIN
+                            } else {
+                                metrics::DUAL_DIALOGUE_LEFT_ORIGIN
+                            };
+                        }
+                        BlockKind::Parenthetical => {
+                            layout.width = metrics::DUAL_PARENTHETICAL_WIDTH;
+                            layout.indent = if right {
+                                metrics::DUAL_PARENTHETICAL_RIGHT_ORIGIN
+                            } else {
+                                metrics::DUAL_PARENTHETICAL_LEFT_ORIGIN
+                            };
+                        }
+                        _ => unreachable!("only speech blocks belong to a pair"),
+                    }
+                }
                 if block.kind == BlockKind::Lyric
                     && index > 0
                     && blocks[index - 1].kind == BlockKind::Lyric
@@ -421,7 +466,9 @@ impl LayoutEngine {
                         kind: block.kind,
                         lines: Arc::clone(&cached.lines),
                         scene_number: cached.scene_number.clone(),
+                        cue_text: cached.cue_text.clone(),
                         layout,
+                        context,
                     });
                 }
 
@@ -435,12 +482,15 @@ impl LayoutEngine {
                 };
                 let display = display_text(text, layout.uppercase);
                 let lines = prepare_lines(&display, layout.width, block.kind);
+                let cue_text = (block.kind == BlockKind::Character && context.right_lane.is_some())
+                    .then(|| Arc::<str>::from(display));
                 self.cache.insert(
                     block.id,
                     CachedBlock {
                         fingerprint,
                         lines: Arc::clone(&lines),
                         scene_number: scene_number.clone(),
+                        cue_text: cue_text.clone(),
                         layout,
                     },
                 );
@@ -450,7 +500,9 @@ impl LayoutEngine {
                     kind: block.kind,
                     lines,
                     scene_number,
+                    cue_text,
                     layout,
+                    context,
                 })
             })
             .collect();
@@ -633,6 +685,57 @@ fn fingerprint(block: &slugline_document::BlockSnapshot, width: u16) -> u64 {
     hash
 }
 
+/// Resolve membership before wrapping: a marker changes both speeches' widths.
+/// Hidden blocks remain in this pass, because they interrupt source adjacency.
+fn speech_contexts(blocks: &[slugline_document::BlockSnapshot]) -> Vec<SpeechContext> {
+    let mut contexts = vec![SpeechContext::default(); blocks.len()];
+    let body_end = |cue: usize| {
+        let mut end = cue + 1;
+        while end < blocks.len()
+            && matches!(
+                blocks[end].kind,
+                BlockKind::Dialogue | BlockKind::Parenthetical
+            )
+        {
+            end += 1;
+        }
+        end
+    };
+    let mut index = 0;
+    while index < blocks.len() {
+        if blocks[index].kind != BlockKind::Character {
+            index += 1;
+            continue;
+        }
+        let end = body_end(index);
+        let mut read_until = (end + 1).min(blocks.len());
+        if end > index + 1
+            && end < blocks.len()
+            && blocks[end].kind == BlockKind::Character
+            && blocks[end].dual
+        {
+            // Even an empty candidate partner required reading its next block.
+            let partner_end = body_end(end);
+            read_until = (partner_end + 1).min(blocks.len());
+            if partner_end > end + 1 {
+                for context in &mut contexts[index..end] {
+                    context.right_lane = Some(false);
+                }
+                for context in &mut contexts[end..partner_end] {
+                    context.right_lane = Some(true);
+                }
+                contexts[index].read_until = read_until;
+                contexts[end].read_until = read_until;
+                index = partner_end;
+                continue;
+            }
+        }
+        contexts[index].read_until = read_until;
+        index = end;
+    }
+    contexts
+}
+
 fn group_speeches(blocks: Vec<PreparedBlock>) -> Vec<FlowElement> {
     let mut flow = Vec::new();
     let mut blocks = blocks.into_iter().peekable();
@@ -646,14 +749,29 @@ fn group_speeches(blocks: Vec<PreparedBlock>) -> Vec<FlowElement> {
             continue;
         }
 
+        let right_lane = block.context.right_lane == Some(true);
+        let read_until = block.context.read_until;
+        let mut end = block.index + 1;
         let mut body = Vec::new();
-        while blocks
-            .peek()
-            .is_some_and(|next| matches!(next.kind, BlockKind::Dialogue | BlockKind::Parenthetical))
-        {
+        while blocks.peek().is_some_and(|next| {
+            next.index == end && matches!(next.kind, BlockKind::Dialogue | BlockKind::Parenthetical)
+        }) {
             body.push(blocks.next().expect("peeked speech body"));
+            end += 1;
         }
-        flow.push(FlowElement::Speech(Speech { cue: block, body }));
+        let speech = Speech {
+            cue: block,
+            body,
+            read_until,
+        };
+        if right_lane {
+            let Some(FlowElement::Speech(left)) = flow.pop() else {
+                unreachable!("paired right cue follows its source-adjacent left speech");
+            };
+            flow.push(FlowElement::Pair(left, speech));
+        } else {
+            flow.push(FlowElement::Speech(speech));
+        }
     }
     flow
 }
@@ -698,6 +816,7 @@ fn paginate_flow(
             FlowElement::Block(block) => paginator.place_generic(block),
             FlowElement::Speech(speech) if rules => paginator.place_speech(speech),
             FlowElement::Speech(speech) => paginator.place_speech_naively(speech),
+            FlowElement::Pair(left, right) => paginator.place_pair(left, right, rules),
         }
         if let Some(page) = paginator.opened.filter(|&page| page > 0) {
             if joins(page, element.first_block()) {
@@ -713,15 +832,14 @@ fn paginate_flow(
 /// This is the paginator's account of its own reading, and a restart is only
 /// as sound as it is complete (ADR 0049): **a rule that looks at anything
 /// beyond the element it is placing must be counted here.** A block or a break
-/// is decided by the blocks up to itself. A speech also took the block after
-/// it, to learn that its body ends there. Past the last element there is
-/// nothing left that was not read, hidden blocks included.
+/// is decided by the blocks up to itself. Speech contexts account for the end
+/// of the body and every candidate partner, including a rejected empty one.
+/// Past the last element there is nothing left that was not read, hidden blocks included.
 fn blocks_read(flow: &[FlowElement], index: usize, total_blocks: usize) -> usize {
     match flow.get(index) {
         None => total_blocks,
-        Some(FlowElement::Speech(_)) => flow
-            .get(index + 1)
-            .map_or(total_blocks, |next| next.first_block() + 1),
+        Some(FlowElement::Speech(speech)) => speech.read_until,
+        Some(FlowElement::Pair(_, right)) => right.read_until,
         Some(element) => element.first_block() + 1,
     }
 }
@@ -754,6 +872,20 @@ fn following_scene_rows(flow: &[FlowElement]) -> (u16, usize) {
                         .map(|block| block.lines.len())
                         .sum::<usize>();
                 let take = (2 - content).min(available as u16);
+                rows = rows.saturating_add(take);
+                content += take;
+            }
+            FlowElement::Pair(left, right) => {
+                rows = rows.saturating_add(left.cue.layout.blanks_before);
+                let height = |speech: &Speech| {
+                    speech.cue.lines.len()
+                        + speech
+                            .body
+                            .iter()
+                            .map(|block| block.lines.len())
+                            .sum::<usize>()
+                };
+                let take = (2 - content).min(height(left).max(height(right)) as u16);
                 rows = rows.saturating_add(take);
                 content += take;
             }
@@ -1125,6 +1257,187 @@ impl<'a> Paginator<'a> {
                 break;
             }
         }
+    }
+
+    fn place_pair(&mut self, left: &Speech, right: &Speech, rules: bool) {
+        let mut lanes = [PairLane::new(left), PairLane::new(right)];
+        let height = lanes
+            .iter()
+            .map(PairLane::remaining_rows)
+            .max()
+            .unwrap_or(0);
+        let spacing = self.top_aware_spacing(&left.cue) as usize;
+        // A pair that fits a fresh page is atomic, regardless of whether each
+        // speech separately could have made a legal split on this page.
+        if self.used > 0
+            && height <= self.capacity as usize
+            && spacing + height > self.remaining() as usize
+        {
+            self.push_page(false);
+        }
+        let mut first = true;
+        while lanes.iter().any(|lane| lane.remaining_rows() > 0) {
+            let spacing = if first {
+                self.top_aware_spacing(&left.cue)
+            } else {
+                0
+            };
+            let available = self.remaining().saturating_sub(spacing) as usize;
+            let mut plans = lanes.each_ref().map(|lane| lane.plan(available, rules));
+            if plans.iter().any(Option::is_none) && self.used > 0 {
+                self.push_page(false);
+                continue;
+            }
+            // No legal start even on a fresh page: drain only the pending
+            // prefix and body rows that fit. In raw mode, do not manufacture
+            // another prefix at every page (an overheight cue would starve
+            // its body). A partially consumed prefix remains pending.
+            for (lane, plan) in lanes.iter_mut().zip(&mut plans) {
+                if plan.is_none() {
+                    lane.raw = true;
+                    *plan = Some(lane.raw_plan(available));
+                }
+            }
+            let plans = plans.map(|plan| plan.expect("fresh-page fallback makes progress"));
+            self.add_blank(spacing);
+            let height = plans.iter().map(PairPlan::height).max().unwrap_or(0);
+            for offset in 0..height {
+                let mut row = lanes[0].take_row(offset, plans[0]);
+                if let Some(right) = lanes[1].take_row(offset, plans[1]) {
+                    if let Some(left) = &mut row {
+                        left.fragments.extend(right.fragments);
+                    } else {
+                        row = Some(right);
+                    }
+                }
+                self.add_row(row.expect("the taller lane supplies every paired row"));
+            }
+            for (lane, plan) in lanes.iter_mut().zip(plans) {
+                if plan.more {
+                    lane.continue_on_next_page();
+                }
+            }
+            first = false;
+            if lanes.iter().any(|lane| lane.remaining_rows() > 0) {
+                self.push_page(false);
+            }
+        }
+    }
+}
+
+/// One lane owns its rows so emitting segments does not clone source text.
+struct PairLane<'a> {
+    prefix: std::vec::IntoIter<VisualRow>,
+    body: std::vec::IntoIter<VisualRow>,
+    cue: BlockId,
+    column: i16,
+    cue_text: &'a str,
+    continued: Option<Vec<String>>,
+    raw: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PairPlan {
+    prefix: usize,
+    body: usize,
+    more: bool,
+}
+
+impl PairPlan {
+    fn height(&self) -> usize {
+        self.prefix + self.body + usize::from(self.more)
+    }
+}
+
+impl<'a> PairLane<'a> {
+    fn new(speech: &'a Speech) -> Self {
+        let cue = speech
+            .cue
+            .cue_text
+            .as_deref()
+            .expect("paired cue keeps its complete display text");
+        Self {
+            prefix: block_rows(&speech.cue).into_iter(),
+            body: speech
+                .body
+                .iter()
+                .flat_map(block_rows)
+                .collect::<Vec<_>>()
+                .into_iter(),
+            cue: speech.cue.id,
+            column: speech.cue.layout.indent,
+            cue_text: cue,
+            continued: None,
+            raw: false,
+        }
+    }
+
+    fn remaining_rows(&self) -> usize {
+        self.prefix.len() + self.body.len()
+    }
+
+    fn raw_plan(&self, available: usize) -> PairPlan {
+        let prefix = self.prefix.len().min(available);
+        PairPlan {
+            prefix,
+            body: self.body.len().min(available - prefix),
+            more: false,
+        }
+    }
+
+    fn plan(&self, available: usize, rules: bool) -> Option<PairPlan> {
+        if !rules || self.raw {
+            return Some(self.raw_plan(available));
+        }
+        if self.remaining_rows() <= available {
+            return Some(PairPlan {
+                prefix: self.prefix.len(),
+                body: self.body.len(),
+                more: false,
+            });
+        }
+        let body_space = available.saturating_sub(self.prefix.len() + 1);
+        legal_dialogue_split(self.body.as_slice(), 0, body_space).map(|body| PairPlan {
+            prefix: self.prefix.len(),
+            body,
+            more: true,
+        })
+    }
+
+    fn take_row(&mut self, offset: usize, plan: PairPlan) -> Option<VisualRow> {
+        if offset < plan.prefix {
+            self.prefix.next()
+        } else if offset < plan.prefix + plan.body {
+            self.body.next()
+        } else if offset == plan.prefix + plan.body && plan.more {
+            Some(generated_row(
+                self.column,
+                "(MORE)".to_owned(),
+                self.cue,
+                LayoutLineKind::More,
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn continue_on_next_page(&mut self) {
+        debug_assert_eq!(self.prefix.len(), 0);
+        let continued = self.continued.get_or_insert_with(|| {
+            break_lines(&continued_cue(self.cue_text), metrics::DUAL_CHARACTER_WIDTH)
+        });
+        self.prefix = continued
+            .iter()
+            .map(|text| {
+                generated_row(
+                    self.column,
+                    text.clone(),
+                    self.cue,
+                    LayoutLineKind::Continued,
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
     }
 }
 

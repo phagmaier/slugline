@@ -55,6 +55,14 @@ consequences worth stating out loud:
 Automatic detection never forces anything. A block promoted by typing `INT.` is an
 unforced scene heading, and is written without a marker.
 
+**Dual dialogue:** on a Character cue, `Ctrl+K` → “Toggle dual dialogue” flips
+the cue's flag without changing its text or selection. The marked cue's element
+bar says “Dual dialogue”; undo/redo restores the flag. There is no dedicated
+shortcut. The cue serializes with a trailing `^`, but do not type that marker
+into its text. It pairs with the immediately preceding speech when both have
+a body and no intervening element; an unmatched flag prints normally.
+
+
 ---
 
 ## Enter

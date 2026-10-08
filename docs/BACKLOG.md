@@ -2312,6 +2312,12 @@ S1 is fixed, two windows cover it.
 
 ## Found along the way
 
+- 2026-10-08 — X1 verification: the isolated release runtime check again fails
+  idle with zero ticks but one voluntary main-thread switch in each quiet
+  interval, matching the retained W4–W8 finding. Startup (376.025 ms) and
+  Xvfb RSS (274.93 MiB) pass. No threshold/harness change or idle fix belongs
+  to X1. Raw samples: `target/x1-dual-smoke/runtime-budgets-isolated.json`.
+
 - 2026-10-08 — final installed stabilization smoke: Find's real pointer/key
   assertions and exact CRLF bytes pass twice, then an ordinary
   `WM_DELETE_WINDOW` close exits with SIGSEGV on the Xvfb raster thread.

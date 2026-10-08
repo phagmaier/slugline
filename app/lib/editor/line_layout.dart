@@ -346,6 +346,9 @@ class DocumentLayout {
 
   final List<BlockView> _blocks;
   final List<List<VisualLine>> _lines = [];
+  final List<BlockView> _wrapContext = [];
+  List<int> _widths = [];
+  bool _pairingDirty = false;
   List<int> _rowStart = const [0];
   int _totalRows = 0;
 
@@ -355,30 +358,59 @@ class DocumentLayout {
 
   /// Re-wraps every block. Called on load and when the whole list is replaced.
   void rebuild() {
+    _wrapContext
+      ..clear()
+      ..addAll(_blocks);
+    _widths = _pairedWidths();
+    _pairingDirty = false;
     _lines
       ..clear()
-      ..addAll([for (final block in _blocks) _wrap(block)]);
+      ..addAll([for (var i = 0; i < _blocks.length; i++) _wrap(i)]);
     reindex();
   }
 
-  /// Re-wraps one block, which is what an edit to it costs.
+  /// Re-wraps one edited block. Cue/kind changes also dirty the wrapping
+  /// context, reconciled once when the patch reindexes.
   ///
   /// The three mutators below leave the row index stale on purpose: a patch may
   /// touch several blocks, and reindexing once at the end of it is the whole
   /// difference between O(blocks) and O(blocks × changes).
   void rewrap(int blockIndex) {
-    _lines[blockIndex] = _wrap(_blocks[blockIndex]);
+    final block = _blocks[blockIndex];
+    final previous = _wrapContext[blockIndex];
+    if (block.kind != previous.kind || block.dual != previous.dual) {
+      _pairingDirty = true;
+    }
+    _wrapContext[blockIndex] = block;
+    _lines[blockIndex] = _wrap(blockIndex);
   }
 
   void insertAt(int blockIndex) {
-    _lines.insert(blockIndex, _wrap(_blocks[blockIndex]));
+    _wrapContext.insert(blockIndex, _blocks[blockIndex]);
+    _widths.insert(blockIndex, metricsFor(_blocks[blockIndex].kind).width);
+    _lines.insert(blockIndex, _wrap(blockIndex));
+    _pairingDirty = true;
   }
 
-  void removeAt(int blockIndex) => _lines.removeAt(blockIndex);
+  void removeAt(int blockIndex) {
+    _lines.removeAt(blockIndex);
+    _wrapContext.removeAt(blockIndex);
+    _widths.removeAt(blockIndex);
+    _pairingDirty = true;
+  }
 
   /// Recomputes the running row index. O(blocks), a few thousand integer adds
   /// on a feature-length script.
   void reindex() {
+    if (_pairingDirty) {
+      final widths = _pairedWidths();
+      for (var i = 0; i < _blocks.length; i++) {
+        if (widths[i] == _widths[i]) continue;
+        _widths[i] = widths[i];
+        _lines[i] = _wrap(i);
+      }
+      _pairingDirty = false;
+    }
     final starts = List<int>.filled(_blocks.length + 1, 0);
     var row = 0;
     for (var i = 0; i < _blocks.length; i++) {
@@ -454,6 +486,51 @@ class DocumentLayout {
     };
   }
 
-  List<VisualLine> _wrap(BlockView block) =>
-      wrapText(block.text, metricsFor(block.kind).width);
+  List<VisualLine> _wrap(int blockIndex) =>
+      wrapText(_blocks[blockIndex].text, _widths[blockIndex]);
+
+  /// Mirrors only Rust's wrapping context, not pagination or document state.
+  /// Source-adjacent speeches pair greedily and disjointly; every other kind,
+  /// including unprinted scaffolding, interrupts adjacency.
+  List<int> _pairedWidths() {
+    final widths = [for (final block in _blocks) metricsFor(block.kind).width];
+    var cue = 0;
+    while (cue < _blocks.length) {
+      if (_blocks[cue].kind != BlockKind.character) {
+        cue++;
+        continue;
+      }
+      final next = _speechEnd(cue);
+      if (next > cue + 1 &&
+          next < _blocks.length &&
+          _blocks[next].kind == BlockKind.character &&
+          _blocks[next].dual) {
+        final end = _speechEnd(next);
+        if (end > next + 1) {
+          for (var i = cue; i < end; i++) {
+            widths[i] = switch (_blocks[i].kind) {
+              BlockKind.character => dualCharacterWidth,
+              BlockKind.dialogue => dualDialogueWidth,
+              BlockKind.parenthetical => dualParentheticalWidth,
+              _ => widths[i],
+            };
+          }
+          cue = end;
+          continue;
+        }
+      }
+      cue = next;
+    }
+    return widths;
+  }
+
+  int _speechEnd(int cue) {
+    var end = cue + 1;
+    while (end < _blocks.length &&
+        (_blocks[end].kind == BlockKind.dialogue ||
+            _blocks[end].kind == BlockKind.parenthetical)) {
+      end++;
+    }
+    return end;
+  }
 }

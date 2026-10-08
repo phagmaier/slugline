@@ -23,6 +23,10 @@ Invariants:
   current order including cached wraps (ADR 0046).
 - Page 1 is counted but prints its number only under "Number the first
   page" (ADR 0048).
+- Dual dialogue pairs source-adjacent speeches without overlap. Cache widths
+  include pairing context; count partner/lookahead dependencies in
+  `blocks_read`. Independent lane continuations retain source-line identity
+  (ADR 0054).
 
 Verify: `cargo test -p slugline_layout`. Golden changes are deliberate or
 they are bugs:
@@ -30,6 +34,6 @@ they are bugs:
 `UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential`
 — each needs a sentence in the commit message.
 
-Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049. Full rules in
+Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049, 0054. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

@@ -74,6 +74,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0051 | Shift+Enter is a core-owned line break with its own undo transaction | `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/commands.dart` | live |
 | 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live |
 | 0053 | The runner stops the engine before the process exits | `app/linux/runner/my_application.cc`, `tools/check_clean_close.py`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | live |
+| 0054 | Dual dialogue is a disjoint pair with independent page continuations | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/editor_controller.dart` | live |
 
 ---
 
@@ -4121,3 +4122,149 @@ and their controls, 60 through the committed check, and 12 on the Hyprland
 session, all exiting zero with no core recorded and exact bytes. The evidence,
 cores, symbolised stacks, drivers and the stock-runner reproducer are under
 `target/stabilization/b16/`.
+
+---
+
+## ADR 0054 — Dual dialogue is a disjoint pair with independent page continuations
+
+**Date:** 2026-10-08 · **Status:** accepted · **Phase:** post-1.0, X1
+
+### Context
+
+Fountain already reads and writes a trailing `^` as a Character block's `dual`
+flag. `SetDual` already validates, journals and undoes that flag without editing
+the cue's text. The layout ignored it: the dual-dialogue corpus PDF put MARTHA
+at `(266.4, 120)` and DEREK at `(266.4, 156)` in Poppler's top-origin points,
+one speech below the other. There was no editor command.
+
+Pairing, column widths and a pair's page-break behavior had no governing
+decision. The fluid editor must still name the same wrapped source lines as
+the paginator, even though it does not place simultaneous speeches side by
+side or decide where pages end.
+
+### Decision
+
+**Pair adjacent speeches greedily, in source order, without overlap.** A speech
+is a Character and its consecutive Dialogue/Parenthetical body. Both bodies
+must contain at least one block, and the second cue must carry `dual`. Any
+intervening source block, even a nonprinting note or section, interrupts the
+pair. An unmatched marked cue prints as an ordinary speech; its flag survives
+on disk. Thus `A, B^, C^` pairs A with B and leaves C ordinary. A first marked
+cue may be the left partner of a following marked cue. Empty-text body blocks
+count as body blocks, just as they do for ordinary dialogue.
+
+This follows the corpus and Fountain's “with the preceding dialogue” meaning
+without reaching back across action or silently constructing three columns.
+Refusing an orphan would make opening an otherwise valid Fountain file fail;
+printing it ordinarily preserves its words and a later edit can give it a
+partner.
+
+**Use two 28-cell measures separated by four cells inside the existing
+60-cell text area.** All columns below are relative to that area's left edge:
+
+| Kind | Left origin | Right origin | Wrap width |
+| --- | ---: | ---: | ---: |
+| Dialogue | 0 | 32 | 28 |
+| Character | 8 | 40 | 20 |
+| Parenthetical | 4 | 36 | 20 |
+
+The equal measures give neither speaker priority. Cues and parentheticals are
+tucked inside their own measure; the rightmost cue cell still ends at 60.
+The four-cell gutter remains empty even for long unbroken words. Ordinary
+speech geometry does not change. Generated continued cues also wrap at the
+paired cue width, rather than spilling into the other speaker.
+
+**Keep a pair together if it fits a fresh page.** If it does not fit the
+remaining rows, move the whole pair to the next page. A taller pair may use
+the current page only if both active lanes can start legally there.
+
+For an overheight pair, align active cues at the top of each segment and split
+each lane independently. A legal split leaves at least two Dialogue rows on
+both sides and does not strand a Parenthetical. Reserve `(MORE)` for a lane
+that continues and repeat only that lane's cue with `(CONT'D)` overleaf.
+The page uses the taller lane segment's height; a shorter completed partner
+does not repeat. This preserves normal speech-break protections without
+forcing a finished speaker to manufacture dialogue.
+
+On a pathological small page or an unsplittable overheight cue/parenthetical,
+only the affected lane falls back to capacity-bounded raw rows. Retain pending
+cue/body rows and stop generating new continuation prefixes for that lane,
+so progress cannot be starved by repeating an overheight cue. The other lane
+still follows legal splitting. Source rows are never discarded or duplicated.
+
+**Keep the editor linear, but wrap both paired speeches at the output
+widths.** Its ordinary indents and source order remain. Pair membership here
+is wrapping context only, mirrored under the shared line-breaking contract,
+not a second Fountain classifier or a page-break rule. Refresh context after
+a patch and rewrap only blocks whose contextual width changed. A flag, kind,
+insert, delete or undo can therefore invalidate an unchanged partner's wrap.
+Page positions continue to come from Rust's `(block, source_line)` metadata,
+not from equating linear editor height with simultaneous output height.
+
+Side-by-side editing would also need two-column caret motion, selections,
+hit testing and accessibility. It is not necessary to toggle or correctly
+print dual dialogue and would change the custom editor's interaction model.
+
+**Offer “Toggle dual dialogue” in the palette on a Character cue.** Register
+its label in `elements.dart`; do not invent a shortcut that collides with the
+existing map. The element bar identifies a marked cue as dual dialogue.
+The command flips `SetDual`, preserves text and selection, and uses existing
+undo/redo and journalling. The `^` belongs to serialization, never editable
+cue text. No bridge API or generated binding changes are needed.
+
+**Resolve output emphasis by source block and line, not spatial adjacency.**
+Two columns interleave both on a sheet and across sheets. Group references
+to consecutive source rows before scanning emphasis, then return each run
+to its original positioned line. This prevents the other speaker from
+closing an emphasis pair, without copying or changing the source text.
+Preview and PDF continue to consume the same resolved runs and columns.
+
+### Consequences
+
+Pair membership becomes part of wrap-cache context. Changing a partner's flag
+or kind can miss several cached blocks and legitimately take the full
+pagination path. Speech/pair lookahead is included in `blocks_read`, so no
+checkpoint can retain a prefix whose placement depended on an edited partner.
+Incremental verification still compares pages and checkpoints, not counts.
+
+The dual-dialogue corpus layout and its Letter/A4 PDF hashes deliberately
+change. The line-breaking fixture gains width 28; width 20 already existed.
+The reference feature has no dual flags and keeps its output.
+
+### Verification
+
+The rendered corpus PDF and native release preview were inspected, with
+screenshots and Poppler bounding boxes retained under `target/x1-dual-smoke/`.
+MARTHA and DEREK now start at x=165.6 and x=396 on the same y=120 baseline.
+Only `03-dual-dialogue.layout.txt` and that corpus file's two PDF hashes changed;
+the reference feature's layout and PDF hashes stayed identical.
+
+Eleven focused layout tests cover pairing, orphan/interruption cases, legal
+and asymmetric continuations, source conservation on four/five/eight-row
+pages, and narrow continued cues. A regression failed before preserving the
+complete wrapped cue name: `UVWXY` vanished from its continuation label.
+Twenty incremental tests compare full pages and checkpoints, including a
+new sweep of pair membership and rejected candidate lookahead.
+
+Four deliberate faults each failed their regression: invert the pairing flag,
+forget the right partner in `blocks_read`, skip editor contextual invalidation,
+and scan emphasis in spatial order. The lookahead probe kept a stale prefix
+and produced 60 pages against a full run's 59. Every probe was restored.
+
+The whole workspace passed 662 Rust tests, the Flutter suite 714 widget tests,
+and all seven Linux suites 83 native tests. The native dual test invokes the
+palette, checks paired preview/source-line metadata and PDF bounding boxes,
+then saves and reopens the marked cue. Formatting, Clippy, analysis, docs,
+lockfile enforcement and the release build passed. Fifteen ordinary release
+closes and network isolation passed.
+
+The isolated Xvfb process check passed 376.025 ms startup and 274.93 MiB RSS.
+Idle failed: the first and third intervals each had zero ticks but one
+voluntary switch on the main thread. Its retained JSON is
+`target/x1-dual-smoke/runtime-budgets-isolated.json`; the known idle issue,
+thresholds and harness were left unchanged. An earlier concurrent run is
+retained separately as `runtime-budgets.json`: its startup samples overlapped
+native builds and its reference process exited 1 before interval measurements.
+Neither a headless pass nor these screenshots close the real-desktop/print
+gates in `docs/MANUAL_GATES.md`.
+

@@ -32,21 +32,20 @@ use slugline_layout::{break_lines, display_text, line_spans};
 
 /// Widths every generated case is wrapped at.
 ///
-/// One and two are the degenerate ends of the contract; 20, 33, 35 and 60 are
-/// §5.2's element widths, which is what the paginator actually asks for; the
-/// small odd ones put wrap points inside tab expansions and space runs.
-const WIDTHS: [u16; 11] = [1, 2, 3, 4, 5, 7, 10, 20, 33, 35, 60];
+/// One and two are the degenerate ends of the contract; 20, 28, 33, 35 and 60
+/// are the ordinary and dual-speech widths (ADR 0054); the small odd ones put
+/// wrap points inside tab expansions and space runs.
+const WIDTHS: [u16; 12] = [1, 2, 3, 4, 5, 7, 10, 20, 28, 33, 35, 60];
 
 /// Widths every corpus block is wrapped at.
 ///
-/// Three element widths and one narrow enough to wrap a corpus block half a
-/// dozen times. The degenerate widths are asked of the generated cases instead,
-/// where the text is short: a hundred-column paragraph at width one is a
-/// hundred rows of fixture that repeat what `edge/one long word` already says.
-const CORPUS_WIDTHS: [u16; 4] = [7, 20, 35, 60];
+/// Ordinary and dual-speech widths and one narrow enough to wrap a corpus block
+/// half a dozen times. The degenerate widths are asked of generated cases
+/// instead, where the text is short.
+const CORPUS_WIDTHS: [u16; 5] = [7, 20, 28, 35, 60];
 
 /// The reference feature is 120 pages of prose; it is carried at the two widths
-/// a screenplay is actually set in rather than at all eleven, because its value
+/// a screenplay is normally set in rather than at all twelve, because its value
 /// here is volume of real text, not another look at the degenerate widths.
 const REFERENCE_WIDTHS: [u16; 2] = [35, 60];
 
