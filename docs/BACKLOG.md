@@ -69,6 +69,7 @@ This is the only place boxes are ticked.
 - [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
 - [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
 - [ ] [B13](#b13) A script with no printed pages throws in the page indicator
+- [ ] [B14](#b14) Find loses Escape and Enter after pointer interaction
 
 **3. Fountain and output fidelity**
 
@@ -838,6 +839,41 @@ actual reopened editor status. The Note-only Shift+Enter test no longer relies
 on printable Action. Logs are under `target/stabilization/b13-*`; intermediate
 native harness mistakes (empty-sheet expectations, BOM/body distinction and
 pointer placement on read-only boneyard after reopen) are retained separately.
+
+---
+
+<a id="b14"></a>
+### B14 — Find loses Escape and Enter after pointer interaction
+
+**Problem.** Promoted from W8's native finding on 2026-10-08. Clicking Match
+case, Whole word or the element filter leaves Escape unable to close Find and
+Enter unable to step matches.
+
+**Evidence.** Original native screenshot:
+`target/w8-smoke/found-escape-after-toggle.png`. Six current-tree Linux widget
+regressions reproduce both failures after pointer interaction; retained in
+`target/stabilization/b14-widget-red.log`.
+
+**Change.** Give Find a focus scope so desktop field unfocus remains inside its
+keyboard boundary. Let children handle their own keys first and retain popup
+and modal behavior.
+
+**Done when.** After clicking each control, Escape dismisses Find and Enter,
+Shift+Enter and numpad Enter navigate normally; query input and navigation
+leave the script bytes untouched. Verify widgets and a native pointer smoke.
+Repeated Ctrl+F, placement, search performance and preview navigation stay
+separate.
+
+**Effort.** S.
+**Result:** _open_ — focused verification complete; final matrix and release
+pointer smoke pending. Six Linux widget failures reproduced the keyboard loss
+before the correction. A Find-owned `FocusScope` retains desktop field unfocus
+inside its key handler without forcing query-field focus on clicks. All 36
+Find widgets pass, including Enter/Shift+Enter/numpad Enter, Escape after all
+three controls, popup-first Escape and modal isolation. Three real-core native
+pointer tests pass with unchanged CRLF file bytes, clean dirty/journal state,
+Save and exact reopen. Evidence: `target/stabilization/b14-*`; the intermediate
+popup-finder failure is retained as a test-harness mistake.
 
 ---
 
@@ -2161,7 +2197,8 @@ not part of that item.
   keyboard on a click outside it, to the page's focus scope; the bar's key
   handler sees keys only while something inside the bar has it, and
   `EditorPage._onPageKey` has no Escape. The close button still works. It
-  predates W8, which changes no focus handling. Left unchanged.
+  predates W8, which changes no focus handling. Left unchanged in W8;
+  promoted to [B14](#b14) on 2026-10-08.
 - 2026-10-07 — W8, reproduced on the release bundle: text typed after Find
   opens is appended to what the field holds rather than replacing it — `DAY`
   seeded, `x` typed, "DAYx", "No matches"

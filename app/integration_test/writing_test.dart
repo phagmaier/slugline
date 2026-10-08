@@ -28,6 +28,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
+import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/editor/command_palette.dart';
 import 'package:slugline/settings/preferences_dialog.dart';
 import 'package:slugline/settings/shortcuts_dialog.dart';
@@ -890,6 +891,72 @@ void main() {
   });
 
   // --- find and replace --------------------------------------------------
+
+  for (final control in ['Match case', 'Whole word', 'element filter']) {
+    testWidgets(
+      'Find keyboard after native pointer interaction with $control',
+      (tester) async {
+        const source =
+            'INT. CHECK - DAY\r\n\r\nA river meets another river.\r\n';
+        final file = File(
+          '${scratch.path}/find-focus-${control.replaceAll(' ', '-')}.fountain',
+        )..writeAsStringSync(source);
+        final bytes = file.readAsBytesSync();
+        final core = (await Core.instance.openDocument(file.path))!;
+        addTearDown(core.close);
+        final controller = EditorController(core);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(home: EditorPage(controller: controller)),
+        );
+        await tester.tap(find.byType(EditorSurface));
+        controller.moveToDocumentEdge(start: true);
+        await tester.pump();
+        await press(tester, LogicalKeyboardKey.keyF, control: true);
+        await tester.pumpAndSettle();
+        await tester.enterText(find.widgetWithText(TextField, 'Find'), 'river');
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(controller.matchIndex, 0);
+        expect(controller.matches, hasLength(2));
+        if (control == 'element filter') {
+          await tester.tap(find.byTooltip('Restrict to an element type'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Action').last);
+        } else {
+          await tester.tap(find.text(control));
+        }
+        await tester.pumpAndSettle();
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(controller.matchIndex, 1);
+        await press(tester, LogicalKeyboardKey.enter, shift: true);
+        expect(controller.matchIndex, 0);
+        await press(tester, LogicalKeyboardKey.numpadEnter);
+        expect(controller.matchIndex, 1);
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byType(FindBar), findsNothing);
+        expect(
+          tester
+              .widget<EditorSurface>(find.byType(EditorSurface))
+              .focusNode!
+              .hasFocus,
+          isTrue,
+        );
+        expect(controller.source, source);
+        expect(core.dirty, isFalse);
+        expect(core.journalState, (0, false));
+        expect(file.readAsBytesSync(), bytes);
+        expect(await core.save(), isA<SaveOutcome_Saved>());
+        expect(file.readAsBytesSync(), bytes);
+        await tester.pumpWidget(const SizedBox.shrink());
+        core.close();
+        final reopened = (await Core.instance.openDocument(file.path))!;
+        expect(reopened.source(), source);
+        reopened.close();
+      },
+    );
+  }
 
   testWidgets('find, replace and replace all, through the real core', (
     tester,

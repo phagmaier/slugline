@@ -124,6 +124,104 @@ String? count(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('find-match-count'))).data;
 
 void main() {
+  for (final control in ['Match case', 'Whole word', 'element filter']) {
+    for (final dismiss in [false, true]) {
+      testWidgets(
+        '${dismiss ? 'Escape closes' : 'Enter steps'} Find after pointer interaction with $control',
+        (tester) async {
+          final core = script();
+          final controller = await pumpEditorPage(tester, core);
+          final before = controller.source;
+          await openFind(tester, controller);
+          await typeFind(tester, 'house');
+          expect(count(tester), '1 of 2');
+          if (control == 'element filter') {
+            await tester.tap(find.byTooltip('Restrict to an element type'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Action').last);
+          } else {
+            await tester.tap(find.text(control));
+          }
+          await tester.pumpAndSettle();
+          if (dismiss) {
+            await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+            await tester.pumpAndSettle();
+            expect(find.byType(FindBar), findsNothing);
+          } else {
+            await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+            await tester.pumpAndSettle();
+            expect(count(tester), '2 of 2');
+            await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+            await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+            await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+            await tester.pumpAndSettle();
+            expect(count(tester), '1 of 2');
+            await tester.sendKeyEvent(LogicalKeyboardKey.numpadEnter);
+            await tester.pumpAndSettle();
+            expect(count(tester), '2 of 2');
+          }
+          expect(controller.source, before);
+          expect(core.commands, isEmpty);
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.linux),
+      );
+    }
+  }
+
+  testWidgets(
+    'Escape closes the element menu before Find',
+    (tester) async {
+      final core = script();
+      final controller = await pumpEditorPage(tester, core);
+      final before = controller.source;
+      await openFind(tester, controller);
+      await typeFind(tester, 'house');
+      await tester.tap(find.byTooltip('Restrict to an element type'));
+      await tester.pumpAndSettle();
+      final menuAction = find.ancestor(
+        of: find.text('Action'),
+        matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
+      );
+      expect(menuAction, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menuAction, findsNothing);
+      expect(find.byType(FindBar), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(FindBar), findsNothing);
+      expect(controller.source, before);
+      expect(core.commands, isEmpty);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
+
+  testWidgets(
+    'Find does not handle a modal dialog keyboard',
+    (tester) async {
+      final controller = await pumpEditorPage(tester, script());
+      await openFind(tester, controller);
+      await typeFind(tester, 'house');
+      final before = controller.source;
+      final dialog = showDialog<void>(
+        context: tester.element(find.byType(FindBar)),
+        builder: (_) => const AlertDialog(content: TextField(autofocus: true)),
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(controller.matchIndex, 0);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await dialog;
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(FindBar), findsOneWidget);
+      expect(controller.source, before);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
+
   for (final seeded in [true, false]) {
     testWidgets(
       'typing replaces the ${seeded ? 'seeded' : 'resumed'} opening Find query',

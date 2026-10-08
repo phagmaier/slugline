@@ -132,7 +132,10 @@ class _FindBarState extends State<FindBar> {
   @override
   Widget build(BuildContext context) {
     final colours = context.colours;
-    return Focus(
+    return FocusScope(
+      // Desktop text fields unfocus on pointer clicks outside them. Keep that
+      // fallback inside Find so Escape and match navigation still reach _onKey.
+      debugLabel: 'find bar',
       onKeyEvent: _onKey,
       // An overlay, floating over the script: the overlay surface and a
       // hairline of its own. No elevation — on a near-black background a drop
