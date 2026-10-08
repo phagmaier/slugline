@@ -71,7 +71,7 @@ This is the only place boxes are ticked.
 - [x] [B13](#b13) A script with no printed pages throws in the page indicator
 - [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [x] [B15](#b15) Same-burst Save can precede the final native text update
-- [ ] [B16](#b16) Closing the window can end the process in SIGSEGV
+- [x] [B16](#b16) Closing the window can end the process in SIGSEGV
 
 **3. Fountain and output fidelity**
 
@@ -983,26 +983,53 @@ on the uncorrected build runs in CI; the correction is published, hosted CI is
 observed, and the installed app is refreshed and verified.
 
 **Effort.** S.
-**Result:** _open_ — source correction and local verification complete;
-publication, hosted CI and the installed refresh pending. Flutter's embedder
-answers the close button with `g_application_quit()` and leaves the window,
-the engine and the engine's threads running, so `main()` returned into
-`exit()` with the raster thread still drawing; Mesa's own exit handlers then
-freed what it was using. `my_application_shutdown` now disposes the engine,
-which is where the embedder calls `FlutterEngineShutdown` and joins those
-threads; at `exit()` the corrected build no longer has an `io.flutter.*` or
-Dart VM thread. Destroying the window instead was measured in the stock runner
-and failed three times in 24, because the view's dispose frees its compositor
-under the raster thread; `_exit()` was rejected as a forced termination. On
-the corrected bundle 74 Xvfb closes across the failing variants and their
-controls, 60 through the new `tools/check_clean_close.py` and 12 on the
-Hyprland session exit zero with no core recorded; six edit–Save–close–reopen
-runs leave `…river. Again\r\n` and then `…river. Again Again\r\n` exactly.
-The new check fails on the uncorrected installed build four invocations in
-four. The cores, symbolised stacks, per-run reports with package versions and
-bundle hashes, drivers and the stock-runner reproducer are under
-`target/stabilization/b16/`. Two unrelated observations from the same runs are
-recorded under Found along the way.
+**Result:** 2026-10-08 — corrected in `774c30a`, published and verified in
+hosted run [37790817381](https://github.com/phagmaier/slugline/actions/runs/37790817381);
+all five jobs pass, including the new "Ordinary close exits cleanly" step, whose
+15 closes all exit zero on GitHub's runner. Flutter's embedder answers the close
+button with `g_application_quit()` and leaves the window, the engine and the
+engine's threads running, so `main()` returned into `exit()` with the raster
+thread still drawing; Mesa's own exit handlers then freed what it was using.
+`my_application_shutdown` now disposes the engine, which is where the embedder
+calls `FlutterEngineShutdown` and joins those threads; at `exit()` the
+corrected build no longer has an `io.flutter.*` or Dart VM thread. Destroying
+the window instead was measured in the stock runner and failed three times in
+24, because the view's dispose frees its compositor under the raster thread;
+`_exit()` was rejected as a forced termination (ADR 0053). Different from the
+item as promoted: this is not an Xvfb artefact. The installed build also died
+on the Hyprland session, twice in seven closes.
+
+`tools/check_clean_close.py` is the regression check, in CI's flutter job, the
+release workflow and the preflight. It fails on the uncorrected installed build
+four invocations in four and passed 87 closes on the corrected bundle. Before
+publication that bundle also passed 74 Xvfb closes across the failing variants
+and their controls and 12 on the Hyprland session, with no core recorded.
+
+The source package built from `774c30a` was installed with its generated
+installer. All 17 package files match the installed bundle byte for byte; the
+runner is new and the Dart, Rust and engine libraries are the bytes already
+installed. A stale `lib/native_assets.json` from the earlier local build is
+left beside them: neither this package nor the hosted one ships it. On the
+installed runner the committed check's 15 closes, the retained
+`shutdown-control.py` twice (`DONE 0`, where it had been `DONE -11`), 30 matrix
+closes and six on the Hyprland session through `~/.local/bin/slugline` all exit
+zero with no core recorded: 53 ordinary closes. Six of those runs edit, Save,
+close, reopen, edit and Save again, leaving `…river. Again\r\n` and then
+`…river. Again Again\r\n` exactly.
+
+The full matrix passes 649 Rust tests, 690 widgets and all 82 native tests
+(journalled keystroke p99 2.24 ms), with formatting, clippy, analysis, the enforced lockfile, docs, layering,
+version and reference checks, the serial release package, tarball
+install/uninstall and network isolation. Xvfb process budgets pass on the
+packaged bundle (startup 374.0 ms, RSS 273.2 MiB, a zero-activity idle
+interval); that does not close the retained earlier idle failure or the
+real-GPU and IME manual gates. No dependency, golden or generated-binding
+change. Cores, symbolised stacks, per-run reports with package versions and
+bundle hashes, the drivers, the stock-runner reproducer and
+`completion-manifest.json` are under `target/stabilization/b16/`; the
+reproductions with the retained driver are `shutdown-current-01/`,
+`shutdown-prior-01/` and `shutdown-b16-installed-0{1,2}/` beside it. Three
+unrelated observations from the same runs are under Found along the way.
 
 ---
 
