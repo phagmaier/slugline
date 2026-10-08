@@ -68,6 +68,7 @@ This is the only place boxes are ticked.
 - [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
 - [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
 - [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
+- [ ] [B13](#b13) A script with no printed pages throws in the page indicator
 
 **3. Fountain and output fidelity**
 
@@ -803,6 +804,29 @@ suites. That hosted run does not cover B12. The B12 fix is committed locally,
 unpushed; the owner-installed W10 executable remains its original build. No
 automated prerequisite was unavailable. Local idle and manual GPU/IME gates
 remain open; X1 and unrelated findings were not started.
+
+---
+
+<a id="b13"></a>
+### B13 — A script with no printed pages throws in the page indicator
+
+**Problem.** Promoted from W3's recorded finding on 2026-10-08. A Note-only
+script produces zero printed pages, but `PageIndicator._updateCurrent` clamps
+page 1 between 1 and 0. The native regression hides it with printable Action.
+
+**Evidence.** Retained original failure: `target/w3-native-writing-retry.log`.
+Reproduce the current implementation with empty and source-only snapshots and
+the original Note-only native fixture before changing production code.
+
+**Change.** Present zero printed pages without inventing page 1, keep pagination
+Rust-owned, and remove the printable-content workaround.
+
+**Done when.** Empty, Note-only and other non-printing scripts remain editable;
+zero/nonzero transitions, Save and actual reopen work without exceptions in
+continuous and page views. Zero pagination has no page target or furniture.
+
+**Effort.** S.
+**Result:** Pending.
 
 ---
 
@@ -2085,6 +2109,12 @@ S1 is fixed, two windows cover it.
 
 ## Found along the way
 
+- 2026-10-08 — installed B12 verification: two unchanged unpaced bursts with
+  Ctrl+S in the same `wtype` invocation saved all text except the final period.
+  The settled journal and later Save/reopen preserve it. A third identical
+  injection passed; it does not close the intermittent native Save-ordering
+  failure. Evidence and exact artifacts: [FAST_INPUT.md](FAST_INPUT.md#installed-b12-follow-up--2026-10-08).
+
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
@@ -2218,6 +2248,7 @@ not part of that item.
   unchanged because pagination presentation is outside W3. The Note fixture
   now includes a printable Action paragraph. Investigate the zero-page case
   separately, including empty scripts and content that prints nothing.
+  Promoted to [B13](#b13) on 2026-10-08.
 
 - 2026-10-06 — While preparing B2's visual smoke, read a separate single-page
   presentation gap: `PageIndicator._resolvePageStarts` excludes page 1, and

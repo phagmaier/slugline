@@ -136,3 +136,27 @@ the correction uses source-tree bundles. Local runtime idle-budget failure,
 real-GPU memory gate, real ibus/CJK and other manual gates remain unresolved.
 Hosted process-budget evidence is distinct from those local/manual claims.
 X1, F7/X6 and unrelated side findings are untouched.
+
+## Installed B12 follow-up — 2026-10-08
+
+The earlier publication-boundary paragraphs above remain historical. B12 and
+its completion record were pushed through `08c7a55`; hosted run
+[37771088908](https://github.com/phagmaier/slugline/actions/runs/37771088908)
+completed successfully in all five jobs. Raw results are retained in
+`target/fast-input/b12-hosted-ci.json`.
+
+Built with `./tools/package.sh`, passed `./tools/smoke_test_tarball.sh`, and ran
+the generated user-local installer. Installed runner, Dart AOT library and Rust
+library hashes match the staged package (`b12-installed-hashes.json`). The
+actual installed executable passed unpaced input, exact before-save journal,
+Save and visible reopen, with both process exits zero
+(`installed-b12-before-save/`).
+
+Two same-burst Ctrl+S runs saved the complete burst except its final period;
+the settled journal and later saves/reopens contained the period. A third run
+using identical unpaced injection passed, including a file observation after
+settling and before the later Save. These are retained separately under
+`installed-b12-immediate-save/`, `installed-b12-immediate-save-repeat/` and
+`installed-b12-immediate-observed/`. A successful control does not close this
+intermittent native Save-ordering finding. B12's stale-state overwrite fix
+preserves the eventual text; the first native Save needs further investigation.
