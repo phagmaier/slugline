@@ -34,6 +34,11 @@ this file and the others to it.
 
 ### Fixed
 
+- The native keyboard-switching check now waits for the destination document
+  and editor focus, and verifies that Ctrl+N reached the chooser. Frame settling
+  alone could finish before native file creation completed; application behavior
+  is unchanged.
+
 - Restoring a previous version now refreshes the editor's text, caret and counts
   from the restored document before editing resumes. Viewing, copying, closing
   or failing to restore a version leaves the current editor unchanged.

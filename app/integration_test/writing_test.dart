@@ -12,6 +12,7 @@
 // prove is the whole chain at once: keystroke → EditCommand → re-classification →
 // patch → Fountain, and that the Fountain reads back as the scene that was typed.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -33,7 +34,30 @@ import 'package:slugline/editor/spell_dialog.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/go_to_page_dialog.dart';
 
-import '../test/support/pending_file_choice.dart';
+// Native bridge work can be pending even when no Flutter frame is scheduled.
+// Synchronize script switches with the visible document and its input focus.
+Future<void> _waitForScript(WidgetTester tester, String path) async {
+  final deadline = tester.binding.clock.fromNowBy(const Duration(seconds: 10));
+  while (true) {
+    final pages = find.byType(EditorPage);
+    final surfaces = find.byType(EditorSurface);
+    if (pages.evaluate().length == 1 && surfaces.evaluate().length == 1) {
+      final current = tester.widget<EditorPage>(pages).controller.core.path;
+      final focused = tester
+          .widget<EditorSurface>(surfaces)
+          .focusNode!
+          .hasFocus;
+      if (current == path && focused) return;
+    }
+    if (tester.binding.clock.now().isAfter(deadline)) {
+      throw TestFailure(
+        'The editor did not open and focus $path; '
+        'focus: ${FocusManager.instance.primaryFocus}',
+      );
+    }
+    await tester.pump();
+  }
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -369,7 +393,22 @@ void main() {
   testWidgets(
     'keyboard script switching saves the native draft before leaving',
     (tester) async {
-      final choice = pendingFileChoice(tester);
+      const channel = MethodChannel('slugline/window');
+      final choice = Completer<String?>();
+      final requested = Completer<MethodCall>();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) {
+        if (call.method != 'chooseFile') throw MissingPluginException();
+        requested.complete(call);
+        return choice.future;
+      });
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        );
+      });
       final alpha = File('${scratch.path}/alpha.fountain')
         ..writeAsStringSync('Original draft.\n');
       final beta = File('${scratch.path}/beta.fountain')
@@ -388,6 +427,7 @@ void main() {
       );
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
+      await _waitForScript(tester, alpha.path);
       EditorController current() =>
           tester.widget<EditorPage>(find.byType(EditorPage)).controller;
       expect(current().core.path, alpha.path);
@@ -432,13 +472,18 @@ void main() {
       expect(saveFocused(), isTrue);
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
+      await _waitForScript(tester, beta.path);
       expect(current().core.path, beta.path);
       expect(alpha.readAsStringSync(), 'Native unsaved words.\n');
       await press(tester, LogicalKeyboardKey.keyN, control: true);
-      await tester.pumpAndSettle();
-      choice.complete('${scratch.path}/new.fountain');
-      await tester.pumpAndSettle();
-      expect(current().core.path, '${scratch.path}/new.fountain');
+      final request = await requested.future.timeout(
+        const Duration(seconds: 10),
+      );
+      expect(request.arguments, containsPair('title', 'New script'));
+      final newPath = '${scratch.path}/new.fountain';
+      choice.complete(newPath);
+      await _waitForScript(tester, newPath);
+      expect(current().core.path, newPath);
       await press(tester, LogicalKeyboardKey.keyW, control: true);
       await tester.pumpAndSettle();
       expect(find.byType(LibraryPage), findsOneWidget);
