@@ -91,7 +91,7 @@ This is the only place boxes are ticked.
 - [x] [W7](#w7) The file chooser is minimal — *option A, ADR 0052*
 - [x] [W8](#w8) Find highlights only the current match
 - [x] [W9](#w9) Previous versions can be restored but not looked at
-- [ ] [W10](#w10) Slugline is not installed on the owner's machine
+- [x] [W10](#w10) Slugline is not installed on the owner's machine
 
 **5. Larger features — plan and use judgment where needed**
 
@@ -1819,7 +1819,34 @@ working `slugline` command, a launcher entry and the `.fountain` file
 association on this machine. Put the exact commands in the README.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-08 — installed and verified in `38a60b7`, separately from
+the CI writing-test correction `316f210`. Reproduced the missing command and
+desktop entry before installation. Built the current source using the normal
+`./tools/package.sh` remapping build, passed isolated tarball installation and
+uninstallation, and ran its generated user-local installer. The command is
+`~/.local/bin/slugline`, the bundle is `~/.local/lib/slugline`, the launcher is
+`~/.local/share/applications/com.phagmaier.slugline.desktop`, and the MIME
+definition is `~/.local/share/mime/packages/com.phagmaier.slugline.xml`.
+The desktop session and existing launcher shell lacked `~/.local/bin` despite
+the interactive shell having it. Added the PATH export to `~/.config/uwsm/env`
+for future sessions, updated the live systemd manager and Hyprland environment,
+and restarted `parkershell.service` to inherit it. Set only `text/x-fountain`'s
+default to `com.phagmaier.slugline.desktop`; GIO identifies the actual smoke
+file as Fountain and opens it with the installed executable and exact filename.
+Verified the actual desktop launcher result and launch, installed command
+version/help and GUI launch, `/proc` executable/argument identity, native-Wayland
+editing and Ctrl+S, exact saved bytes, association-based reopen and visible text,
+return to library and clean exit status 0. Screenshots, data and process logs
+remain in `target/w10-smoke/`; no personal script was edited. README contains
+the exact source-package/install commands, session-PATH setup and default-file
+association command. Refreshed the installed documentation from the already
+remapped bundle; package smoke, network isolation and docs/version checks pass.
+The preceding correction passed 649 Rust tests, 671 widget tests and all 71
+native tests, including the suites skipped by the failing hosted run.
+The physical mouse double-click was not performed; the actual default-opening
+path was exercised with `gio open`. No W10 desktop integration check was
+unreachable. The unpaced synthetic-input finding below is not fixed; the known
+local idle-budget failure and real-GPU manual memory gate remain unresolved.
 
 ---
 
