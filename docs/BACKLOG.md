@@ -67,7 +67,7 @@ This is the only place boxes are ticked.
 - [x] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
 - [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
 - [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
-- [ ] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
+- [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
 
 **3. Fountain and output fidelity**
 
@@ -784,9 +784,25 @@ accepted typing/composition and final structural/refused results. The native
 storage regression covers immediate Save, Undo/Redo and reopen.
 
 **Effort.** S.
-**Result:** _open_ — correction and verification in progress. Evidence and the
-publication record are described in [FAST_INPUT.md](FAST_INPUT.md). X1 and
-unrelated findings remain outside this change.
+**Result:** 2026-10-08 — verified in `0cb58de`. All 40 supplied key-down
+characters arrived intact, but stale application state echoes caused incomplete
+platform values and journal patches before Save. Track the last remote value
+and batch each platform edit's synchronization; accepted text sends no echo,
+while a differing final caret, structural or refused result still synchronizes.
+The uninstrumented native-Wayland release now preserves the original unpaced
+burst before Save, and same-burst Ctrl+S also saves/reopens exact bytes with clean
+exits. No input delay, retry or relaxed assertion. Verified 649 Rust tests,
+675 widget tests, all seven native suites (72 tests), journalled keystroke p99
+4.37 ms, enforced lockfile, formatting/clippy/analysis, layering/version/docs,
+serial release build and network isolation. Evidence and retained harness
+failures are described in [FAST_INPUT.md](FAST_INPUT.md).
+
+Separately published the original CI/W10 commits through `9b21f33`; hosted run
+37764798245 passed all five jobs, including writing and subsequent native
+suites. That hosted run does not cover B12. The B12 fix is committed locally,
+unpushed; the owner-installed W10 executable remains its original build. No
+automated prerequisite was unavailable. Local idle and manual GPU/IME gates
+remain open; X1 and unrelated findings were not started.
 
 ---
 

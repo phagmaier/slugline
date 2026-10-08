@@ -126,6 +126,11 @@ Rust API, generated binding, golden, accepted ADR decision or budget changed.
 
 ## Boundaries
 
+The verified B12 implementation is committed locally as `0cb58de`; it has not
+been pushed, and no hosted success is claimed for it. The published CI/W10
+boundary remains `origin/main` at `9b21f33`. No missing automated prerequisite
+blocked this investigation or correction.
+
 The owner-installed W10 executable remains the original build; verification of
 the correction uses source-tree bundles. Local runtime idle-budget failure,
 real-GPU memory gate, real ibus/CJK and other manual gates remain unresolved.
