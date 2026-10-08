@@ -70,7 +70,7 @@ This is the only place boxes are ticked.
 - [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
 - [x] [B13](#b13) A script with no printed pages throws in the page indicator
 - [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
-- [ ] [B15](#b15) Same-burst Save can precede the final native text update
+- [x] [B15](#b15) Same-burst Save can precede the final native text update
 
 **3. Fountain and output fidelity**
 
@@ -912,9 +912,16 @@ reopen exactly on the final installed package. Preserve the red runs and verify
 that waiting for native input never mutates the text itself.
 
 **Effort.** S.
-**Result:** _open_ — source correction and final local matrix verified; final
-installed-package verification and publication pending. Two widget failures
-reproduce snapshot-before-input and disposal boundaries. Explicit Save now waits
+**Result:** 2026-10-08 — implemented in `40cfad5`, published and verified in
+hosted run [37775929481](https://github.com/phagmaier/slugline/actions/runs/37775929481)
+at `804ba18`; all five jobs pass. The generated source-package installer
+refreshed the existing user-local app. All 18 installed bundle files match the
+verified stage, and `/proc/<pid>/exe` confirms the shell launcher reaches the
+installed runner on both initial open and reopen. One before-save journal run
+and three unchanged same-burst Ctrl+S runs preserve exact first-save, settled
+pre-later-save, later-save and reopened bytes, with every Wayland process exit
+zero. Two widget failures reproduce snapshot-before-input and disposal
+boundaries. Explicit Save now waits
 for a one-shot GTK idle acknowledgment on the existing native channel, then
 checks the original editor is still mounted before asking Rust to snapshot.
 This forwards already queued native input without a clock, input reconstruction,
@@ -928,7 +935,11 @@ tarball install/uninstall and network isolation pass. Current Xvfb process
 budgets pass (startup 372.795 ms, RSS 275.41 MiB, a zero-activity idle interval);
 this does not close the retained earlier idle failure or real-GPU/IME manual
 gates. Evidence and initial harness failures remain under
-`target/stabilization/` and `target/fast-input/save-order-*`.
+`target/stabilization/`, `target/fast-input/save-order-*` and
+`target/fast-input/installed-final-*`. Final installed Note-only checks pass in
+both views; Find pointer/key checks preserve bytes. Their separate Xvfb
+ordinary-close SIGSEGV is retained below with failing pre-fix package controls,
+not claimed as a clean process exit. See [FAST_INPUT.md](FAST_INPUT.md#final-publication-and-installed-verification--2026-10-08).
 
 ---
 
@@ -2210,6 +2221,20 @@ bookmarks; opening the PDF after export. Tabs are deliberately not here: once
 S1 is fixed, two windows cover it.
 
 ## Found along the way
+
+- 2026-10-08 — final installed stabilization smoke: Find's real pointer/key
+  assertions and exact CRLF bytes pass twice, then an ordinary
+  `WM_DELETE_WINDOW` close exits with SIGSEGV on the Xvfb raster thread.
+  This is distinct from the earlier direct `XDestroyWindow`/BadDrawable
+  teardown. The preceding B12 hosted package at `08c7a55` reproduces the
+  ordinary-close SIGSEGV twice without opening Find. Its Flutter engine hash
+  matches the final installed engine; retained cores share the same
+  `libgallium` offsets above Flutter raster frames. This establishes a failure
+  before B13/B14/B15, not its corruption origin or a dependency fix. Keep the
+  shutdown issue open independently of the successful installed Wayland
+  input/Save/reopen checks and hosted CI. Evidence, logs, cores and package
+  provenance: `target/stabilization/pointer-smoke-installed*/`,
+  `shutdown-b12-*/` and `shutdown-control-package-hashes.json`.
 
 - 2026-10-08 — installed B12 verification: two unchanged unpaced bursts with
   Ctrl+S in the same `wtype` invocation saved all text except the final period.

@@ -187,4 +187,61 @@ keystroke p99 6.53 ms. Enforced lockfile, formatting/clippy/analysis and reposit
 checks, serial release package, isolated tarball installation and network
 isolation pass. Current Xvfb startup/idle/RSS pass; the earlier retained local
 idle failure and GPU/IME manual gates remain open. B15's source publication and
-final installed-package evidence will be recorded after hosted CI.
+final installed-package evidence follow below.
+
+## Final publication and installed verification — 2026-10-08
+
+B13 (`f34aed7`), B14 (`e15126d`) and B15 (`40cfad5`) were published through
+`804ba18`. Hosted run
+[37775929481](https://github.com/phagmaier/slugline/actions/runs/37775929481)
+passes all five jobs, including the native suites, release process budgets,
+MSRV, fuzz and package checks. Complete metadata and logs are retained in
+`target/stabilization/hosted-ci.json` and `hosted-ci.log`.
+
+The final source package reuses the serial verified release build and was
+installed with its generated installer. All 18 installed bundle files match
+the stage byte-for-byte (`final-installed-all-bundle-hashes.json`); the runner,
+Dart and Rust hashes and shell launcher are recorded separately in
+`final-installed-hashes.json`. `/proc/<pid>/exe` confirms initial launch and
+actual reopen through `~/.local/bin/slugline` execute
+`~/.local/lib/slugline/slugline`.
+
+The unchanged unpaced text burst passes one before-save journal check and
+three same-invocation Ctrl+S checks on that installed executable
+(`target/fast-input/installed-final-before-save/` and
+`installed-final-immediate-1/` through `installed-final-immediate-3/`). The
+first saved file, settled file before the later Save, later saved file and
+actual reopened file all match the expected bytes, including the final
+period. All initial and reopened processes exit zero. The before-save journal
+contains the exact outcome of each delivered character. Injection is unchanged;
+its approximately 189–193 ms duration adds no character pacing.
+
+Installed Note-only scripts edit, immediately Save and visibly reopen with
+"No printed pages" in both continuous and page views, exact bytes and zero
+exits (`installed-final-note-continuous/`, `installed-final-note-pageview/`).
+The unit/native regressions separately cover empty scripts, other nonprinting
+content and zero/nonzero transitions, with Rust's empty Action remaining one
+blank printed sheet.
+
+Two installed Xvfb Find smokes use actual OS clicks on Match case, Whole word
+and the element menu, then Enter/Shift+Enter and Escape. Match navigation and
+bar closing pass; unchanged CRLF script bytes are checked after every operation
+and Save. Screenshots are retained in
+`target/stabilization/pointer-smoke-installed/` and
+`pointer-smoke-installed-repeat/`. Both processes subsequently SIGSEGV during
+ordinary `WM_DELETE_WINDOW` shutdown: these are functional passes with failed
+process exits, not clean native runs.
+
+The preceding B12 CI package from run `37771088908` reproduces that shutdown
+SIGSEGV twice without opening Find (`shutdown-b12-1/`, `shutdown-b12-2/`). The
+same Flutter engine hash is used in both packages; the crashing raster-thread
+stacks share the same Mesa `libgallium` offsets above Flutter frames. Metadata,
+original and control cores, package hashes and the prior artifact remain under
+`target/stabilization/`. This demonstrates a pre-fix shutdown failure but does
+not establish its cause or close it. The earlier successful source-bundle close
+and green hosted CI remain controls; the separate direct-XDestroyWindow
+BadDrawable failure also remains retained. No shutdown workaround, dependency
+change or budget relaxation was made.
+
+The requested stabilization boundary is complete. The shutdown finding,
+retained earlier idle-budget failure and real-GPU/manual IME gates remain open.
