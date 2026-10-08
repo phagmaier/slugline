@@ -100,7 +100,7 @@ This is the only place boxes are ticked.
 
 **5. Larger features — plan and use judgment where needed**
 
-- [ ] [X1](#x1) Dual dialogue
+- [x] [X1](#x1) Dual dialogue
 - [ ] [X2](#x2) Final Draft (FDX) import and export
 - [ ] [X3](#x3) Scene numbering commands
 - [ ] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
@@ -2152,7 +2152,55 @@ the paginator, the preview and the PDF.
 `docs/LINE_BREAKING.md`; page-break rules need a paired-speech case.
 
 **Effort.** M–L.
-**Result:** _open_
+**Result:** 2026-10-08 — verified in `ca867f8`; ADR 0054 records the choices.
+Reproduced the corpus PDF before editing: MARTHA and DEREK had the same
+x=266.4 and successive y=120/156 positions. They now start at x=165.6/396
+on the same y=120 row; inspected the rendered PDF and the actual release
+editor/preview under Xvfb.
+
+Adjacent source speeches pair greedily without overlap when the second cue
+is marked and both have a body. Hidden source blocks also interrupt pairing.
+Unmatched flags print ordinary dialogue, preserving valid Fountain and its
+words rather than rejecting the file or reaching across unrelated content.
+Equal 28-cell measures at columns 0/32 leave a four-cell gutter; cues use
+20 cells at 8/40 and parentheticals 20 at 4/36, entirely within each lane.
+A pair that fits a fresh page stays together. Overheight lanes split
+independently with the normal two-row/parenthetical protections and only
+continuing speakers get (MORE)/CONT'D; pathological small-page raw segments
+preserve all source rows without starving the body behind repeated cues.
+
+The editor remains linear but uses paired widths and invalidates unchanged
+partners on context changes. This extends the named output work because F4's
+source-line/page-anchor invariant requires it, while avoiding a new two-column
+caret/selection model. “Toggle dual dialogue” is a Character-only palette
+command, registered in `elements.dart` with no new shortcut to collide with
+the map. It flips the existing journalled SetDual flag, not editable text,
+and preserves selection and undo/redo. The element bar identifies the flag.
+No bridge API or binding generation was needed; preview already paints the
+paginator's columns. Output emphasis now groups source rows instead of
+spatial neighbors, and continued cues retain their complete wrapped names.
+
+Deliberately regenerated the dual corpus layout and its Letter/A4 PDF hashes
+because it now prints side by side; every other print golden, including the
+reference feature, is unchanged. The differential fixture gained width 28.
+Eleven pair-layout regressions and twenty exact incremental/full tests cover
+membership, interruptions, partner movement, continuations, source conservation
+and checkpoints. Four injected mistakes (pair flag, partner lookahead, editor
+invalidation, interleaved emphasis) each failed the relevant test and were
+restored; the complete-cue regression also failed before its fix.
+
+Full verification: 662 Rust, 714 widget and 83 native tests; the scoped layout,
+document, fountain and editor checks; formatting, Clippy, Dart analysis,
+lockfile enforcement, docs and release build. The native dual test drives the
+palette through preview, PDF bounding boxes, the journal, Save and reopen.
+Open was 88.7 ms, journalled keystroke p99 3.34 ms and frame-build p99 7.53 ms.
+Fifteen ordinary release closes and network isolation pass. Isolated process
+startup is 376.025 ms and Xvfb RSS 274.93 MiB; idle retains the known
+zero-tick/one-main-thread-switch failure, logged under “Found along the way”.
+No idle threshold or harness was changed. Evidence and fault logs are under
+`target/x1-dual-smoke/`, including `runtime-budgets-isolated.json`.
+Real-desktop IME, Orca, HiDPI, print calibration and real-GPU RSS remain
+unverified manual gates; no installation, push or merge was performed.
 
 <a id="x2"></a>
 ### X2 — Final Draft (FDX) import and export
