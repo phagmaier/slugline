@@ -2360,6 +2360,16 @@ S1 is fixed, two windows cover it.
 
 ## Found along the way
 
+- 2026-10-08 — X1 publication: fast-forwarded and pushed `main` at `34844c7`.
+  [Hosted CI run 37860589165](https://github.com/phagmaier/slugline/actions/runs/37860589165)
+  passes Flutter (including native integration, process budgets and ordinary
+  close), packaging, fuzzing and MSRV. The Rust job fails before any Rust
+  checks: installation of Poppler version `24.02.0-1ubuntu9.9` receives HTTP
+  404 for both `libpoppler134` and `poppler-utils` from the Ubuntu mirrors.
+  That job does not refresh apt metadata before installation, unlike the
+  desktop-build jobs. Refreshing it with `apt-get update` is separate CI
+  maintenance, not an X1 change. No workflow or thresholds were changed.
+
 - 2026-10-08 — X1 verification: the isolated release runtime check again fails
   idle with zero ticks but one voluntary main-thread switch in each quiet
   interval, matching the retained W4–W8 finding. Startup (376.025 ms) and
