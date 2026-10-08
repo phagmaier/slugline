@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/theme.dart';
 
@@ -41,6 +43,14 @@ class _Backups extends FakeCore {
   Future<BackupReadOutcome> readBackup(String backupPath) => read;
 
   @override
+  Future<SaveOutcome> restoreBackup(String backupPath) async =>
+      const SaveOutcome.failed(
+        failure: SaveFailure.io,
+        path: '/scripts/current.fountain',
+        message: 'Version disappeared',
+      );
+
+  @override
   Future<SaveOutcome> copyBackup(String source, String path) async {
     copies++;
     return copyOutcome;
@@ -71,6 +81,47 @@ Future<void> _show(
 }
 
 void main() {
+  testWidgets(
+    'closing after viewing or failed restore retains text and caret',
+    (tester) async {
+      final core = _Backups();
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      const position = DocPosition(block: 1, offsetUtf16: 7);
+      const selection = DocSelection(anchor: position, focus: position);
+      controller.setSelection(selection);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: sluglineTheme(Brightness.light),
+          home: EditorPage(controller: controller, onClosed: () async {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('editor overflow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Previous versions…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(controller.selection, selection);
+      expect(controller.blocks.single.text, 'Current words');
+      await tester.tap(find.byKey(const ValueKey('editor overflow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Previous versions…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+      expect(find.text('Version disappeared'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(controller.selection, selection);
+      expect(controller.blocks.single.text, 'Current words');
+      expect(core.commands, isEmpty);
+    },
+  );
+
   testWidgets('view is selectable but not editable; Back returns to the list', (
     tester,
   ) async {

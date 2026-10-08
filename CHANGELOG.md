@@ -34,6 +34,9 @@ this file and the others to it.
 
 ### Fixed
 
+- Restoring a previous version now refreshes the editor's text, caret and counts
+  from the restored document before editing resumes. Viewing, copying, closing
+  or failing to restore a version leaves the current editor unchanged.
 - Find selects its seeded or resumed query on opening, so typing replaces it
   instead of appending. Moving the caret first still allows amendment.
 - Find's match count is no longer stale when Find is reopened with a different

@@ -21,6 +21,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_page.dart';
+import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/src/rust/api/files.dart' as files;
 
@@ -306,6 +308,69 @@ void main() {
           '§Phase 4: restoring writes the current state to a new backup first',
     );
   });
+
+  for (final fromView in [false, true]) {
+    testWidgets('restore refreshes the editor, fromView=$fromView', (
+      tester,
+    ) async {
+      final file = path('restore-refresh-$fromView.fountain');
+      const earlier = 'Earlier words.\n';
+      File(file).writeAsStringSync(earlier);
+      final handle = await files.libraryOpen(path: file);
+      final core = RustDocumentCore.of(handle!);
+      addTearDown(core.close);
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      controller.insertText('Current draft has more words. ');
+      controller.splitBlock();
+      controller.insertText('Another paragraph.');
+      final current = core.source();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditorPage(controller: controller, onClosed: () async {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('editor overflow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Previous versions…'));
+      await tester.pumpAndSettle();
+      expect(find.text('Restore'), findsOneWidget);
+      if (fromView) {
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+        expect(find.text(earlier), findsOneWidget);
+      }
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BackupsDialog), findsNothing);
+      expect(File(file).readAsStringSync(), earlier);
+      expect(controller.blocks.single.text, 'Earlier words.');
+      expect(controller.selection.focus.block, controller.blocks.single.id);
+      expect(controller.selection.focus.offsetUtf16, 0);
+      expect(core.dirty, isFalse);
+      final preserved = await core.backups();
+      expect(
+        preserved.any(
+          (backup) => File(backup.path).readAsStringSync() == current,
+        ),
+        isTrue,
+        reason: 'the replaced unsaved draft remains recoverable',
+      );
+      await settleUntil(
+        tester,
+        () => find.textContaining('2 words').evaluate().isNotEmpty,
+      );
+      expect(find.textContaining('2 words'), findsOneWidget);
+      controller.insertText('Edited ');
+      await tester.pump();
+      expect(controller.lastRejection, isNull);
+      expect(core.source(), 'Edited Earlier words.\n');
+      expect(controller.blocks.single.text, 'Edited Earlier words.');
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      expect(File(file).readAsStringSync(), 'Edited Earlier words.\n');
+    });
+  }
 
   testWidgets('the journal grows with typing and is cleared by a save', (
     tester,

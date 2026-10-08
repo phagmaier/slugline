@@ -389,8 +389,13 @@ class EditorPageState extends State<EditorPage> {
     return outcome;
   }
 
-  Future<void> _showBackups() =>
-      withModal(() => BackupsDialog.show(context, _core));
+  Future<void> _showBackups() => withModal(() async {
+    final controller = widget.controller;
+    final restored = await BackupsDialog.show(context, controller.core);
+    if (!restored || !mounted || widget.controller != controller) return;
+    controller.reloadFromCore();
+    widget.saveStatus?.refresh();
+  });
 
   /// §Phase 7's title page. An ordinary modal, so autosave is held off while it
   /// is open like every other one.

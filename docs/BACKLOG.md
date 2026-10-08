@@ -66,6 +66,7 @@ This is the only place boxes are ticked.
 - [x] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
 - [x] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
 - [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
+- [ ] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
 
 **3. Fountain and output fidelity**
 
@@ -686,6 +687,33 @@ were not rerun; the known idle failure, its thresholds and its harness remain
 unchanged. KEYMAP and CHANGELOG describe opening-query replacement. No Rust API,
 binding, dependency, lockfile, golden or ADR change. Committed locally,
 unpushed; W9 remains next.
+
+<a id="b11"></a>
+### B11 — Restoring a previous version leaves the editor showing the old draft
+
+**Problem.** Restore replaces the core document and the file, but the editor
+continues displaying the pre-restore text, caret and word count. Further editing
+can target block identities that no longer belong to the restored document.
+
+**Evidence (reproduced).** W9's release smoke restored the selected older bytes
+and preserved the current draft in backups, but the screen stayed on the current
+draft (`target/w9-smoke/after-restored.png`). `EditorPage._showBackups` drops
+`BackupsDialog.show`'s restored boolean; `withModal` only holds autosave.
+`EditorController.reloadFromCore` already rebuilds the editor after a whole
+document replacement. Promoted from W9's finding ahead of W10: displayed/saved
+text divergence is a correctness bug, installation is not.
+
+**Change.** On successful restore, reload the current editor from the core and
+refresh save status before releasing the modal autosave hold. Do not reload on
+view, copy, cancellation or failure.
+
+**Done when.** Restore from both the list and the read-only view replaces the
+visible text and count; the next edit and save use the restored document without
+unknown-block refusals. Cancellation and failed restore retain text and caret.
+The pre-restore draft remains recoverable in previous versions.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -1952,8 +1980,9 @@ not part of that item.
   `withModal` only suppresses/releases autosave, and the existing
   `EditorController.reloadFromCore` is not called. That handoff predates W9
   (source-read at the starting commit); the visible/disk mismatch was exercised
-  after W9. Left unchanged as a separate restore-refresh bug. Reading a version
-  and opening a copy do not replace the current document and need no refresh.
+  after W9. Promoted to [B11](#b11) ahead of installation on 2026-10-08.
+  Reading a version and opening a copy do not replace the current document and
+  need no refresh.
 
 - 2026-10-07 — W8, reproduced on the release bundle with a real pointer and
   real keys: after a click on "Match case", "Whole word" or the element filter,
