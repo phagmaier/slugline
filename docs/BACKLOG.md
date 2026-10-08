@@ -68,7 +68,7 @@ This is the only place boxes are ticked.
 - [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
 - [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
 - [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
-- [ ] [B13](#b13) A script with no printed pages throws in the page indicator
+- [x] [B13](#b13) A script with no printed pages throws in the page indicator
 - [ ] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [ ] [B15](#b15) Same-burst Save can precede the final native text update
 
@@ -828,8 +828,7 @@ zero/nonzero transitions, Save and actual reopen work without exceptions in
 continuous and page views. Zero pagination has no page target or furniture.
 
 **Effort.** S.
-**Result:** _open_ — source correction in `f34aed7` and focused verification complete;
-final matrix pending.
+**Result:** 2026-10-08 — verified in `f34aed7`.
 Five current-tree widget regressions and the original Note-only native test
 failed at the recorded clamp before the fix. Zero pagination now has no current
 page and says “No printed pages”; page targets and furniture stay absent. Rust
@@ -840,6 +839,10 @@ actual reopened editor status. The Note-only Shift+Enter test no longer relies
 on printable Action. Logs are under `target/stabilization/b13-*`; intermediate
 native harness mistakes (empty-sheet expectations, BOM/body distinction and
 pointer placement on read-only boneyard after reopen) are retained separately.
+Final shared matrix passes 649 Rust tests, 690 widgets and 82 native tests;
+static, docs, serial package, tarball and network checks pass. Current Xvfb
+process budgets pass; the earlier retained idle failure and manual GPU/IME gates
+remain open.
 
 ---
 
