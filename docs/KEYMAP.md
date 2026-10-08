@@ -330,6 +330,8 @@ Opening Find with text selected inside one element, on one line of it, searches
 for that text. The toggles and the element filter stay as they were. With no
 selection, or one that crosses elements or a line break, the last search
 resumes — as it does when the selection is the match that search stopped on.
+The opening query is selected in the find field, so typing replaces it. Move
+the caret first (for example with `→`) to amend it instead.
 
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
 

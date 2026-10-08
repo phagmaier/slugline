@@ -98,6 +98,23 @@ Future<void> typeFind(WidgetTester tester, String text) async {
   await tester.pumpAndSettle();
 }
 
+/// A platform text insertion respects the field's current selection; enterText
+/// replaces the whole value and would hide an opening-query selection bug.
+Future<void> insertFind(WidgetTester tester, String text) async {
+  final value = tester.widget<TextField>(findField()).controller!.value;
+  final selection = value.selection.isValid
+      ? value.selection
+      : TextSelection.collapsed(offset: value.text.length);
+  tester.testTextInput.updateEditingValue(
+    TextEditingValue(
+      text: value.text.replaceRange(selection.start, selection.end, text),
+      selection: TextSelection.collapsed(offset: selection.start + text.length),
+    ),
+  );
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+}
+
 Finder replaceField() => find.ancestor(
   of: find.text('Replace with'),
   matching: find.byType(TextField),
@@ -107,6 +124,56 @@ String? count(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('find-match-count'))).data;
 
 void main() {
+  for (final seeded in [true, false]) {
+    testWidgets(
+      'typing replaces the ${seeded ? 'seeded' : 'resumed'} opening Find query',
+      (tester) async {
+        final core = script();
+        final controller = await pumpEditorPage(tester, core);
+        if (seeded) {
+          selectFromTo(controller, 0, 13, 0, 16);
+          await tester.pump();
+          await pressFind(tester);
+          expect(findText(tester), 'DAY');
+        } else {
+          await openFind(tester, controller);
+          await typeFind(tester, 'quiet');
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          await openFind(tester, controller);
+          expect(findText(tester), 'quiet');
+        }
+
+        await insertFind(tester, 'house');
+        expect(findText(tester), 'house');
+        expect(count(tester), '1 of 2');
+        expect(controller.selectedText(), 'house');
+
+        // The initial selection must not reset after typing or a rebuild.
+        await insertFind(tester, 's');
+        expect(findText(tester), 'houses');
+        expect(count(tester), 'No matches');
+        expect(core.commands, isEmpty, reason: 'query input edits no script');
+      },
+    );
+  }
+
+  testWidgets('Right keeps the opening query for deliberate amendment', (
+    tester,
+  ) async {
+    final controller = await pumpEditorPage(tester, script());
+    selectFromTo(controller, 1, 16, 1, 21);
+    await tester.pump();
+    await pressFind(tester);
+    expect(findText(tester), 'house');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await insertFind(tester, 's');
+    expect(findText(tester), 'houses');
+    expect(count(tester), 'No matches');
+  });
+
   testWidgets('typing waits for a pause before scanning the document', (
     tester,
   ) async {

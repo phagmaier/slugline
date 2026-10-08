@@ -65,6 +65,7 @@ This is the only place boxes are ticked.
 - [x] [B7](#b7) README names a Preferences section the dialog does not have
 - [x] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
 - [x] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
+- [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
 
 **3. Fountain and output fidelity**
 
@@ -628,6 +629,63 @@ integration script stops at “required command not found: pdftotext”, and wit
 it all seven suites pass. The tests were not changed and do not skip. This was
 the first green run on `main` since `40b1f1c`: the two pushes between failed in
 the writing suite (fixed by B5) and then here.
+
+<a id="b10"></a>
+### B10 — Typing after Find opens appends to the seeded or resumed query
+
+**Problem.** Promoted from W8's second finding: opening Find over a selection
+or resuming the last search leaves the query's caret at the end. Typing a new
+query appends instead of replacing what was offered.
+
+**Evidence (reproduced 2026-10-07).** Real keys on the W8 release bundle under
+Xvfb: select `DAY`, open Find, type `house` → `DAYhouse`, “No matches”
+(`target/b10-smoke/before-typed.png`). Two widget regressions on the unchanged
+production code give `DAYhouse` and `quiethouse` rather than `house`.
+
+**Change.** Select the entire query once when the bar first takes focus, for
+both seeded and resumed searches. Typing replaces it; moving the caret first
+allows amendment. Do not change toggle focus, repeated Ctrl+F, bar positioning
+or search scheduling.
+
+**Done when.** Seeded and resumed queries are replaceable by typing on the real
+release surface and in widgets, later typing continues normally, and the script
+is unchanged.
+
+**Effort.** S.
+**Result:** 2026-10-07 — verified in the commit named
+`B10 — Find selects its opening query for replacement`. Named by subject here
+so the implementation and its completion record stay in one commit.
+`FindBar` selects the whole query once in its existing post-frame focus
+callback, after requesting focus. No controller or search-policy change; the
+other four W8 findings remain outside this item.
+
+Reproduced before changing production code: the W8 release bundle appends
+`house` to selected `DAY`, and the two new replacement widget cases fail with
+`DAYhouse` and `quiethouse`. Three widget regressions now cover seeded and
+resumed replacement, continued typing without reselecting, and Right-arrow
+amendment; query input issues no script edits.
+
+The rebuilt release, driven with real keys under Xvfb, shows selected `DAY`
+on opening, `house` / “2 of 3” after typing, `houses` after further typing,
+and resumed replacement with `DAY` / “1 of 1”. Reopening, waiting for field
+focus, then Right and `s` yields `houses`; Find input followed by Save leaves
+the script byte-identical. Frames and the saved script are in
+`target/b10-smoke/`. An initial amendment driver sent Right before the opening
+frame and produced `x`; its corrected run waits for field focus
+(`after-amended-after-focus.png`). Bare Xvfb has no window manager to dispatch
+Alt+F4, so the smoke closed the session with Ctrl+W before stopping the process.
+Scratch state and processes were removed. This is software-rendered Xvfb
+evidence, not a real-desktop claim.
+
+Verified 646 Rust tests, 664 widget tests, all seven native suites (69 tests),
+rustfmt/clippy, enforced lockfile, Dart formatting/analysis,
+layering/version/docs/reference checks, Linux release build and headed network
+isolation. Journalled keystroke p99: 2.48 ms. Workspace and Flutter output is
+retained in `target/b10-rust.log` and `target/b10-flutter.log`. Runtime budgets
+were not rerun; the known idle failure, its thresholds and its harness remain
+unchanged. KEYMAP and CHANGELOG describe opening-query replacement. No Rust API,
+binding, dependency, lockfile, golden or ADR change. Committed locally,
+unpushed; W9 remains next.
 
 ---
 
@@ -1863,6 +1921,7 @@ not part of that item.
   starts with. More noticeable since W8: a writer who opens Find over a
   selection and then wants something else has to clear the field first. Worth
   its own small item. Left unchanged.
+  Promoted to [B10](#b10) on 2026-10-07.
 - 2026-10-07 — W8, read: `Ctrl+F` with the find bar already open does nothing.
   `EditorPage._show` returns when the panel asked for is the one showing, so
   from the script it neither moves the keyboard to the find field nor takes a

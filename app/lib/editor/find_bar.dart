@@ -59,7 +59,14 @@ class _FindBarState extends State<FindBar> {
     // After mount: requesting focus synchronously here is unreliable on
     // Linux/IME — the focus tree is not attached yet.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _findFocus.requestFocus();
+      if (!mounted) return;
+      _findFocus.requestFocus();
+      // Offer the opening query for replacement, not amendment. Do this only
+      // once: later typing and pointer/caret movement own the selection.
+      _find.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _find.text.length,
+      );
     });
   }
 

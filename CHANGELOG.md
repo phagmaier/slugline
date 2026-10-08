@@ -30,6 +30,8 @@ this file and the others to it.
 
 ### Fixed
 
+- Find selects its seeded or resumed query on opening, so typing replaces it
+  instead of appending. Moving the caret first still allows amendment.
 - Find's match count is no longer stale when Find is reopened with a different
   match selected than the one it stopped on.
 - On Hyprland and other non-GNOME Wayland desktops, the runner no longer adds
