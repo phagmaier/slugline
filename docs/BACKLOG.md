@@ -66,7 +66,7 @@ This is the only place boxes are ticked.
 - [x] [B8](#b8) The Dart tree is not formatter-clean, and nothing checks it
 - [x] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
 - [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
-- [ ] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
+- [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
 
 **3. Fountain and output fidelity**
 
@@ -713,7 +713,43 @@ unknown-block refusals. Cancellation and failed restore retain text and caret.
 The pre-restore draft remains recoverable in previous versions.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-08 — verified in `79935c1`. Promoted ahead of W10 because
+displayed/saved text divergence is a correctness bug. Both native entry points
+failed before the fix: the file contained `Earlier words.` while the controller
+still contained the current draft. `_showBackups` now consumes the restored
+boolean and calls the existing `reloadFromCore` plus save-status refresh inside
+the modal autosave hold. It checks that the page still owns the same controller.
+No extra core reload, parser, mutation or API is introduced.
+
+Two native regressions cover the list and read-only-view entry points, a
+different-sized restored document, caret reset, refreshed word count, preservation
+of the replaced unsaved draft, and editing/saving the restored text. A widget
+regression covers viewing then closing, and failed restore then closing: both
+retain text and caret without edits. A first green attempt exposed an invalid
+test assumption that block ids could not recur across replacement documents;
+that incidental assertion was removed, and the test instead exercises editing
+after replacing a two-block draft with a one-block version.
+
+The rebuilt release was driven with real pointer and keyboard events under
+Xvfb. The view restore changed the visible draft and count from 13 to 6 words,
+with the exact earlier bytes on disk and the current text preserved in a backup.
+Restoring that preserved draft directly from the list changed text and count
+back to 13; typing and Save then produced the matching 16-word file. Frames and
+both version sources are in `target/b11-smoke/`. Closing removed the journal;
+the smoke processes and isolated caches were removed. This is software-rendered
+evidence, not a real-desktop claim.
+
+Verified 649 Rust tests, 671 widget tests, all seven native suites (71 tests),
+rustfmt/clippy, enforced lockfile, Dart formatting/analysis, layering/version/docs
+and reference checks, binding freshness, serial Linux release build and headed
+network isolation. Journalled keystroke p99: 4.12 ms. Rust and Flutter output is
+retained in `target/b11-rust.log` and `target/b11-flutter.log`; the Rust log
+includes the initial docs check rejecting the pending Result spelling, corrected
+before the successful docs check. Runtime budgets were not rerun; the known idle
+failure, thresholds and harness remain unchanged. CHANGELOG records the fix.
+No dependency, lockfile, Rust API, generated binding, golden or accepted ADR
+decision changed. W10 remains next, F7 remains blocked by X6, and the other W8/W9
+findings remain untouched. Committed locally; nothing was pushed.
 
 ---
 
