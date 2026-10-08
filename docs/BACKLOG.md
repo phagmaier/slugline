@@ -89,7 +89,7 @@ This is the only place boxes are ticked.
 - [x] [W6](#w6) A GTK title bar is stacked above the app's own bar on Hyprland
 - [x] [W7](#w7) The file chooser is minimal — *option A, ADR 0052*
 - [x] [W8](#w8) Find highlights only the current match
-- [ ] [W9](#w9) Previous versions can be restored but not looked at
+- [x] [W9](#w9) Previous versions can be restored but not looked at
 - [ ] [W10](#w10) Slugline is not installed on the owner's machine
 
 **5. Larger features — plan and use judgment where needed**
@@ -1698,7 +1698,49 @@ of its text — and open it as a separate copy without replacing the current
 script. More useful once S2 exists.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-07 — verified in `a3b3593`. Reproduced with the unchanged
+release bundle: previous versions offered timestamps, sizes and Restore, with
+no way to read or copy one (`target/w9-smoke/before.png`). View now opens
+selectable, read-only literal Fountain text. This is deliberately a source view
+rather than print preview: title-page fields, markup and source-only material
+are all available for inspection, with no second screenplay parser in Dart.
+Back returns to the list. Existing Restore behavior is retained.
+
+Open as copy asks GTK for a new filename, atomically writes the exact snapshot
+that was viewed, then starts a separate Slugline process on that durable file.
+Saving first gives the copy ordinary journalling, saving and recovery without
+temporary-file lifetime rules. The copy uses the loaded snapshot even if
+retention deletes its backing backup meanwhile. Existing files are never
+overwritten, and open-script destinations are refused even if their file is
+missing. A collision leaves the view open for another name; a launch failure
+names the saved copy and retries opening it without writing again. Reading and
+copying leave the original path, dirty flag, journal and document untouched.
+Rust does the I/O off the actor; generated Dart/Rust bindings were regenerated.
+
+Three Rust regressions cover exact bytes (BOM, CRLF, Unicode and trailing
+whitespace), preservation of unsaved text and journal recovery, unavailable
+versions and protected destinations. Six widget regressions cover read-only
+selection, returning to the list, read errors, chooser cancellation, refused
+writes, launch retry and in-flight modal lifetime. Verified 649 Rust tests,
+670 widget tests and all 69 native tests, rustfmt/clippy, Dart formatting and
+analysis, enforced lockfile, layering/version/docs and binding freshness.
+The release build passed when run serially after the native suites; an earlier
+concurrent release/native build collided over `build/lib/libapp.so`. Headed
+network isolation passed. Native journalled keystroke p99 was 3.20 ms; no
+process runtime budgets were rerun, and the known idle failure, thresholds and
+harness remain unchanged.
+
+Real-window release smoke proved the literal view and attempted typing were
+read-only, the original-path refusal preserved the file and unsaved journal,
+and an exact copy opened in a second process with its own journal. Editing and
+saving the copy left the original byte-identical, and the original unsaved work
+remained saveable. Restore from the view still writes the selected older bytes
+and preserves the current draft first, but exposed the pre-existing stale
+editor-after-restore handoff recorded under Found along the way; it was not
+folded into this item. Evidence is in `target/w9-smoke/` and `target/w9-*.log`.
+KEYMAP and CHANGELOG describe the workflow. No dependency, lockfile, golden,
+line-breaking fixture or accepted ADR decision changed. The W8 side findings
+remain untouched. W10 is the next unblocked item; nothing was pushed.
 
 <a id="w10"></a>
 ### W10 — Slugline is not installed on the owner's machine
