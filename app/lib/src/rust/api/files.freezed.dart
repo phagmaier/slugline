@@ -12,6 +12,298 @@ part of 'files.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$BackupReadOutcome {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BackupReadOutcome);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BackupReadOutcome()';
+}
+
+
+}
+
+/// @nodoc
+class $BackupReadOutcomeCopyWith<$Res>  {
+$BackupReadOutcomeCopyWith(BackupReadOutcome _, $Res Function(BackupReadOutcome) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BackupReadOutcome].
+extension BackupReadOutcomePatterns on BackupReadOutcome {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BackupReadOutcome_Read value)?  read,TResult Function( BackupReadOutcome_Failed value)?  failed,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BackupReadOutcome_Read() when read != null:
+return read(_that);case BackupReadOutcome_Failed() when failed != null:
+return failed(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BackupReadOutcome_Read value)  read,required TResult Function( BackupReadOutcome_Failed value)  failed,}){
+final _that = this;
+switch (_that) {
+case BackupReadOutcome_Read():
+return read(_that);case BackupReadOutcome_Failed():
+return failed(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BackupReadOutcome_Read value)?  read,TResult? Function( BackupReadOutcome_Failed value)?  failed,}){
+final _that = this;
+switch (_that) {
+case BackupReadOutcome_Read() when read != null:
+return read(_that);case BackupReadOutcome_Failed() when failed != null:
+return failed(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String source)?  read,TResult Function( String message)?  failed,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BackupReadOutcome_Read() when read != null:
+return read(_that.source);case BackupReadOutcome_Failed() when failed != null:
+return failed(_that.message);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String source)  read,required TResult Function( String message)  failed,}) {final _that = this;
+switch (_that) {
+case BackupReadOutcome_Read():
+return read(_that.source);case BackupReadOutcome_Failed():
+return failed(_that.message);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String source)?  read,TResult? Function( String message)?  failed,}) {final _that = this;
+switch (_that) {
+case BackupReadOutcome_Read() when read != null:
+return read(_that.source);case BackupReadOutcome_Failed() when failed != null:
+return failed(_that.message);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BackupReadOutcome_Read extends BackupReadOutcome {
+  const BackupReadOutcome_Read({required this.source}): super._();
+  
+
+ final  String source;
+
+/// Create a copy of BackupReadOutcome
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BackupReadOutcome_ReadCopyWith<BackupReadOutcome_Read> get copyWith => _$BackupReadOutcome_ReadCopyWithImpl<BackupReadOutcome_Read>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BackupReadOutcome_Read&&(identical(other.source, source) || other.source == source));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,source);
+
+@override
+String toString() {
+  return 'BackupReadOutcome.read(source: $source)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BackupReadOutcome_ReadCopyWith<$Res> implements $BackupReadOutcomeCopyWith<$Res> {
+  factory $BackupReadOutcome_ReadCopyWith(BackupReadOutcome_Read value, $Res Function(BackupReadOutcome_Read) _then) = _$BackupReadOutcome_ReadCopyWithImpl;
+@useResult
+$Res call({
+ String source
+});
+
+
+
+
+}
+/// @nodoc
+class _$BackupReadOutcome_ReadCopyWithImpl<$Res>
+    implements $BackupReadOutcome_ReadCopyWith<$Res> {
+  _$BackupReadOutcome_ReadCopyWithImpl(this._self, this._then);
+
+  final BackupReadOutcome_Read _self;
+  final $Res Function(BackupReadOutcome_Read) _then;
+
+/// Create a copy of BackupReadOutcome
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? source = null,}) {
+  return _then(BackupReadOutcome_Read(
+source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BackupReadOutcome_Failed extends BackupReadOutcome {
+  const BackupReadOutcome_Failed({required this.message}): super._();
+  
+
+ final  String message;
+
+/// Create a copy of BackupReadOutcome
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BackupReadOutcome_FailedCopyWith<BackupReadOutcome_Failed> get copyWith => _$BackupReadOutcome_FailedCopyWithImpl<BackupReadOutcome_Failed>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BackupReadOutcome_Failed&&(identical(other.message, message) || other.message == message));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,message);
+
+@override
+String toString() {
+  return 'BackupReadOutcome.failed(message: $message)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BackupReadOutcome_FailedCopyWith<$Res> implements $BackupReadOutcomeCopyWith<$Res> {
+  factory $BackupReadOutcome_FailedCopyWith(BackupReadOutcome_Failed value, $Res Function(BackupReadOutcome_Failed) _then) = _$BackupReadOutcome_FailedCopyWithImpl;
+@useResult
+$Res call({
+ String message
+});
+
+
+
+
+}
+/// @nodoc
+class _$BackupReadOutcome_FailedCopyWithImpl<$Res>
+    implements $BackupReadOutcome_FailedCopyWith<$Res> {
+  _$BackupReadOutcome_FailedCopyWithImpl(this._self, this._then);
+
+  final BackupReadOutcome_Failed _self;
+  final $Res Function(BackupReadOutcome_Failed) _then;
+
+/// Create a copy of BackupReadOutcome
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? message = null,}) {
+  return _then(BackupReadOutcome_Failed(
+message: null == message ? _self.message : message // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$RecoveryOutcome {
 
 

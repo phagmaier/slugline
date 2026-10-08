@@ -12,7 +12,7 @@ part 'files.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `load_preferences`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `unprotected`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `Restart`, `SavedPagination`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
 /// them.
@@ -297,6 +297,24 @@ Future<bool> docReload({
 Future<List<BackupView>> backupsList({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiFilesBackupsList(handle: handle);
 
+/// Reads the literal Fountain snapshot off the actor, including its title page.
+Future<BackupReadOutcome> backupRead({required String backupPath}) =>
+    RustLib.instance.api.crateApiFilesBackupRead(backupPath: backupPath);
+
+/// Writes the already viewed snapshot to a new file, without touching the
+/// current session. Using the snapshot rather than rereading the backup keeps
+/// the copy identical to the view even if retention removes the backup meanwhile.
+/// Existing destinations are never replaced, including the backup itself.
+Future<SaveOutcome> backupCopy({
+  required DocumentHandle handle,
+  required String source,
+  required String path,
+}) => RustLib.instance.api.crateApiFilesBackupCopy(
+  handle: handle,
+  source: source,
+  path: path,
+);
+
 /// §Phase 4's "Restore previous version".
 ///
 /// "Restoring a backup writes the current state to a new backup first" — so this
@@ -365,6 +383,16 @@ PreferencesView prefsGet() => RustLib.instance.api.crateApiFilesPrefsGet();
 
 Future<bool> prefsSet({required PreferencesView preferences}) =>
     RustLib.instance.api.crateApiFilesPrefsSet(preferences: preferences);
+
+@freezed
+sealed class BackupReadOutcome with _$BackupReadOutcome {
+  const BackupReadOutcome._();
+
+  const factory BackupReadOutcome.read({required String source}) =
+      BackupReadOutcome_Read;
+  const factory BackupReadOutcome.failed({required String message}) =
+      BackupReadOutcome_Failed;
+}
 
 /// One rolling backup (§Phase 4's "Restore previous version" list).
 class BackupView {

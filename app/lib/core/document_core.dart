@@ -6,6 +6,9 @@ import 'package:slugline/src/rust/api/spell.dart' as spell;
 export 'package:slugline/src/rust/api/files.dart'
     show
         BackupView,
+        BackupReadOutcome,
+        BackupReadOutcome_Read,
+        BackupReadOutcome_Failed,
         SaveFailure,
         SaveOutcome,
         SaveOutcome_Failed,
@@ -292,6 +295,13 @@ abstract class DocumentCore {
   /// Every rolling backup of this script, newest first.
   Future<List<files.BackupView>> backups();
 
+  /// Reads a literal, immutable snapshot without changing this script.
+  Future<files.BackupReadOutcome> readBackup(String backupPath);
+
+  /// Writes that viewed snapshot to a new file; never replaces an existing file.
+  /// The current path, dirty flag, journal and history remain untouched.
+  Future<files.SaveOutcome> copyBackup(String source, String path);
+
   /// Restores one, having first backed up what is there now (§Phase 4).
   Future<files.SaveOutcome> restoreBackup(String backupPath);
 
@@ -513,6 +523,14 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   @override
   Future<List<files.BackupView>> backups() =>
       files.backupsList(handle: _handle);
+
+  @override
+  Future<files.BackupReadOutcome> readBackup(String backupPath) =>
+      files.backupRead(backupPath: backupPath);
+
+  @override
+  Future<files.SaveOutcome> copyBackup(String source, String path) =>
+      files.backupCopy(handle: _handle, source: source, path: path);
 
   @override
   Future<files.SaveOutcome> restoreBackup(String backupPath) =>

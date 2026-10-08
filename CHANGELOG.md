@@ -10,6 +10,10 @@ this file and the others to it.
 
 ### Added
 
+- Previous versions can be viewed as selectable, read-only Fountain text,
+  including the title page, before restoring. “Open as copy…” saves the viewed
+  version under a new filename and opens it in a separate window without
+  replacing the current script or its unsaved work.
 - The release process now has automated cold-start, idle wakeup and memory
   regression checks under Xvfb. The separate real-desktop memory budget remains
   a manual verification gate.

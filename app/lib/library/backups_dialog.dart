@@ -1,25 +1,32 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
+import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/theme.dart';
+import 'package:slugline/typography.dart';
+import 'package:slugline/widgets/escape_dismissible.dart';
 
-/// §Phase 4's "Restore previous version" — the list of rolling backups, with
-/// timestamps and sizes.
-///
-/// The confirmation is not boilerplate. Restoring replaces what is on screen and
-/// what is on disk, so the dialog says the one thing that makes it safe:
-/// **the current version is backed up first.** That is a §Phase 4 requirement
-/// ("restoring a backup writes the current state to a new backup first") and it
-/// is what turns a restore from a decision into an experiment.
+/// Previous versions can be read without changing the current script, restored,
+/// or saved to a new file and opened in another window.
 class BackupsDialog extends StatefulWidget {
-  const BackupsDialog({required this.core, super.key});
+  const BackupsDialog({
+    required this.core,
+    this.openCopy = _openCopyWindow,
+    super.key,
+  });
 
   final DocumentCore core;
 
-  /// Returns true if a backup was restored.
+  /// The desktop launch seam; widget tests do not start a second application.
+  final Future<void> Function(String path) openCopy;
+
+  /// Returns true only if a backup replaced the current script.
   static Future<bool> show(BuildContext context, DocumentCore core) async {
     final restored = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => BackupsDialog(core: core),
     );
     return restored ?? false;
@@ -29,8 +36,17 @@ class BackupsDialog extends StatefulWidget {
   State<BackupsDialog> createState() => _BackupsDialogState();
 }
 
+Future<void> _openCopyWindow(String path) async {
+  await Process.start(Platform.resolvedExecutable, [
+    path,
+  ], mode: ProcessStartMode.detached);
+}
+
 class _BackupsDialogState extends State<BackupsDialog> {
   List<BackupView>? _backups;
+  BackupView? _viewing;
+  String? _source;
+  String? _copyPath;
   String? _error;
   bool _working = false;
 
@@ -46,8 +62,30 @@ class _BackupsDialogState extends State<BackupsDialog> {
     setState(() => _backups = backups);
   }
 
+  Future<void> _view(BackupView backup) async {
+    setState(() {
+      _working = true;
+      _error = null;
+    });
+    final outcome = await widget.core.readBackup(backup.path);
+    if (!mounted) return;
+    setState(() {
+      _working = false;
+      switch (outcome) {
+        case BackupReadOutcome_Read(:final source):
+          _viewing = backup;
+          _source = source;
+        case BackupReadOutcome_Failed(:final message):
+          _error = message;
+      }
+    });
+  }
+
   Future<void> _restore(BackupView backup) async {
-    setState(() => _working = true);
+    setState(() {
+      _working = true;
+      _error = null;
+    });
     final outcome = await widget.core.restoreBackup(backup.path);
     if (!mounted) return;
     switch (outcome) {
@@ -63,80 +101,194 @@ class _BackupsDialogState extends State<BackupsDialog> {
     }
   }
 
+  Future<void> _copy() async {
+    setState(() {
+      _working = true;
+      _error = null;
+    });
+    try {
+      if (_copyPath == null) {
+        final original = widget.core.path;
+        final name = original == null
+            ? 'untitled'
+            : File(original).uri.pathSegments.last.replaceFirst(
+                RegExp(r'\.fountain$', caseSensitive: false),
+                '',
+              );
+        final path = await FileChooser.show(
+          context,
+          title: 'Open previous version as a copy',
+          action: 'Save copy',
+          directory: original == null ? null : File(original).parent.path,
+          suggestedName: '$name-copy.fountain',
+        );
+        if (path == null || !mounted) return;
+        final outcome = await widget.core.copyBackup(_source!, path);
+        if (!mounted) return;
+        switch (outcome) {
+          case SaveOutcome_Saved(:final path):
+            _copyPath = path;
+          case SaveOutcome_Failed(:final message):
+            setState(() => _error = message);
+            return;
+          case SaveOutcome_Unchanged():
+            return;
+        }
+      }
+      await widget.openCopy(_copyPath!);
+      if (mounted) Navigator.of(context).pop(false);
+    } on ProcessException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error =
+              'The copy is saved at $_copyPath, but its window could not '
+              'be opened: ${error.message}';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  void _back() {
+    setState(() {
+      _viewing = null;
+      _source = null;
+      _copyPath = null;
+      _error = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final backups = _backups;
-    return AlertDialog(
-      title: const Text('Previous versions'),
-      content: SizedBox(
-        width: 480,
-        height: 380,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Restoring one of these writes the version you have now to a new '
-              'backup first, so nothing here is a one-way door.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: switch (backups) {
-                null => const Center(child: CircularProgressIndicator()),
-                [] => Center(
-                  child: Text(
-                    'No previous versions yet. Opening preserves changed '
-                    'on-disk text. Autosave snapshots changed text at most '
-                    'every ten minutes. Saving by hand records a version '
-                    'every time.',
-                    style: theme.textTheme.bodySmall,
-                    textAlign: TextAlign.center,
-                  ),
+    final viewing = _viewing;
+    return PopScope(
+      canPop: !_working,
+      child: EscapeDismissible(
+        child: AlertDialog(
+          title: Text(
+            viewing == null
+                ? 'Previous versions'
+                : formatTimestamp(viewing.writtenMillis),
+          ),
+          content: SizedBox(
+            width: viewing == null ? 540 : 720,
+            height: 480,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  viewing == null
+                      ? 'View a version without changing your script, or open it '
+                            'as a copy in another window. Restoring backs up '
+                            'the current version first.'
+                      : 'Read-only Fountain text. Open as copy leaves your '
+                            'current script untouched.',
+                  style: theme.textTheme.bodySmall,
                 ),
-                final found => ListView.builder(
-                  itemCount: found.length,
-                  itemBuilder: (context, index) {
-                    final backup = found[index];
-                    return ListTile(
-                      dense: true,
-                      title: Text(formatTimestamp(backup.writtenMillis)),
-                      subtitle: Text(formatBytes(backup.bytes)),
-                      trailing: TextButton(
-                        onPressed: _working
-                            ? null
-                            : () => unawaitedRestore(backup),
-                        child: const Text('Restore'),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: viewing != null
+                      ? Scrollbar(
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              _source!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontFamily: scriptFontFamily,
+                              ),
+                            ),
+                          ),
+                        )
+                      : switch (backups) {
+                          null => const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                          [] => Center(
+                            child: Text(
+                              'No previous versions yet. Opening preserves '
+                              'changed on-disk text. Autosave snapshots changed '
+                              'text at most every ten minutes. Saving by hand '
+                              'records a version every time.',
+                              style: theme.textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          final found => ListView.builder(
+                            itemCount: found.length,
+                            itemBuilder: (context, index) {
+                              final backup = found[index];
+                              return ListTile(
+                                dense: true,
+                                title: Text(
+                                  formatTimestamp(backup.writtenMillis),
+                                ),
+                                subtitle: Text(formatBytes(backup.bytes)),
+                                onTap: _working ? null : () => _view(backup),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextButton(
+                                      onPressed: _working
+                                          ? null
+                                          : () => _view(backup),
+                                      child: const Text('View'),
+                                    ),
+                                    TextButton(
+                                      onPressed: _working
+                                          ? null
+                                          : () => _restore(backup),
+                                      child: const Text('Restore'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        },
+                ),
+                if (_working) const LinearProgressIndicator(),
+                if (_error case final message?)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SelectableText(
+                      message,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: context.colours.danger,
                       ),
-                    );
-                  },
-                ),
-              },
-            ),
-            if (_error case final message?)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  message,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: context.colours.danger,
+                    ),
                   ),
+              ],
+            ),
+          ),
+          actions: [
+            if (viewing != null) ...[
+              TextButton(
+                onPressed: _working ? null : _back,
+                child: const Text('Back'),
+              ),
+              TextButton(
+                onPressed: _working ? null : () => _restore(viewing),
+                child: const Text('Restore'),
+              ),
+              FilledButton(
+                onPressed: _working ? null : _copy,
+                child: Text(
+                  _copyPath == null ? 'Open as copy…' : 'Open saved copy',
                 ),
               ),
+            ],
+            TextButton(
+              onPressed: _working
+                  ? null
+                  : () => Navigator.of(context).pop(false),
+              child: const Text('Close'),
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Close'),
-        ),
-      ],
     );
-  }
-
-  void unawaitedRestore(BackupView backup) {
-    _restore(backup);
   }
 }
 

@@ -149,6 +149,13 @@ pub struct BackupView {
     pub bytes: u64,
 }
 
+/// Reading a previous version never opens or changes a document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackupReadOutcome {
+    Read { source: String },
+    Failed { message: String },
+}
+
 /// A crashed session, as an offer to the user.
 ///
 /// §Phase 4: "Recovery presents a diff summary ('14 edits since last save') and
@@ -1722,6 +1729,73 @@ pub async fn backups_list(handle: DocumentHandle) -> Vec<BackupView> {
             bytes: found.bytes,
         })
         .collect()
+}
+
+/// Reads the literal Fountain snapshot off the actor, including its title page.
+pub async fn backup_read(backup_path: String) -> BackupReadOutcome {
+    match std::fs::read_to_string(&backup_path) {
+        Ok(source) => BackupReadOutcome::Read { source },
+        Err(error) => BackupReadOutcome::Failed {
+            message: format!("could not read {backup_path}: {error}"),
+        },
+    }
+}
+
+/// Writes the already viewed snapshot to a new file, without touching the
+/// current session. Using the snapshot rather than rereading the backup keeps
+/// the copy identical to the view even if retention removes the backup meanwhile.
+/// Existing destinations are never replaced, including the backup itself.
+pub async fn backup_copy(handle: DocumentHandle, source: String, path: String) -> SaveOutcome {
+    let path = PathBuf::from(path);
+    if path.as_os_str().is_empty() {
+        return failed(SaveFailure::NoPath, &path, "no file was chosen");
+    }
+    let Some(open_scripts) = actor().run(move |state| {
+        state.session(handle.id)?;
+        Some(
+            state
+                .handles()
+                .into_iter()
+                .filter_map(|open| state.session(open))
+                .filter_map(Session::path)
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>(),
+        )
+    }) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            &path,
+            "no document with that handle",
+        );
+    };
+    if open_scripts.iter().any(|open| same_file(open, &path)) {
+        return failed(
+            SaveFailure::ScriptIsOpen,
+            &path,
+            "that script is open; choose a new file for the copy",
+        );
+    }
+    if path.exists() {
+        return failed(
+            SaveFailure::AlreadyExists,
+            &path,
+            "that file already exists; choose a new name for the copy",
+        );
+    }
+    // The same chooser-to-rename race as Fountain export; no write or session
+    // bookkeeping runs on the actor.
+    if let Err(error) = atomic::save_atomically(&path, &source) {
+        return SaveOutcome::Failed {
+            failure: failure_of(&error),
+            path: path.to_string_lossy().into_owned(),
+            message: error.to_string(),
+        };
+    }
+    SaveOutcome::Saved {
+        path: path.to_string_lossy().into_owned(),
+        bytes: source.len().min(u32::MAX as usize) as u32,
+        backup: None,
+    }
 }
 
 /// §Phase 4's "Restore previous version".
@@ -4181,6 +4255,98 @@ mod tests {
             SaveOutcome::Failed { failure, .. } => *failure,
             other => panic!("expected a refusal, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_viewed_backup_copies_exact_bytes_and_preserves_unsaved_work() {
+        const OLD: &str = "\u{feff}Title: Earlier\r\nAuthor: Zoë\r\n\r\nINT. ROOM - DAY\r\n\r\nOld *words*.  \r\n";
+        let it = Fixture::open_source("backup-view-copy", OLD);
+        let previous = block_on(backups_list(it.handle)).remove(0);
+        it.types("Unsaved current words. ");
+        let before = it.in_memory();
+        let journal = fs::read(it.journal_path()).unwrap();
+        let backups = block_on(backups_list(it.handle));
+        let BackupReadOutcome::Read { source } = block_on(backup_read(previous.path.clone()))
+        else {
+            panic!("the previous version must be readable");
+        };
+        assert_eq!(
+            source, OLD,
+            "reading does not parse or normalise the source"
+        );
+        // Retention is allowed to remove the backing file after it was viewed.
+        fs::remove_file(&previous.path).unwrap();
+        let copy = it.root.join("earlier-copy.fountain");
+        let outcome = block_on(backup_copy(
+            it.handle,
+            source,
+            copy.to_string_lossy().into_owned(),
+        ));
+        assert_eq!(exported(&outcome), copy.to_string_lossy());
+        assert_eq!(fs::read_to_string(&copy).unwrap(), OLD);
+        assert_eq!(it.in_memory(), before);
+        assert_eq!(it.on_disk(), OLD);
+        assert!(it.dirty());
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
+        assert_eq!(fs::read(it.journal_path()).unwrap(), journal);
+        assert_eq!(it.recovers_to(), before);
+        assert_eq!(
+            block_on(backups_list(it.handle)),
+            backups
+                .into_iter()
+                .filter(|b| b.path != previous.path)
+                .collect::<Vec<_>>(),
+        );
+        assert!(!it.is_saving());
+        assert!(it.own_writes().is_empty());
+    }
+
+    #[test]
+    fn a_backup_copy_refuses_existing_files_and_open_missing_scripts() {
+        let it = Fixture::open("backup-copy-refusals");
+        let other = it.beside("backup-copy-open");
+        let backup = block_on(backups_list(it.handle)).remove(0);
+        let occupied = it.root.join("occupied.fountain");
+        fs::write(&occupied, "Keep this draft.").unwrap();
+        for path in [&occupied, Path::new(&backup.path)] {
+            let before = fs::read(path).unwrap();
+            assert_eq!(
+                failure_of_outcome(&block_on(backup_copy(
+                    it.handle,
+                    "Earlier.".to_owned(),
+                    path.to_string_lossy().into_owned(),
+                ))),
+                SaveFailure::AlreadyExists,
+            );
+            assert_eq!(fs::read(path).unwrap(), before);
+        }
+        fs::remove_file(&other.script).unwrap();
+        assert_eq!(
+            failure_of_outcome(&block_on(backup_copy(
+                it.handle,
+                "Earlier.".to_owned(),
+                other.script.to_string_lossy().into_owned(),
+            ))),
+            SaveFailure::ScriptIsOpen,
+        );
+        assert!(!other.script.exists());
+        assert_eq!(it.on_disk(), SCRIPT);
+    }
+
+    #[test]
+    fn an_unavailable_backup_reports_failure_instead_of_an_empty_view() {
+        let root = temp_root("backup-read-errors");
+        let path = root.join("previous.fountain");
+        for bytes in [None, Some(&b"\xff"[..])] {
+            if let Some(bytes) = bytes {
+                fs::write(&path, bytes).unwrap();
+            }
+            assert!(matches!(
+                block_on(backup_read(path.to_string_lossy().into_owned())),
+                BackupReadOutcome::Failed { message } if message.contains("previous.fountain")
+            ));
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     /// Save As moves the session: the path it answers to afterwards is the new

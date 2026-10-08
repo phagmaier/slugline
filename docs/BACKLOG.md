@@ -1902,6 +1902,17 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-07 — W9, reproduced in the release smoke: **Restore** from a version
+  view writes the selected older text to disk and preserves the current text in
+  backups, but the editor still paints the pre-restore text and word count
+  (`target/w9-smoke/after-restored.png`). The unchanged
+  `EditorPage._showBackups` discards `BackupsDialog.show`'s restored boolean;
+  `withModal` only suppresses/releases autosave, and the existing
+  `EditorController.reloadFromCore` is not called. That handoff predates W9
+  (source-read at the starting commit); the visible/disk mismatch was exercised
+  after W9. Left unchanged as a separate restore-refresh bug. Reading a version
+  and opening a copy do not replace the current document and need no refresh.
+
 - 2026-10-07 — W8, reproduced on the release bundle with a real pointer and
   real keys: after a click on "Match case", "Whole word" or the element filter,
   Escape no longer closes the find bar and Enter no longer steps

@@ -820,6 +820,14 @@ class FakeCore implements DocumentCore {
   Future<List<BackupView>> backups() async => const [];
 
   @override
+  Future<BackupReadOutcome> readBackup(String backupPath) async =>
+      const BackupReadOutcome.failed(message: 'that backup cannot be read');
+
+  @override
+  Future<SaveOutcome> copyBackup(String source, String path) async =>
+      SaveOutcome.saved(path: path, bytes: source.length, backup: null);
+
+  @override
   Future<SaveOutcome> restoreBackup(String backupPath) async =>
       SaveOutcome.saved(path: filePath ?? '', bytes: 0, backup: null);
 

@@ -271,6 +271,16 @@ version every time: even a clean `Ctrl+S` after autosave keeps that version.
 Snapshots are best effort; an unavailable backup cache does not fail opening or
 saving the script.
 
+Open “Previous versions…” from the overflow menu or command palette. **View**
+shows selectable, read-only Fountain text, including the title page and literal
+markup; **Back** returns to the list. **Open as copy…** asks for a new filename,
+saves the exact viewed text and opens it in a separate Slugline window. Existing
+files and open scripts are refused: choose another name, rather than replacing
+them. The original script, unsaved edits and crash record stay where they were.
+If the new window cannot start, the dialog names the saved copy and offers
+**Open saved copy** to retry without writing it again. **Restore** remains the
+way to replace the current script, after backing up its current text first.
+
 Retention combines the newest N versions, the newest version in each UTC-hour
 bucket across the current hour and the previous 23 hours, and M daily versions.
 The defaults are N = 10 and M = 7. Overlapping versions count only once, so these

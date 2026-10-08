@@ -37,6 +37,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  BackupReadOutcome dco_decode_backup_read_outcome(dynamic raw);
+
+  @protected
   BackupView dco_decode_backup_view(dynamic raw);
 
   @protected
@@ -349,6 +352,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
+
+  @protected
+  BackupReadOutcome sse_decode_backup_read_outcome(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BackupView sse_decode_backup_view(SseDeserializer deserializer);
@@ -713,6 +721,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_backup_read_outcome(
+    BackupReadOutcome self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_backup_view(BackupView self, SseSerializer serializer);
