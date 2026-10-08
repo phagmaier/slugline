@@ -826,7 +826,17 @@ zero/nonzero transitions, Save and actual reopen work without exceptions in
 continuous and page views. Zero pagination has no page target or furniture.
 
 **Effort.** S.
-**Result:** Pending.
+**Result:** Source correction and focused verification complete; final matrix pending.
+Five current-tree widget regressions and the original Note-only native test
+failed at the recorded clamp before the fix. Zero pagination now has no current
+page and says “No printed pages”; page targets and furniture stay absent. Rust
+still gives an empty editable Action one blank sheet, which remains “Page 1 of
+1”. Fifteen page-indicator widget tests and seven focused native tests pass,
+including both views, zero/nonzero Undo/Redo, exact BOM/CRLF file bytes, Save and
+actual reopened editor status. The Note-only Shift+Enter test no longer relies
+on printable Action. Logs are under `target/stabilization/b13-*`; intermediate
+native harness mistakes (empty-sheet expectations, BOM/body distinction and
+pointer placement on read-only boneyard after reopen) are retained separately.
 
 ---
 

@@ -168,6 +168,7 @@ class PageIndicator extends ChangeNotifier {
   bool printsNumber(int page) => !_unnumberedPages.contains(page);
 
   String get label => switch ((_current, _total)) {
+    (_, 0) => 'No printed pages',
     (final current?, final total?) => 'Page $current of $total',
     _ => 'Pages …',
   };
@@ -288,6 +289,12 @@ class PageIndicator extends ChangeNotifier {
   }
 
   void _updateCurrent({bool forceNotify = false}) {
+    if (_total == 0) {
+      // A known empty pagination has no containing page. Do not invent page 1
+      // or retain the last printable page through a transition to source only.
+      _setPosition(null, 0, forceNotify: forceNotify);
+      return;
+    }
     if (_total == null || _pageAtBlock.isEmpty) return;
     final anchor = controller.pageAnchorAtRow(_visibleRow);
     final page =

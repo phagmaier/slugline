@@ -101,6 +101,100 @@ class _OutputCore extends FakeCore implements ScreenplayOutput {
 }
 
 void main() {
+  group('zero printed pages', () {
+    const setup = PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
+      numberFirstPage: false,
+      debugLinesPerPage: null,
+    );
+
+    for (final (kind, text) in [
+      (BlockKind.action, ''),
+      (BlockKind.note, 'Private note.'),
+      (BlockKind.section, 'Private section'),
+      (BlockKind.synopsis, 'Private synopsis.'),
+    ]) {
+      test(
+        '$kind has no current page when the snapshot prints nothing',
+        () async {
+          final controller = EditorController(
+            FakeCore([
+              BlockView(
+                id: 1,
+                kind: kind,
+                sectionLevel: 1,
+                text: text,
+                forced: false,
+                dual: false,
+                readOnly: false,
+              ),
+            ]),
+          );
+          addTearDown(controller.dispose);
+          final indicator = PageIndicator(
+            controller: controller,
+            output: FakeOutput(_pagination([])),
+            setup: setup,
+          );
+          addTearDown(indicator.dispose);
+          var notifications = 0;
+          indicator.addListener(() => notifications++);
+          expect(indicator.label, 'Pages …');
+          await indicator.refresh();
+          expect(indicator.current, isNull);
+          expect(indicator.total, 0);
+          expect(indicator.words, 0);
+          expect(indicator.label, 'No printed pages');
+          expect(indicator.pageStarts, isEmpty);
+          expect(indicator.positionForPage(1), isNull);
+          expect(notifications, 1);
+          indicator.updateVisibleRow(10);
+          expect(indicator.current, isNull);
+          expect(notifications, 1);
+        },
+      );
+    }
+
+    test('zero/nonzero transitions clear the old page and notify', () async {
+      final controller = EditorController(FakeCore([_block(1, 80)]));
+      addTearDown(controller.dispose);
+      final output = FakeOutput(_pagination([]));
+      final indicator = PageIndicator(
+        controller: controller,
+        output: output,
+        setup: setup,
+        initialRow: 45,
+      );
+      addTearDown(indicator.dispose);
+      var notifications = 0;
+      indicator.addListener(() => notifications++);
+      await indicator.refresh();
+      expect(indicator.label, 'No printed pages');
+      output.pagination = _pagination([
+        _page(1, 1, 0, 40),
+        _page(2, 1, 40, 80),
+      ]);
+      await indicator.refresh();
+      expect(indicator.label, 'Page 2 of 2');
+      expect(indicator.pageStarts, isNotEmpty);
+      expect(indicator.positionForPage(2), isNotNull);
+      output.pagination = _pagination([]);
+      await indicator.refresh();
+      expect(indicator.current, isNull);
+      expect(indicator.total, 0);
+      expect(indicator.words, 0);
+      expect(indicator.label, 'No printed pages');
+      expect(indicator.pageStarts, isEmpty);
+      expect(indicator.positionForPage(2), isNull);
+      output.pagination = _pagination([_page(1, 1, 0, 80)]);
+      await indicator.refresh();
+      expect(indicator.label, 'Page 1 of 1');
+      expect(notifications, 4);
+    });
+  });
+
   test(
     'a split block uses its wrapped source line, not scroll percentage',
     () async {

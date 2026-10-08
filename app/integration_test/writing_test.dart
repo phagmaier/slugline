@@ -13,6 +13,7 @@
 // patch → Fountain, and that the Fountain reads back as the scene that was typed.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -123,6 +124,144 @@ void main() {
 
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
+
+  for (final pageView in [false, true]) {
+    for (final (name, source) in [
+      ('empty', ''),
+      ('note', '[[Private note.]]\n'),
+      (
+        'source-only',
+        '\uFEFF[[Private note.]]\r\n\r\n'
+            '# Private section\r\n\r\n= Private synopsis\r\n\r\n'
+            '/* Private boneyard. */\r\n',
+      ),
+    ]) {
+      testWidgets(
+        'zero printed pages edit save reopen $name pageView=$pageView',
+        (tester) async {
+          final file = File(
+            '${scratch.path}/zero-pages-$name-$pageView.fountain',
+          )..writeAsStringSync(source);
+          final originalBytes = file.readAsBytesSync();
+          var core = (await Core.instance.openDocument(file.path))!;
+          addTearDown(() => core.close());
+          var controller = EditorController(core);
+          addTearDown(() => controller.dispose());
+
+          Future<void> mount() async {
+            await tester.pumpWidget(
+              MaterialApp(
+                home: EditorPage(controller: controller, pageView: pageView),
+              ),
+            );
+            await tester.tap(find.byType(EditorSurface));
+            final start = controller.blocks.firstWhere(
+              (block) => !block.readOnly,
+            );
+            controller.setSelection(
+              DocSelection(
+                anchor: DocPosition(block: start.id, offsetUtf16: 0),
+                focus: DocPosition(block: start.id, offsetUtf16: 0),
+              ),
+            );
+            await tester.pump();
+          }
+
+          Future<void> shows(String label) async {
+            final deadline = DateTime.now().add(const Duration(seconds: 10));
+            while (find.textContaining(label).evaluate().isEmpty &&
+                DateTime.now().isBefore(deadline)) {
+              await tester.pump(const Duration(milliseconds: 20));
+            }
+            expect(find.textContaining(label), findsOneWidget);
+            expect(tester.takeException(), isNull);
+          }
+
+          Future<void> saveReopen(String expected) async {
+            final body = expected.startsWith('\uFEFF')
+                ? expected.substring(1)
+                : expected;
+            final diskSource = source.startsWith('\uFEFF')
+                ? '\uFEFF$body'
+                : body;
+            expect(await core.save(), isA<SaveOutcome_Saved>());
+            expect(file.readAsBytesSync(), utf8.encode(diskSource));
+            final savedBytes = file.readAsBytesSync();
+            await tester.pumpWidget(const SizedBox.shrink());
+            controller.dispose();
+            core.close();
+            core = (await Core.instance.openDocument(file.path))!;
+            controller = EditorController(core);
+            expect(core.source(), body);
+            expect(file.readAsBytesSync(), savedBytes);
+            await mount();
+          }
+
+          final initialPagination = switch (await (core as ScreenplayOutput)
+              .paginate(
+                const PageSetup(
+                  paper: PaperSize.usLetter,
+                  sceneNumbers: SceneNumbers.off,
+                  boldSceneHeadings: false,
+                  numberFirstPage: false,
+                  debugLinesPerPage: null,
+                ),
+              )) {
+            PaginationOutcome_Current(:final pagination) => pagination,
+            _ => throw StateError('Expected current pagination'),
+          };
+          // An empty editable Action gets one blank sheet from Rust; source-only
+          // blocks get none. The presentation must follow either snapshot.
+          expect(initialPagination.pageCount, name == 'empty' ? 1 : 0);
+          final initialLabel = initialPagination.pageCount == 0
+              ? 'No printed pages'
+              : 'Page 1 of 1';
+          await mount();
+          await shows(initialLabel);
+          expect(await core.save(), isA<SaveOutcome_Saved>());
+          expect(file.readAsBytesSync(), originalBytes);
+          await saveReopen(source);
+          await shows(initialLabel);
+
+          final first = controller.blocks.firstWhere(
+            (block) => !block.readOnly,
+          );
+          controller.setSelection(
+            DocSelection(
+              anchor: DocPosition(
+                block: first.id,
+                offsetUtf16: first.text.length,
+              ),
+              focus: DocPosition(
+                block: first.id,
+                offsetUtf16: first.text.length,
+              ),
+            ),
+          );
+          controller.setKind(BlockKind.note);
+          await type(tester, controller, ' Extra private text.');
+          await shows('No printed pages');
+          final nonPrinting = controller.source;
+          controller.setKind(BlockKind.action);
+          await shows('Page 1 of 1');
+          controller.undo();
+          expect(controller.source, nonPrinting);
+          await shows('No printed pages');
+          controller.redo();
+          await shows('Page 1 of 1');
+          final printable = controller.source;
+          await saveReopen(printable);
+          await shows('Page 1 of 1');
+          controller.setKind(BlockKind.note);
+          await shows('No printed pages');
+          final finalSource = controller.source;
+          await saveReopen(finalSource);
+          await shows('No printed pages');
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+      );
+    }
+  }
 
   for (final pageView in [false, true]) {
     testWidgets('go to page uses real pagination, pageView=$pageView', (
@@ -240,12 +379,7 @@ void main() {
       1,
       'JOHN\nFirst 🎬 line.\nSecond line.\n',
     ),
-    (
-      BlockKind.note,
-      '[[Seed.]]\n\nAnchor.\n',
-      0,
-      '[[First 🎬 line.\nSecond line.]]\n\nAnchor.\n',
-    ),
+    (BlockKind.note, '[[Seed.]]\n', 0, '[[First 🎬 line.\nSecond line.]]\n'),
   ]) {
     testWidgets(
       'Shift+Enter saves adjacent lines in ${kind.name} and reopens',
