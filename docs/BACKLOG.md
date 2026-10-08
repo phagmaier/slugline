@@ -69,7 +69,7 @@ This is the only place boxes are ticked.
 - [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
 - [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
 - [x] [B13](#b13) A script with no printed pages throws in the page indicator
-- [ ] [B14](#b14) Find loses Escape and Enter after pointer interaction
+- [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [ ] [B15](#b15) Same-burst Save can precede the final native text update
 
 **3. Fountain and output fidelity**
@@ -869,15 +869,23 @@ Repeated Ctrl+F, placement, search performance and preview navigation stay
 separate.
 
 **Effort.** S.
-**Result:** _open_ — focused verification complete; final matrix and release
-pointer smoke pending. Six Linux widget failures reproduced the keyboard loss
+**Result:** 2026-10-08 — verified in `e15126d`. Six Linux widget failures reproduced the keyboard loss
 before the correction. A Find-owned `FocusScope` retains desktop field unfocus
 inside its key handler without forcing query-field focus on clicks. All 36
 Find widgets pass, including Enter/Shift+Enter/numpad Enter, Escape after all
 three controls, popup-first Escape and modal isolation. Three real-core native
 pointer tests pass with unchanged CRLF file bytes, clean dirty/journal state,
 Save and exact reopen. Evidence: `target/stabilization/b14-*`; the intermediate
-popup-finder failure is retained as a test-harness mistake.
+popup-finder failure is retained as a test-harness mistake. Final shared
+matrix passes 649 Rust tests, 690 widgets and 82 native tests. Release OS pointer
+clicks and real keys confirm match stepping and Escape after every control with
+exact CRLF bytes after navigation and Save; screenshots were inspected under
+`target/stabilization/pointer-smoke-clean/`, and WM_DELETE_WINDOW closes with
+exit 0. The first smoke's xdotool direct window destruction produced BadDrawable
+and exit 1; it remains separately retained under `pointer-smoke/` and is not an
+ordinary-close result. Current Xvfb budgets and packaging/network checks pass;
+earlier idle and manual GPU/IME gates remain open. Repeated Ctrl+F, placement,
+search performance and preview navigation are untouched.
 
 ---
 
