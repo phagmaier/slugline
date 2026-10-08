@@ -119,9 +119,44 @@ and never removes scripts, preferences, backups, or recovery data.
 
 ### Building from source
 
-See [source build requirements](#source-build-requirements) below. This route
-is intended for contributors and packagers; ordinary users do not need Flutter
-or Rust.
+After installing the [source build requirements](#source-build-requirements),
+run these commands from the checkout root. No `sudo` is needed for installation:
+
+```sh
+(cd app && flutter pub get --enforce-lockfile)
+./tools/package.sh
+./tools/smoke_test_tarball.sh
+version="$(./tools/release_version.sh)"
+"./dist/slugline-$version-linux-x86_64/install.sh"
+export PATH="$HOME/.local/bin:$PATH"
+slugline --version
+```
+
+The packaging build remaps source paths in the Rust library, then creates both
+`dist/slugline-<version>-linux-x86_64.tar.gz` and its extracted staging directory.
+The installer puts the command in `~/.local/bin`, the application bundle in
+`~/.local/lib/slugline`, and the launcher, icons and Fountain MIME definition
+under `~/.local/share`.
+
+Keep `~/.local/bin` in your **desktop-session PATH**, not just your interactive
+shell's PATH: the launcher uses `Exec=slugline %f` and `TryExec=slugline`.
+For a UWSM-managed desktop, add this line to `~/.config/uwsm/env`, preserving any
+existing contents, then log out and back in so launchers inherit it:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+The installer registers Fountain support without overriding your chosen default.
+To make Slugline the application used when opening `.fountain` files:
+
+```sh
+xdg-mime default com.phagmaier.slugline.desktop text/x-fountain
+xdg-mime query default text/x-fountain
+```
+
+The query should print `com.phagmaier.slugline.desktop`. Open Slugline from your
+application menu or open a `.fountain` file in your file manager.
 
 ## Quick start
 
@@ -182,26 +217,30 @@ comes back out exactly as it went in. No reformatting, no surprises.
 
 ## Source build requirements
 
-You need Flutter (stable), a Rust toolchain, and GTK 3 development headers:
+You need Flutter 3.44.8 (the CI-pinned stable SDK), Rust 1.85 or newer, GTK 3
+development headers, and desktop registration tools:
 
 ```sh
 # Arch
-sudo pacman -S --needed clang cmake ninja pkgconf gtk3 xz
+sudo pacman -S --needed clang cmake ninja pkgconf gtk3 xz desktop-file-utils shared-mime-info xdg-utils
 
 # Debian/Ubuntu
-sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev desktop-file-utils shared-mime-info xdg-utils
 
 # Optional: needed for one PDF text-extraction test
 sudo apt install poppler-utils   # or pacman -S poppler
 ```
 
-Then:
+For a development run, from the checkout root:
 
 ```sh
-cd app
-flutter run -d linux                 # debug
-flutter build linux --release        # release
+(cd app && flutter run -d linux)
 ```
+
+For a release build and user-local installation, use the
+[packaging commands above](#building-from-source), rather than copying a
+source-tree bundle. Do not run native integration builds and a release build
+concurrently; they share Flutter build outputs.
 
 `flutter build linux` compiles the Rust workspace through cargokit and bundles
 `libslugline_bridge.so` — there is no separate Rust build step.

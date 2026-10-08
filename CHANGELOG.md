@@ -20,6 +20,9 @@ this file and the others to it.
 
 ### Changed
 
+- The README now gives the complete source-package/user-local installation
+  commands, desktop-session PATH setup, and Fountain default-application command.
+
 - Preview and export opens on the page the caret is on instead of always at the
   top. Page 1 still opens at the top, with the title page. The preview's scroll
   bar now reflects the script's real length from the moment it opens.

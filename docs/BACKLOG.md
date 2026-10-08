@@ -2008,6 +2008,16 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-08 — W10, observed during the installed native-Wayland smoke: an
+  unpaced `wtype` text burst did not arrive intact. The saved action was
+  `Installed command ready. Verifed hrough insalled assoiation.` rather than
+  the supplied `Installed command ready. Verified through installed association.`
+  A separate replacement entered with 30 ms between keys saved and reopened
+  byte-exactly. Cause is not established; no input-path change was made for W10.
+  Evidence: `target/w10-smoke/fast-input-observation.fountain` and
+  `target/w10-smoke/installed-saved.png`. Investigate separately rather than
+  treating the paced installation smoke as a fix for fast input.
+
 - 2026-10-07 — W9, reproduced in the release smoke: **Restore** from a version
   view writes the selected older text to disk and preserves the current text in
   backups, but the editor still paints the pre-restore text and word count
