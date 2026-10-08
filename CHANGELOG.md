@@ -37,6 +37,10 @@ this file and the others to it.
 
 ### Fixed
 
+- Fixed lost characters during fast platform typing by avoiding stale editing
+  state echoes while accepting input; final caret and structural corrections
+  still synchronize with the input method.
+
 - The native keyboard-switching check now waits for the destination document
   and editor focus, and verifies that Ctrl+N reached the chooser. Frame settling
   alone could finish before native file creation completed; application behavior

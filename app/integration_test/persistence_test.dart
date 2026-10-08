@@ -117,6 +117,53 @@ void main() {
     );
   });
 
+  testWidgets(
+    'a platform burst is journalled before an immediate save and reopens exactly',
+    (tester) async {
+      const source =
+          'INT. INSTALLATION CHECK - DAY\n\nInstalled command ready.\n';
+      const burst = ' Verified through installed association.';
+      final file = path('platform-burst.fountain');
+      File(file).writeAsStringSync(source);
+      final core = (await Core.instance.openDocument(file))!;
+      addTearDown(core.close);
+      final controller = await openEditor(tester, core);
+      controller.moveToDocumentEdge(start: false);
+      final surface = tester.state<EditorSurfaceState>(
+        find.byType(EditorSurface),
+      );
+      var text = controller.focusedBlock.text;
+      for (final character in burst.split('')) {
+        text += character;
+        surface.updateEditingValue(
+          TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          ),
+        );
+      }
+      final expected = '${source.trimRight()}$burst\n';
+      expect(controller.source, expected);
+      expect(core.source(), expected);
+      expect(core.journalState.$1, burst.length);
+      expect(core.journalState.$2, isFalse);
+      expect(File(file).readAsStringSync(), source);
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      expect(File(file).readAsStringSync(), expected);
+      expect(core.dirty, isFalse);
+
+      controller.undo();
+      expect(controller.source, source);
+      controller.redo();
+      expect(controller.source, expected);
+      await tester.pumpWidget(const SizedBox.shrink());
+      core.close();
+      final reopened = (await Core.instance.openDocument(file))!;
+      addTearDown(reopened.close);
+      expect(reopened.source(), expected);
+    },
+  );
+
   testWidgets('a save writes atomically and leaves no temp file behind', (
     tester,
   ) async {

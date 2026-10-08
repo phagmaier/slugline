@@ -67,6 +67,7 @@ This is the only place boxes are ticked.
 - [x] [B9](#b9) CI's flutter job cannot run the export suite: no Poppler
 - [x] [B10](#b10) Typing after Find opens appends to the seeded or resumed query
 - [x] [B11](#b11) Restoring a previous version leaves the editor showing the old draft
+- [ ] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
 
 **3. Fountain and output fidelity**
 
@@ -750,6 +751,42 @@ failure, thresholds and harness remain unchanged. CHANGELOG records the fix.
 No dependency, lockfile, Rust API, generated binding, golden or accepted ADR
 decision changed. W10 remains next, F7 remains blocked by X6, and the other W8/W9
 findings remain untouched. Committed locally; nothing was pushed.
+
+---
+
+<a id="b12"></a>
+### B12 — Fast platform typing can overwrite characters through stale input echoes
+
+**Problem.** Promoted from W10's separate finding, and explicitly prioritized
+before X1 on 2026-10-08: an unpaced native-Wayland `wtype` burst loses letters.
+The installed app paints and saves the same incomplete text.
+
+**Evidence (reproduced before changing production code).** A fresh disposable
+document, with the editor adopted and the caret at its end, has incomplete
+journal patches before any Save shortcut. Immediate and later explicit saves
+write the same incomplete bytes. A temporary diagnostic release records all 40
+printable key-down characters arriving intact, while later platform editing
+values already lack letters. `EditorSurface._syncEditingState` echoes every
+accepted value back through the asynchronous input channel; selection placement
+during a replacement also sends pre-edit text. These stale whole-block values
+can overwrite newer platform input. Two widget regressions fail on the unchanged
+implementation. This establishes an application input synchronization defect,
+rather than incomplete driver delivery or a premature Save snapshot.
+
+**Change.** Track the last known platform value, suppress intermediate outgoing
+states while applying one platform edit, and send only a differing final result.
+Application caret moves, structural edits and core refusals still synchronize.
+Keep this correction separate from the published CI correction and W10.
+
+**Done when.** The original unpaced burst reaches the journal and file intact on
+the native release, with exact reopen; outgoing-channel regressions cover
+accepted typing/composition and final structural/refused results. The native
+storage regression covers immediate Save, Undo/Redo and reopen.
+
+**Effort.** S.
+**Result:** _open_ — correction and verification in progress. Evidence and the
+publication record are described in [FAST_INPUT.md](FAST_INPUT.md). X1 and
+unrelated findings remain outside this change.
 
 ---
 
@@ -2044,6 +2081,8 @@ not part of that item.
   Evidence: `target/w10-smoke/fast-input-observation.fountain` and
   `target/w10-smoke/installed-saved.png`. Investigate separately rather than
   treating the paced installation smoke as a fix for fast input.
+  Promoted to [B12](#b12) on 2026-10-08 after tracing intact delivered keys,
+  stale outgoing application states, and incomplete committed text before Save.
 
 - 2026-10-07 — W9, reproduced in the release smoke: **Restore** from a version
   view writes the selected older text to disk and preserves the current text in

@@ -139,6 +139,11 @@ class EditorSurfaceState extends State<EditorSurface>
 
   TextInputConnection? _connection;
 
+  // Platform messages are asynchronous. Echoing a value it already supplied
+  // can replace text it has typed since sending that value.
+  TextEditingValue? _lastKnownRemoteValue;
+  bool _applyingPlatformValue = false;
+
   double _viewportWidth = 900;
   double _viewportHeight = 600;
 
@@ -317,6 +322,7 @@ class EditorSurfaceState extends State<EditorSurface>
       _controller.dismissCompletions();
       _connection?.close();
       _connection = null;
+      _lastKnownRemoteValue = null;
       _composing = TextRange.empty;
       _sessionBlock = null;
       _reportComposing();
@@ -328,6 +334,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   void _attachInput() {
     if (_connection?.attached ?? false) return;
+    _lastKnownRemoteValue = null;
     _connection = TextInput.attach(
       this,
       const TextInputConfiguration(
@@ -377,6 +384,9 @@ class EditorSurfaceState extends State<EditorSurface>
   /// claim across a block boundary is what would lose text, because the offsets in
   /// it would then describe a range in a block the platform cannot see.
   void _syncEditingState() {
+    // Selection placement and patch application both notify listeners during
+    // one platform edit. Only its final result can describe the input session.
+    if (_applyingPlatformValue) return;
     final block = _controller.focusedBlock.id;
     if (_sessionBlock != block) {
       _sessionBlock = block;
@@ -387,7 +397,11 @@ class EditorSurfaceState extends State<EditorSurface>
         if (mounted) setState(() {});
       }
     }
-    _connection?.setEditingState(_editingValue);
+    if (!(_connection?.attached ?? false)) return;
+    final value = _editingValue;
+    if (value == _lastKnownRemoteValue) return;
+    _connection!.setEditingState(value);
+    _lastKnownRemoteValue = value;
   }
 
   @override
@@ -396,36 +410,45 @@ class EditorSurfaceState extends State<EditorSurface>
   @override
   void updateEditingValue(TextEditingValue value) {
     final previous = _editingValue;
-    _composing = value.composing;
-    _reportComposing();
-    if (value.text == previous.text) {
-      // Selection-only news — a composition being confirmed, or the platform
-      // moving its own caret. The model's caret is ours, so only repaint.
-      setState(() {});
-      return;
-    }
+    _lastKnownRemoteValue = value;
+    _applyingPlatformValue = true;
+    try {
+      _composing = value.composing;
+      _reportComposing();
+      if (value.text == previous.text) {
+        // Selection-only news — a composition being confirmed, or the platform
+        // moving its own caret. The model's caret is ours, so only repaint.
+        setState(() {});
+        return;
+      }
 
-    // What the platform changed, as the smallest range that explains it. A
-    // minimal range is not just tidy: the core coalesces consecutive insertions
-    // into one undo step only when they are insertions (§3.4).
-    final (start, oldEnd, inserted) = _diff(previous.text, value.text);
-    final block = _controller.focusedBlock.id;
-    _controller.setSelection(
-      DocSelection(
-        anchor: DocPosition(block: block, offsetUtf16: start),
-        focus: DocPosition(block: block, offsetUtf16: oldEnd),
-      ),
-    );
+      // What the platform changed, as the smallest range that explains it. A
+      // minimal range is not just tidy: the core coalesces consecutive insertions
+      // into one undo step only when they are insertions (§3.4).
+      final (start, oldEnd, inserted) = _diff(previous.text, value.text);
+      final block = _controller.focusedBlock.id;
+      _controller.setSelection(
+        DocSelection(
+          anchor: DocPosition(block: block, offsetUtf16: start),
+          focus: DocPosition(block: block, offsetUtf16: oldEnd),
+        ),
+      );
 
-    // A newline can only arrive here if the platform's IM produced one rather
-    // than the key reaching our handler. Split, so that the block structure is
-    // still the core's and not a `\n` smuggled into a block's text.
-    final parts = inserted.split('\n');
-    for (var i = 0; i < parts.length; i++) {
-      if (i > 0) _controller.splitBlock();
-      if (parts[i].isNotEmpty) _controller.insertText(parts[i]);
+      // A newline can only arrive here if the platform's IM produced one rather
+      // than the key reaching our handler. Split, so that the block structure is
+      // still the core's and not a `\n` smuggled into a block's text.
+      final parts = inserted.split('\n');
+      for (var i = 0; i < parts.length; i++) {
+        if (i > 0) _controller.splitBlock();
+        if (parts[i].isNotEmpty) _controller.insertText(parts[i]);
+      }
+      if (inserted.isEmpty) _controller.deleteSelection();
+    } finally {
+      _applyingPlatformValue = false;
+      // A structural edit or a core refusal can differ from the supplied
+      // value. Synchronize that result once; accepted text needs no echo.
+      _syncEditingState();
     }
-    if (inserted.isEmpty) _controller.deleteSelection();
   }
 
   /// The common prefix and suffix of two strings, as `(start, oldEnd, inserted)`.
