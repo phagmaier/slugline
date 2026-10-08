@@ -336,6 +336,9 @@ class EditorPageState extends State<EditorPage> {
   void _show(_Panel panel) {
     if (_panel == panel) return;
     _scaffoldKey.currentState?.closeDrawer();
+    // Before the bar exists, so that it opens on this search: the selection's
+    // text if there is one to take, the last query otherwise.
+    if (panel == _Panel.find) widget.controller.startFind();
     setState(() => _panel = panel);
   }
 
@@ -785,6 +788,7 @@ class EditorPageState extends State<EditorPage> {
                                       widget.initialPageSetup.boldSceneHeadings,
                                   pageIndicator: _pageIndicator,
                                   initialScrollRow: widget.initialScrollRow,
+                                  highlightMatches: _panel == _Panel.find,
                                   focusNode: _editorFocus,
                                   // The surface has the focus, so it sees these keys first and
                                   // hands the ones that are not editing back up here.

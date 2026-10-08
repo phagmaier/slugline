@@ -44,6 +44,25 @@ FakeCore script() => FakeCore([
   ),
 ]);
 
+/// A core that finds without regard to case, as the real one does unless told
+/// otherwise — for the one test where what was found and what was typed have
+/// to be spelled differently.
+class _FoldingCore extends FakeCore {
+  _FoldingCore(super.blocks);
+
+  @override
+  List<FindMatch> find(FindQuery query) {
+    queries.add(query);
+    final needle = query.text.toLowerCase();
+    if (needle.isEmpty) return const [];
+    return [
+      for (final block in blocks(0, blockCount))
+        for (final hit in needle.allMatches(block.text.toLowerCase()))
+          FindMatch(block: block.id, startUtf16: hit.start, endUtf16: hit.end),
+    ];
+  }
+}
+
 /// Opens the find bar with the caret at the top of the script.
 ///
 /// The caret matters: a search starts from where the writer is, so a test that
@@ -51,6 +70,11 @@ FakeCore script() => FakeCore([
 Future<void> openFind(WidgetTester tester, EditorController controller) async {
   caretAt(controller, 0, 0);
   await tester.pump();
+  await pressFind(tester);
+}
+
+/// `Ctrl+F`, with the selection left as the test made it.
+Future<void> pressFind(WidgetTester tester) async {
   await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
   await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
   await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
@@ -59,6 +83,10 @@ Future<void> openFind(WidgetTester tester, EditorController controller) async {
 
 Finder findField() =>
     find.ancestor(of: find.text('Find'), matching: find.byType(TextField));
+
+/// What the find field holds.
+String findText(WidgetTester tester) =>
+    tester.widget<TextField>(findField()).controller!.text;
 
 /// Types into the find field and waits out the keystroke debounce. Searches
 /// from typing run 150 ms after the last keystroke — a full-document scan per
@@ -449,5 +477,258 @@ void main() {
     expect(core.commands, isEmpty);
     expect(core.replacements, isEmpty);
     expect(controller.blocks[1].text, _action);
+  });
+
+  // W8: Find opened over a selection inside one block starts with that text.
+
+  testWidgets('Find opened over a selection starts with the selected text', (
+    tester,
+  ) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    // The second "house" of the two.
+    selectFromTo(controller, 1, 30, 1, 35);
+    await tester.pump();
+
+    await pressFind(tester);
+
+    expect(findText(tester), 'house');
+    expect(core.queries.last.text, 'house');
+    expect(controller.matches, hasLength(2));
+    expect(count(tester), '2 of 2', reason: 'it is on the one that was chosen');
+    expect(controller.selection.anchor.block, 2);
+    expect(controller.selection.anchor.offsetUtf16, 30);
+    expect(controller.selection.focus.offsetUtf16, 35);
+    expect(core.commands, isEmpty, reason: 'opening Find edits nothing');
+  });
+
+  testWidgets('a selection made backwards starts Find with the same text', (
+    tester,
+  ) async {
+    final controller = await pumpEditorPage(tester, script());
+    selectFromTo(controller, 1, 35, 1, 30);
+    await tester.pump();
+
+    await pressFind(tester);
+
+    expect(findText(tester), 'house');
+    expect(count(tester), '2 of 2');
+  });
+
+  testWidgets('the seeded search has run before the bar is first drawn', (
+    tester,
+  ) async {
+    final controller = await pumpEditorPage(tester, script());
+    await openFind(tester, controller);
+    await typeFind(tester, 'house');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(controller.matches, hasLength(2));
+
+    selectFromTo(controller, 1, 39, 1, 44);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    // No frame has been drawn since the key. A bar that searched after its
+    // first one would draw it over the last search's matches.
+    expect(controller.query.text, 'quiet');
+    expect(controller.matches.single.startUtf16, 39);
+
+    await tester.pumpAndSettle();
+    expect(findText(tester), 'quiet');
+    expect(count(tester), '1 of 1');
+  });
+
+  testWidgets('the seed is the text of the script, not its display capitals', (
+    tester,
+  ) async {
+    final core = FakeCore([
+      const BlockView(
+        id: 1,
+        kind: BlockKind.sceneHeading,
+        sectionLevel: 0,
+        text: 'int. house - day',
+        forced: false,
+        dual: false,
+        readOnly: false,
+      ),
+    ]);
+    final controller = await pumpEditorPage(tester, core);
+    selectFromTo(controller, 0, 5, 0, 10);
+    await tester.pump();
+
+    await pressFind(tester);
+
+    // The heading is drawn as INT. HOUSE - DAY and stored as it was typed; a
+    // match-case search has to be for what is stored.
+    expect(findText(tester), 'house');
+  });
+
+  testWidgets('with no selection, or one across blocks, Find resumes the '
+      'last search', (tester) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await typeFind(tester, 'quiet');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    await openFind(tester, controller);
+    expect(findText(tester), 'quiet', reason: 'a bare caret');
+    expect(count(tester), '1 of 1');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // From inside the heading to inside the action: no query matches across
+    // a block boundary, so there is nothing here to search for.
+    selectFromTo(controller, 0, 5, 1, 4);
+    await tester.pump();
+    await pressFind(tester);
+    expect(findText(tester), 'quiet', reason: 'a selection across two blocks');
+    expect(core.queries.last.text, 'quiet');
+  });
+
+  testWidgets('reopening over the match a search stopped on keeps the query '
+      'as it was typed', (tester) async {
+    final core = _FoldingCore([
+      const BlockView(
+        id: 1,
+        kind: BlockKind.sceneHeading,
+        sectionLevel: 0,
+        text: 'INT. HOUSE - DAY',
+        forced: false,
+        dual: false,
+        readOnly: false,
+      ),
+      const BlockView(
+        id: 2,
+        kind: BlockKind.action,
+        sectionLevel: 0,
+        text: _action,
+        forced: false,
+        dual: false,
+        readOnly: false,
+      ),
+    ]);
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await typeFind(tester, 'house');
+    expect(count(tester), '1 of 3');
+    expect(controller.selectedText(), 'HOUSE');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // The selection is the match in the heading. That is the last search, not
+    // a new one, and it is still for what the writer typed.
+    await pressFind(tester);
+    expect(findText(tester), 'house');
+    expect(count(tester), '1 of 3');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // Selected by hand, a different match than the one the search stopped on
+    // is still that search — and the count says which of them it is, where it
+    // used to go on showing the place the search had stopped.
+    await openFind(tester, controller);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(count(tester), '2 of 3');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    selectFromTo(controller, 0, 5, 0, 10);
+    await tester.pump();
+    await pressFind(tester);
+    expect(findText(tester), 'house');
+    expect(count(tester), '1 of 3');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // Any other selection in the heading is a new search.
+    selectFromTo(controller, 0, 13, 0, 16);
+    await tester.pump();
+    await pressFind(tester);
+    expect(findText(tester), 'DAY');
+  });
+
+  testWidgets('a selection across a line break inside a block does not seed', (
+    tester,
+  ) async {
+    final core = FakeCore.single(BlockKind.action, 'first line\nsecond line');
+    final controller = await pumpEditorPage(tester, core);
+    selectFromTo(controller, 0, 6, 0, 17);
+    await tester.pump();
+
+    await pressFind(tester);
+    // The find field is one line, and "line⏎second" is not something it can
+    // show or a writer can retype in it.
+    expect(findText(tester), isEmpty);
+    expect(core.queries, isEmpty);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // Either side of the break is an ordinary selection.
+    selectFromTo(controller, 0, 11, 0, 17);
+    await tester.pump();
+    await pressFind(tester);
+    expect(findText(tester), 'second');
+    expect(count(tester), '1 of 1');
+  });
+
+  testWidgets('a seeded search keeps the toggles and the element filter', (
+    tester,
+  ) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await typeFind(tester, 'house');
+    await tester.tap(find.text('Match case'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Every element'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Action').last);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    selectFromTo(controller, 1, 39, 1, 44);
+    await tester.pump();
+    await pressFind(tester);
+
+    expect(findText(tester), 'quiet');
+    expect(core.queries.last.text, 'quiet');
+    expect(core.queries.last.caseSensitive, isTrue);
+    expect(core.queries.last.wholeWord, isFalse);
+    expect(core.queries.last.kinds, [BlockKind.action]);
+    expect(
+      tester
+          .widget<FilterChip>(find.widgetWithText(FilterChip, 'Match case'))
+          .selected,
+      isTrue,
+    );
+  });
+
+  testWidgets('Find reached through the command palette is seeded too', (
+    tester,
+  ) async {
+    final controller = await pumpEditorPage(tester, script());
+    selectFromTo(controller, 1, 39, 1, 44);
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Element or command'),
+      'Find and replace',
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(findText(tester), 'quiet');
+    expect(count(tester), '1 of 1');
   });
 }

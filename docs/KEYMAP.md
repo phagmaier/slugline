@@ -322,6 +322,14 @@ At most one panel is open at a time. Two panels would both want Escape and both
 want the focus, and neither question has a good answer.
 
 Inside the find bar, `Enter` and `Shift+Enter` step through the matches.
+While the bar is open every match on screen is tinted, and the one the caret is
+on is the selection. Closing the bar takes the tint away; `Ctrl+G` still walks
+the same matches.
+
+Opening Find with text selected inside one element, on one line of it, searches
+for that text. The toggles and the element filter stay as they were. With no
+selection, or one that crosses elements or a line break, the last search
+resumes — as it does when the selection is the match that search stopped on.
 
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
 

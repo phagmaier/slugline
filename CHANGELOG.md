@@ -24,9 +24,14 @@ this file and the others to it.
   folder creation and file-type filters. Dialogs start beside the current script
   or remember the last accepted folder during the launch. Extensionless save
   names gain the format's extension; replacement still asks only once in Slugline.
+- While the find bar is open, every match on screen is tinted and the one the
+  caret is on is still the selection. Opening Find with text selected inside
+  one element searches for that text, with the same toggles and element filter.
 
 ### Fixed
 
+- Find's match count is no longer stale when Find is reopened with a different
+  match selected than the one it stopped on.
 - On Hyprland and other non-GNOME Wayland desktops, the runner no longer adds
   a GTK header bar above Slugline's own bar. GNOME keeps its header bar; other
   desktops leave decoration to their compositor.

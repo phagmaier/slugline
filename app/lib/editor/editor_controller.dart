@@ -1065,6 +1065,78 @@ class EditorController extends ChangeNotifier {
   /// shows this as "3 of 17".
   int? get matchIndex => _matches.isEmpty ? null : _matchIndex;
 
+  /// [_matches] by block, and the list it was grouped from.
+  List<FindMatch>? _grouped;
+  final Map<int, List<FindMatch>> _matchesByBlock = {};
+
+  /// The matches in [block], in order. What the surface tints while the find
+  /// bar is open.
+  ///
+  /// Grouped on the first asking after the list changes, so that a paint pass
+  /// looks up the blocks on screen instead of walking a list as long as the
+  /// script — and keyed on the list itself rather than cleared where it is
+  /// assigned, so that no path that replaces it can leave this stale. With
+  /// the bar closed nobody asks, and an edit pays nothing for it.
+  List<FindMatch> matchesIn(int block) {
+    if (!identical(_grouped, _matches)) {
+      _grouped = _matches;
+      _matchesByBlock.clear();
+      for (final match in _matches) {
+        (_matchesByBlock[match.block] ??= []).add(match);
+      }
+    }
+    return _matchesByBlock[block] ?? const [];
+  }
+
+  /// Find is opening.
+  ///
+  /// A selection inside one block is what the writer is pointing at, so it
+  /// becomes the search; with anything else the last search resumes. The
+  /// toggles and the element filter carry over either way: they are how the
+  /// writer said to search, not what for. Run here rather than by the bar once
+  /// it is on screen, so that its first frame is already this search's and not
+  /// the last one's matches under a new query.
+  void startFind() {
+    final text = _findSeed() ?? _query.text;
+    if (text.isEmpty) return;
+    search(
+      FindQuery(
+        text: text,
+        caseSensitive: _query.caseSensitive,
+        wholeWord: _query.wholeWord,
+        kinds: _query.kinds,
+      ),
+    );
+  }
+
+  /// The selection as something to search for: its text, when it lies inside
+  /// one block and on one line of it.
+  ///
+  /// The block's own text, not [selectedText]: that is Fountain for the
+  /// clipboard, and a search is over what the block holds — which for a scene
+  /// heading is what was typed, not the capitals it is drawn in. A selection
+  /// across blocks has no match to stand for, since a match never leaves its
+  /// block, and one across a line break is nothing the one-line find field can
+  /// show.
+  ///
+  /// Nor is a selection that is already one of the matches: that is the last
+  /// search, left where it stopped, and resuming it keeps the query as the
+  /// writer typed it instead of respelling `house` as the `HOUSE` it found.
+  String? _findSeed() {
+    final (from, to) = orderedSelection;
+    if (!hasSelection || from.block != to.block) return null;
+    final text = _textOf(from.block);
+    if (text == null || to.offsetUtf16 > text.length) return null;
+    final isMatch = matchesIn(from.block).any(
+      (match) =>
+          match.startUtf16 == from.offsetUtf16 &&
+          match.endUtf16 == to.offsetUtf16,
+    );
+    if (isMatch) return null;
+    final selected = text.substring(from.offsetUtf16, to.offsetUtf16);
+    return selected.contains('\n') ? null : selected;
+  }
+
   /// Runs [query] and selects the first match at or after the caret, so that
   /// typing in the find box walks forwards through the script rather than
   /// jumping back to the top on every keystroke.
@@ -1105,12 +1177,17 @@ class EditorController extends ChangeNotifier {
 
   void _selectMatch() {
     final match = _matches[_matchIndex];
-    setSelection(
-      DocSelection(
-        anchor: DocPosition(block: match.block, offsetUtf16: match.startUtf16),
-        focus: DocPosition(block: match.block, offsetUtf16: match.endUtf16),
-      ),
+    final selection = DocSelection(
+      anchor: DocPosition(block: match.block, offsetUtf16: match.startUtf16),
+      focus: DocPosition(block: match.block, offsetUtf16: match.endUtf16),
     );
+    // [setSelection] says nothing about a selection already in force, and a
+    // search can land on one: "Match case" drops the other matches and leaves
+    // this one where it was. The count and the tints are drawn from the list
+    // and the index, which are new all the same.
+    final unchanged = selection == _selection && _stickyColumn == null;
+    setSelection(selection);
+    if (unchanged) notifyListeners();
   }
 
   /// Replaces the match the caret is on and moves to the next one.

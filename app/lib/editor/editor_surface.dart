@@ -37,6 +37,7 @@ class EditorSurface extends StatefulWidget {
     this.textSize = 15,
     this.pageView = true,
     this.boldSceneHeadings = false,
+    this.highlightMatches = false,
     this.pageIndicator,
     this.focusNode,
     this.onOpenPalette,
@@ -61,6 +62,12 @@ class EditorSurface extends StatefulWidget {
   /// which is also what a widget test with no core behind it gets.
   final bool pageView;
   final bool boldSceneHeadings;
+
+  /// Whether to tint every match of the controller's find query that is on
+  /// screen. True while the find bar is open and at no other time: the query
+  /// outlives the bar, for `Ctrl+G`, and a script that stayed marked up after
+  /// the search was put away would be a search that never ends.
+  final bool highlightMatches;
 
   /// Where Rust's paginator put the page breaks.
   ///
@@ -1038,6 +1045,7 @@ class EditorSurfaceState extends State<EditorSurface>
                               fontSize: _fontSize,
                               lineCache: _lineCache,
                               boldSceneHeadings: widget.boldSceneHeadings,
+                              highlightMatches: widget.highlightMatches,
                             ),
                           ),
                         ),
@@ -1252,6 +1260,7 @@ class _EditorColours {
     required this.text,
     required this.dim,
     required this.selection,
+    required this.match,
     required this.caret,
     required this.rule,
     required this.spelling,
@@ -1272,6 +1281,11 @@ class _EditorColours {
       // text itself at full strength, so it stays visible inside a selection
       // rather than dissolving into the same hue.
       selection: colours.accent.withValues(alpha: 0.30),
+      // What Find found, apart from the one the caret is on — which is the
+      // selection, and so the accent's. The accent marks one thing at a time,
+      // so the rest are a wash of the text's own colour: plainly marked, and
+      // plainly not selected.
+      match: colours.textPrimary.withValues(alpha: 0.16),
       caret: colours.textPrimary,
       rule: colours.border,
       spelling: colours.danger,
@@ -1291,6 +1305,7 @@ class _EditorColours {
   final Color text;
   final Color dim;
   final Color selection;
+  final Color match;
   final Color caret;
   final Color rule;
   final Color spelling;
@@ -1309,6 +1324,7 @@ class _EditorColours {
       other.text == text &&
       other.dim == dim &&
       other.selection == selection &&
+      other.match == match &&
       other.caret == caret &&
       other.rule == rule &&
       other.spelling == spelling &&
@@ -1322,6 +1338,7 @@ class _EditorColours {
     text,
     dim,
     selection,
+    match,
     caret,
     rule,
     spelling,
@@ -1345,6 +1362,7 @@ class _SurfacePainter extends CustomPainter {
     required this.fontSize,
     required this.lineCache,
     required this.boldSceneHeadings,
+    required this.highlightMatches,
   }) : super(
          repaint: Listenable.merge([
            controller,
@@ -1363,6 +1381,7 @@ class _SurfacePainter extends CustomPainter {
   final _EditorColours colours;
   final double fontSize;
   final bool boldSceneHeadings;
+  final bool highlightMatches;
 
   /// Owned by the surface's state, so it outlives any one delegate install.
   final LineTextCache lineCache;
@@ -1399,6 +1418,7 @@ class _SurfacePainter extends CustomPainter {
     final hasSelection = controller.hasSelection;
 
     final selectionPaint = Paint()..color = colours.selection;
+    final matchPaint = Paint()..color = colours.match;
     final rulePaint = Paint()
       ..color = colours.rule
       ..strokeWidth = 1.0;
@@ -1444,6 +1464,12 @@ class _SurfacePainter extends CustomPainter {
         final column = layout.columnOf(index, i);
         final x = pageLeft + column * advance;
         final y = geometry.yOfRow(row);
+
+        // Under the selection: the match the caret is on is both, and reads as
+        // the selected one.
+        if (highlightMatches) {
+          _paintMatches(canvas, matchPaint, block.id, line, x, y);
+        }
 
         if (hasSelection) {
           _paintSelection(
@@ -1633,6 +1659,36 @@ class _SurfacePainter extends CustomPainter {
     }
   }
 
+  /// Find's matches on this row, each as the grid cells it covers.
+  ///
+  /// The same arithmetic as the selection, row by row, so a match that wraps
+  /// is tinted on each row it touches and one behind a tab or an astral scalar
+  /// lands on its cells rather than its code units.
+  void _paintMatches(
+    Canvas canvas,
+    Paint paint,
+    int block,
+    VisualLine line,
+    double x,
+    double y,
+  ) {
+    for (final match in controller.matchesIn(block)) {
+      // In document order, so nothing after this one is on the row either.
+      if (match.startUtf16 >= line.end) break;
+      final start = math.max(match.startUtf16, line.start);
+      final end = math.min(match.endUtf16, line.end);
+      if (end <= start) continue;
+      final startColumn = line.columnAtOffset(start);
+      final width = (line.columnAtOffset(end) - startColumn) * advance;
+      if (width > 0) {
+        canvas.drawRect(
+          Rect.fromLTWH(x + startColumn * advance, y, width, lineHeight),
+          paint,
+        );
+      }
+    }
+  }
+
   /// Sections, synopses, notes and boneyard never reach the page (§5.2). Showing
   /// them dimmed says so without hiding them.
   bool _isMuted(BlockKind kind) => switch (kind) {
@@ -1752,6 +1808,7 @@ class _SurfacePainter extends CustomPainter {
       old.geometry != geometry ||
       old.fontSize != fontSize ||
       old.boldSceneHeadings != boldSceneHeadings ||
+      old.highlightMatches != highlightMatches ||
       old.showCaret != showCaret ||
       old.composing != composing ||
       old.colours != colours;

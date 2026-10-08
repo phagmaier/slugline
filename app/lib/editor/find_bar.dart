@@ -14,6 +14,8 @@ import 'package:slugline/theme.dart';
 /// The bar owns the two text fields and the three toggles; the controller owns
 /// the match list and which one the caret is on, because moving the caret to a
 /// match is a selection change and selections belong to the controller (§2.1).
+/// While the bar is up the surface tints every match on screen; the page tells
+/// it so, and the bar draws none of that.
 /// Escape closes the bar and changes no text — that is §Phase 3's requirement and
 /// the reason Escape is handled here rather than left to bubble.
 class FindBar extends StatefulWidget {
@@ -50,11 +52,14 @@ class _FindBarState extends State<FindBar> {
     _caseSensitive = widget.controller.query.caseSensitive;
     _wholeWord = widget.controller.query.wholeWord;
     _only = widget.controller.query.kinds.firstOrNull;
+    // The query above is already the one in force: the page ran
+    // [EditorController.startFind] before putting the bar up, which is where
+    // a selection becomes the search and the last search is resumed.
+    //
     // After mount: requesting focus synchronously here is unreliable on
     // Linux/IME — the focus tree is not attached yet.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _findFocus.requestFocus();
-      if (mounted && _find.text.isNotEmpty) _search();
     });
   }
 
