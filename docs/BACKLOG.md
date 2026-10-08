@@ -70,6 +70,7 @@ This is the only place boxes are ticked.
 - [x] [B12](#b12) Fast platform typing can overwrite characters through stale input echoes
 - [ ] [B13](#b13) A script with no printed pages throws in the page indicator
 - [ ] [B14](#b14) Find loses Escape and Enter after pointer interaction
+- [ ] [B15](#b15) Same-burst Save can precede the final native text update
 
 **3. Fountain and output fidelity**
 
@@ -874,6 +875,49 @@ three controls, popup-first Escape and modal isolation. Three real-core native
 pointer tests pass with unchanged CRLF file bytes, clean dirty/journal state,
 Save and exact reopen. Evidence: `target/stabilization/b14-*`; the intermediate
 popup-finder failure is retained as a test-harness mistake.
+
+---
+
+<a id="b15"></a>
+### B15 — Same-burst Save can precede the final native text update
+
+**Problem.** Found while executing the required installed B12 verification.
+Typing and Ctrl+S in one unchanged unpaced burst can save a snapshot that lacks
+the final period; the eventual text and later save/reopen are complete.
+
+**Evidence.** Two installed release failures in
+`target/fast-input/installed-b12-immediate-save/` and
+`installed-b12-immediate-save-repeat/`. The settled journal records the final
+period after the initial saved base. A passing identical run and a diagnostic
+release control do not close the failure. This is separate from B12's stale
+state echoes, which no longer overwrite the eventual text.
+
+**Change.** Synchronize explicit Save with the native input queue before taking
+a Rust snapshot; no clock, slower injection, key reconstruction or extra save.
+
+**Done when.** A delayed platform text update is committed before the snapshot
+in a widget regression; original unpaced native bursts immediately Save and
+reopen exactly on the final installed package. Preserve the red runs and verify
+that waiting for native input never mutates the text itself.
+
+**Effort.** S.
+**Result:** _open_ — source correction and final local matrix verified; final
+installed-package verification and publication pending. Two widget failures
+reproduce snapshot-before-input and disposal boundaries. Explicit Save now waits
+for a one-shot GTK idle acknowledgment on the existing native channel, then
+checks the original editor is still mounted before asking Rust to snapshot.
+This forwards already queued native input without a clock, input reconstruction,
+text-state echo, composition confirmation or a second save. Both widgets and an
+actual-runner persistence test pass; three uninstrumented native-Wayland runs
+preserve exact first/later saved bytes and actual reopen with zero exits. The
+full matrix passes 649 Rust tests, 690 widgets and all 82 native tests;
+journalled keystroke p99 is 6.53 ms. Formatting, clippy, analysis, enforced
+lockfile, docs/layering/version/reference, serial release package, isolated
+tarball install/uninstall and network isolation pass. Current Xvfb process
+budgets pass (startup 372.795 ms, RSS 275.41 MiB, a zero-activity idle interval);
+this does not close the retained earlier idle failure or real-GPU/IME manual
+gates. Evidence and initial harness failures remain under
+`target/stabilization/` and `target/fast-input/save-order-*`.
 
 ---
 
@@ -2160,7 +2204,8 @@ S1 is fixed, two windows cover it.
   Ctrl+S in the same `wtype` invocation saved all text except the final period.
   The settled journal and later Save/reopen preserve it. A third identical
   injection passed; it does not close the intermittent native Save-ordering
-  failure. Evidence and exact artifacts: [FAST_INPUT.md](FAST_INPUT.md#installed-b12-follow-up--2026-10-08).
+  failure. Promoted to [B15](#b15) to complete the required installation check.
+  Evidence and exact artifacts: [FAST_INPUT.md](FAST_INPUT.md#installed-b12-follow-up--2026-10-08).
 
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.

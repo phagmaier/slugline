@@ -14,6 +14,7 @@ import 'package:slugline/editor/element_bar.dart';
 import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/editor/go_to_page_dialog.dart';
 import 'package:slugline/editor/navigator_sidebar.dart';
+import 'package:slugline/editor/native_input.dart';
 import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/editor/pagination_debug_dialog.dart';
 import 'package:slugline/editor/save_status.dart';
@@ -371,6 +372,9 @@ class EditorPageState extends State<EditorPage> {
 
   /// Ctrl+S, and the command palette's Save.
   Future<void> save({bool forcePath = false}) async {
+    final controller = widget.controller;
+    await NativeInput.flush();
+    if (!mounted || widget.controller != controller) return;
     await _saveWithOutcome(forcePath: forcePath);
   }
 

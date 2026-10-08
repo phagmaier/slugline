@@ -339,7 +339,22 @@ static void window_method_call_cb(FlMethodChannel* channel,
                                   gpointer user_data) {
   MyApplication* self = MY_APPLICATION(user_data);
   g_autoptr(FlMethodResponse) response = nullptr;
-  if (strcmp(fl_method_call_get_name(method_call), "chooseFile") == 0) {
+  if (strcmp(fl_method_call_get_name(method_call), "flushTextInput") == 0) {
+    // Flutter redispatches unhandled raw keys to GTK text input asynchronously.
+    // Reply after queued native input callbacks have forwarded their updates,
+    // before Dart takes the explicit Save snapshot. This is a one-shot queue
+    // boundary, not a clock, and neither changes nor confirms IME composition.
+    g_idle_add_full(
+        G_PRIORITY_DEFAULT_IDLE,
+        [](gpointer data) -> gboolean {
+          g_autoptr(FlMethodResponse) result =
+              FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+          respond_to_window_call(FL_METHOD_CALL(data), result);
+          return G_SOURCE_REMOVE;
+        },
+        g_object_ref(method_call), g_object_unref);
+    return;
+  } else if (strcmp(fl_method_call_get_name(method_call), "chooseFile") == 0) {
     response = choose_file(self, method_call);
     if (response == nullptr) return;
   } else if (strcmp(fl_method_call_get_name(method_call), "setFullscreen") == 0) {

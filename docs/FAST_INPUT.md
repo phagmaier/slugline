@@ -160,3 +160,31 @@ settling and before the later Save. These are retained separately under
 `installed-b12-immediate-observed/`. A successful control does not close this
 intermittent native Save-ordering finding. B12's stale-state overwrite fix
 preserves the eventual text; the first native Save needs further investigation.
+
+## Native Save ordering correction — B15
+
+The incomplete first saves above are a separate, established snapshot-ordering
+defect: the final native text update can reach Dart after the Ctrl+S handler.
+Explicit Save now crosses a one-shot native queue acknowledgment before taking
+the Rust snapshot. GTK forwards queued input before its idle response; Dart
+then verifies the original editor is still mounted. Input is neither delayed
+nor reconstructed, and Save writes one snapshot. Flutter's documented Linux
+raw-key redispatch behavior and GLib's idle priority/ownership contract were
+consulted; source reads supplemented partial native graph coverage.
+
+Two widget regressions failed before the change. Both pass with a delayed
+acknowledgment, including disposal while waiting. The native persistence test
+requires the runner method itself, then verifies an explicit Save and actual
+reopen. Three uninstrumented native-Wayland bursts pass with exact first-file
+observations, settled pre-later-save bytes, later Save and actual reopen
+(`save-order-barrier-1/` through `save-order-barrier-3/`); all original/reopened
+process exits are zero. The passing temporary diagnostic run
+`save-order-diagnostic-1/` is a control, not failure evidence; all trace prints
+were removed before the corrected release and full checks.
+
+Final local checks: 649 Rust tests, 690 widgets and 82 native tests; journalled
+keystroke p99 6.53 ms. Enforced lockfile, formatting/clippy/analysis and repository
+checks, serial release package, isolated tarball installation and network
+isolation pass. Current Xvfb startup/idle/RSS pass; the earlier retained local
+idle failure and GPU/IME manual gates remain open. B15's source publication and
+final installed-package evidence will be recorded after hosted CI.

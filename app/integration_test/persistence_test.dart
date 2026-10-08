@@ -15,6 +15,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -86,6 +87,46 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   }
+
+  testWidgets('explicit Save crosses the actual native input queue once', (
+    tester,
+  ) async {
+    // Require the Linux runner method itself; the widget-only missing-plugin
+    // fallback is not evidence that the native acknowledgment exists.
+    await const MethodChannel(
+      'slugline/window',
+    ).invokeMethod<void>('flushTextInput');
+    const source = 'Before.\n';
+    const expected = 'Before. Complete.\n';
+    final file = path('input-queue-save.fountain');
+    File(file).writeAsStringSync(source);
+    final core = (await Core.instance.openDocument(file))!;
+    addTearDown(core.close);
+    final controller = EditorController(core);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: EditorPage(controller: controller)),
+    );
+    await tester.tap(find.byType(EditorSurface));
+    controller.moveToDocumentEdge(start: false);
+    await tester.pump();
+    tester
+        .state<EditorSurfaceState>(find.byType(EditorSurface))
+        .updateEditingValue(
+          const TextEditingValue(
+            text: 'Before. Complete.',
+            selection: TextSelection.collapsed(offset: 17),
+          ),
+        );
+    await tester.state<EditorPageState>(find.byType(EditorPage)).save();
+    expect(File(file).readAsStringSync(), expected);
+    expect(core.dirty, isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+    core.close();
+    final reopened = (await Core.instance.openDocument(file))!;
+    expect(reopened.source(), expected);
+    reopened.close();
+  });
 
   testWidgets('a new script is a real file, and typing into it saves', (
     tester,
