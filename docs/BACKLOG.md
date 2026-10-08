@@ -826,7 +826,8 @@ zero/nonzero transitions, Save and actual reopen work without exceptions in
 continuous and page views. Zero pagination has no page target or furniture.
 
 **Effort.** S.
-**Result:** Source correction and focused verification complete; final matrix pending.
+**Result:** _open_ — source correction in `f34aed7` and focused verification complete;
+final matrix pending.
 Five current-tree widget regressions and the original Note-only native test
 failed at the recorded clamp before the fix. Zero pagination now has no current
 page and says “No printed pages”; page targets and furniture stay absent. Rust
