@@ -264,6 +264,19 @@ jobs:
           path: target/runtime-budgets.json
           if-no-files-found: ignore
 
+      # B16: the same shipped process, closed the ordinary way while a frame is
+      # in flight. Every close must exit zero by itself (ADR 0053).
+      - name: Ordinary close exits cleanly
+        run: xvfb-run -a python3 tools/check_clean_close.py --output target/clean-close.json
+
+      - name: Retain clean-close exit statuses and process logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-close
+          path: target/clean-close.json
+          if-no-files-found: ignore
+
       - name: Bridge integration tests
         working-directory: app
         run: xvfb-run -a flutter test integration_test/bridge_test.dart -d linux

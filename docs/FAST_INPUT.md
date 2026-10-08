@@ -245,3 +245,15 @@ change or budget relaxation was made.
 
 The requested stabilization boundary is complete. The shutdown finding,
 retained earlier idle-budget failure and real-GPU/manual IME gates remain open.
+
+## Ordinary-close follow-up — 2026-10-08
+
+The shutdown finding above became [B16](BACKLOG.md#b16) and is decided in ADR
+0053. It was unrelated to input, Find or Save. Flutter's Linux embedder ends an
+ordinary close with `g_application_quit()` and leaves its engine running, so
+the process entered `exit()` with the raster thread still drawing and Mesa's
+exit handlers freed what that thread was using. The two installed Find smokes
+and the two B12 controls crashed because each closed the window 0.3 s after
+Ctrl+W, while the library was still sliding in. The runner now stops the engine
+before `main()` returns. The earlier idle-budget failure and the real-GPU and
+manual IME gates are untouched by this and remain open.

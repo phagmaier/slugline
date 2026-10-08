@@ -43,6 +43,7 @@ fi
 
 tools/package.sh
 xvfb-run -a python3 tools/check_runtime_budgets.py --output target/runtime-budgets.json
+xvfb-run -a python3 tools/check_clean_close.py --output target/clean-close.json
 tools/check_no_network.sh
 tools/smoke_test_tarball.sh
 tools/make_appimage.sh

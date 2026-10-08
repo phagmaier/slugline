@@ -71,6 +71,7 @@ This is the only place boxes are ticked.
 - [x] [B13](#b13) A script with no printed pages throws in the page indicator
 - [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [x] [B15](#b15) Same-burst Save can precede the final native text update
+- [ ] [B16](#b16) Closing the window can end the process in SIGSEGV
 
 **3. Fountain and output fidelity**
 
@@ -940,6 +941,68 @@ gates. Evidence and initial harness failures remain under
 both views; Find pointer/key checks preserve bytes. Their separate Xvfb
 ordinary-close SIGSEGV is retained below with failing pre-fix package controls,
 not claimed as a clean process exit. See [FAST_INPUT.md](FAST_INPUT.md#final-publication-and-installed-verification--2026-10-08).
+
+<a id="b16"></a>
+### B16 — Closing the window can end the process in SIGSEGV
+
+**Problem.** Promoted from the final installed stabilization smoke, and taken
+ahead of X1 at the owner's direction. An ordinary close — the window manager's
+close button — can kill the process with SIGSEGV after the session has shut
+down: the script is saved, the journal is discarded, and the process then dies
+in `exit()` and leaves a core behind. Nothing the writer typed is lost. Every
+close that crashes reports a crash to the desktop.
+
+**Evidence (reproduced 2026-10-08).** The retained driver
+`target/stabilization/shutdown-control.py` ends in `DONE -11` on the installed
+build at `804ba18` and on the earlier CI package at `08c7a55`
+(`shutdown-current-01/`, `shutdown-prior-01/`). In every core
+`io.flutter.raster` is inside a Mesa GL call while the main thread is inside
+`exit()` running Mesa's handlers. Controlled comparisons on the installed build
+under Xvfb (`target/stabilization/b16/`, one isolated launch each):
+
+- Save against no Save, both followed by Ctrl+W and a close 0.3 s later: one
+  SIGSEGV in three each. Save is not involved.
+- Closing 0.05, 0.15 and 3 s after Ctrl+W: four in six, three in six, none in
+  six. The crash needs the library still sliding in.
+- No script at all, closed while Tab moves focus through the library: five in
+  six. The document and its Rust state are not involved.
+- A script open, closed while the shortcuts dialog fades in: two in six.
+- The window at rest, on either page: none in 19. Pointer movement, caret
+  movement, scrolling, the palette and a close during startup: none in 42.
+- The stock `flutter create` runner with a spinner and the same engine binary:
+  three in eight.
+- The owner's Hyprland session, on the hardware driver: two in seven.
+
+**Change.** Stop the Flutter engine before `main()` returns, so the process's
+exit handlers run with no frame in flight (ADR 0053). Not a longer wait before
+closing, not a forced exit, not software or disabled rendering.
+
+**Done when.** At least five ordinary-close runs of the corrected build exit
+zero with no core recorded and exact Save and reopen bytes; a check that fails
+on the uncorrected build runs in CI; the correction is published, hosted CI is
+observed, and the installed app is refreshed and verified.
+
+**Effort.** S.
+**Result:** _open_ — source correction and local verification complete;
+publication, hosted CI and the installed refresh pending. Flutter's embedder
+answers the close button with `g_application_quit()` and leaves the window,
+the engine and the engine's threads running, so `main()` returned into
+`exit()` with the raster thread still drawing; Mesa's own exit handlers then
+freed what it was using. `my_application_shutdown` now disposes the engine,
+which is where the embedder calls `FlutterEngineShutdown` and joins those
+threads; at `exit()` the corrected build no longer has an `io.flutter.*` or
+Dart VM thread. Destroying the window instead was measured in the stock runner
+and failed three times in 24, because the view's dispose frees its compositor
+under the raster thread; `_exit()` was rejected as a forced termination. On
+the corrected bundle 74 Xvfb closes across the failing variants and their
+controls, 60 through the new `tools/check_clean_close.py` and 12 on the
+Hyprland session exit zero with no core recorded; six edit–Save–close–reopen
+runs leave `…river. Again\r\n` and then `…river. Again Again\r\n` exactly.
+The new check fails on the uncorrected installed build four invocations in
+four. The cores, symbolised stacks, per-run reports with package versions and
+bundle hashes, drivers and the stock-runner reproducer are under
+`target/stabilization/b16/`. Two unrelated observations from the same runs are
+recorded under Found along the way.
 
 ---
 
@@ -2235,6 +2298,7 @@ S1 is fixed, two windows cover it.
   input/Save/reopen checks and hosted CI. Evidence, logs, cores and package
   provenance: `target/stabilization/pointer-smoke-installed*/`,
   `shutdown-b12-*/` and `shutdown-control-package-hashes.json`.
+  Promoted to [B16](#b16) on 2026-10-08.
 
 - 2026-10-08 — installed B12 verification: two unchanged unpaced bursts with
   Ctrl+S in the same `wtype` invocation saved all text except the final period.
@@ -2245,6 +2309,35 @@ S1 is fixed, two windows cover it.
 
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
+
+- 2026-10-08 — B16, reproduced under Xvfb: closing the window the moment it
+  first appears, while the script named on the command line is still being
+  opened, logs `Unhandled Exception: Bad state: No element` from
+  `EditorController`'s constructor through `_SluglineAppState._adopt`. Six of
+  six on the installed build at `804ba18` and eight of ten on the B16 bundle,
+  with the 120-page reference script; never with no script argument. The
+  process still exits zero and the file's bytes are unchanged. Read, not
+  proven: the exit request runs `core.shutdown()`, which closes the handle
+  that `_startUp` is about to hand to a new editor. One of the ten B16 runs
+  also left `<id>.log.tmp-<pid>-…` in the journal directory, an atomic write
+  the exit interrupted; the journal scan lists only `.log`, so nothing offers
+  it for recovery. Left unchanged. Logs:
+  `target/stabilization/b16/cur-G1-early-reference-*/first-process.log`,
+  `fix-G1-early-reference-07/state/slugline/journal/`.
+- 2026-10-08 — B16, observed on the Hyprland session: Ctrl+W in the instant
+  after a Save's bytes reach the file is answered with "Save changes? There are
+  edits here that are not in the file yet", with "saved just now" already in
+  the status bar behind it
+  (`target/stabilization/b16/wayland-cur-02/save-close-still-open.png`). An
+  unpaced driver hit it three times in three there and never under Xvfb. The
+  save writes the file, then its previous-version copy, and only then clears
+  the dirty flag on the actor, so the question is asked of a file that already
+  holds the text. It errs on the safe side and no person is that fast; recorded
+  because any harness must wait for the journal to restart, not for the bytes.
+  Left unchanged.
+- 2026-10-08 — B16, observed on the Hyprland session: every launch logs
+  `Gdk-Message: Unable to load  from the cursor theme`, with an empty cursor
+  name, on the installed build and the B16 bundle alike. Not investigated.
 
 - 2026-10-08 — W10, observed during the installed native-Wayland smoke: an
   unpaced `wtype` text burst did not arrive intact. The saved action was

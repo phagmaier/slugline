@@ -157,6 +157,15 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   `DocumentCore` with the double in `app/test/support/fake_core.dart`. That
   double does list surgery only: anything that decides what a screenplay *is*
   goes in Rust and is tested with `cargo test` (ADR 0011).
+- **The runner stops the engine before the process exits** (ADR 0053). Flutter
+  answers the window's close button with `g_application_quit()` and leaves the
+  window, the engine and the engine's threads running, so `main()` would return
+  into exit handlers that free what a frame in flight is still using.
+  `my_application_shutdown` in `app/linux/runner/my_application.cc` disposes
+  the engine — where the embedder joins those threads — and touches nothing
+  else. Do not replace that with destroying the window, whose view frees its
+  compositor under the raster thread, or with `_exit()`.
+  `tools/check_clean_close.py` holds it; run it after any Flutter upgrade.
 
 ## Output — pagination, preview and PDF
 
@@ -381,6 +390,18 @@ The Xvfb RSS ceiling is 320 MiB; the 250 MiB GPU-session budget remains manual
 gate 5. Do not claim that a software-rendered pass proves the real-desktop figure.
 `--only` selects a budget for deliberate failure checks; revert every injected
 regression and rebuild.
+
+The same bundle must also close the ordinary way (ADR 0053):
+
+```sh
+xvfb-run -a python3 tools/check_clean_close.py --output target/clean-close.json
+```
+
+Five runs of three closes, each a `WM_DELETE_WINDOW` sent while a frame is
+still being drawn, each required to exit zero by itself with the saved bytes
+intact. The crash it guards against is a race, so one green close proves
+nothing and a red one is never a flake: read the retained process log and the
+core. `--binary` points it at another bundle, such as the installed one.
 
 ## Project constraints
 

@@ -96,9 +96,9 @@ for tool in pdftotext pdftohtml; do
 done
 
 if command_present xdotool; then
-  ok "xdotool present (runtime budget harness)"
+  ok "xdotool present (runtime budget and clean-close harnesses)"
 else
-  warn "xdotool not found; tools/check_runtime_budgets.py cannot observe the release window"
+  warn "xdotool not found; tools/check_runtime_budgets.py and tools/check_clean_close.py cannot drive the release window"
 fi
 
 # Bridge codegen helpers (only needed when touching crates/bridge/src/api/).

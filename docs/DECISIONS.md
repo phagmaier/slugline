@@ -73,6 +73,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | live |
 | 0051 | Shift+Enter is a core-owned line break with its own undo transaction | `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/commands.dart` | live |
 | 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live |
+| 0053 | The runner stops the engine before the process exits | `app/linux/runner/my_application.cc`, `tools/check_clean_close.py`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | live |
 
 ---
 
@@ -4007,3 +4008,116 @@ Closing the dialog preserved the editor; closing its parent with a chooser
 active exited with status 0. Screenshot evidence is under `target/w7-*`.
 The startup log included an OpenGL initial-size timeout warning; no duplicate
 chooser-response or teardown warning was observed.
+
+---
+
+## ADR 0053 — The runner stops the engine before the process exits
+
+**Date:** 2026-10-08 · **Status:** accepted · **Backlog:** B16
+**Extends:** ADR 0050 with an observation of the shipped process's ordinary
+close. Its budgets, and its SIGTERM cleanup of disposable sessions, are unchanged.
+
+### Context
+
+Closing the window could end the process with SIGSEGV after the session had
+shut down cleanly: scripts saved, journals discarded, `AppExitResponse.exit`
+returned. Every core has the same shape. The main thread is inside `exit()`,
+running handlers and destructors; `io.flutter.raster` is still inside a GL call
+— `glReadPixels`, `glTexSubImage2D`, a program link, a draw — and faults in
+state those handlers have freed. Mesa registers such handlers itself: one
+destroys the table `_mesa_format_from_array_format` searches, another joins
+its worker queues.
+
+Flutter's Linux embedder is why a frame is still being drawn. `FlView` stops
+the window's `delete-event`, asks Dart through `System.requestAppExit`, then
+detaches the window from the application and calls `g_application_quit()`.
+Nothing destroys the window or stops the engine, so `g_application_run()`
+returns and `main()` goes into `exit()` with the engine's threads running.
+Whether the process survives is whether a frame happens to be in flight.
+
+It is not Save, the document or the Rust core. On the installed build under
+Xvfb a close with the window at rest was clean 19 times in 19. A close while
+the library slid in after Ctrl+W, a dialog faded in over the script or focus
+moved through the library ended in SIGSEGV 16 times in 30, with and without a
+Save, and with no script ever opened. The same engine binary under the stock
+`flutter create` runner, showing only a spinner, died 3 times in 8. On the
+owner's Hyprland session, on Intel's hardware driver rather than a software
+rasteriser, the installed build died 2 times in 7. Flutter's `master` has the same template and the same
+`fl_view_dispose`; there is no upstream fix to adopt.
+
+### Decision
+
+`my_application_shutdown` disposes the engine: `g_object_run_dispose` on the
+`FlEngine` the view owns, held by the runner as a weak pointer. `FlEngine`'s
+dispose is where the embedder calls `FlutterEngineShutdown`, which joins the
+UI, raster and IO threads and the Dart VM's before it returns. The window and
+its view are left exactly as Flutter leaves them. `exit()` then runs every
+handler it always ran, with nothing left to race them.
+
+Three alternatives were measured or considered and rejected.
+
+*Destroying the window in shutdown.* The ordinary GTK answer does not reach
+`FlutterEngineShutdown`: `fl_view_dispose` first asks the engine to remove the
+view, and that request's completion holds an engine reference until a main-loop
+iteration that never comes after a quit. It also frees the view's compositor —
+framebuffer, pixel buffer, frame mutex — while the raster thread may be
+presenting into it. In the stock runner, three variants (destroy; then drain
+the main context; then block until the engine is finalized) failed 3 times in
+24: two SIGSEGV and one abort in `g_mutex_clear` on the locked frame mutex.
+
+*`_exit()` after `g_application_run()`.* It would stop the crash by skipping
+every exit handler in the process, with the engine's threads still mid-frame
+when the kernel takes them. That is a forced termination reported as status 0,
+and the item required an ordinary one.
+
+*Waiting.* Dart has no signal for "the raster thread has finished", and a pause
+long enough for an animation to end is a clock that hides the race for exactly
+the frames it was tuned on.
+
+Disposing an object the runner does not implement is the cost. It is
+acceptable because nothing uses the engine afterwards: the main loop has
+stopped, the view is never drawn or disposed again, and the process is on its
+way out. An engine already finalized by some other route has cleared the weak
+pointer, and there is nothing to do.
+
+### Consequences
+
+At `exit()` the installed build had 45 threads, among them `io.flutter.raster`,
+`io.flutter.io`, three `io.worker`s and the Dart VM's. The corrected build has
+38 and none of those. What remains is parked: GLib's, Pango's, Mesa's own
+workers, and the core's actor, pool, watcher and disk threads. A core thread
+that finishes a job after the VM is gone posts to a port map that answers
+`false` — read in the pinned VM's `PortMap::PostMessage`, and exercised by ten
+closes during startup with pagination and the library scan still running. The
+bridge exposes no opaque Rust object for the VM to finalize on its way down.
+
+Shutting the engine down took 1.3–5.2 ms in the stock runner. Close-to-exit
+time is unchanged within the harness's resolution on both display servers.
+
+The decision rests on `FlEngine`'s dispose being its shutdown, which has been
+true of every embedder this project has shipped and is not a documented
+contract. `tools/check_clean_close.py` is what notices if that changes: run it
+on every Flutter upgrade, and treat a failure there as this record's decision
+needing to be made again rather than as a flaky test.
+
+### Verification
+
+`tools/check_clean_close.py` drives the shipped release bundle under Xvfb, in
+CI's flutter job and the release workflow. Each run types an edit, saves,
+presses Ctrl+W and closes while the library slides in; reopens, edits, saves
+and closes while the shortcuts dialog fades in; then closes the library while
+focus moves through it. The close is a `WM_DELETE_WINDOW`, not `XDestroyWindow`.
+Every process must exit zero by itself, and the final bytes prove the reopened
+editor held the first save. Five runs are fifteen closes. Against the
+uncorrected build the same command failed four invocations in four, once at
+each of its three closes.
+
+It waits for a Save by the journal restarting from the saved text, not by the
+bytes appearing: the session clears its dirty flag in that actor turn, and a
+Ctrl+W before it is rightly answered with "Save changes?".
+
+On the corrected bundle: 74 Xvfb closes across the variants that had failed
+and their controls, 60 through the committed check, and 12 on the Hyprland
+session, all exiting zero with no core recorded and exact bytes. The evidence,
+cores, symbolised stacks, drivers and the stock-runner reproducer are under
+`target/stabilization/b16/`.

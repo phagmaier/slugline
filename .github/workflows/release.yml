@@ -144,6 +144,17 @@ jobs:
           path: target/runtime-budgets.json
           if-no-files-found: ignore
 
+      - name: Ordinary close exits cleanly
+        run: xvfb-run -a python3 tools/check_clean_close.py --output target/clean-close.json
+
+      - name: Retain clean-close exit statuses and process logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-clean-close
+          path: target/clean-close.json
+          if-no-files-found: ignore
+
       - name: Verify stripped binaries and bundled Rust bridge
         run: |
           test -f app/build/linux/x64/release/bundle/lib/libslugline_bridge.so

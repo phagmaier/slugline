@@ -37,6 +37,12 @@ this file and the others to it.
 
 ### Fixed
 
+- Closing the window while something was still animating — the library sliding
+  back after closing a script, a dialog fading in — could end the process with
+  a segmentation fault and a crash report, after the script had been saved and
+  the session closed. Slugline now shuts its Flutter engine down before the
+  process exits, and an automated check closes the release build that way.
+
 - Fixed lost characters during fast platform typing by avoiding stale editing
   state echoes while accepting input; final caret and structural corrections
   still synchronize with the input method.

@@ -12,6 +12,8 @@ struct _MyApplication {
   char** dart_entrypoint_arguments;
   FlMethodChannel* window_channel;
   GtkWindow* window;
+  // Not owned: the view holds the engine. Null once it has been finalized.
+  FlEngine* engine;
   GtkWidget* file_chooser;
   FlMethodCall* file_chooser_call;
   gchar* file_chooser_extension;
@@ -465,6 +467,7 @@ static void my_application_activate(GApplication* application) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
   FlEngine* engine = fl_view_get_engine(view);
+  g_set_weak_pointer(&self->engine, engine);
   FlBinaryMessenger* messenger = fl_engine_get_binary_messenger(engine);
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   self->window_channel = fl_method_channel_new(
@@ -561,10 +564,26 @@ static void my_application_startup(GApplication* application) {
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
 }
 
+// Flutter answers the close button with g_application_quit() and leaves the
+// window, the engine and the engine's threads running. main() would then return
+// into exit handlers that free what a frame still being drawn is using: Mesa
+// tears its tables down under the raster thread, and a session that had ended
+// cleanly dies of SIGSEGV instead.
+//
+// So the engine stops here, before g_application_run() returns. Its dispose is
+// where the embedder calls FlutterEngineShutdown, which joins those threads.
+// Destroying the window does not get there: the view's dispose leaves the
+// engine referenced, and frees its compositor under a frame in flight (ADR
+// 0053). The view is left exactly as Flutter leaves it, with nothing drawing.
+static void stop_engine(MyApplication* self) {
+  if (self->engine != nullptr) g_object_run_dispose(G_OBJECT(self->engine));
+}
+
 // Implements GApplication::shutdown.
 static void my_application_shutdown(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   cancel_file_chooser(self);
+  stop_engine(self);
 
   G_APPLICATION_CLASS(my_application_parent_class)->shutdown(application);
 }
@@ -578,6 +597,7 @@ static void my_application_dispose(GObject* object) {
                                              nullptr, nullptr);
   }
   self->window = nullptr;
+  g_clear_weak_pointer(&self->engine);
   g_clear_pointer(&self->last_directory, g_free);
   g_clear_object(&self->window_channel);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
