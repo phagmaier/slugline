@@ -1368,6 +1368,7 @@ async fn write_document(
     // document the disk does not have.
     let bytes = plan.text.len().min(u32::MAX as usize) as u32;
     let snapshot = plan.snapshot;
+    let identities: Vec<_> = snapshot.blocks.iter().map(|block| block.id).collect();
     let generation = plan.generation;
     let (still_dirty, page_count_job) = actor().run({
         let path = path.clone();
@@ -1406,13 +1407,15 @@ async fn write_document(
                 let unsaved = session.finish_save();
                 if let Some(journal) = session.journal_mut() {
                     if unsaved.is_empty() {
-                        let _ = journal.checkpoint(&path, &text);
+                        let _ = journal.checkpoint_with_identities(&path, &text, &identities);
                     } else {
                         // Rebuilt at its own path, not by id: a Save As has
                         // already changed the id by now and the journal file
                         // has not moved. Written atomically, so a crash in the
                         // middle leaves the old journal whole.
-                        if let Ok(successor) = journal.rebuild_at(&path, &text, &unsaved) {
+                        if let Ok(successor) =
+                            journal.rebuild_at_with_identities(&path, &text, &unsaved, &identities)
+                        {
                             *journal = successor;
                         }
                         // A failed rebuild leaves the journal exactly as it was:
@@ -2884,96 +2887,134 @@ mod tests {
     fn omitted_unicode_is_offered_accepted_and_restored_after_checkpoint_and_redo() {
         use crate::api::doc::{doc_close, doc_omit_selection, doc_restore_omitted, BlockKind};
 
-        let source = "\u{feff}Title: Recovery\r\n\r\n@BOB\r\nHello 😀 café friend.\r\n";
-        for checkpoint in [false, true] {
-            let mut it = Fixture::open_source("omission-accepted-recovery", source);
-            let body = doc_blocks(it.handle, 0, u32::MAX);
-            let selection = DocSelection {
-                anchor: DocPosition {
-                    block: body[1].id,
-                    offset_utf16: 13,
-                },
-                focus: DocPosition {
-                    block: body[1].id,
-                    offset_utf16: 9,
-                },
-            };
-            let EditOutcome::Applied { result } = doc_omit_selection(it.handle, selection) else {
-                panic!("Unicode omission applies");
-            };
-            let comment = result.selection.unwrap();
-            let omitted = it.in_memory();
-            if checkpoint {
+        for (source, selected, from, to, left_kind) in [
+            (
+                "\u{feff}Title: Recovery\r\n\r\n@BOB\r\nHello 😀 café friend.\r\n",
+                1,
+                9,
+                13,
+                BlockKind::Dialogue,
+            ),
+            (
+                "\u{feff}Title: Recovery\r\n\r\nINT. ROOM - DAY\r\n\r\nOutside.\r\n",
+                0,
+                5,
+                9,
+                BlockKind::SceneHeading,
+            ),
+        ] {
+            for checkpoint in [false, true] {
+                let mut it = Fixture::open_source("omission-accepted-recovery", source);
+                let body = doc_blocks(it.handle, 0, u32::MAX);
+                let selection = DocSelection {
+                    anchor: DocPosition {
+                        block: body[selected].id,
+                        offset_utf16: to,
+                    },
+                    focus: DocPosition {
+                        block: body[selected].id,
+                        offset_utf16: from,
+                    },
+                };
+                let EditOutcome::Applied { result } = doc_omit_selection(it.handle, selection)
+                else {
+                    panic!("Unicode omission applies");
+                };
+                let comment = result.selection.unwrap();
+                let omitted = it.in_memory();
+                if checkpoint {
+                    let live_identity = actor().run(move |state| {
+                        let document = state.session(it.handle.id).unwrap().document();
+                        (
+                            document.blocks().to_vec(),
+                            document.revision(),
+                            document.can_undo(),
+                            document.can_redo(),
+                        )
+                    });
+                    assert!(matches!(
+                        block_on(doc_save(it.handle)),
+                        SaveOutcome::Saved { .. }
+                    ));
+                    assert_eq!(
+                        actor().run(move |state| {
+                            let document = state.session(it.handle.id).unwrap().document();
+                            (
+                                document.blocks().to_vec(),
+                                document.revision(),
+                                document.can_undo(),
+                                document.can_redo(),
+                            )
+                        }),
+                        live_identity,
+                        "checkpoint translation must preserve live identities, provenance, pins and history"
+                    );
+                }
                 assert!(matches!(
-                    block_on(doc_save(it.handle)),
+                    doc_restore_omitted(it.handle, comment),
+                    EditOutcome::Applied { .. }
+                ));
+                doc_undo(it.handle).unwrap();
+                doc_redo(it.handle).unwrap();
+                doc_undo(it.handle).unwrap();
+                assert_eq!(it.in_memory(), omitted);
+
+                // Release the journal without discarding it and lose the session,
+                // reproducing the state a new process admits through the real API.
+                let old_handle = it.handle;
+                let journal_path = actor().run(move |state| {
+                    let session = state.session_mut(old_handle.id).unwrap();
+                    let path = session.journal_mut().unwrap().path().to_path_buf();
+                    session.set_journal(None);
+                    state.close(old_handle.id);
+                    path
+                });
+                let offer = block_on(recovery_pending())
+                    .into_iter()
+                    .find(|offer| Path::new(&offer.journal) == journal_path)
+                    .expect("the omission is offered for recovery");
+                assert!(offer.blocked.is_none());
+                let RecoveryOutcome::Recovered { handle } =
+                    block_on(recovery_accept(offer.journal))
+                else {
+                    panic!("omission history is accepted without losing its seams");
+                };
+                it.handle = handle;
+                assert_eq!(it.in_memory(), omitted);
+                assert!(doc_undo(handle).is_none());
+                let recovered = doc_blocks(handle, 0, u32::MAX);
+                assert_eq!(recovered[selected].kind, left_kind);
+                assert_eq!(recovered.last().unwrap().kind, BlockKind::Action);
+                let comment = recovered
+                    .iter()
+                    .find(|b| b.kind == BlockKind::Opaque)
+                    .unwrap();
+                let at = DocPosition {
+                    block: comment.id,
+                    offset_utf16: 0,
+                };
+                assert!(matches!(
+                    doc_restore_omitted(
+                        handle,
+                        DocSelection {
+                            anchor: at,
+                            focus: at
+                        }
+                    ),
+                    EditOutcome::Applied { .. }
+                ));
+                assert_eq!(it.in_memory(), source);
+                assert!(matches!(
+                    block_on(doc_save(handle)),
                     SaveOutcome::Saved { .. }
                 ));
+                assert_eq!(fs::read(&it.script).unwrap(), source.as_bytes());
+                doc_close(handle);
+                it.handle =
+                    block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+                assert_eq!(it.in_memory(), source);
+                assert_eq!(doc_blocks(it.handle, 0, u32::MAX)[selected].kind, left_kind);
             }
-            assert!(matches!(
-                doc_restore_omitted(it.handle, comment),
-                EditOutcome::Applied { .. }
-            ));
-            doc_undo(it.handle).unwrap();
-            doc_redo(it.handle).unwrap();
-            doc_undo(it.handle).unwrap();
-            assert_eq!(it.in_memory(), omitted);
-
-            // Release the journal without discarding it and lose the session,
-            // reproducing the state a new process admits through the real API.
-            let old_handle = it.handle;
-            let journal_path = actor().run(move |state| {
-                let session = state.session_mut(old_handle.id).unwrap();
-                let path = session.journal_mut().unwrap().path().to_path_buf();
-                session.set_journal(None);
-                state.close(old_handle.id);
-                path
-            });
-            let offer = block_on(recovery_pending())
-                .into_iter()
-                .find(|offer| Path::new(&offer.journal) == journal_path)
-                .expect("the omission is offered for recovery");
-            assert!(offer.blocked.is_none());
-            let RecoveryOutcome::Recovered { handle } = block_on(recovery_accept(offer.journal))
-            else {
-                panic!("omission history is accepted without losing its seams");
-            };
-            it.handle = handle;
-            assert_eq!(it.in_memory(), omitted);
-            assert!(doc_undo(handle).is_none());
-            let recovered = doc_blocks(handle, 0, u32::MAX);
-            assert_eq!(recovered[1].kind, BlockKind::Dialogue);
-            assert_eq!(recovered.last().unwrap().kind, BlockKind::Action);
-            let comment = recovered
-                .iter()
-                .find(|b| b.kind == BlockKind::Opaque)
-                .unwrap();
-            let at = DocPosition {
-                block: comment.id,
-                offset_utf16: 0,
-            };
-            assert!(matches!(
-                doc_restore_omitted(
-                    handle,
-                    DocSelection {
-                        anchor: at,
-                        focus: at
-                    }
-                ),
-                EditOutcome::Applied { .. }
-            ));
-            assert_eq!(it.in_memory(), source);
-            assert!(matches!(
-                block_on(doc_save(handle)),
-                SaveOutcome::Saved { .. }
-            ));
-            assert_eq!(fs::read(&it.script).unwrap(), source.as_bytes());
-            doc_close(handle);
-            it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
-            assert_eq!(it.in_memory(), source);
-            assert_eq!(
-                doc_blocks(it.handle, 0, u32::MAX)[1].kind,
-                BlockKind::Dialogue
-            );
         }
     }
 

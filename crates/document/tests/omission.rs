@@ -24,6 +24,35 @@ fn omitted(document: &Document) -> BlockId {
 }
 
 #[test]
+fn changed_saved_seam_whitespace_refuses_without_consuming_the_record() {
+    let mut document = Document::parse(".INT. ROOM - DAY\n\nOutside.\n");
+    let heading = document.blocks()[0].id();
+    document
+        .apply(EditCommand::OmitSelection {
+            at: DocSelection {
+                anchor: DocPosition::new(heading, 5),
+                focus: DocPosition::new(heading, 9),
+            },
+        })
+        .unwrap();
+    let saved = document.serialise();
+    assert!(saved.starts_with("INT. \n"));
+    let changed = saved.replacen("INT. \n", "INT.\n", 1);
+    let mut reopened = Document::parse(&changed);
+    let before = reopened.blocks().to_vec();
+    let comment = omitted(&reopened);
+    assert_eq!(
+        reopened.apply(EditCommand::RestoreOmitted {
+            at: caret(comment, 0)
+        }),
+        Err(EditError::CannotRestoreOmission)
+    );
+    assert_eq!(reopened.blocks(), before);
+    assert_eq!(reopened.serialise(), changed);
+    assert!(!reopened.can_undo());
+}
+
+#[test]
 fn partial_unicode_selection_restores_the_original_element_and_one_step_history() {
     let source = "Title: Exact\n\nBOB\nBefore 😀 café after.\n\nUntouched.\n";
     let mut document = Document::parse(source);
@@ -226,6 +255,38 @@ fn changed_same_kind_boundary_and_changed_kind_refuse_atomically() {
     assert_eq!(document.blocks(), blocks);
     document.undo().unwrap();
     assert_eq!(document.block(id).unwrap().kind(), BlockKind::Dialogue);
+}
+
+#[test]
+fn deleting_live_seam_whitespace_does_not_authorize_normalized_restoration() {
+    let mut document = Document::parse(".INT. ROOM - DAY\n\nOutside.\n");
+    let heading = document.blocks()[0].id();
+    let at = DocSelection {
+        anchor: DocPosition::new(heading, 5),
+        focus: DocPosition::new(heading, 9),
+    };
+    document.apply(EditCommand::OmitSelection { at }).unwrap();
+    let comment = omitted(&document);
+    assert_eq!(document.block(heading).unwrap().text(), "INT. ");
+    document
+        .apply(EditCommand::ReplaceText {
+            block: heading,
+            range: 4..5,
+            with: String::new(),
+        })
+        .unwrap();
+    let blocks = document.blocks().to_vec();
+    let source = document.serialise();
+    assert_eq!(
+        document.apply(EditCommand::RestoreOmitted {
+            at: caret(comment, 0)
+        }),
+        Err(EditError::CannotRestoreOmission),
+    );
+    assert_eq!(document.blocks(), blocks);
+    assert_eq!(document.serialise(), source);
+    document.undo().unwrap();
+    assert_eq!(document.block(heading).unwrap().text(), "INT. ");
 }
 
 #[test]

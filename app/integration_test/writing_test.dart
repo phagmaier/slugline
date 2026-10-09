@@ -272,6 +272,48 @@ void main() {
         expect(damaged.source, before);
         expect(damaged.core.undo(), isNull);
       }
+      final whitespace = await open(tester, '.INT. ROOM - DAY\n\nOutside.\n');
+      final heading = whitespace.blocks.first.id;
+      whitespace.setSelection(
+        DocSelection(
+          anchor: DocPosition(block: heading, offsetUtf16: 5),
+          focus: DocPosition(block: heading, offsetUtf16: 9),
+        ),
+      );
+      await omissionCommand(tester, 'Omit selection');
+      final omittedWhitespace = whitespace.selection;
+      whitespace.setSelection(
+        DocSelection(
+          anchor: DocPosition(block: heading, offsetUtf16: 4),
+          focus: DocPosition(block: heading, offsetUtf16: 5),
+        ),
+      );
+      whitespace.insertText('');
+      whitespace.setSelection(omittedWhitespace);
+      final beforeRefusal = whitespace.source;
+      await omissionCommand(tester, 'Restore omitted text');
+      expect(whitespace.lastRejection, EditRejection.cannotRestoreOmission);
+      expect(whitespace.source, beforeRefusal);
+      expect(whitespace.selection, omittedWhitespace);
+      whitespace.undo();
+      expect(whitespace.blocks.first.text, 'INT. ');
+      final changedSaved = whitespace.source.replaceFirst('INT. \n', 'INT.\n');
+      expect(changedSaved, isNot(whitespace.source));
+      final reopenedWhitespace = await open(tester, changedSaved);
+      reopenedWhitespace.jumpToBlock(
+        reopenedWhitespace.blocks
+            .firstWhere((b) => b.kind == BlockKind.opaque)
+            .id,
+      );
+      final reopenedSelection = reopenedWhitespace.selection;
+      await omissionCommand(tester, 'Restore omitted text');
+      expect(
+        reopenedWhitespace.lastRejection,
+        EditRejection.cannotRestoreOmission,
+      );
+      expect(reopenedWhitespace.source, changedSaved);
+      expect(reopenedWhitespace.selection, reopenedSelection);
+      expect(reopenedWhitespace.core.undo(), isNull);
       await press(tester, LogicalKeyboardKey.f1);
       await tester.pumpAndSettle();
       expect(find.byType(ShortcutsDialog), findsOneWidget);

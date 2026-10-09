@@ -78,6 +78,10 @@ this file and the others to it.
 
 ### Fixed
 
+- Omitted text remains recoverable after Save followed by Restore/Undo/Redo,
+  including partial scene headings. Restoration also refuses changed seam
+  whitespace instead of silently putting that whitespace back.
+
 - Pasting dense emphasis into a fresh editor now reveals the end caret after
   horizontal layout, without requiring another edit.
 

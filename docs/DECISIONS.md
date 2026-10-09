@@ -33,7 +33,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0010 | Paste is composed in the bridge, and grouped by the document | `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | extended by 0061 — safe omission transactions |
 | 0011 | Automatic classification is the recognition rules read forwards | `crates/fountain/src/infer.rs`, `crates/document/src/workflow.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | partly superseded by 0059 — live pins are not unconditional persisted markers |
 | 0012 | The custom surface's semantics tree is a render object per block | `app/lib/editor/surface_semantics.dart`, `app/test/editor/accessibility_test.dart` | live |
-| 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | live |
+| 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | extended by 0063 — saved checkpoint identity translation |
 | 0014 | The autosave clock lives in Dart | `app/lib/editor/autosave.dart`, `app/lib/editor/editor_page.dart` | partly superseded by 0043 — "autosave writes no backup" |
 | 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | superseded by 0052 — GTK chooser through the runner |
 | 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
@@ -82,7 +82,8 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | refined by 0060 — necessary authored-case syntax |
 | 0060 | Forced Character cues retain authored case on every surface | `crates/fountain/src/case.rs`, `crates/fountain/src/serialise.rs`, `crates/layout/src/engine.rs`, `app/lib/editor/metrics.dart`, `app/lib/editor/editor_surface.dart`, `crates/render_pdf/tests/text_extraction.rs`, `app/integration_test/export_test.dart`, `app/integration_test/persistence_test.dart` | live |
 | 0058 | The outline is source-ordered Rust structure and scene length is paginated occupied eighths | `crates/bridge/src/api/doc.rs`, `crates/bridge/src/api/layout.rs`, `app/lib/editor/navigator_sidebar.dart`, `app/lib/editor/page_indicator.dart` | live |
-| 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
+| 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | refined by 0063 — provenance-only seam normalization and checkpoint recovery |
+| 0063 | Saved checkpoint outcomes use the base's identities without changing live state | `crates/storage/src/journal.rs`, `crates/bridge/src/api/files.rs`, `crates/document/src/omission.rs`, `crates/document/tests/omission.rs`, `app/integration_test/writing_test.dart` | live |
 
 ---
 
@@ -874,6 +875,8 @@ Three details are load-bearing:
 ## ADR 0013 — The crash journal records outcomes, not commands
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4
+
+**Superseded by:** ADR 0063 extends saved checkpoint identity handling; outcome replay and journal durability remain unchanged.
 
 ### Context
 
@@ -4621,6 +4624,7 @@ and reviews/regenerates affected baselines.
 ## ADR 0061 — Omissions carry lossless semantic fragments inside Fountain boneyards
 
 **Date:** 2026-10-09 · **Status:** accepted
+**Superseded by:** ADR 0063 refines seam normalization and recovery after saved structural edits; the omission record format remains unchanged.
 **Extends:** ADR 0007's protected-block model and ADR 0010's grouped structural
 gestures. Only explicit safe boneyard replacement narrows provenance-only Opaque
 editing; ordinary commands retain their existing protections.
@@ -5023,3 +5027,60 @@ and pending/current metadata. Controlled async deliveries cover old-current,
 stale, title-commit and undo-revision races without recreating pagination
 semantics in the fake. Generated bridge reconciliation and execution of checks
 belong to the integration owner.
+
+---
+
+## ADR 0063 — Saved checkpoint outcomes use the base's identities without changing live state
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Refines:** ADR 0013's saved checkpoint identity handling and ADR 0061's seam
+matching and saved omission recovery. The read-only Save contract remains.
+
+### Context
+
+Splitting a scene heading for an omission leaves live identities in source order
+`[1, 3, 4, 2]`. Parsing its saved Fountain assigns `[1, 2, 3, 4]`. A checkpoint
+that writes later Restore/Undo/Redo outcomes with live identities can therefore
+replace the wrong block during recovery. Changing the actor document to match
+the parse would break ADR 0059's Save selection, history and live-pin invariants.
+
+Separately, accepting a trimmed seam witness without checking provenance lets
+a live whitespace deletion masquerade as parser normalization. Restoration then
+silently puts deleted text back instead of refusing the changed witness.
+
+### Decision
+
+The save's immutable snapshot supplies source-ordered block identities to the
+journal checkpoint and buffered-outcome rebuild. A session-local map translates
+those identities into the saved base's one-based parse identities. Newly inserted
+identities get stable fresh numbers above the base; retained entries also cover
+removal and subsequent reinsertion through Undo/Redo. Each later record translates
+removed, changed and inserted identities before encoding the ordinary outcome.
+
+The map never changes a live Patch, actor Document, selection, revision, history
+or kind pin. It is not persisted: records already contain recovery identities,
+so the existing recovery parse/replay and second-crash journal rebuild need no
+new schema or hidden semantic cache. A successful new checkpoint resets the map.
+Buffered edits are translated against the snapshot actually saved, rather than
+the newer document present when the write completes. Untouched saved provenance,
+BOM and line endings remain available to the recovery parse.
+
+Omission seam normalization requires untouched parsed provenance whose bytes
+match the actual serializer's representation of the witnessed text, excluding
+separator newlines. Provenance alone cannot authorize a whitespace change made
+outside the editor. A changed live block must match the exact witnessed text;
+rejection adds no history or journal outcome and keeps live text and the record.
+
+### Evidence and consequences
+
+The real recovery API regression failed after a saved partial heading followed
+by Restore/Undo/Redo/Undo, duplicating the omission over the following Action.
+It now passes for both heading and Unicode Dialogue cases, before and after a
+checkpoint, with offer/acceptance, exact restoration and BOM/CRLF Save/reopen.
+A storage consumer replays buffered changes and later inserts into the saved
+base, preserves untouched bytes, and repeats recovery through a second journal.
+
+Core and native consumers reproduce live and saved-source whitespace deletions,
+require atomic refusal and verify the existing Undo selection/text remains usable. The failed
+logs and final verification belong to the X7 backlog Result. No journal version,
+forcing policy, dependency, budget or golden output changes.

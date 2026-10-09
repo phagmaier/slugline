@@ -341,19 +341,27 @@ impl Document {
                     expected.forced = visible_remainder_forced(expected, false);
                 }
             }
-            if !matches_witness(neighbor, visible_before.as_ref()) {
+            if !matches_witness(
+                neighbor,
+                visible_before.as_ref(),
+                self.original_source.as_deref(),
+            ) {
                 return Err(EditError::BadRange);
             }
             for (offset, expected) in preceding.iter().enumerate() {
                 let prior = seam_first
                     .checked_sub(offset + 2)
                     .and_then(|i| self.blocks.get(i));
-                if !matches_witness(prior, Some(expected)) {
+                if !matches_witness(prior, Some(expected), self.original_source.as_deref()) {
                     return Err(EditError::BadRange);
                 }
             }
             let seam_end = end + usize::from(right.is_some()) + following.len();
-            if !matches_witness(self.blocks.get(seam_end), after.as_ref()) {
+            if !matches_witness(
+                self.blocks.get(seam_end),
+                after.as_ref(),
+                self.original_source.as_deref(),
+            ) {
                 return Err(EditError::BadRange);
             }
         }
@@ -363,28 +371,35 @@ impl Document {
                 .map(|i| &self.blocks[i])
                 .ok_or(EditError::BadRange)?;
             let head = restored.first_mut().ok_or(EditError::BadRange)?;
-            if !compatible_remainder(neighbor, &expected, false)
+            if !compatible_remainder(neighbor, &expected, false, self.original_source.as_deref())
                 || head.kind != expected.kind
                 || head.forced != expected.forced
                 || head.dual != expected.dual
             {
                 return Err(EditError::BadRange);
             }
-            head.text.insert_str(0, boundary_text(neighbor, &expected));
+            head.text.insert_str(
+                0,
+                boundary_text(neighbor, &expected, self.original_source.as_deref()),
+            );
             head.id = neighbor.id;
             first -= 1;
         }
         if let Some(expected) = right {
             let neighbor = self.blocks.get(end).ok_or(EditError::BadRange)?;
             let tail = restored.last_mut().ok_or(EditError::BadRange)?;
-            if !compatible_remainder(neighbor, &expected, true)
+            if !compatible_remainder(neighbor, &expected, true, self.original_source.as_deref())
                 || tail.kind != expected.kind
                 || tail.forced != expected.forced
                 || tail.dual != expected.dual
             {
                 return Err(EditError::BadRange);
             }
-            tail.text.push_str(boundary_text(neighbor, &expected));
+            tail.text.push_str(boundary_text(
+                neighbor,
+                &expected,
+                self.original_source.as_deref(),
+            ));
             if tail.id == BlockId(0) {
                 tail.id = neighbor.id;
             }
@@ -410,7 +425,7 @@ impl Document {
                 return Err(EditError::BadRange);
             }
             let neighbor = self.blocks.get(end).ok_or(EditError::BadRange)?;
-            if !compatible_remainder(neighbor, &expected, true) {
+            if !compatible_remainder(neighbor, &expected, true, self.original_source.as_deref()) {
                 return Err(EditError::BadRange);
             }
             let mut tail = neighbor.clone();
@@ -589,23 +604,28 @@ impl Document {
     }
 }
 
-fn compatible_remainder(block: &Block, expected: &Element, after_boneyard: bool) -> bool {
+fn compatible_remainder(
+    block: &Block,
+    expected: &Element,
+    after_boneyard: bool,
+    source: Option<&str>,
+) -> bool {
     let kind = visible_remainder_kind(expected, after_boneyard);
     let forced = visible_remainder_forced(expected, after_boneyard);
     block.kind == kind
         && block.dual == expected.dual
-        && boundary_text(block, expected) == expected.text
+        && boundary_text(block, expected, source) == expected.text
         && (block.forced == forced || redundant_pin_difference(block, expected))
 }
 
-fn compatible_boundary(block: &Block, expected: &Element) -> bool {
+fn compatible_boundary(block: &Block, expected: &Element, source: Option<&str>) -> bool {
     let same_kind = block.kind == expected.kind
         || (block.provenance.is_some()
             && ((expected.kind.continues_dialogue()
                 && (block.kind == BlockKind::Action || block.kind.continues_dialogue()))
                 || (expected.kind == BlockKind::Note && block.kind == BlockKind::Action)));
     same_kind && block.dual == expected.dual
-        && boundary_text(block, expected) == expected.text
+        && boundary_text(block, expected, source) == expected.text
         // Canonical Fountain keeps only necessary markers (ADR 0059).
         // A reopened seam may therefore lose a redundant live forced pin.
         && (block.forced == expected.forced || redundant_pin_difference(block, expected))
@@ -617,22 +637,51 @@ fn redundant_pin_difference(block: &Block, expected: &Element) -> bool {
             && slugline_fountain::case::changes_when_uppercased(&expected.text))
 }
 
-fn matches_witness(block: Option<&Block>, expected: Option<&Element>) -> bool {
+fn matches_witness(
+    block: Option<&Block>,
+    expected: Option<&Element>,
+    source: Option<&str>,
+) -> bool {
     match (block, expected) {
-        (Some(block), Some(expected)) => compatible_boundary(block, expected),
+        (Some(block), Some(expected)) => compatible_boundary(block, expected, source),
         (None, None) => true,
         _ => false,
     }
 }
 
-fn boundary_text<'a>(block: &'a Block, expected: &'a Element) -> &'a str {
+fn boundary_text<'a>(block: &'a Block, expected: &'a Element, source: Option<&str>) -> &'a str {
     // Fountain trims single-line element markers. The record retains the exact
     // remainder so a reopen cannot eat a space at a partial selection seam.
-    if (!expected.kind.is_multiline() || expected.kind == BlockKind::Note)
+    if block.text != expected.text
+        && (!expected.kind.is_multiline() || expected.kind == BlockKind::Note)
         && block.text == expected.text.trim()
+        && normalized_provenance_matches(block, expected, source)
     {
         &expected.text
     } else {
         &block.text
     }
+}
+
+fn normalized_provenance_matches(block: &Block, expected: &Element, source: Option<&str>) -> bool {
+    let Some(raw) = source.and_then(|source| source.get(block.provenance.clone()?)) else {
+        return false;
+    };
+    // Only the serializer's actual representation authorizes parser trimming.
+    // Provenance alone cannot excuse whitespace changed outside the editor.
+    let elements = [ElementRef {
+        kind: block.kind,
+        text: &expected.text,
+        forced: block.forced,
+        dual: block.dual,
+        provenance: None,
+    }];
+    let canonical = serialise(&Output {
+        title_page: &TitlePage::default(),
+        elements: &elements,
+        source: None,
+        bom: false,
+        line_ending: LineEnding::Lf,
+    });
+    raw.replace("\r\n", "\n").trim_end_matches('\n') == canonical.trim_end_matches('\n')
 }

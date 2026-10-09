@@ -2624,10 +2624,24 @@ transaction-boundary identities; newly inserted remainders cannot also be change
 to absent IDs. Save remains read-only over actor state. Palette, KEYMAP and F1
 help share all three commands, with no dedicated shortcuts.
 
+Final refusal/recovery review reproduced two further failures: deleted live seam
+whitespace was treated as parser trimming, and saved partial-heading history used
+live identities against differently numbered parsed blocks. Saved-source whitespace
+changes also reproduced the normalization gap. ADR 0063 restricts normalization to
+untouched provenance matching the serializer's witnessed bytes, and translates
+journal identities at a saved checkpoint without changing actor state. Buffered
+outcomes, new inserts and second-crash recovery retain the existing record format.
+
 **Found along the way (read).** Generic `apply_group` rollback still clears
 pre-existing Redo after a late failure in unrelated grouped commands. X7's public
 commands stage their history; extending that protection to other commands is a
 separate task.
+
+Final local release idle measurement fails with one voluntary main-thread switch
+in otherwise zero-tick intervals. The unchanged, previously verified `593e6ad`
+bundle fails with the same pattern; both reports are retained, without changing
+budgets or retrying to discard the failure. This shared, unattributed idle gate
+remains open outside X7's functional acceptance.
 
 **Effort.** M.
 **Result:** 2026-10-09 — individually verified in `fcae98c`. The reported `café`

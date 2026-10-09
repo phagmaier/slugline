@@ -48,6 +48,7 @@
 //! something, and a recovery path that panics on a damaged file is a recovery
 //! path that turns a bad day into a lost script.
 
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
@@ -221,6 +222,47 @@ pub struct Journal {
     path: PathBuf,
     seq: u64,
     records: u64,
+    identities: Option<JournalIdentities>,
+}
+
+/// Translates live identities to the saved base's source-order identities.
+/// It is session bookkeeping; records remain ordinary replayable outcomes.
+struct JournalIdentities {
+    ids: HashMap<u64, u64>,
+    next: u64,
+}
+
+impl JournalIdentities {
+    fn new(ids: &[BlockId]) -> Self {
+        Self {
+            ids: ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| (id.0, i as u64 + 1))
+                .collect(),
+            next: ids.len() as u64,
+        }
+    }
+
+    fn translate(&mut self, id: &mut u64) {
+        *id = *self.ids.entry(*id).or_insert_with(|| {
+            self.next += 1;
+            self.next
+        });
+    }
+
+    fn record(&mut self, record: &mut Record) {
+        for id in &mut record.removed {
+            self.translate(id);
+        }
+        for block in record
+            .changed
+            .iter_mut()
+            .chain(record.inserted.iter_mut().map(|(_, b)| b))
+        {
+            self.translate(&mut block.id);
+        }
+    }
 }
 
 impl Journal {
@@ -257,6 +299,7 @@ impl Journal {
             path,
             seq,
             records: seq,
+            identities: None,
         })
     }
 
@@ -314,6 +357,7 @@ impl Journal {
                     path,
                     seq,
                     records: seq,
+                    identities: None,
                 })
             }
             Err(error) => Err(error),
@@ -329,6 +373,24 @@ impl Journal {
         rebuild_locked(&self.file, &self.path, script, base, patches)
     }
 
+    /// Rebuilds saved-base outcomes while preserving the live document's ids.
+    pub fn rebuild_at_with_identities(
+        &self,
+        script: &Path,
+        base: &str,
+        patches: &[Patch],
+        ids: &[BlockId],
+    ) -> io::Result<Journal> {
+        rebuild_locked_mapped(
+            &self.file,
+            &self.path,
+            script,
+            base,
+            patches,
+            Some(JournalIdentities::new(ids)),
+        )
+    }
+
     /// Records what one edit did. Nothing is recorded for an edit that changed
     /// nothing.
     pub fn append(&mut self, patch: &Patch) -> io::Result<()> {
@@ -339,7 +401,11 @@ impl Journal {
         // One `write_all` for the line and its terminator together. Two writes
         // could be interrupted between them, and a line without its newline is
         // exactly what the reader treats as damage.
-        let mut line = serde_json::to_vec(&record(self.seq, patch)).map_err(io::Error::other)?;
+        let mut outcome = record(self.seq, patch);
+        if let Some(identities) = &mut self.identities {
+            identities.record(&mut outcome);
+        }
+        let mut line = serde_json::to_vec(&outcome).map_err(io::Error::other)?;
         line.push(b'\n');
         self.file.write_all(&line)?;
         self.records += 1;
@@ -367,6 +433,20 @@ impl Journal {
         self.file.sync_all()?;
         self.seq = 0;
         self.records = 0;
+        self.identities = None;
+        Ok(())
+    }
+
+    /// Maps subsequent live outcomes to the identities assigned by a parse of
+    /// this saved base, without reparsing or replacing the actor document.
+    pub fn checkpoint_with_identities(
+        &mut self,
+        script: &Path,
+        base: &str,
+        ids: &[BlockId],
+    ) -> io::Result<()> {
+        self.checkpoint(script, base)?;
+        self.identities = Some(JournalIdentities::new(ids));
         Ok(())
     }
 
@@ -507,6 +587,16 @@ fn prepare_journal<'a>(
     base: &str,
     patches: &[Patch],
 ) -> io::Result<(crate::atomic::PreparedSave<'a>, u64)> {
+    prepare_journal_mapped(path, script, base, patches, None)
+}
+
+fn prepare_journal_mapped<'a>(
+    path: &'a Path,
+    script: &Path,
+    base: &str,
+    patches: &[Patch],
+    mut identities: Option<&mut JournalIdentities>,
+) -> io::Result<(crate::atomic::PreparedSave<'a>, u64)> {
     let mut contents = Vec::new();
     write_line(
         &mut contents,
@@ -522,7 +612,11 @@ fn prepare_journal<'a>(
             continue;
         }
         seq += 1;
-        write_line(&mut contents, &record(seq, patch))?;
+        let mut outcome = record(seq, patch);
+        if let Some(identities) = &mut identities {
+            identities.record(&mut outcome);
+        }
+        write_line(&mut contents, &outcome)?;
     }
     let prepared = crate::atomic::prepare_save(path, &contents, lock_exclusive)
         .map_err(|error| io::Error::other(error.to_string()))?;
@@ -536,8 +630,19 @@ fn rebuild_locked(
     base: &str,
     patches: &[Patch],
 ) -> io::Result<Journal> {
+    rebuild_locked_mapped(file, path, script, base, patches, None)
+}
+
+fn rebuild_locked_mapped(
+    file: &File,
+    path: &Path,
+    script: &Path,
+    base: &str,
+    patches: &[Patch],
+    mut identities: Option<JournalIdentities>,
+) -> io::Result<Journal> {
     validate_current(file, path)?;
-    let (prepared, seq) = prepare_journal(path, script, base, patches)?;
+    let (prepared, seq) = prepare_journal_mapped(path, script, base, patches, identities.as_mut())?;
     validate_current(file, path)?;
     let file = prepared.publish()?;
     Ok(Journal {
@@ -545,6 +650,7 @@ fn rebuild_locked(
         path: path.to_path_buf(),
         seq,
         records: seq,
+        identities,
     })
 }
 
@@ -920,6 +1026,65 @@ mod tests {
         assert_eq!(
             record,
             r#"{"seq":1,"changed":[{"id":1,"kind":"action","text":"typed"}]}"#
+        );
+    }
+
+    #[test]
+    fn saved_identity_translation_preserves_source_and_later_inserted_ids() {
+        let dir = TempDir::new("saved-identities");
+        let script = dir.path().join("x.fountain");
+        let base = "\u{feff}!One\r\n\r\n!Two\r\n";
+        fs::write(&script, base).unwrap();
+        let id = script_id(&script);
+        let mut journal = Journal::create(dir.path(), &id, &script, base).unwrap();
+        let live_ids = [BlockId(90), BlockId(4)];
+        journal
+            .checkpoint_with_identities(&script, base, &live_ids)
+            .unwrap();
+        assert_eq!(journal.records(), 0);
+        journal.append(&change(4, "Earlier.")).unwrap();
+        assert_eq!(
+            read(journal.path()).unwrap().patches[0].changed[0].id,
+            BlockId(2)
+        );
+
+        // These outcomes arrived while the saved base was being written.
+        let buffered = Patch {
+            changed: vec![snapshot(4, BlockKind::Action, "Changed.")],
+            inserted: vec![(0, snapshot(100, BlockKind::Action, "New."))],
+            ..Patch::default()
+        };
+        journal = journal
+            .rebuild_at_with_identities(&script, base, &[buffered], &live_ids)
+            .unwrap();
+        journal.append(&change(100, "Newer.")).unwrap();
+        let path = journal.path().to_path_buf();
+        drop(journal);
+        let recovery = read(&path).unwrap();
+        let mut document = slugline_document::Document::parse(&verify(&recovery.header).unwrap());
+        for patch in &recovery.patches {
+            document.replay(patch).unwrap();
+        }
+        assert_eq!(
+            document.serialise(),
+            "\u{feff}Newer.\r\n\r\n!One\r\n\r\nChanged.\r\n"
+        );
+
+        // A second crash uses the already translated identities, without any
+        // persisted mapping or reconstruction of the former live id space.
+        let guard = RecoveryGuard::try_open(&path).unwrap();
+        let mut successor = guard
+            .rebuild(dir.path(), &id, &script, base, &recovery.patches)
+            .unwrap();
+        successor.append(&change(3, "Newest.")).unwrap();
+        let recovered = read(successor.path()).unwrap();
+        let mut document = slugline_document::Document::parse(base);
+        for patch in &recovered.patches {
+            document.replay(patch).unwrap();
+        }
+        assert_eq!(
+            document.serialise(),
+            "\u{feff}Newest.\r\n\r\n!One\r\n\r\nChanged.\r\n"
         );
     }
 

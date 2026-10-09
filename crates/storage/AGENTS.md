@@ -18,6 +18,10 @@ Invariants:
 - The journal records the outcome of an edit (a `Patch`), never the
   command; replay is list surgery with no inference. Appends are not
   `fsync`ed on purpose (ADR 0013).
+- Saved checkpoints translate live block identities into the saved base's
+  source-order identities, including buffered outcomes and subsequent inserts.
+  The translation is session bookkeeping; records keep their existing format
+  and recovery needs no persisted mapping (ADR 0063).
 - A journal file's absence says the session ended cleanly. Only
   `Journal::discard` removes it; live journals hold a kernel `flock` the
   startup scan respects (ADR 0042). Report every journal-less outcome via
@@ -34,6 +38,6 @@ Verify: `cargo test -p slugline_storage`. The full-disk test is only the
 real thing with a small filesystem in `SLUGLINE_FULL_DISK_DIR` (CI mounts a
 4 MB tmpfs); otherwise it proves error classification alone.
 
-Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043. Full rules
+Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043, 0063. Full rules
 in `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR
 changes this crate, update this file in the same change.

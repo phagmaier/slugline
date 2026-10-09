@@ -36,7 +36,9 @@ Invariants:
 - Save never reparses/replaces the actor's Document to clear redundant pins.
   Source syntax becomes authority only on reload. Checkpoints describe the exact
   saved bytes and subsequent outcomes must replay against their block identities,
-  including an empty forced Action's `!` representation (ADR 0059).
+  including an empty forced Action's `!` representation (ADR 0059). Pass the
+  saved snapshot's source-ordered identities to the journal checkpoint/rebuild;
+  translate outcomes there without changing actor identities or history (ADR 0063).
 - `doc_navigator` supplies outline parent/depth in source order (ADR 0058).
   Scene page/occupied-eighth length travels in the async pagination snapshot;
   deriving it never runs on the actor or the keystroke path.
@@ -54,6 +56,6 @@ Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
 `cd app && flutter_rust_bridge_codegen generate`, then
 `./tools/check_bridge_bindings.sh` (the same check CI runs).
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0061, 0062. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0061, 0062, 0063. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.
