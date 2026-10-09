@@ -86,6 +86,9 @@ this file and the others to it.
   for the open to finish and closes that script like any other.
 - The status line's page for a note, synopsis or section under a paragraph that
   crosses pages is the page the paragraph ends on, not the one it began on.
+- `Ctrl+F` with the find bar already open returns to the find field with its
+  text selected. From the script it also searches for newly selected text, as
+  opening Find does.
 - Opening and closing the title page form no longer rewrites a title page that
   repeats a key or leaves one empty. Only a field that was actually edited is
   written; looking adds nothing to Undo, the unsaved state or the recovery

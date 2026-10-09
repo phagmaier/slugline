@@ -136,6 +136,7 @@ class EditorPageState extends State<EditorPage> {
   final GlobalKey<NavigatorSidebarState> _navigatorKey =
       GlobalKey<NavigatorSidebarState>();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey<FindBarState> _findKey = GlobalKey<FindBarState>();
   bool _compactLayout = false;
 
   int _externalChangeSerial = 0;
@@ -344,7 +345,11 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _show(_Panel panel) {
-    if (_panel == panel) return;
+    if (_panel == panel) {
+      // Find asked for again from the script, with its bar still up.
+      if (panel == _Panel.find) _findKey.currentState?.resume();
+      return;
+    }
     _scaffoldKey.currentState?.closeDrawer();
     // Before the bar exists, so that it opens on this search: the selection's
     // text if there is one to take, the last query otherwise.
@@ -846,6 +851,7 @@ class EditorPageState extends State<EditorPage> {
                                     alignment: Alignment.topRight,
                                     child: SingleChildScrollView(
                                       child: FindBar(
+                                        key: _findKey,
                                         controller: widget.controller,
                                         onDismiss: _dismiss,
                                       ),

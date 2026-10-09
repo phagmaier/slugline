@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
+import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/find_bar.dart';
 
 import '../support/fake_core.dart';
@@ -733,6 +734,90 @@ void main() {
   });
 
   // W8: Find opened over a selection inside one block starts with that text.
+
+  testWidgets('Ctrl+F from the script with the bar up takes a new selection', (
+    tester,
+  ) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await typeFind(tester, 'house');
+    expect(count(tester), '1 of 2');
+
+    // Back in the script with the bar still up, pointing at something else.
+    await tester.tapAt(
+      tester.getBottomLeft(find.byType(EditorSurface)) + const Offset(40, -40),
+    );
+    await tester.pumpAndSettle();
+    selectFromTo(controller, 1, 0, 1, 4);
+    await tester.pump();
+    await pressFind(tester);
+
+    expect(findText(tester), 'John');
+    expect(core.queries.last.text, 'John');
+    expect(count(tester), '1 of 1');
+    final field = tester.widget<TextField>(findField());
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(
+      field.controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 4),
+      reason: 'offered for replacement, as on opening',
+    );
+    await insertFind(tester, 'quiet');
+    expect(findText(tester), 'quiet');
+    expect(core.commands, isEmpty);
+  });
+
+  testWidgets('Ctrl+F from the script with the bar up and nothing new selected '
+      'returns to the search in force', (tester) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    await openFind(tester, controller);
+    await typeFind(tester, 'house');
+    await tester.tapAt(
+      tester.getBottomLeft(find.byType(EditorSurface)) + const Offset(40, -40),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(findField()).focusNode!.hasFocus, isFalse);
+
+    await pressFind(tester);
+
+    expect(findText(tester), 'house');
+    expect(controller.query.text, 'house');
+    final field = tester.widget<TextField>(findField());
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(
+      field.controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 5),
+    );
+  });
+
+  testWidgets('Ctrl+F inside the bar offers the query again and keeps it', (
+    tester,
+  ) async {
+    final core = script();
+    final controller = await pumpEditorPage(tester, core);
+    // A selection the search then leaves behind: nothing matches, so the
+    // script still has "John" selected while the field says something else.
+    selectFromTo(controller, 1, 0, 1, 4);
+    await tester.pump();
+    await pressFind(tester);
+    await typeFind(tester, 'zzz');
+    expect(count(tester), 'No matches');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    await pressFind(tester);
+
+    expect(findText(tester), 'zzz', reason: 'not seeded over what was typed');
+    expect(controller.query.text, 'zzz');
+    final field = tester.widget<TextField>(findField());
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(
+      field.controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 3),
+    );
+  });
 
   testWidgets('Find opened over a selection starts with the selected text', (
     tester,

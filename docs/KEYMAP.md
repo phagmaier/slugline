@@ -401,6 +401,10 @@ resumes — as it does when the selection is the match that search stopped on.
 The opening query is selected in the find field, so typing replaces it. Move
 the caret first (for example with `→`) to amend it instead.
 
+`Ctrl+F` with the bar already open goes back to the find field and selects what
+is in it. Pressed from the script it also does what opening does: text selected
+there becomes the search. Pressed inside the bar it leaves the search alone.
+
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
 
 “Go to page…” is also in the palette. Enter a page number and press `Enter` or

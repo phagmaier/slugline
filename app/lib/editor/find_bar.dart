@@ -25,10 +25,10 @@ class FindBar extends StatefulWidget {
   final VoidCallback onDismiss;
 
   @override
-  State<FindBar> createState() => _FindBarState();
+  State<FindBar> createState() => FindBarState();
 }
 
-class _FindBarState extends State<FindBar> {
+class FindBarState extends State<FindBar> {
   final TextEditingController _find = TextEditingController();
   final TextEditingController _replace = TextEditingController();
   final FocusNode _findFocus = FocusNode();
@@ -59,15 +59,35 @@ class _FindBarState extends State<FindBar> {
     // After mount: requesting focus synchronously here is unreliable on
     // Linux/IME — the focus tree is not attached yet.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _findFocus.requestFocus();
-      // Offer the opening query for replacement, not amendment. Do this only
-      // once: later typing and pointer/caret movement own the selection.
-      _find.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: _find.text.length,
-      );
+      if (mounted) _offerQuery();
     });
+  }
+
+  /// Gives the find field the keyboard with its text selected: offered for
+  /// replacement, not amendment. Only when Find is asked for — later typing
+  /// and pointer/caret movement own the selection.
+  void _offerQuery() {
+    _findFocus.requestFocus();
+    _find.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _find.text.length,
+    );
+  }
+
+  /// `Ctrl+F` from the script with the bar already up: what opening does. A
+  /// new selection becomes the search; otherwise the one in force stands,
+  /// including anything typed that the debounce had not reached yet.
+  void resume() {
+    final before = widget.controller.query.text;
+    widget.controller.startFind();
+    final seeded = widget.controller.query.text;
+    if (seeded != before) {
+      _debounce?.cancel();
+      _find.text = seeded;
+    } else if (_find.text != seeded) {
+      _search();
+    }
+    _offerQuery();
   }
 
   @override
@@ -109,6 +129,11 @@ class _FindBarState extends State<FindBar> {
     switch (event.logicalKey) {
       case LogicalKeyboardKey.escape:
         widget.onDismiss();
+      // The keyboard is already in the bar, so the script's selection is
+      // whatever the last search left there and is not taken as a new one.
+      case LogicalKeyboardKey.keyF
+          when HardwareKeyboard.instance.isControlPressed:
+        _offerQuery();
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
         shift ? _previous() : _next();
       default:

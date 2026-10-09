@@ -97,6 +97,7 @@ This is the only place boxes are ticked.
 - [x] [B19](#b19) Save As leaves the old name in the app bar
 - [x] [B20](#b20) Closing the window while a script is still opening throws
 - [x] [B21](#b21) The status line gives a block that prints nothing the wrong page
+- [x] [B22](#b22) `Ctrl+F` with the find bar already open does nothing
 
 **3. Fountain and output fidelity**
 
@@ -1261,6 +1262,28 @@ first and gives non-printing blocks the last page of the text above them.
 `app/test/editor/page_indicator_test.dart` holds the note case and passes with
 the go-to-page tests. Commit:
 `B21 — a block that prints nothing takes the page the text above ends on`.
+
+<a id="b22"></a>
+### B22 — `Ctrl+F` with the find bar already open does nothing
+
+**Evidence (reproduced in widget tests).** Promoted from the 2026-10-07 W8 note
+under [Found along the way](#found-along-the-way). With the bar up,
+`EditorPage._show` returned at once: from the script `Ctrl+F` neither moved the
+keyboard to the find field nor took a new selection, and inside the field
+nothing handled the key.
+
+**Change.** From the script, `Ctrl+F` does what opening does — a new selection
+becomes the search, otherwise the one in force stands — and the find field
+takes the keyboard with its text selected. Inside the bar it only offers the
+field's text again: the script's selection there is whatever the last search
+left, and is not taken over what was typed.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `FindBarState.resume` and a `Ctrl+F` case in the bar's
+own key handler. Three tests in `app/test/editor/find_replace_test.dart` cover a
+new selection, no new selection, and the key inside the bar after a search with
+no matches; `docs/KEYMAP.md` says it. Commit:
+`B22 — Ctrl+F with the find bar open returns to the field`.
 
 ---
 
@@ -3054,6 +3077,7 @@ not part of that item.
   `Ctrl+F` case. W8 seeds on opening, as its item says; a writer who selects
   other text with the bar still open and presses `Ctrl+F` gets no new search.
   Not exercised. Left unchanged.
+  Promoted to [B22](#b22) on 2026-10-09.
 - 2026-10-07 — W8, observed in its release frames: the find bar floats over the
   top right of the script and hides the matches under it. At 1400 px it covers
   the right of the first seven rows, and with them three of the seven matches
