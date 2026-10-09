@@ -83,7 +83,7 @@ This is the only place boxes are ticked.
 - [x] [F4](#f4) Consecutive lyric lines print double-spaced
 - [x] [F5](#f5) A `~` line under a cue prints its tilde
 - [x] [F6](#f6) Page 1 carries a page number
-- [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE`
+- [x] [F7](#f7) `@McCLANE` prints as `MCCLANE`
 - [x] [F8](#f8) Incremental repagination is not proven equal to a full one
 - [x] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
 
@@ -1518,7 +1518,13 @@ extension can still produce a duplicate suffix. That separate furniture defect
 is unchanged by authored-case rendering; no marker interpretation is duplicated
 in this change.
 
-**Result:** _open_
+**Result:** 2026-10-09 — individually verified in `db5f2c0`. The acceptance
+paths and final serialization interaction above passed. Release startup best
+373.285 ms, Xvfb RSS best 268.31 MiB, a ten-second idle interval with zero ticks
+and voluntary switches, and all 15 ordinary closes passed with saved bytes
+intact. Release build and no-network script passed. Logs, PDFs, bbox extraction,
+initial failures and process JSON remain in `target/retained-features/f7/`.
+Desktop manual gates remain pending.
 
 ---
 
