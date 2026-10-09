@@ -2441,8 +2441,8 @@ markers dimmed; add Ctrl+B, Ctrl+I and Ctrl+U to wrap a selection.
 Do F2 first.
 
 **Effort.** M–L.
-**Result:** Completed 2026-10-08 in `2790d75` (ADR 0057), on
-`x4-complete-styled-emphasis`; not merged or pushed. Rust supplies source-resolved
+**Result:** Completed 2026-10-08 in `2790d75` (ADR 0057), integrated with the
+first-edit caret correction `3cf175e` on 2026-10-09. Rust supplies source-resolved
 inline metadata to both printed-width wrappers and output. The editor styles
 content while keeping dim half-cell markers individually editable; Ctrl+B/I/U
 wrap selections in one journalled undo group with exact Unicode boundaries and
@@ -2461,6 +2461,11 @@ zero-tick/zero-switch interval, and all 15 stressed ordinary closes exited zero.
 Evidence: root `target/x4-resume-smoke/`. No new hosted run was performed; X3's
 hosted startup failure remains unresolved. Desktop IME/Orca, print calibration,
 HiDPI and real-GPU RSS remain manual gates.
+The integration audit reproduced a first dense paste leaving the End caret
+offscreen until another character. The surface now initializes its width cache
+when attaching the controller, and resets it on controller replacement, so the
+first edit requests geometry rebuild and post-layout reveal. The new native
+first-paste regression passes under Xvfb; the Find revision cache is retained.
 
 <a id="x5"></a>
 ### X5 — Outline in the navigator
