@@ -100,6 +100,7 @@ This is the only place boxes are ticked.
 - [x] [B22](#b22) `Ctrl+F` with the find bar already open does nothing
 - [x] [B23](#b23) The find bar covers the matches under it
 - [x] [B24](#b24) A one-page script draws no sheet in page view
+- [x] [B25](#b25) `Ctrl+Home` does nothing in a restored session whose caret is at the top
 
 **3. Fountain and output fidelity**
 
@@ -1342,6 +1343,38 @@ shows the sheet under a one-page, an empty and a typed-into script
 (`target/b24/after/`). Limitation: a sheet is as tall as its rows, so a short
 script sits on a short sheet, as a last page always has. Commit:
 `B24 — a script of one page draws its sheet`.
+
+<a id="b25"></a>
+### B25 — `Ctrl+Home` does nothing in a restored session whose caret is at the top
+
+**Evidence (reproduced in widget tests).** Promoted from the 2026-10-06 W4 note
+under [Found along the way](#found-along-the-way). The surface showed the caret
+only when the controller reported a change, and in a restored viewport not
+until the caret had left the position it opened at. `Ctrl+Home`, `Home`, `↑`,
+`Page Up`, `←`, `Ctrl+←` and `Backspace` leave a caret at the start of the
+script where it is: nothing was reported and the view stayed where it was.
+`Delete` and `Ctrl+Delete` changed the first line out of sight. It is not only
+a restore — every script opens with that guard up, and `Ctrl+End` with the
+caret already at the end and the view scrolled away did nothing either.
+
+**Change.** A key the surface handles as the writer acting at the caret ends
+the guard and shows the caret, whether or not it moved; so do a navigator row
+and the palette's "Start of script" and "End of script". An edit that leaves
+the caret where it was ends the guard too. Opening Find or the palette, copy
+and Escape scroll nothing, and what is not the writer's doing — spell-check
+results arriving — still leaves a restored view alone.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `EditorSurface.revealCaret` after every caret and
+editing key, navigator jump and palette edge command, and the guard also ends
+on the controller's edit count. `scroll_restore_test.dart` holds the eight keys
+that leave the caret in place, edits under it by key and otherwise, the keys
+that must not scroll, late spell-check results and the `Ctrl+End` case;
+`navigator_test.dart` and `go_to_page_test.dart` hold the other two ways in,
+and the widget suite passes. On the rebuilt app `Ctrl+Home` and `←`, pressed
+on page 7 with the caret still on line 1, both come back to it
+(`target/b24/b25/`). Commit:
+`B25 — a key at the caret shows the caret, moved or not`.
 
 ---
 
@@ -3047,6 +3080,12 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-09 — B25, reproduced in a widget probe and left unchanged: once a
+  key has been pressed, any notification from the controller shows the caret
+  again. A spell-check result arriving after the writer had scrolled away
+  pulled the view from 900 px back to the caret's row.
+  `EditorSurface._onDocumentChanged` calls `_ensureCaretVisible` whatever the
+  news was; the restore guard only covers the time before the first key.
 - 2026-10-09 — B24, reproduced in a widget probe and left unchanged: in page
   view a restored scroll row is applied against the first frame's continuous
   geometry. When the sheets arrive, every row moves down by the page gaps above
@@ -3218,6 +3257,7 @@ not part of that item.
   place and `_ensureCaretVisible` returns. W4 explicitly reveals its own page
   target; the general shortcut behavior is unchanged. Reproduce and investigate
   separately.
+  Promoted to [B25](#b25) on 2026-10-09.
 
 - 2026-10-06 — W3's native fixture exposed a zero-page presentation error:
   a Note-only script has no printed pages, and `PageIndicator._updateCurrent`

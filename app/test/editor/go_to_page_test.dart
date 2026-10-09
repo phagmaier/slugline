@@ -230,6 +230,39 @@ void main() {
     );
   }
 
+  // The palette's own way to the top. The caret of a restored session is
+  // there already, so the command moves nothing and still has to show it.
+  testWidgets('"Start of script" in the palette reveals the top with an '
+      'unchanged caret', (tester) async {
+    final controller = await _open(tester, initialScrollRow: 80);
+    final selection = controller.selection;
+    expect(_scroll(tester).pixels, greaterThan(0));
+
+    await _key(tester, LogicalKeyboardKey.keyK, control: true);
+    await tester.enterText(find.byType(TextField), 'Start of script');
+    await tester.pumpAndSettle();
+    await _key(tester, LogicalKeyboardKey.enter);
+
+    expect(controller.selection, selection);
+    // Shown as any caret is, with its rows of air above it: on a sheet that
+    // is short of the very top.
+    final painter = tester
+        .widgetList<CustomPaint>(
+          find.descendant(
+            of: find.byType(EditorSurface),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+        .map((paint) => paint.painter)
+        .firstWhere(
+          (painter) => painter.runtimeType.toString() == '_SurfacePainter',
+        );
+    final caretTop =
+        ((painter as dynamic).geometry.yOfRow(0) as double) -
+        _scroll(tester).pixels;
+    expect(caretTop, inInclusiveRange(0, 200));
+  });
+
   for (final input in [
     '0',
     '4',

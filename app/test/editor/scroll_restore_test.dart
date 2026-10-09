@@ -1,6 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:slugline/core/document_core.dart';
@@ -61,7 +62,166 @@ Future<void> _pumpSurface(
   await tester.pump();
 }
 
+Future<void> _press(
+  WidgetTester tester,
+  LogicalKeyboardKey key, {
+  bool control = false,
+  bool shift = false,
+}) async {
+  if (control) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.sendKeyEvent(key);
+  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  if (control) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.pump();
+}
+
 void main() {
+  group('a key pressed with the restored view away from the caret', () {
+    // A restored session: the view is where it was parked and the caret is
+    // where a script opens, at the start.
+    Future<EditorController> restored(
+      WidgetTester tester, {
+      FakeCore? core,
+    }) async {
+      final controller = EditorController(core ?? _script(100));
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      await _pumpSurface(
+        tester,
+        controller,
+        initialScrollRow: 42,
+        focusNode: focusNode,
+      );
+      focusNode.requestFocus();
+      await tester.pump();
+      expect(_position(tester).pixels, _offsetOfRow(42));
+      return controller;
+    }
+
+    const start = DocPosition(block: 1, offsetUtf16: 0);
+
+    // None of these moves a caret that is already at the start of the script,
+    // so the controller has nothing to report and nothing follows from it.
+    for (final (name, key, control, shift) in [
+      ('Ctrl+Home', LogicalKeyboardKey.home, true, false),
+      ('Shift+Ctrl+Home', LogicalKeyboardKey.home, true, true),
+      ('Home', LogicalKeyboardKey.home, false, false),
+      ('Up', LogicalKeyboardKey.arrowUp, false, false),
+      ('Page Up', LogicalKeyboardKey.pageUp, false, false),
+      ('Left', LogicalKeyboardKey.arrowLeft, false, false),
+      ('Ctrl+Left', LogicalKeyboardKey.arrowLeft, true, false),
+      ('Backspace', LogicalKeyboardKey.backspace, false, false),
+    ]) {
+      testWidgets('$name shows the caret it left where it was', (tester) async {
+        final controller = await restored(tester);
+
+        await _press(tester, key, control: control, shift: shift);
+
+        expect(controller.selection.focus, start);
+        expect(_position(tester).pixels, 0);
+      });
+    }
+
+    // These change the script at the caret and leave the caret on it.
+    for (final (name, key, control) in [
+      ('Delete', LogicalKeyboardKey.delete, false),
+      ('Ctrl+Delete', LogicalKeyboardKey.delete, true),
+    ]) {
+      testWidgets('$name shows what it changed', (tester) async {
+        final controller = await restored(tester);
+        final before = (controller.blocks.first.kind, controller.source);
+
+        await _press(tester, key, control: control);
+
+        expect((
+          controller.blocks.first.kind,
+          controller.source,
+        ), isNot(before));
+        expect(controller.selection.focus, start);
+        expect(_position(tester).pixels, 0);
+      });
+    }
+
+    testWidgets('an edit made there by something that is not a key shows it', (
+      tester,
+    ) async {
+      // A palette command, say: the caret stays put and the text under it goes.
+      final controller = await restored(tester);
+
+      controller.deleteForward();
+      await tester.pump();
+
+      expect(controller.selection.focus, start);
+      expect(_position(tester).pixels, 0);
+    });
+
+    testWidgets('Escape and copy are not about the caret and move nothing', (
+      tester,
+    ) async {
+      await restored(tester);
+
+      await _press(tester, LogicalKeyboardKey.escape);
+      await _press(tester, LogicalKeyboardKey.keyC, control: true);
+
+      expect(_position(tester).pixels, _offsetOfRow(42));
+    });
+
+    testWidgets('spell-check results arriving move nothing either', (
+      tester,
+    ) async {
+      final core = _script(100)
+        ..spellStatusData = const SpellStatus(
+          enabled: true,
+          language: 'en_US',
+          languages: [
+            SpellLanguage(code: 'en_US', label: 'English (United States)'),
+          ],
+          message: 'Checking with English (United States).',
+        )
+        // One block at a time, so the last of them is long after the restore.
+        ..spellCheckDelay = const Duration(milliseconds: 5);
+      core.spellings[100] = const [
+        Misspelling(block: 100, startUtf16: 0, endUtf16: 6, word: 'Action'),
+      ];
+      final controller = await restored(tester, core: core);
+      expect(controller.misspellingsFor(100), isEmpty);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+
+      expect(controller.misspellingsFor(100), hasLength(1));
+      expect(_position(tester).pixels, _offsetOfRow(42));
+    });
+  });
+
+  testWidgets('Ctrl+End with the caret already at the end, and the view '
+      'scrolled away from it, comes back to it', (tester) async {
+    final controller = EditorController(_script(100));
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await _pumpSurface(
+      tester,
+      controller,
+      initialScrollRow: 0,
+      focusNode: focusNode,
+    );
+    focusNode.requestFocus();
+    await tester.pump();
+    await _press(tester, LogicalKeyboardKey.end, control: true);
+    final position = _position(tester);
+    final atEnd = position.pixels;
+    expect(atEnd, greaterThan(0));
+
+    position.jumpTo(0);
+    await tester.pump();
+    await _press(tester, LogicalKeyboardKey.end, control: true);
+
+    expect(position.pixels, atEnd);
+  });
+
   testWidgets(
     'a saved row is applied after the first layout and survives focus',
     (tester) async {

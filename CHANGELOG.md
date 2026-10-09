@@ -78,6 +78,11 @@ this file and the others to it.
 
 ### Fixed
 
+- A caret key shows the caret even when it does not move it: `Ctrl+Home` with
+  the caret already at the top of a script scrolled somewhere else, `Ctrl+End`
+  at the end. The navigator and the palette's “Start of script” do the same,
+  and `Delete` at the top of a script that has just been opened and scrolled no
+  longer changes the first line out of sight.
 - Page view draws a script that fits on one page — every new script — on a
   sheet of paper, as it does longer ones, instead of as a bare column.
 - Save As now shows the script's new name in the app bar and in the “Save

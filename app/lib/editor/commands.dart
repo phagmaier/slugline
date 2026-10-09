@@ -33,6 +33,7 @@ class EditorCommand {
 List<EditorCommand> editorCommands({
   required EditorController controller,
   required VoidCallback openFind,
+  VoidCallback? revealCaret,
   VoidCallback? openNavigator,
   VoidCallback? goToPage,
   VoidCallback? save,
@@ -261,13 +262,21 @@ List<EditorCommand> editorCommands({
       group: 'Go to',
       label: 'Start of script',
       shortcut: 'Ctrl+Home',
-      run: () => controller.moveToDocumentEdge(start: true),
+      // The caret may be there already, and then the controller has nothing
+      // to report: the view is brought to it all the same.
+      run: () {
+        controller.moveToDocumentEdge(start: true);
+        revealCaret?.call();
+      },
     ),
     EditorCommand(
       group: 'Go to',
       label: 'End of script',
       shortcut: 'Ctrl+End',
-      run: () => controller.moveToDocumentEdge(start: false),
+      run: () {
+        controller.moveToDocumentEdge(start: false);
+        revealCaret?.call();
+      },
     ),
     if (toggleNavigator case final run?)
       EditorCommand(

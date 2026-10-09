@@ -151,6 +151,10 @@ class EditorSurfaceState extends State<EditorSurface>
   /// the caret.
   late final DocPosition _initialFocus;
 
+  /// The controller's edit count when it was taken on, so we can tell when
+  /// the script has been changed with the caret left where it was.
+  late int _initialRevision;
+
   TextInputConnection? _connection;
 
   // Platform messages are asynchronous. Echoing a value it already supplied
@@ -214,6 +218,7 @@ class EditorSurfaceState extends State<EditorSurface>
   void initState() {
     super.initState();
     _initialFocus = _controller.selection.focus;
+    _initialRevision = _controller.documentRevision;
     _displayColumns = _controller.layout.displayColumns;
     _controller.addListener(_onDocumentChanged);
     widget.pageIndicator?.addListener(_onPaginationChanged);
@@ -252,6 +257,7 @@ class EditorSurfaceState extends State<EditorSurface>
       _reportedRow = -1;
       _initialScrollPending = true;
       _restoreInProgress = true;
+      _initialRevision = widget.controller.documentRevision;
       _scheduleInitialScroll();
     }
   }
@@ -274,9 +280,11 @@ class EditorSurfaceState extends State<EditorSurface>
   void _onDocumentChanged() {
     _syncEditingState();
     // Clear the session-restore guard once the user has moved the caret
-    // from its initial position — spell-check results don't change the
-    // selection, so they leave the guard intact.
-    if (_restoreInProgress && _controller.selection.focus != _initialFocus) {
+    // from its initial position or changed the script with it still there —
+    // spell-check results do neither, so they leave the guard intact.
+    if (_restoreInProgress &&
+        (_controller.selection.focus != _initialFocus ||
+            _controller.documentRevision != _initialRevision)) {
       _restoreInProgress = false;
     }
     _ensureCaretVisible();
@@ -590,6 +598,9 @@ class EditorSurfaceState extends State<EditorSurface>
     final keys = HardwareKeyboard.instance;
     final shift = keys.isShiftPressed;
     final control = keys.isControlPressed;
+    // Nearly every key here is the writer acting at the caret. The few that
+    // are not — a panel opening, a copy — say so.
+    var atCaret = true;
 
     switch (event.logicalKey) {
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
@@ -658,6 +669,7 @@ class EditorSurfaceState extends State<EditorSurface>
         _controller.selectAll();
       case LogicalKeyboardKey.keyC when control:
         _controller.copy();
+        atCaret = false;
       case LogicalKeyboardKey.keyX when control:
         _controller.cut();
       case LogicalKeyboardKey.keyV when control:
@@ -675,8 +687,10 @@ class EditorSurfaceState extends State<EditorSurface>
         _controller.cycleElement(reverse: shift);
       case LogicalKeyboardKey.keyK when control:
         widget.onOpenPalette?.call();
+        atCaret = false;
       case LogicalKeyboardKey.keyF when control:
         widget.onOpenFind?.call();
+        atCaret = false;
       case LogicalKeyboardKey.keyG when control && shift:
         _controller.previousMatch();
       case LogicalKeyboardKey.keyG when control:
@@ -690,6 +704,7 @@ class EditorSurfaceState extends State<EditorSurface>
         }
         widget.onEscape?.call();
         _controller.collapseSelection();
+        atCaret = false;
       // The element shortcuts. `Ctrl+<digit>` sets the type and pins it, which
       // is also how a writer overrules an automatic change (§Phase 3).
       case final key when control && elementShortcuts.containsKey(key):
@@ -698,6 +713,7 @@ class EditorSurfaceState extends State<EditorSurface>
       default:
         return KeyEventResult.ignored;
     }
+    if (atCaret) revealCaret();
     return KeyEventResult.handled;
   }
 
@@ -951,6 +967,19 @@ class EditorSurfaceState extends State<EditorSurface>
     } else {
       _ensureCaretVisible();
     }
+  }
+
+  /// Shows the caret because the writer has just acted at it: a key, a
+  /// navigator row, "Start of script" in the palette.
+  ///
+  /// The controller reports a caret that moved, and that is not every one of
+  /// those. `Ctrl+Home` with the caret already at the top moves nothing, and so
+  /// does a jump to the scene the caret is in. In a session whose view was
+  /// restored somewhere else they are the first things done, and anywhere else
+  /// they would leave a view that has been scrolled away where it is.
+  void revealCaret() {
+    _restoreInProgress = false;
+    _ensureCaretVisible();
   }
 
   /// Brings the selection out from under [EditorSurface.obscuredTop] when

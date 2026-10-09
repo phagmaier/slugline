@@ -312,6 +312,40 @@ void main() {
     );
   });
 
+  testWidgets('a row for the scene the caret is already in shows it, in a view '
+      'restored somewhere else', (tester) async {
+    final core = _script();
+    final probe = EditorController(core);
+    final secondSceneRow = probe.layout.firstRowOf(4);
+    probe.dispose();
+    ScrollPosition scroll() => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(EditorSurface),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+            ),
+          ),
+        )
+        .position;
+
+    final controller = await _pump(
+      tester,
+      _script(),
+      initialScrollRow: secondSceneRow,
+    );
+    await tester.pumpAndSettle();
+    const start = DocPosition(block: 1, offsetUtf16: 0);
+    expect(controller.selection.focus, start);
+    expect(scroll().pixels, greaterThan(0));
+
+    await tester.tap(find.byKey(const ValueKey('navigator scene 1')));
+    await tester.pumpAndSettle();
+
+    expect(controller.selection.focus, start, reason: 'nothing moved');
+    expect(scroll().pixels, 0);
+  });
+
   testWidgets('the top visible scene is highlighted after a restored scroll', (
     tester,
   ) async {

@@ -296,6 +296,8 @@ class EditorPageState extends State<EditorPage> {
       _refreshNavigator();
       return;
     }
+    // A jump to the scene the caret is already in moves nothing.
+    _surfaceKey.currentState?.revealCaret();
     _editorFocus.requestFocus();
     _navigatorSuppressionTimer = Timer(const Duration(seconds: 1), () {
       if (mounted) _suppressNavigatorScroll = false;
@@ -326,6 +328,7 @@ class EditorPageState extends State<EditorPage> {
       _refreshNavigator();
       return;
     }
+    _surfaceKey.currentState?.revealCaret();
     _editorFocus.requestFocus();
     _navigatorSuppressionTimer = Timer(const Duration(seconds: 1), () {
       if (mounted) _suppressNavigatorScroll = false;
@@ -927,6 +930,9 @@ class EditorPageState extends State<EditorPage> {
                                               _runScriptAction(_closeScript),
                                             ),
                                       openFind: () => _show(_Panel.find),
+                                      revealCaret: () => _surfaceKey
+                                          .currentState
+                                          ?.revealCaret(),
                                       openNavigator: widget.distractionFree
                                           ? null
                                           : _showNavigatorSearch,
