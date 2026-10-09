@@ -15,10 +15,14 @@ finished, and update its source note if the status or evidence changes.
   every group stages its history until success, retaining prior Undo/Redo and
   pending typing on rejection or no-op. Document regressions and the bridge
   document API tests pass.
-- [ ] Investigate the pagination case where an action paragraph taller than a
+- [x] Investigate the pagination case where an action paragraph taller than a
   page arrives when the current page is exactly full: the next page starts
   with a blank row. Update the incremental/full-pagination expectation when
   correcting it. See [F8's remaining finding](docs/BACKLOG.md#f8).
+  **Result:** Confirmed and fixed in `F8 — Drop leading blanks when oversized actions cross pages`:
+  oversized actions carry over before spacing when fewer than two content rows
+  fit, so the new page starts with content. Break-rule regressions, full/incremental
+  differential tests (including checkpoint reuse), and unchanged layout goldens pass.
 - [ ] Investigate the inherited hosted startup failure noted during X3/X4/X6
   work and record whether it still reproduces. The backlog calls it unresolved
   but does not include the original failure details. See [X3](docs/BACKLOG.md#x3),

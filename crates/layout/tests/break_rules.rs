@@ -306,6 +306,68 @@ fn rule_7_action_never_leaves_a_one_line_orphan() {
 }
 
 #[test]
+fn oversized_action_drops_leading_spacing_when_carried_to_a_new_page() {
+    for capacity in [6, 54] {
+        let tall_lines: Vec<_> = (1..=capacity + 6)
+            .map(|line| format!("Tall line {line}."))
+            .collect();
+        // Exactly full, or too little space for the blank and two content
+        // rows: start fresh. With three rows free, keep the blank and split.
+        for remaining in 0..=3 {
+            let opening: Vec<_> = (1..=capacity - remaining)
+                .map(|line| format!("Opening line {line}."))
+                .collect();
+            let document = Document::parse(&format!(
+                "{}\n\n{}\n",
+                opening.join("\n"),
+                tall_lines.join("\n")
+            ));
+            assert_eq!(document.blocks().len(), 2);
+            let action = document.blocks()[1].id();
+            let output = paginate(&document, &tiny(capacity));
+            let rows: Vec<_> = output
+                .pages
+                .iter()
+                .enumerate()
+                .flat_map(|(page, output)| {
+                    output
+                        .lines
+                        .iter()
+                        .filter(|line| line.block == Some(action))
+                        .map(move |line| (page, line))
+                })
+                .collect();
+            let expected_start = if remaining < 3 {
+                (1, 0)
+            } else {
+                (0, (capacity - 2) as i16)
+            };
+            assert_eq!(
+                (rows[0].0, rows[0].1.row),
+                expected_start,
+                "{capacity} rows per page, {remaining} free"
+            );
+            assert_eq!(
+                rows.iter()
+                    .map(|(_, line)| (line.source_line, line.content.as_str()))
+                    .collect::<Vec<_>>(),
+                tall_lines
+                    .iter()
+                    .enumerate()
+                    .map(|(index, text)| (Some(index as u16), text.as_str()))
+                    .collect::<Vec<_>>()
+            );
+            for page in output.pages.iter().skip(1) {
+                assert!(page
+                    .lines
+                    .iter()
+                    .any(|line| { line.row == 0 && line.kind == LayoutLineKind::Content }));
+            }
+        }
+    }
+}
+
+#[test]
 fn scene_numbers_can_be_emitted_in_both_gutters() {
     let document = Document::parse("INT. ROOM - DAY #7#\n\nAction one.\nAction two.\n");
     let output = paginate(

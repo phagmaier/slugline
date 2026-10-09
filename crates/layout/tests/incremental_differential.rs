@@ -1088,11 +1088,10 @@ fn an_empty_forced_page_is_not_somewhere_to_resume() {
 }
 
 #[test]
-fn a_page_that_opens_on_a_blank_row_is_not_somewhere_to_resume() {
+fn an_oversized_action_after_a_full_page_begins_a_resumable_page() {
     // A paragraph taller than a page, arriving at a page that is exactly full,
-    // is not moved whole: its blank goes over and it follows. That page begins
-    // with the paragraph's first line on its second row, and laying it out
-    // from there on a fresh page would put it on the first.
+    // begins the next page without a leading blank. A later edit can resume
+    // there, but editing the paragraph itself must resume from before it.
     let hard_lines: Vec<String> = (1..=60).map(|line| format!("Tall line {line}.")).collect();
     let script = Script::default()
         .actions(7 * PAGE + 26)
@@ -1110,13 +1109,25 @@ fn a_page_that_opens_on_a_blank_row_is_not_somewhere_to_resume() {
             .iter()
             .find(|line| line.row == 0)
             .map(|line| line.kind),
-        Some(LayoutLineKind::Blank)
+        Some(LayoutLineKind::Content)
+    );
+    assert_eq!(
+        case.before
+            .checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.page_index == 8)
+            .expect("the ninth page has a checkpoint")
+            .start_block,
+        Some(case.script.blocks[giant].id)
     );
     let edited = block(&case.script, "Action line 250.");
     assert_eq!(pages_of(&case.before, &case.script, edited), 10..11);
 
     let output = case.edit(edited, |block| block.text.push_str(" Changed."));
 
+    assert_kept(&output, 8, 2);
+
+    let output = case.edit(giant, |block| block.text.push_str(" Changed."));
     assert_kept(&output, 4, 2);
 }
 

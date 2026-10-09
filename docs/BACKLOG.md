@@ -3534,9 +3534,13 @@ not part of that item.
   starts the new page with the paragraph's leading blank, which
   `top_aware_spacing` would have dropped. One row of that page is lost. It is
   what a full pagination does, so it is outside F8;
-  `a_page_that_opens_on_a_blank_row_is_not_somewhere_to_resume` asserts the
-  blank because the incremental path has to agree with it, and will need
-  rewriting with any fix.
+  `a_page_that_opens_on_a_blank_row_is_not_somewhere_to_resume` asserted the
+  blank because the incremental path had to agree with it. Resolved 2026-10-09
+  in `F8 — Drop leading blanks when oversized actions cross pages`: carry-over
+  now precedes spacing whenever fewer than two content rows fit, including
+  oversized actions. Break-rule regressions, full/incremental differential
+  tests and unchanged layout goldens pass; the rewritten case verifies a
+  content row at page top and safe checkpoint reuse for later edits.
 
 - 2026-10-06 — F9, read: the ordinary CI Flutter job enumerates seven native
   suite steps directly instead of invoking `tools/test_linux_integration.sh`.

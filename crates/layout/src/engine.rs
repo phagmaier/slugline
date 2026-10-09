@@ -1119,9 +1119,12 @@ impl<'a> Paginator<'a> {
         let rows = block_rows(block);
         let spacing = self.top_aware_spacing(block);
         let available = self.remaining().saturating_sub(spacing) as usize;
+        // Carry over before adding spacing whenever fewer than two content
+        // rows fit, even if the paragraph itself is taller than a page.
         if self.used > 0
-            && rows.len() <= self.capacity as usize
-            && (available < 2 || rows.len().saturating_sub(available) == 1)
+            && (available < 2
+                || (rows.len() <= self.capacity as usize
+                    && rows.len().saturating_sub(available) == 1))
         {
             self.push_page(false);
         }
