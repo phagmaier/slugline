@@ -104,7 +104,7 @@ This is the only place boxes are ticked.
 - [x] [X1](#x1) Dual dialogue
 - [x] [X2](#x2) Final Draft (FDX) import and export
 - [x] [X3](#x3) Scene numbering commands
-- [ ] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
+- [x] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
 - [ ] [X5](#x5) Outline in the navigator
 - [ ] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers) — *unblocks F7*
 - [ ] [X7](#x7) Omit and restore (editable boneyard)
@@ -2377,7 +2377,26 @@ markers dimmed; add Ctrl+B, Ctrl+I and Ctrl+U to wrap a selection.
 Do F2 first.
 
 **Effort.** M–L.
-**Result:** _open_
+**Result:** Completed 2026-10-08 in `2790d75` (ADR 0057), on
+`x4-complete-styled-emphasis`; not merged or pushed. Rust supplies source-resolved
+inline metadata to both printed-width wrappers and output. The editor styles
+content while keeping dim half-cell markers individually editable; Ctrl+B/I/U
+wrap selections in one journalled undo group with exact Unicode boundaries and
+selection direction. Actual dense markup clipped text and the End caret, so
+cached horizontal extents and caret reveal expose it without shrinking the
+script, moving printed wraps or changing page anchors. Preserved the integrated
+`ı`/`ſ` UTF-8 source-span correction. Deliberately regenerated the differential
+fixture; existing layout goldens and PDF hashes passed unchanged.
+Verified 728 Rust tests, 739 widget tests and 90 native tests across all seven
+suites, formatting/clippy/analyze, bindings, Rust 1.85, docs/layers/version/reference,
+release pagination/PDF budgets, release build and offline startup. Real editor,
+preview/PDF, formatting/Save/Undo/Redo and dense caret/hit smoke passed; two
+behavioral fault injections failed regressions and were reverted. Unchanged
+Xvfb gates passed: 368.336 ms best startup, 267.3125 MiB RSS, a ten-second
+zero-tick/zero-switch interval, and all 15 stressed ordinary closes exited zero.
+Evidence: root `target/x4-resume-smoke/`. No new hosted run was performed; X3's
+hosted startup failure remains unresolved. Desktop IME/Orca, print calibration,
+HiDPI and real-GPU RSS remain manual gates.
 
 <a id="x5"></a>
 ### X5 — Outline in the navigator
