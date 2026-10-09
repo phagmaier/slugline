@@ -184,8 +184,8 @@ slugline --version
 slugline --help
 ```
 
-Open a `.fountain` file and start typing. Here is enough Fountain to write an
-entire screenplay:
+Choose **Import…** in the library, select a `.fountain` file and start typing.
+Here is enough Fountain to write an entire screenplay:
 
 ```fountain
 Title: My Script
@@ -206,10 +206,13 @@ Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Open Preview and export with
 <kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export; the preview opens on the
 page your caret is on. Everything else is in the command palette.
 
-To bring in an `.fdx` screenplay, choose **Import FDX…** in the library or
-command palette. Review any conversion warnings before replacing the current
-editor. The original FDX stays untouched; the imported script is unsaved and
-**Save** asks for a `.fountain` destination. Ordinary **Open** remains Fountain.
+**Import…** in the library or command palette accepts Fountain (`.fountain`)
+and Final Draft (`.fdx`) together; the picker also offers individual format
+filters. Fountain opens the original file for editing. FDX conversion warnings
+are shown before replacing the current editor. The original FDX stays
+untouched; the imported script is unsaved and **Save** asks for a `.fountain`
+destination. `Ctrl+O` still quick-opens recent scripts, with **Browse…** accepting
+both formats too.
 Choose **Export FDX copy…** in Preview to share screenplay content. If the
 script changes after warning approval, the new conversion needs fresh approval.
 FDX interchange is not an exact round trip for production revisions, locked

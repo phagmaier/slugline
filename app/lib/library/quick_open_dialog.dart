@@ -31,6 +31,7 @@ class QuickOpenDialog extends StatefulWidget {
       action: 'Open',
       mustExist: true,
       directory: directory,
+      screenplayFiles: true,
     );
   }
 

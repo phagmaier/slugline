@@ -278,6 +278,14 @@ class _SluglineAppState extends State<SluglineApp> {
     await _adopt(core, initialScrollRow: initialScrollRow);
   }
 
+  Future<void> _openScriptPath(String path) async {
+    if (path.toLowerCase().endsWith('.fdx')) {
+      await _importFdx(path);
+    } else {
+      await _switchPath(path);
+    }
+  }
+
   Future<void> _switchPath(String? path) async {
     if (path == null || !mounted || path == _open?.core.path) return;
     final editor = _editorKey.currentState;
@@ -314,31 +322,41 @@ class _SluglineAppState extends State<SluglineApp> {
   Future<void> _quickOpen() async {
     final context = _navigator.currentContext;
     if (context == null) return;
-    await _switchPath(
-      await QuickOpenDialog.show(
-        context,
-        widget.core,
-        directory: _scriptDirectory,
-      ),
+    final path = await QuickOpenDialog.show(
+      context,
+      widget.core,
+      directory: _scriptDirectory,
     );
+    if (path != null && mounted) await _openScriptPath(path);
   }
 
-  Future<void> _importFdx() async {
+  Future<void> _importScript() async {
+    final context = _navigator.currentContext;
+    if (context == null || !context.mounted || _importActive) return;
+    final path = await FileChooser.show(
+      context,
+      title: 'Import screenplay',
+      action: 'Import',
+      directory: _scriptDirectory,
+      mustExist: true,
+      screenplayFiles: true,
+    );
+    if (path == null || !mounted) return;
+    final lower = path.toLowerCase();
+    if (!lower.endsWith('.fountain') && !lower.endsWith('.fdx')) {
+      _say('Choose a Fountain (.fountain) or Final Draft (.fdx) screenplay.');
+      return;
+    }
+    await _openScriptPath(path);
+  }
+
+  Future<void> _importFdx(String path) async {
     if (_importActive) return;
     final context = _navigator.currentContext;
     if (context == null || !context.mounted) return;
     _importActive = true;
     DocumentCore? candidate;
     try {
-      final path = await FileChooser.show(
-        context,
-        title: 'Import FDX',
-        action: 'Import',
-        directory: _scriptDirectory,
-        mustExist: true,
-        extension: 'fdx',
-      );
-      if (path == null || !mounted || !context.mounted) return;
       final result = await _opening(() => widget.core.importFdx(path));
       switch (result) {
         case null:
@@ -603,8 +621,9 @@ class _SluglineAppState extends State<SluglineApp> {
       home: open == null
           ? LibraryPage(
               core: widget.core,
-              onOpen: _openPath,
-              onImportFdx: _importFdx,
+              onOpen: _openScriptPath,
+              onCreate: _switchPath,
+              onImport: _importScript,
               onOpenPreferences: _openPreferences,
               onShowShortcuts: _showShortcuts,
             )
@@ -628,7 +647,7 @@ class _SluglineAppState extends State<SluglineApp> {
               onClosed: _closeScript,
               onNewScript: _newScript,
               onOpenScript: _quickOpen,
-              onImportFdx: _importFdx,
+              onImport: _importScript,
               onSaved: _scriptSaved,
               title: _titleOf(open.core),
             ),

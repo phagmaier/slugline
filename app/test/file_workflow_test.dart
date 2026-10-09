@@ -800,17 +800,148 @@ void main() {
 
   Future<void> chooseImport(WidgetTester tester) async {
     final choice = pendingFileChoice(tester);
-    await _runPalette(tester, 'Import FDX…');
+    await _runPalette(tester, 'Import…');
     choice.complete('/scripts/source.fdx');
     await tester.pumpAndSettle();
   }
 
-  testWidgets('Library Import FDX chooser cancellation opens nothing', (
+  testWidgets(
+    'Library Import opens Fountain in place with both format filters',
+    (tester) async {
+      final core = await _pump(tester, open: false);
+      Map<Object?, Object?>? arguments;
+      final choice = pendingFileChoice(
+        tester,
+        onChoose: (value) => arguments = value,
+      );
+      expect(find.text('Open'), findsNothing);
+      expect(find.text('Import FDX…'), findsNothing);
+      await tester.tap(find.byKey(const Key('import-script')));
+      await tester.pumpAndSettle();
+      expect(arguments, containsPair('title', 'Import screenplay'));
+      expect(arguments, containsPair('action', 'Import'));
+      expect(arguments, containsPair('mustExist', true));
+      expect(arguments, containsPair('screenplayFiles', true));
+      choice.complete('/scripts/original.FoUnTaIn');
+      await tester.pumpAndSettle();
+      expect(core.requests, ['/scripts/original.FoUnTaIn']);
+      expect(core.importRequests, isEmpty);
+      expect(
+        _editor(tester).controller.core.path,
+        '/scripts/original.FoUnTaIn',
+      );
+      expect(_editor(tester).controller.core.dirty, isFalse);
+    },
+  );
+
+  testWidgets('Library Import converts FDX into an unsaved script', (
+    tester,
+  ) async {
+    final core = await _pump(tester, open: false);
+    final candidate = await prepareImport(core, warnings: false);
+    final choice = pendingFileChoice(tester);
+    await tester.tap(find.byKey(const Key('import-script')));
+    await tester.pumpAndSettle();
+    choice.complete('/scripts/source.FDX');
+    await tester.pumpAndSettle();
+    expect(core.requests, isEmpty);
+    expect(core.importRequests, ['/scripts/source.FDX']);
+    expect(_editor(tester).controller.core, same(candidate));
+    expect(candidate.path, isNull);
+    expect(candidate.dirty, isTrue);
+  });
+
+  testWidgets(
+    'Import rejects an unsupported file without replacing the draft',
+    (tester) async {
+      final core = await _pump(tester);
+      final controller = _editor(tester).controller;
+      controller.insertText('Keep my draft. ');
+      final source = controller.source;
+      final choice = pendingFileChoice(tester);
+      await _runPalette(tester, 'Import…');
+      choice.complete('/scripts/screenplay.pdf');
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Choose a Fountain (.fountain) or Final Draft (.fdx) screenplay.',
+        ),
+        findsOneWidget,
+      );
+      expect(core.requests, ['/scripts/alpha.fountain']);
+      expect(core.importRequests, isEmpty);
+      expect(_editor(tester).controller, same(controller));
+      expect(controller.source, source);
+      expect(core.opened.single.closes, 0);
+    },
+  );
+
+  testWidgets(
+    'Fountain Import checks unsaved changes before opening the file',
+    (tester) async {
+      final core = await _pump(tester);
+      final controller = _editor(tester).controller;
+      controller.insertText('Keep my draft. ');
+      final source = controller.source;
+      final choice = pendingFileChoice(tester);
+      await _runPalette(tester, 'Import…');
+      choice.complete('/scripts/source.fountain');
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(core.requests, ['/scripts/alpha.fountain']);
+      expect(core.importRequests, isEmpty);
+      expect(_editor(tester).controller, same(controller));
+      expect(controller.source, source);
+      expect(core.opened.single.closes, 0);
+    },
+  );
+
+  for (final editorOpen in [false, true]) {
+    testWidgets('New stays a native creation with editor open: $editorOpen', (
+      tester,
+    ) async {
+      final core = await _pump(tester, open: editorOpen);
+      final choice = pendingFileChoice(tester);
+      await _key(tester, LogicalKeyboardKey.keyN, control: true);
+      // A save chooser preserves explicit suffixes. Creation must not dispatch
+      // the requested destination to the FDX importer.
+      choice.complete('/scripts/new.fdx');
+      await tester.pumpAndSettle();
+      expect(core.requests.last, '/scripts/new.fdx');
+      expect(core.importRequests, isEmpty);
+      expect(_editor(tester).controller.core.path, '/scripts/new.fdx');
+    });
+
+    testWidgets('Ctrl+O Browse imports FDX with editor open: $editorOpen', (
+      tester,
+    ) async {
+      final core = await _pump(tester, open: editorOpen);
+      final candidate = await prepareImport(core, warnings: false);
+      Map<Object?, Object?>? arguments;
+      final choice = pendingFileChoice(
+        tester,
+        onChoose: (value) => arguments = value,
+      );
+      await _key(tester, LogicalKeyboardKey.keyO, control: true);
+      await tester.tap(find.byKey(const ValueKey('quick-open-browse')));
+      await tester.pumpAndSettle();
+      expect(arguments, containsPair('screenplayFiles', true));
+      choice.complete('/scripts/browsed.FdX');
+      await tester.pumpAndSettle();
+      expect(core.requests, editorOpen ? ['/scripts/alpha.fountain'] : isEmpty);
+      expect(core.importRequests, ['/scripts/browsed.FdX']);
+      expect(_editor(tester).controller.core, same(candidate));
+    });
+  }
+
+  testWidgets('Library Import chooser cancellation opens nothing', (
     tester,
   ) async {
     final core = await _pump(tester, open: false);
     final choice = pendingFileChoice(tester);
-    await tester.tap(find.byKey(const Key('import-fdx')));
+    await tester.tap(find.byKey(const Key('import-script')));
     await tester.pumpAndSettle();
     choice.complete(null);
     await tester.pumpAndSettle();
@@ -990,14 +1121,14 @@ void main() {
     },
   );
 
-  testWidgets('editor overflow Import FDX cancellation retains session', (
+  testWidgets('editor overflow Import cancellation retains session', (
     tester,
   ) async {
     final core = await _pump(tester);
     final choice = pendingFileChoice(tester);
     await tester.tap(find.byKey(const ValueKey('editor overflow')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Import FDX…'));
+    await tester.tap(find.text('Import…'));
     await tester.pumpAndSettle();
     choice.complete(null);
     await tester.pumpAndSettle();

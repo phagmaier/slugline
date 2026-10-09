@@ -43,7 +43,7 @@ List<EditorCommand> editorCommands({
   VoidCallback? previewAndExport,
   VoidCallback? newScript,
   VoidCallback? openScript,
-  VoidCallback? importFdx,
+  VoidCallback? importScript,
   VoidCallback? closeScript,
   VoidCallback? openPreferences,
   VoidCallback? showSpelling,
@@ -73,8 +73,8 @@ List<EditorCommand> editorCommands({
         shortcut: 'Ctrl+O',
         run: run,
       ),
-    if (importFdx case final run?)
-      EditorCommand(group: 'File', label: 'Import FDX…', run: run),
+    if (importScript case final run?)
+      EditorCommand(group: 'File', label: 'Import…', run: run),
     if (closeScript case final run?)
       EditorCommand(
         group: 'File',

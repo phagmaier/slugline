@@ -187,6 +187,54 @@ static gboolean is_nullable_string(FlValue* value) {
          value_has_type(value, FL_VALUE_TYPE_STRING);
 }
 
+static void add_extension_pattern(GtkFileFilter* filter,
+                                  const gchar* extension) {
+  GString* pattern = g_string_new("*.");
+  for (const gchar* character = extension; *character != '\0'; character++) {
+    if (g_ascii_isalpha(*character)) {
+      g_string_append_printf(pattern, "[%c%c]", g_ascii_tolower(*character),
+                             g_ascii_toupper(*character));
+    } else {
+      g_string_append_c(pattern, *character);
+    }
+  }
+  gtk_file_filter_add_pattern(filter, pattern->str);
+  g_string_free(pattern, TRUE);
+}
+
+static void add_file_filters(GtkFileChooser* chooser,
+                             const gchar* extension,
+                             gboolean screenplay_files) {
+  GtkFileFilter* filter = gtk_file_filter_new();
+  if (screenplay_files) {
+    gtk_file_filter_set_name(filter, "Screenplays (*.fountain, *.fdx)");
+    add_extension_pattern(filter, "fountain");
+    add_extension_pattern(filter, "fdx");
+  } else {
+    g_autofree gchar* filter_name =
+        g_strdup_printf("%s files (*.%s)", extension, extension);
+    gtk_file_filter_set_name(filter, filter_name);
+    add_extension_pattern(filter, extension);
+  }
+  gtk_file_chooser_add_filter(chooser, filter);
+  gtk_file_chooser_set_filter(chooser, filter);
+
+  if (screenplay_files) {
+    GtkFileFilter* fountain = gtk_file_filter_new();
+    gtk_file_filter_set_name(fountain, "Fountain (*.fountain)");
+    add_extension_pattern(fountain, "fountain");
+    gtk_file_chooser_add_filter(chooser, fountain);
+    GtkFileFilter* fdx = gtk_file_filter_new();
+    gtk_file_filter_set_name(fdx, "Final Draft (*.fdx)");
+    add_extension_pattern(fdx, "fdx");
+    gtk_file_chooser_add_filter(chooser, fdx);
+  }
+  GtkFileFilter* all_files = gtk_file_filter_new();
+  gtk_file_filter_set_name(all_files, "All files");
+  gtk_file_filter_add_pattern(all_files, "*");
+  gtk_file_chooser_add_filter(chooser, all_files);
+}
+
 // A null response means the call is retained for the asynchronous GTK signals.
 static FlMethodResponse* choose_file(MyApplication* self,
                                      FlMethodCall* method_call) {
@@ -202,14 +250,25 @@ static FlMethodResponse* choose_file(MyApplication* self,
   FlValue* must_exist = fl_value_lookup_string(args, "mustExist");
   FlValue* select_directory = fl_value_lookup_string(args, "selectDirectory");
   FlValue* extension_value = fl_value_lookup_string(args, "extension");
+  FlValue* screenplay_value = fl_value_lookup_string(args, "screenplayFiles");
   if (!value_has_type(title, FL_VALUE_TYPE_STRING) ||
       !value_has_type(action, FL_VALUE_TYPE_STRING) ||
       !is_nullable_string(directory) || !is_nullable_string(suggested_name) ||
       !value_has_type(must_exist, FL_VALUE_TYPE_BOOL) ||
       !value_has_type(select_directory, FL_VALUE_TYPE_BOOL) ||
-      !value_has_type(extension_value, FL_VALUE_TYPE_STRING)) {
+      !value_has_type(extension_value, FL_VALUE_TYPE_STRING) ||
+      (screenplay_value != nullptr &&
+       !value_has_type(screenplay_value, FL_VALUE_TYPE_BOOL))) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "invalid-argument", "chooseFile arguments have missing or invalid types",
+        nullptr));
+  }
+  const gboolean screenplay_files =
+      screenplay_value != nullptr && fl_value_get_bool(screenplay_value);
+  if (screenplay_files && (!fl_value_get_bool(must_exist) ||
+                           fl_value_get_bool(select_directory))) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "invalid-argument", "Screenplay filters require an open-file chooser",
         nullptr));
   }
   const gchar* extension = fl_value_get_string(extension_value);
@@ -275,27 +334,7 @@ static FlMethodResponse* choose_file(MyApplication* self,
   gtk_file_chooser_set_current_folder(chooser, absolute_directory);
 
   if (mode != GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER) {
-    GString* pattern = g_string_new("*.");
-    for (const gchar* character = extension; *character != '\0'; character++) {
-      if (g_ascii_isalpha(*character)) {
-        g_string_append_printf(pattern, "[%c%c]", g_ascii_tolower(*character),
-                               g_ascii_toupper(*character));
-      } else {
-        g_string_append_c(pattern, *character);
-      }
-    }
-    g_autofree gchar* filter_name =
-        g_strdup_printf("%s files (*.%s)", extension, extension);
-    GtkFileFilter* filter = gtk_file_filter_new();
-    gtk_file_filter_set_name(filter, filter_name);
-    gtk_file_filter_add_pattern(filter, pattern->str);
-    g_string_free(pattern, TRUE);
-    gtk_file_chooser_add_filter(chooser, filter);
-    gtk_file_chooser_set_filter(chooser, filter);
-    GtkFileFilter* all_files = gtk_file_filter_new();
-    gtk_file_filter_set_name(all_files, "All files");
-    gtk_file_filter_add_pattern(all_files, "*");
-    gtk_file_chooser_add_filter(chooser, all_files);
+    add_file_filters(chooser, extension, screenplay_files);
 
     if (value_has_type(suggested_name, FL_VALUE_TYPE_STRING) &&
         *fl_value_get_string(suggested_name) != '\0') {

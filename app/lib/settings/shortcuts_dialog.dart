@@ -103,7 +103,7 @@ const _sections = <(String, List<(String, String)>)>[
     'Files and view',
     [
       ('Ctrl+N', 'New script…'),
-      ('Ctrl+O', 'Quick-open scripts; Browse… for another file'),
+      ('Ctrl+O', 'Quick-open scripts; Browse… for Fountain or FDX'),
       ('Ctrl+W', 'Back to the library'),
       ('↑ / ↓ / Enter', 'Select / open a library or quick-open script'),
       ('Ctrl+S', 'Save'),

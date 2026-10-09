@@ -247,7 +247,7 @@ editable while the text uses its resolved face; wrapping counts printed width.
 | `F1` | Keyboard shortcut reference |
 | `F11` | Distraction-free full screen |
 
-New, Open, Import FDX, Back to the library, Save, Save as and Preview are also in
+New, Open, Import, Back to the library, Save, Save as and Preview are also in
 the command palette, along with "Previous versions…" and "Title page…".
 Preferences, Spell checking, Keyboard shortcuts, navigator visibility,
 distraction-free mode, page/continuous view and text-size changes are there too.
@@ -266,7 +266,7 @@ closes either chooser without changing the draft. `Ctrl+N` asks where to create
 the new script. Choosing the current script in quick-open keeps its session and
 undo history.
 
-New, Browse, Import FDX, Save As, Rename and Export use GTK's local file dialog,
+New, Browse, Import, Save As, Rename and Export use GTK's local file dialog,
 with system bookmarks, search, keyboard navigation and folder creation.
 File dialogs start beside the current script when one is open; otherwise they remember the last
 accepted folder during this launch, falling back to home. Fountain/FDX/PDF/font
@@ -277,16 +277,20 @@ Preferences uses the same dialog for a TrueType font or a backup folder.
 
 The library focuses its search field when it opens. Typing filters by title or
 path, `↑` / `↓` selects a row, and `Enter` opens it; a missing file cannot be
-opened. New and Open work there too. Leaving an editor through New, Open or
+opened. New and Import are the library's file buttons; `Ctrl+O` still opens the
+recent-script chooser. Leaving an editor through New, Open, Import or
 `Ctrl+W` always checks unsaved changes with the same Save / Discard / Cancel
 dialog as the back arrow. Input and autosave are held during that action, and
 the current session stays open until the destination has loaded successfully.
 These keys also work in distraction-free mode.
 
-**Import FDX…** is also a library button. It decodes an isolated candidate
+**Import…** opens a file picker showing Fountain (`.fountain`) and Final Draft
+(`.fdx`) together, with optional filters for each format. Quick-open's
+**Browse…** accepts both formats too. A Fountain selection opens the original
+file for editing. An FDX selection decodes an isolated candidate
 before asking to close the current script. Cancelling the chooser, conversion
 warnings or unsaved-changes prompt keeps the current editor untouched; decode
-failure is reported without closing it. An accepted import is a new, unsaved
+failure is reported without closing it. An accepted FDX import is a new, unsaved
 Fountain script with no binding to its source FDX. Save asks for a Fountain
 destination, and the source is never watched, autosaved or library-indexed.
 

@@ -24,7 +24,8 @@ class LibraryPage extends StatefulWidget {
   const LibraryPage({
     required this.core,
     required this.onOpen,
-    this.onImportFdx,
+    this.onCreate,
+    this.onImport,
     this.onOpenPreferences,
     this.onShowShortcuts,
     super.key,
@@ -34,7 +35,8 @@ class LibraryPage extends StatefulWidget {
 
   /// Open a script at this path. The shell above turns it into an editor.
   final Future<void> Function(String path) onOpen;
-  final Future<void> Function()? onImportFdx;
+  final Future<void> Function(String path)? onCreate;
+  final Future<void> Function()? onImport;
   final Future<void> Function()? onOpenPreferences;
   final Future<void> Function()? onShowShortcuts;
 
@@ -92,6 +94,7 @@ class _LibraryPageState extends State<LibraryPage> {
         action: 'Create',
         suggestedName: 'untitled.fountain',
       ),
+      accept: widget.onCreate,
     );
   }
 
@@ -99,8 +102,8 @@ class _LibraryPageState extends State<LibraryPage> {
     await _choose(() => QuickOpenDialog.show(context, widget.core));
   }
 
-  Future<void> _importFdx() async {
-    final action = widget.onImportFdx;
+  Future<void> _importScript() async {
+    final action = widget.onImport;
     if (_choosing || action == null) return;
     _choosing = true;
     try {
@@ -112,13 +115,16 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Future<void> _choose(Future<String?> Function() choose) async {
+  Future<void> _choose(
+    Future<String?> Function() choose, {
+    Future<void> Function(String path)? accept,
+  }) async {
     if (_choosing) return;
     _choosing = true;
     try {
       final path = await choose();
       if (path == null || !mounted) return;
-      await widget.onOpen(path);
+      await (accept ?? widget.onOpen)(path);
       if (mounted) await _refresh();
     } finally {
       _choosing = false;
@@ -283,12 +289,11 @@ class _LibraryPageState extends State<LibraryPage> {
               onPressed: widget.onOpenPreferences,
               icon: const Icon(Icons.settings_outlined),
             ),
-            TextButton(onPressed: _openScript, child: const Text('Open')),
-            if (widget.onImportFdx != null)
+            if (widget.onImport != null)
               TextButton(
-                key: const Key('import-fdx'),
-                onPressed: _importFdx,
-                child: const Text('Import FDX…'),
+                key: const Key('import-script'),
+                onPressed: _importScript,
+                child: const Text('Import…'),
               ),
             const SizedBox(width: 8),
             FilledButton.icon(
@@ -361,7 +366,7 @@ class _LibraryPageState extends State<LibraryPage> {
             ),
             const SizedBox(height: 18),
             Text(
-              'No scripts yet. Create a new script to start writing.',
+              'No scripts yet. Create a new script or import a screenplay.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: context.colours.textSecondary,
@@ -380,11 +385,10 @@ class _LibraryPageState extends State<LibraryPage> {
                   icon: const Icon(Icons.add),
                   label: const Text('New script'),
                 ),
-                TextButton(onPressed: _openScript, child: const Text('Open')),
-                if (widget.onImportFdx != null)
+                if (widget.onImport != null)
                   TextButton(
-                    onPressed: _importFdx,
-                    child: const Text('Import FDX…'),
+                    onPressed: _importScript,
+                    child: const Text('Import…'),
                   ),
               ],
             ),

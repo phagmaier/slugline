@@ -63,6 +63,7 @@ Future<List<String>> _pump(
       home: LibraryPage(
         core: _FakeLibraryCore(scripts),
         onOpen: (path) async => opened.add(path),
+        onImport: () async {},
       ),
     ),
   );
@@ -211,7 +212,7 @@ void main() {
     expect(icon, findsOneWidget);
     expect(tester.getCenter(icon).dx, 600);
     expect(
-      find.text('No scripts yet. Create a new script to start writing.'),
+      find.text('No scripts yet. Create a new script or import a screenplay.'),
       findsOneWidget,
     );
 
@@ -221,10 +222,12 @@ void main() {
       reason: 'the app bar and empty state both use the primary action',
     );
     expect(
-      find.widgetWithText(TextButton, 'Open'),
+      find.widgetWithText(TextButton, 'Import…'),
       findsNWidgets(2),
-      reason: 'Open stays visually secondary in both action groups',
+      reason: 'Import stays visually secondary in both action groups',
     );
+    expect(find.text('Open'), findsNothing);
+    expect(find.text('Import FDX…'), findsNothing);
     expect(find.byType(OutlinedButton), findsNothing);
   });
 
