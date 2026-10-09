@@ -8,10 +8,13 @@ finished, and update its source note if the status or evidence changes.
 
 ## Bugs and engineering follow-ups
 
-- [ ] Fix generic `apply_group` rollback so a rejected grouped edit preserves
-  Redo history that existed before the group. X7's public commands stage their
-  history, but unrelated grouped commands still have this gap. See
-  [X7's remaining finding](docs/BACKLOG.md#x7).
+- [x] Fix generic `apply_group` rollback so a rejected grouped edit preserves
+  Redo history that existed before the group. See
+  [X7's resolved finding](docs/BACKLOG.md#x7).
+  **Result:** Confirmed and fixed in `Preserve history when grouped edits fail`:
+  every group stages its history until success, retaining prior Undo/Redo and
+  pending typing on rejection or no-op. Document regressions and the bridge
+  document API tests pass.
 - [ ] Investigate the pagination case where an action paragraph taller than a
   page arrives when the current page is exactly full: the next page starts
   with a blank row. Update the incremental/full-pagination expectation when

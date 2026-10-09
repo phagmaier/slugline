@@ -377,19 +377,10 @@ impl Document {
                 | EditCommand::OmitScene { .. }
                 | EditCommand::RestoreOmitted { .. }
         ) {
-            // Stage only this gesture's history. A late multi-restore refusal
-            // must not erase pre-existing redo or evict older undo transactions.
-            let previous_history = std::mem::take(&mut self.history);
-            let outcome = self.apply_group(before, |group| {
+            return self.apply_group(before, |group| {
                 group.apply(command)?;
                 Ok(())
             });
-            let transaction = outcome.as_ref().ok().and_then(|_| self.history.take_undo());
-            self.history = previous_history;
-            if let Some(transaction) = transaction {
-                self.history.append_edit(transaction);
-            }
-            return outcome;
         }
 
         let revision = self.revision;
@@ -521,6 +512,11 @@ impl Document {
             self.check_selection(selection)?;
         }
         let start_revision = self.revision;
+        // Record only this group's inverses until it succeeds. Recording into
+        // the live history would clear Redo and could evict old Undo steps
+        // before a later command refuses. Moving it also preserves pending
+        // typing across failed and no-op groups without cloning the history.
+        let previous_history = std::mem::take(&mut self.history);
         self.history.begin_group();
 
         let mut group = Grouped {
@@ -534,17 +530,22 @@ impl Document {
         if let Err(error) = outcome {
             if self.revision != start_revision {
                 self.undo();
-                // The caller is being told the command did nothing, so there is
-                // nothing for a redo to put back.
-                self.history.drop_last_redo();
             }
+            self.history = previous_history;
             return Err(error);
         }
 
         let result = merged.into_result();
-        if self.revision != start_revision {
+        let transaction = if self.revision != start_revision {
             self.history
                 .set_selections(self.revision, before, result.selection);
+            self.history.take_undo()
+        } else {
+            None
+        };
+        self.history = previous_history;
+        if let Some(transaction) = transaction {
+            self.history.append_edit(transaction);
         }
         Ok(result)
     }

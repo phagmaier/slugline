@@ -236,13 +236,6 @@ impl History {
         self.close();
     }
 
-    /// Drops the transaction an undo just pushed onto the redo stack. Used when
-    /// the undo was a rollback of a group that failed half-way: the caller was
-    /// told the command did nothing, so there is nothing to redo.
-    pub(crate) fn drop_last_redo(&mut self) {
-        self.undone.pop();
-    }
-
     pub(crate) fn take_undo(&mut self) -> Option<Transaction> {
         self.close();
         self.done.pop()

@@ -3068,10 +3068,14 @@ untouched provenance matching the serializer's witnessed bytes, and translates
 journal identities at a saved checkpoint without changing actor state. Buffered
 outcomes, new inserts and second-crash recovery retain the existing record format.
 
-**Found along the way (read).** Generic `apply_group` rollback still clears
-pre-existing Redo after a late failure in unrelated grouped commands. X7's public
-commands stage their history; extending that protection to other commands is a
-separate task.
+**Found along the way (resolved).** Generic `apply_group` rollback cleared
+pre-existing Redo after a late failure in unrelated grouped commands, while X7's
+public commands staged their history. `Preserve history when grouped edits fail`
+moves that staging into the shared primitive, preserving prior Undo/Redo and
+pending typing across rejected and no-op groups without cloning the history.
+Document regressions cover late stale-ID/Unicode refusals, exact BOM/CRLF source,
+provenance, pins, directed selections and the Undo limit; bridge document API
+tests pass.
 
 Final local release idle measurement fails with one voluntary main-thread switch
 in otherwise zero-tick intervals. The unchanged, previously verified `593e6ad`
