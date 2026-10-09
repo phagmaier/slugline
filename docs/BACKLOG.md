@@ -3230,6 +3230,7 @@ not part of that item.
   Close shortcuts, the added palette commands, `Shift+Enter` line breaks and
   "Go to page…" are all user-visible and all absent from "Unreleased"; W5 adds
   its own line and leaves theirs for whoever cuts the next release notes.
+  Resolved on 2026-10-09: the four lines are under "Added" in "Unreleased".
 
 - 2026-10-06 — W4's first release-process budget run failed idle: all three
   ten-second intervals had voluntary thread switches (1, 64, 1); the first

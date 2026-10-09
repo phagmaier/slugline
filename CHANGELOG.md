@@ -46,6 +46,20 @@ this file and the others to it.
   including the title page, before restoring. “Open as copy…” saves the viewed
   version under a new filename and opens it in a separate window without
   replacing the current script or its unsaved work.
+- Ctrl+N starts a new script, Ctrl+O opens a searchable list of recent scripts
+  with “Browse…” at its end, and Ctrl+W goes back to the library. The library
+  focuses its search field and takes Up/Down and Enter, so a script can be
+  found, opened, left and replaced without the mouse. Leaving a script still
+  asks about unsaved changes first; the keys work in distraction-free mode too.
+- Ctrl+K now reaches Preferences, Spell checking, Keyboard shortcuts, showing
+  or hiding the navigator, distraction-free mode, page or continuous view and
+  text size, as well as New, Open and Back to the library.
+- Shift+Enter types a line break inside an Action, Dialogue or Note element and
+  keeps both lines in that element; in other elements it does what Enter does.
+  It is one undo step, and Ctrl+K → “Insert line break” does the same.
+- Ctrl+L, or Ctrl+K → “Go to page…”, moves the caret to the first line of a
+  printed page. Page 1 is the start of the script; the title page is not
+  counted.
 - The release process now has automated cold-start, idle wakeup and memory
   regression checks under Xvfb. The separate real-desktop memory budget remains
   a manual verification gate.
