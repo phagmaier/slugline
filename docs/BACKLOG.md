@@ -102,7 +102,7 @@ This is the only place boxes are ticked.
 **5. Larger features — plan and use judgment where needed**
 
 - [x] [X1](#x1) Dual dialogue
-- [ ] [X2](#x2) Final Draft (FDX) import and export
+- [x] [X2](#x2) Final Draft (FDX) import and export
 - [ ] [X3](#x3) Scene numbering commands
 - [ ] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
 - [ ] [X5](#x5) Outline in the navigator
@@ -2267,7 +2267,54 @@ native title form would display the last value and write it into the first.
 Resolve title emphasis per hard line, as the native preview/PDF do.
 
 **Effort.** M–L.
-**Result:** _open_
+**Result:** 2026-10-09 — implementation `6214b67`
+(`X2 — Import and export editable FDX copies safely`), with this separate
+completion record. ADR 0055 selects both migration import and editable-copy
+export, with Fountain remaining native. The syntax-only `fdx -> fountain`
+crate uses quick-xml 0.38.3; the bridge alone adds its dependency and owns
+session/atomic-copy behavior. Imports create isolated dirty candidates,
+warn before adoption, and preserve the old editor on cancellation/failure.
+Exports require exact-revision conversion approval and existing replacement/
+open-script protection, without changing native path, dirty state or history.
+
+Supported kinds, numbers, disjoint dual speeches, BIU, title text, hard lines,
+whitespace and Unicode are preserved. Unsupported authored text is retained
+with diagnostics or refused, never silently replaced by empty content.
+Nonprinting text may become visible to another recipient, explicitly warned.
+Stale metadata cannot override visible paragraph kinds/alignment/page breaks
+or conflicting raw text/style/scene-number content. Imported duplicate title
+keys coalesce before the single-value native form; title emphasis stays
+independent per hard line. Standard finite ParagraphSpec bounds are emitted
+because real Fade In otherwise renders ordinary paragraphs blank; these are
+interchange defaults, not promised native pagination/font/margin fidelity.
+Approved warnings remain in the scrollable dialog, avoiding the reproduced
+fixed-footer overflow after eight diagnostics.
+
+Deviation from the pre-implementation recovery design is recorded, not hidden:
+ADR 0062 refines ADR 0055's initial journal base. Untitled headers contain only
+a checksum, so the full initial title/body outcome is recorded against blank,
+without an Undo transaction. An explicit empty forced Action now retains its
+native `!` representation to preserve imported caret identity on save/recovery.
+
+Verified 701 Rust tests in 38 suites, 732 widgets and 88 native tests in seven
+suites; formatting, clippy/analyze, layering/version/docs/reference, generated
+bindings, Rust 1.85, release build and network isolation passed. Four deliberate
+guard faults failed their regressions; stale metadata, title-field/row and
+large-warning cases fail before and pass after. No goldens were regenerated.
+The actual Fade In 5.0.15 producer fixture was imported, killed before document
+typing, recovered and saved as Fountain. Its copy export reopened in Fade In
+with title/BIU/Unicode/numbers/dual speeches/hard break and all authored words;
+native and producer bytes stayed unchanged. Real title-form inspection and
+paired scene-card XML import/save also passed.
+
+The unchanged final runtime harness passed startup 375.568 ms, Xvfb RSS
+275.29 MiB and an idle interval with zero ticks/switches; 15 stressed ordinary
+closes exited zero. Earlier local failures remain retained, not reclassified
+as passes; no idle fix or threshold change is claimed. Evidence:
+`target/x2-fdx-smoke/` (verification/logs/screenshots and runtime/close JSON).
+Genuine Final Draft, physical print calibration, desktop IME/Orca/HiDPI and
+real-GPU 250 MiB RSS remain manual. Unrelated title-refresh, duplicate-native-
+key and no-op-title-journal findings are recorded below and not fixed.
 
 <a id="x3"></a>
 ### X3 — Scene numbering commands
