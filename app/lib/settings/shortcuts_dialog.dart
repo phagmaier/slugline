@@ -122,6 +122,7 @@ const _sections = <(String, List<(String, String)>)>[
       ('Ctrl+X / Ctrl+C / Ctrl+V', 'Cut, copy, and Fountain-aware paste'),
       ('Ctrl+Shift+V', 'Paste as plain Action text'),
       ('Ctrl+A', 'Select all'),
+      ('Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline the selection'),
       ('Ctrl+Space', 'Show suggestions, including the cast in an empty cue'),
       (
         'Shift+Enter',

@@ -1,22 +1,25 @@
+use slugline_fountain::emphasis::{self, Emphasis, EmphasisRun, SourceRun};
+
 /// One visual row of wrapped text, as boundaries in the source it came from.
 ///
 /// The rendered row is one coordinate system and the source is another; this is
 /// the second one. Offsets are UTF-8 byte offsets into the text handed to
 /// [`line_spans`], and [`columns`](LineSpan::columns) is the row's width on the
-/// §5.2 grid, where one Unicode scalar is one cell and a tab is however many
-/// cells its stop takes. Subtracting the two offsets is a column count only for
-/// text that happens to be plain ASCII — `docs/LINE_BREAKING.md` is what says so.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// printed grid: one visible Unicode scalar is one cell, paired markers and
+/// escape slashes are zero cells, and tabs advance to four-column stops.
+/// Source bytes and printed columns are intentionally different coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LineSpan {
     /// Byte offset of the row's first scalar. Inclusive.
     pub start_utf8: usize,
     /// Byte offset one past the row's last scalar. Exclusive.
     ///
-    /// The whitespace a wrap consumed is the gap between one row's end and the
-    /// next row's start, and a tab a wrap split lies inside that gap: no offset
-    /// ever points into a source scalar.
+    /// Consumed boundary whitespace normally lies between adjacent spans.
+    /// Hidden markers interleaved in that gap remain in the preceding span,
+    /// without restoring consumed printed spaces. Boundaries never split a
+    /// source scalar, including a tab whose expansion straddles a wrap.
     pub end_utf8: usize,
-    /// Grid cells the row occupies, after tab expansion.
+    /// Printed grid cells, after source projection and tab expansion.
     pub columns: usize,
     /// Byte offset of the `\n` that terminates this row, when there is one.
     ///
@@ -26,10 +29,10 @@ pub struct LineSpan {
     pub hard_break_utf8: Option<usize>,
 }
 
-/// Breaks fixed-grid text on ASCII spaces. Runs of spaces inside a line are
-/// preserved; spaces at a chosen wrap boundary are consumed. A word wider than
-/// the column width is the only text split mid-word. Tabs expand to four-column
-/// tab stops before wrapping, and explicit newlines always begin a new line.
+/// Breaks Fountain source on printed ASCII spaces. Paired markers and escaping
+/// slashes occupy no columns, but remain intact in the returned raw row text.
+/// Internal spaces are preserved and chosen boundary spaces are consumed.
+/// Long words split on printed cells; explicit newlines always start a row.
 pub fn break_lines(text: &str, width: u16) -> Vec<String> {
     break_lines_with_spans(text, width)
         .into_iter()
@@ -51,21 +54,49 @@ pub fn line_spans(text: &str, width: u16) -> Vec<LineSpan> {
         .collect()
 }
 
+/// Wraps already resolved Fountain source metadata without interpreting it again.
+pub fn line_spans_with_runs(text: &str, width: u16, runs: &[SourceRun]) -> Vec<LineSpan> {
+    break_lines_projected(text, width, runs)
+        .into_iter()
+        .map(|line| line.span)
+        .collect()
+}
+
+/// Returns raw output rows using source metadata already resolved by Fountain.
+pub fn break_lines_with_runs(text: &str, width: u16, runs: &[SourceRun]) -> Vec<String> {
+    break_lines_projected(text, width, runs)
+        .into_iter()
+        .map(|line| line.text)
+        .collect()
+}
+
 pub(crate) struct WrappedLine {
     pub(crate) span: LineSpan,
+    /// Original markers retained, tabs expanded, boundary spaces consumed.
     pub(crate) text: String,
+    pub(crate) runs: Vec<EmphasisRun>,
+    pub(crate) projected: bool,
 }
 
-/// One hard line expanded onto the grid: one entry per cell.
+/// Printed cells and their exact source geometry. Hidden prefixes belong to
+/// the following cell; the first prefix begins at the hard-line boundary.
 struct Cells {
-    /// The scalar drawn in each cell. A tab contributes spaces.
     scalars: Vec<char>,
-    /// The byte offset of the scalar each cell belongs to.
+    starts: Vec<usize>,
     offsets: Vec<usize>,
+    emphasis: Vec<Emphasis>,
 }
 
-/// Returns row text and its source boundaries from a single wrapping pass.
 pub(crate) fn break_lines_with_spans(text: &str, width: u16) -> Vec<WrappedLine> {
+    let runs = emphasis::source_runs(text);
+    break_lines_projected(text, width, &runs)
+}
+
+pub(crate) fn break_lines_projected(
+    text: &str,
+    width: u16,
+    runs: &[SourceRun],
+) -> Vec<WrappedLine> {
     let width = usize::from(width.max(1));
     let mut output = Vec::new();
     let mut hard_start = 0usize;
@@ -73,10 +104,12 @@ pub(crate) fn break_lines_with_spans(text: &str, width: u16) -> Vec<WrappedLine>
         let newline = text[hard_start..].find('\n').map(|at| hard_start + at);
         let hard_end = newline.unwrap_or(text.len());
         wrap_hard_line(
-            &text[hard_start..hard_end],
+            text,
             hard_start,
+            hard_end,
             width,
             newline,
+            runs,
             &mut output,
         );
         match newline {
@@ -86,43 +119,59 @@ pub(crate) fn break_lines_with_spans(text: &str, width: u16) -> Vec<WrappedLine>
     }
 }
 
-fn expand(line: &str, base: usize) -> Cells {
-    let mut scalars = Vec::with_capacity(line.len());
-    let mut offsets = Vec::with_capacity(line.len());
+fn expand(text: &str, base: usize, end: usize, runs: &[SourceRun]) -> Cells {
+    let mut cells = Cells {
+        scalars: Vec::with_capacity(end - base),
+        starts: Vec::with_capacity(end - base),
+        offsets: Vec::with_capacity(end - base),
+        emphasis: if runs.is_empty() {
+            Vec::new()
+        } else {
+            Vec::with_capacity(end - base)
+        },
+    };
     let mut column = 0usize;
-    for (offset, character) in line.char_indices() {
-        match character {
-            '\t' => {
-                let cells = 4 - column % 4;
-                for _ in 0..cells {
-                    scalars.push(' ');
-                    offsets.push(base + offset);
-                }
-                column += cells;
-            }
-            // Not part of the shared input domain; the editor drops it too.
-            '\r' => {}
-            other => {
-                scalars.push(other);
-                offsets.push(base + offset);
-                column += 1;
+    let mut pending = base;
+    let mut run_index = runs.partition_point(|run| run.end_utf8 <= base);
+    for (relative, character) in text[base..end].char_indices() {
+        let offset = base + relative;
+        while run_index < runs.len() && runs[run_index].end_utf8 <= offset {
+            run_index += 1;
+        }
+        let run = runs.get(run_index).filter(|run| run.start_utf8 <= offset);
+        if run.is_some_and(|run| run.hidden) || character == '\r' {
+            continue;
+        }
+        let count = if character == '\t' { 4 - column % 4 } else { 1 };
+        for cell in 0..count {
+            cells
+                .scalars
+                .push(if character == '\t' { ' ' } else { character });
+            cells.starts.push(if cell == 0 { pending } else { offset });
+            cells.offsets.push(offset);
+            if !runs.is_empty() {
+                cells
+                    .emphasis
+                    .push(run.map_or(Emphasis::PLAIN, |run| run.emphasis));
             }
         }
+        column += count;
+        pending = offset + character.len_utf8();
     }
-    Cells { scalars, offsets }
+    cells
 }
 
 fn wrap_hard_line(
-    line: &str,
+    text: &str,
     base: usize,
+    hard_end: usize,
     width: usize,
     hard_break: Option<usize>,
+    runs: &[SourceRun],
     output: &mut Vec<WrappedLine>,
 ) {
-    let hard_end = base + line.len();
-    let cells = expand(line, base);
+    let cells = expand(text, base, hard_end, runs);
     if cells.scalars.is_empty() {
-        // An empty hard line still occupies a row.
         output.push(WrappedLine {
             span: LineSpan {
                 start_utf8: base,
@@ -130,13 +179,14 @@ fn wrap_hard_line(
                 columns: 0,
                 hard_break_utf8: hard_break,
             },
-            text: String::new(),
+            text: text[base..hard_end].replace('\r', ""),
+            runs: Vec::new(),
+            projected: !runs.is_empty(),
         });
         return;
     }
-
     let first = output.len();
-    let mut start = 0usize;
+    let mut start = 0;
     while cells.scalars.len() - start > width {
         let window = &cells.scalars[start..start + width + 1];
         let break_at = if window[width] == ' ' {
@@ -147,71 +197,216 @@ fn wrap_hard_line(
                 .rposition(|character| *character == ' ')
                 .filter(|offset| window[..*offset].iter().any(|character| *character != ' '))
         };
-
-        match break_at {
-            Some(offset) => {
-                output.push(row(&cells, start, start + offset, hard_end, None));
-                start += offset;
-                while cells.scalars.get(start) == Some(&' ') {
-                    start += 1;
-                }
-            }
-            None => {
-                output.push(row(&cells, start, start + width, hard_end, None));
-                start += width;
+        let to = start + break_at.unwrap_or(width);
+        let mut next = to;
+        if break_at.is_some() {
+            while cells.scalars.get(next) == Some(&' ') {
+                next += 1;
             }
         }
+        let mut end = cells.starts.get(to).copied().unwrap_or(hard_end);
+        let gap_end = cells.starts.get(next).copied().unwrap_or(hard_end);
+        let gap_start = end;
+        for hidden in runs
+            .iter()
+            .filter(|run| run.hidden && run.start_utf8 < gap_end && run.end_utf8 > gap_start)
+        {
+            end = end.max(hidden.end_utf8.min(gap_end));
+        }
+        output.push(row(text, &cells, start, to, end, None, runs));
+        start = next;
     }
-
     if start < cells.scalars.len() {
         output.push(row(
+            text,
             &cells,
             start,
             cells.scalars.len(),
             hard_end,
             hard_break,
+            runs,
         ));
-    } else if let Some(hard_break) = hard_break {
-        // A consumed space run can exhaust the rest of a non-empty hard line.
-        // It does not create a phantom row, but its newline still terminates
-        // the preceding one.
+    } else if let Some(newline) = hard_break {
         debug_assert!(output.len() > first);
-        let last = output.len() - 1;
-        output[last].span.hard_break_utf8 = Some(hard_break);
+        output.last_mut().expect("wrapped row").span.hard_break_utf8 = Some(newline);
     }
 }
 
-/// One row, from the half-open cell range that fits on it.
 fn row(
+    source: &str,
     cells: &Cells,
     from: usize,
     to: usize,
-    hard_end: usize,
+    end: usize,
     hard_break: Option<usize>,
+    source_runs: &[SourceRun],
 ) -> WrappedLine {
-    // A row always begins on a scalar: a break lands either on a non-space cell
-    // or after a whole run of spaces, and every cell of a tab is a space.
-    debug_assert!(from == 0 || cells.offsets[from - 1] != cells.offsets[from]);
+    let start = cells.starts[from];
+    let mut text = String::new();
+    let mut runs: Vec<EmphasisRun> = Vec::new();
+    let mut cell = from;
+    let mut run_index = source_runs.partition_point(|run| run.end_utf8 <= start);
+    for (relative, character) in source[start..end].char_indices() {
+        let offset = start + relative;
+        while run_index < source_runs.len() && source_runs[run_index].end_utf8 <= offset {
+            run_index += 1;
+        }
+        let hidden = source_runs
+            .get(run_index)
+            .is_some_and(|run| run.start_utf8 <= offset && run.hidden);
+        if hidden {
+            text.push(character);
+        }
+        while cell < to && cells.offsets[cell] == offset {
+            let character = cells.scalars[cell];
+            let face = cells.emphasis.get(cell).copied().unwrap_or(Emphasis::PLAIN);
+            text.push(character);
+            if !source_runs.is_empty() {
+                match runs.last_mut() {
+                    Some(last) if last.emphasis == face => last.text.push(character),
+                    _ => runs.push(EmphasisRun {
+                        text: character.to_string(),
+                        emphasis: face,
+                    }),
+                }
+            }
+            cell += 1;
+        }
+    }
+    // A tab split by a wrap has printable cells but no complete source scalar
+    // in the row's span. Its selected expansion still belongs to this row.
+    while cell < to {
+        let character = cells.scalars[cell];
+        let face = cells.emphasis.get(cell).copied().unwrap_or(Emphasis::PLAIN);
+        text.push(character);
+        if !source_runs.is_empty() {
+            match runs.last_mut() {
+                Some(last) if last.emphasis == face => last.text.push(character),
+                _ => runs.push(EmphasisRun {
+                    text: character.to_string(),
+                    emphasis: face,
+                }),
+            }
+        }
+        cell += 1;
+    }
     WrappedLine {
         span: LineSpan {
-            start_utf8: cells.offsets[from],
-            // A row ends before the scalar of the next cell, so a tab straddling
-            // the boundary stays outside both rows' source slices.
-            end_utf8: if to < cells.offsets.len() {
-                cells.offsets[to]
-            } else {
-                hard_end
-            },
+            start_utf8: start,
+            end_utf8: end,
             columns: to - from,
             hard_break_utf8: hard_break,
         },
-        text: cells.scalars[from..to].iter().collect(),
+        text,
+        runs,
+        projected: !source_runs.is_empty(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn printed(rows: &[WrappedLine]) -> Vec<String> {
+        rows.iter()
+            .map(|line| {
+                if line.projected {
+                    line.runs.iter().map(|run| run.text.as_str()).collect()
+                } else {
+                    line.text.clone()
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn paired_markup_wraps_by_printed_width_without_changing_raw_source() {
+        let rows = break_lines_with_spans("ab**cd**ef", 2);
+        assert_eq!(printed(&rows), ["ab", "cd", "ef"]);
+        assert_eq!(
+            rows.iter()
+                .map(|line| line.text.as_str())
+                .collect::<String>(),
+            "ab**cd**ef"
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|line| (line.span.start_utf8, line.span.end_utf8))
+                .collect::<Vec<_>>(),
+            [(0, 2), (2, 6), (6, 10)]
+        );
+        assert!(rows[1].runs.iter().all(|run| run.emphasis.bold));
+        assert!(rows[2]
+            .runs
+            .iter()
+            .all(|run| run.emphasis == Emphasis::PLAIN));
+    }
+
+    #[test]
+    fn consumed_space_gaps_do_not_lose_hidden_markers() {
+        let rows = break_lines_with_spans("*a*  *b*", 1);
+        assert_eq!(printed(&rows), ["a", "b"]);
+        assert_eq!(
+            rows.iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>(),
+            ["*a*", "*b*"]
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|line| (line.span.start_utf8, line.span.end_utf8))
+                .collect::<Vec<_>>(),
+            [(0, 3), (5, 8)]
+        );
+        assert!(rows
+            .iter()
+            .flat_map(|line| &line.runs)
+            .all(|run| run.emphasis.italic));
+    }
+
+    #[test]
+    fn escapes_unpaired_markers_unicode_and_tabs_use_resolved_printed_cells() {
+        let rows = break_lines_with_spans(r"\*é🎬\*", 2);
+        assert_eq!(printed(&rows), ["*é", "🎬*"]);
+        assert_eq!(
+            rows.iter()
+                .map(|line| line.text.as_str())
+                .collect::<String>(),
+            r"\*é🎬\*"
+        );
+        assert_eq!(printed(&break_lines_with_spans("**a**\tb", 20)), ["a   b"]);
+        assert_eq!(printed(&break_lines_with_spans("**a", 2)), ["**", "a"]);
+        for width in [1, 2, 20, 28, 33, 35, 60] {
+            let rows = break_lines_with_spans("**é🎬中 wrapped dialogue**", width);
+            assert!(rows
+                .iter()
+                .all(|line| line.span.columns <= usize::from(width)));
+            assert!(rows
+                .iter()
+                .flat_map(|line| &line.runs)
+                .all(|run| run.emphasis.bold));
+        }
+    }
+
+    #[test]
+    fn hard_lines_and_marker_only_sung_rows_keep_source_and_resolved_styles() {
+        let rows = break_lines_with_spans("**ab\ncd**", 1);
+        assert_eq!(printed(&rows), ["a", "b", "c", "d"]);
+        assert_eq!(rows[1].span.hard_break_utf8, Some(4));
+        assert!(rows
+            .iter()
+            .flat_map(|line| &line.runs)
+            .all(|run| run.emphasis.bold));
+        let text = "~\n~**é🎬**\nplain";
+        let projection = emphasis::dialogue_source_runs(text);
+        let rows = break_lines_projected(text, 1, &projection);
+        assert_eq!(printed(&rows), ["", "é", "🎬", "p", "l", "a", "i", "n"]);
+        assert_eq!(rows[0].text, "~");
+        assert_eq!(rows[0].span.columns, 0);
+        assert_eq!(rows[0].span.hard_break_utf8, Some(1));
+        assert!(rows[1].runs[0].emphasis.bold && rows[1].runs[0].emphasis.italic);
+        assert_eq!(rows[3].runs[0].emphasis, Emphasis::PLAIN);
+    }
 
     #[test]
     fn wraps_at_spaces_before_splitting_a_word() {

@@ -26,6 +26,10 @@ Invariants:
 - `doc_number_scenes` and `doc_remove_scene_numbers` interrupt typing, convert
   the exact selection through `offsets.rs`, and journal one grouped outcome
   without reinference (ADR 0056).
+- Inline source metadata rides on every BlockView/patch, translated only through
+  offsets.rs. `doc_format_selection` validates scanner semantics, groups one
+  gesture and finishes through journalled `outcome`; marker-only formatting
+  preserves element kinds rather than reinferring them (ADR 0057).
 - Keep `flutter_rust_bridge = "=2.12.0"` aligned with the Dart package and
   regenerate in the same change. Commit the generated bindings; never edit
   them by hand.
@@ -40,6 +44,6 @@ Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
 `cd app && flutter_rust_bridge_codegen generate`, then
 `./tools/check_bridge_bindings.sh` (the same check CI runs).
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0062. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0062. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

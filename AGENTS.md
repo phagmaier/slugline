@@ -176,9 +176,9 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   `UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf --test golden`.
 - **The renderer makes no layout decisions.** Every row and column comes from
   `crates/layout` and is copied; `Geometry` multiplies a grid cell by its size
-  in points. `render_pdf::emphasis_runs` shares resolved inline emphasis with
-  the bridge (ADR 0045): body rows pair across wraps/pages, title rows pair
-  individually, and an unpaired marker stays an ordinary character.
+  in points. Shared resolved emphasis is scanned before
+  wrapping (ADR 0057); body scopes cross hard lines, title source hard lines
+  resolve individually, and unpaired markers remain ordinary characters.
 - **An incremental pagination is a full pagination, arrived at sooner** (ADR
   0049). `repaginate` keeps pages only from a page the paginator recorded an
   element beginning: before the edit, one it began before it had read the
@@ -191,7 +191,8 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   `app/lib/preview/preview_view.dart` paints Rust's runs and makes no layout
   or emphasis-parsing decision. Raw row content and source identity stay intact.
   “Bold scene headings” is an output preference, off by default, followed by
-  the editor, preview and PDF. Editor inline markup and wrapping remain literal.
+  editor, preview and PDF. Both line breakers use printed-width source projections;
+  editor paired markers stay dim and individually editable (ADR 0057).
 - **Page 1 is counted but not marked** (ADR 0048). `Page::number` is still
   `Some(1)`; whether a page prints its number is whether the paginator gave it
   a page-number line, and page 1 gets one only under “Number the first page”,

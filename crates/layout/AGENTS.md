@@ -12,8 +12,8 @@ Invariants:
 - Only this crate turns preferences into page geometry. Preview, PDF and
   the editor draw the lines they are given; nothing else re-derives page
   numbers or page ends (ADR 0048).
-- Alignment uses printed width (paired markers and escapes removed), never
-  raw length; wrapping stays raw-width (ADR 0044).
+- Alignment and wrapping use printed width (paired markers and escape slashes
+  removed), with exact source spans and pre-resolved output runs (ADR 0057).
 - An incremental repagination is a full pagination arrived at sooner:
   resume and stop only where the paginator recorded it could, and count
   every beyond-the-element lookahead in `blocks_read` (ADR 0049).
@@ -34,6 +34,6 @@ they are bugs:
 `UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential`
 — each needs a sentence in the commit message.
 
-Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049, 0054. Full rules in
+Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049, 0054, 0057. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

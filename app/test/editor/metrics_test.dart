@@ -26,6 +26,7 @@ BlockView _block(BlockKind kind, String text, {int id = 1}) => BlockView(
   forced: false,
   dual: false,
   readOnly: false,
+  inlineRuns: const [],
 );
 
 /// The geometry a document of [totalRows] rows is drawn through, in continuous

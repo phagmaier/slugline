@@ -184,6 +184,11 @@ pub struct LayoutLine {
     /// UTF-8 byte offset of that hard line's leading `~` in raw `content`.
     /// Only the wrapped row containing the marker has an offset.
     pub lyric_marker_utf8: Option<usize>,
+    /// Source-resolved printable runs, computed before soft wrapping. Generated
+    /// furniture has no source projection and is interpreted independently.
+    pub resolved_runs: Option<Vec<slugline_fountain::emphasis::EmphasisRun>>,
+    /// Exact source span in the prepared block text; absent for furniture.
+    pub source_span: Option<crate::line_break::LineSpan>,
 }
 
 /// One title or screenplay page. Screenplay pages have `number = Some(1..)`;

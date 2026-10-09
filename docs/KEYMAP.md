@@ -198,11 +198,19 @@ classification says so.
 | `Ctrl+V` | Paste, as Fountain-aware blocks |
 | `Ctrl+Shift+V` | Paste as plain text — Action blocks, nothing inferred |
 | `Ctrl+A` | Select all |
+| `Ctrl+B` / `Ctrl+I` / `Ctrl+U` | Wrap the selection in bold / italic / underline Fountain markup |
 | `Ctrl+Space` | Show suggestions at the caret, including the cast in an empty cue |
 | `Backspace` | Delete backwards; at offset 0, join to the block above |
 | `Delete` | Delete forwards; at the end, pull the next block up |
 | `Ctrl+Backspace` | Delete the word before the caret; at offset 0, join to the block above |
 | `Ctrl+Delete` | Delete the word after the caret |
+
+Inline formatting is one undo step, retaining selection direction and selecting
+the original content inside the new markers. Rust formats each selected block
+and hard line without removing whitespace or changing element kinds. Empty,
+whitespace-only, read-only or unsafe existing-markup selections are refused
+without mutation. This is wrapping, not a toggle. Dim half-size markers remain
+editable while the text uses its resolved face; wrapping counts printed width.
 
 ## Files
 

@@ -27,6 +27,7 @@ FakeCore twoBlocks() => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: [],
   ),
   const BlockView(
     id: 2,
@@ -36,6 +37,7 @@ FakeCore twoBlocks() => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: [],
   ),
 ]);
 

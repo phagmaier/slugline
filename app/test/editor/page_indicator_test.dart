@@ -21,6 +21,7 @@ BlockView _block(int id, int lines) => BlockView(
   forced: false,
   dual: false,
   readOnly: false,
+  inlineRuns: const [],
 );
 
 /// A page as the paginator hands it over. [numbered] is whether it carries a
@@ -129,6 +130,7 @@ void main() {
                 forced: false,
                 dual: false,
                 readOnly: false,
+                inlineRuns: const [],
               ),
             ]),
           );
@@ -532,7 +534,9 @@ void main() {
     final scrollable = tester.state<ScrollableState>(
       find.descendant(
         of: find.byType(EditorSurface),
-        matching: find.byType(Scrollable),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+        ),
       ),
     );
     scrollable.position.jumpTo(0);

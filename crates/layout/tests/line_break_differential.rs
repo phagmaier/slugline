@@ -27,8 +27,9 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use slugline_document::{split_scene_number, without_notes_and_boneyards, Document};
-use slugline_layout::{break_lines, display_text, line_spans};
+use slugline_document::{split_scene_number, without_notes_and_boneyards, BlockKind, Document};
+use slugline_fountain::emphasis::{self, SourceRun};
+use slugline_layout::{break_lines_with_runs, display_text, line_spans_with_runs};
 
 /// Widths every generated case is wrapped at.
 ///
@@ -60,6 +61,7 @@ struct Case {
     text: String,
     uppercase: bool,
     widths: &'static [u16],
+    dialogue: bool,
 }
 
 #[test]
@@ -122,13 +124,27 @@ fn a_row_of_spans_is_a_row_of_break_lines() {
     // wrap, and this is what says so for every text the fixture carries.
     for case in cases() {
         let display = display_text(&case.text, case.uppercase);
+        let projection = case.projection(&display);
         for width in case.widths {
-            let rows = break_lines(&display, *width);
-            let spans = line_spans(&display, *width);
+            let rows = break_lines_with_runs(&display, *width, &projection);
+            let spans = line_spans_with_runs(&display, *width, &projection);
             assert_eq!(rows.len(), spans.len(), "{} at {width}", case.name);
             for (row, span) in rows.iter().zip(&spans) {
                 assert_eq!(
-                    row.chars().count(),
+                    row.chars().count()
+                        - projection
+                            .iter()
+                            .filter(|run| run.hidden)
+                            .map(|run| {
+                                let start = run.start_utf8.max(span.start_utf8);
+                                let end = run.end_utf8.min(span.end_utf8);
+                                if start < end {
+                                    display[start..end].chars().count()
+                                } else {
+                                    0
+                                }
+                            })
+                            .sum::<usize>(),
                     span.columns,
                     "{} at {width}",
                     case.name
@@ -138,27 +154,39 @@ fn a_row_of_spans_is_a_row_of_break_lines() {
     }
 }
 
+impl Case {
+    fn projection(&self, display: &str) -> Vec<SourceRun> {
+        if self.dialogue {
+            emphasis::dialogue_source_runs(display)
+        } else {
+            emphasis::source_runs(display)
+        }
+    }
+}
+
 fn cases() -> Vec<Case> {
     let mut cases = Vec::new();
     let mut seen = HashMap::new();
 
-    let mut push = |name: String, text: String, uppercase: bool, widths: &'static [u16]| {
-        // The corpus repeats itself — every cue in a feature, every blank
-        // action line — and a case that wraps character for character like an
-        // earlier one asks nothing new. Two castings of a text with no lower
-        // case in it are one case for the same reason; the casing itself is
-        // swept exhaustively below.
-        let display = display_text(&text, uppercase);
-        if seen.insert((display, widths), ()).is_some() {
-            return;
-        }
-        cases.push(Case {
-            name,
-            text,
-            uppercase,
-            widths,
-        });
-    };
+    let mut push =
+        |name: String, text: String, uppercase: bool, widths: &'static [u16], dialogue: bool| {
+            // The corpus repeats itself — every cue in a feature, every blank
+            // action line — and a case that wraps character for character like an
+            // earlier one asks nothing new. Two castings of a text with no lower
+            // case in it are one case for the same reason; the casing itself is
+            // swept exhaustively below.
+            let display = display_text(&text, uppercase);
+            if seen.insert((display, widths, dialogue), ()).is_some() {
+                return;
+            }
+            cases.push(Case {
+                name,
+                text,
+                uppercase,
+                widths,
+                dialogue,
+            });
+        };
 
     for (label, text) in edge_cases() {
         for uppercase in [false, true] {
@@ -167,6 +195,7 @@ fn cases() -> Vec<Case> {
                 text.to_owned(),
                 uppercase,
                 &WIDTHS,
+                false,
             );
         }
     }
@@ -178,6 +207,7 @@ fn cases() -> Vec<Case> {
                 text.clone(),
                 uppercase,
                 &SWEEP_WIDTHS,
+                false,
             );
         }
     }
@@ -196,6 +226,7 @@ fn cases() -> Vec<Case> {
                     text.clone(),
                     uppercase,
                     &CORPUS_WIDTHS,
+                    block.kind() == BlockKind::Dialogue,
                 );
             }
             let prepared = prepared(&text);
@@ -206,6 +237,7 @@ fn cases() -> Vec<Case> {
                         prepared.clone(),
                         uppercase,
                         &CORPUS_WIDTHS,
+                        block.kind() == BlockKind::Dialogue,
                     );
                 }
             }
@@ -221,6 +253,28 @@ fn cases() -> Vec<Case> {
             block.text().to_owned(),
             false,
             &REFERENCE_WIDTHS,
+            block.kind() == BlockKind::Dialogue,
+        );
+    }
+
+    for (label, text) in [
+        (
+            "sung mixed emphasis",
+            "~**Sing** *now* _please_.\nOrdinary.",
+        ),
+        (
+            "sung escape and literal tilde",
+            "\\~literal\n~\\*stars\\* ~inside",
+        ),
+        ("sung marker before pair", "~*one\ntwo*"),
+        ("sung hard-line scope", "~one two\nthree four"),
+    ] {
+        push(
+            format!("dialogue/{label}"),
+            text.to_owned(),
+            false,
+            &WIDTHS,
+            true,
         );
     }
 
@@ -305,6 +359,16 @@ fn edge_cases() -> Vec<(&'static str, &'static str)> {
         ("emphasis markers", "*bold* _under_ **both**"),
         ("nested emphasis", "***all*** of it"),
         ("markers around a wrap", "_*nested markers across a wrap*_"),
+        ("escaped markers", r"\*literal\* \_under\_ \\ \q"),
+        ("unpaired markers", "one *two **three _four"),
+        ("unicode emphasis", "**é🎬中** *e\u{301}xy*"),
+        ("hidden before tab", "**a**\tb"),
+        ("marker transition at boundary", "ab**cd**ef"),
+        ("hidden inside consumed spaces", "*a*  * *b*"),
+        ("hard-line paired", "**one\ntwo**"),
+        ("hard-line unpaired", "one **\n** two"),
+        ("marker-only hard line", "*a\n**\nb*"),
+        ("overlapping styles", "*a _b* c_"),
         ("a scene number", "INT. HOUSE - DAY #1A#"),
         ("a note", "Action [[with a note]] in it"),
         ("a boneyard", "Action /* struck out */ still here"),
@@ -349,6 +413,7 @@ fn render(cases: &[Case]) -> String {
     for (index, case) in cases.iter().enumerate() {
         let display = display_text(&case.text, case.uppercase);
         let scalars = scalar_indices(&display);
+        let projection = case.projection(&display);
 
         out.push_str("    {\"name\":");
         json_string(&case.name, &mut out);
@@ -360,13 +425,35 @@ fn render(cases: &[Case]) -> String {
             out.push_str(",\"display\":");
             json_string(&display, &mut out);
         }
+        out.push_str(",\"dialogue\":");
+        out.push_str(if case.dialogue { "true" } else { "false" });
+        out.push_str(",\"inline_runs\":[");
+        for (run_index, run) in projection.iter().enumerate() {
+            if run_index > 0 {
+                out.push(',');
+            }
+            let _ = write!(
+                out,
+                "[{},{},{},{},{},{}]",
+                scalars[&run.start_utf8],
+                scalars[&run.end_utf8],
+                run.emphasis.bold,
+                run.emphasis.italic,
+                run.emphasis.underline,
+                run.hidden
+            );
+        }
+        out.push(']');
         out.push_str(",\"runs\":[");
         for (position, width) in case.widths.iter().enumerate() {
             if position > 0 {
                 out.push(',');
             }
             let _ = write!(out, "{{\"width\":{width},\"lines\":[");
-            for (row, span) in line_spans(&display, *width).iter().enumerate() {
+            for (row, span) in line_spans_with_runs(&display, *width, &projection)
+                .iter()
+                .enumerate()
+            {
                 if row > 0 {
                     out.push(',');
                 }

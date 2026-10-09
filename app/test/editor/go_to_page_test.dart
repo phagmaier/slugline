@@ -73,6 +73,7 @@ class _OutputCore extends FakeCore implements ScreenplayOutput {
           forced: false,
           dual: false,
           readOnly: false,
+          inlineRuns: [],
         ),
         BlockView(
           id: 20,
@@ -82,6 +83,7 @@ class _OutputCore extends FakeCore implements ScreenplayOutput {
           forced: false,
           dual: false,
           readOnly: false,
+          inlineRuns: const [],
         ),
       ]);
 
@@ -138,7 +140,9 @@ ScrollPosition _scroll(WidgetTester tester) => tester
     .state<ScrollableState>(
       find.descendant(
         of: find.byType(EditorSurface),
-        matching: find.byType(Scrollable),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+        ),
       ),
     )
     .position;

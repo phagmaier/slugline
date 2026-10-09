@@ -21,6 +21,13 @@ Invariants:
 - Editor wrapping stays in Dart on the keystroke path; the differential
   test holds it to Rust's `line_break.rs`. Change one side only with the
   other, or regenerate fixtures deliberately (ADR 0018).
+- Inline semantics arrive as sparse `BlockView.inlineRuns`, not a Dart parser.
+  Wrap on printed cells; dim syntax has separate half-cell editable slots.
+  Painting, caret/hits, selection and underlines use VisualLine's display map;
+  IME/accessibility/clipboard remain exact source UTF-16 (ADR 0057).
+- Dense syntax can extend past the viewport without changing printed wraps.
+  Horizontal scrolling exposes those slots; caret/hits share its offset, and
+  DocumentLayout caches editable extents alongside each block's wraps.
 - `lib/editor/elements.dart` is the one table for shortcuts, element
   selector and palette; `docs/KEYMAP.md` is the keyboard map.
 - A block's kind changes only through `SetKind`. Panels stay children of
@@ -54,6 +61,6 @@ area), `flutter build linux --release`. Real-window suites run under Xvfb
 via `./tools/test_linux_integration.sh`. After touching the runner or
 upgrading Flutter, also `xvfb-run -a python3 ../tools/check_clean_close.py`.
 
-Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056. Full rules in
+Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this surface, update this file in the same change.

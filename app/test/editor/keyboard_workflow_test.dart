@@ -45,6 +45,7 @@ FakeCore oneBlock(BlockKind kind) => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: const [],
   ),
 ]);
 
@@ -211,6 +212,7 @@ void main() {
           forced: false,
           dual: false,
           readOnly: false,
+          inlineRuns: [],
         ),
       ]);
       final controller = await pumpEditor(tester, core);

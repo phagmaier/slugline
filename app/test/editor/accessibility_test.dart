@@ -30,6 +30,7 @@ void main() {
     forced: false,
     dual: false,
     readOnly: readOnly,
+    inlineRuns: const [],
   );
 
   FakeCore scene() => FakeCore([

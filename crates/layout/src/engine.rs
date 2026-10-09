@@ -6,7 +6,7 @@ use slugline_document::{
 };
 use slugline_fountain::{dialogue_lyric_marker_utf8, emphasis};
 
-use crate::line_break::{break_lines, break_lines_with_spans};
+use crate::line_break::{break_lines_projected, break_lines_with_spans, LineSpan, WrappedLine};
 use crate::metrics;
 use crate::model::{
     CacheStats, LayoutLine, LayoutLineKind, Page, PageConfig, PaginatedScript,
@@ -61,6 +61,9 @@ struct PreparedLine {
     content: String,
     is_lyric: bool,
     lyric_marker_utf8: Option<usize>,
+    runs: Vec<emphasis::EmphasisRun>,
+    span: LineSpan,
+    projected: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -480,10 +483,9 @@ impl LayoutEngine {
                 } else {
                     (visible.as_ref(), None)
                 };
-                let display = display_text(text, layout.uppercase);
-                let lines = prepare_lines(&display, layout.width, block.kind);
+                let lines = prepare_lines(text, layout.width, block.kind, layout.uppercase);
                 let cue_text = (block.kind == BlockKind::Character && context.right_lane.is_some())
-                    .then(|| Arc::<str>::from(display));
+                    .then(|| Arc::<str>::from(display_text(text, layout.uppercase)));
                 self.cache.insert(
                     block.id,
                     CachedBlock {
@@ -512,43 +514,54 @@ impl LayoutEngine {
     }
 }
 
-fn prepare_lines(text: &str, width: u16, kind: BlockKind) -> Arc<[PreparedLine]> {
-    if kind != BlockKind::Dialogue {
-        return break_lines_with_spans(text, width)
-            .into_iter()
-            .map(|line| PreparedLine {
-                content: line.text,
-                is_lyric: false,
-                lyric_marker_utf8: None,
-            })
-            .collect();
-    }
+fn prepare_lines(text: &str, width: u16, kind: BlockKind, uppercase: bool) -> Arc<[PreparedLine]> {
+    let runs = if kind == BlockKind::Dialogue {
+        emphasis::dialogue_source_runs(text)
+    } else {
+        emphasis::source_runs(text)
+    };
     let mut hard_lines = text.split('\n');
-    let mut marker = dialogue_lyric_marker_utf8(hard_lines.next().unwrap_or_default());
-    break_lines_with_spans(text, width)
+    let mut marker = (kind == BlockKind::Dialogue)
+        .then(|| dialogue_lyric_marker_utf8(hard_lines.next().unwrap_or_default()))
+        .flatten();
+    break_lines_projected(text, width, &runs)
         .into_iter()
-        .map(|line| {
+        .map(|mut line| {
             let lyric_marker_utf8 = marker
                 .filter(|&offset| line.span.start_utf8 <= offset && offset < line.span.end_utf8)
-                .map(|_| {
-                    // The semantic marker is the first non-whitespace scalar
-                    // of its hard line. Once source boundaries locate its row,
-                    // the first tilde in that row is precisely that marker,
-                    // even after tabs expand or indentation wraps before it.
-                    line.text.find('~').expect("wrapped lyric marker")
-                });
+                .map(|_| line.text.find('~').expect("wrapped lyric marker"));
+            // Project the original source before changing display glyphs:
+            // equal UTF-16 widths need not have equal UTF-8 byte lengths.
+            if uppercase {
+                line.text = display_text(&line.text, true);
+                for run in &mut line.runs {
+                    run.text = display_text(&run.text, true);
+                }
+            }
             let prepared = PreparedLine {
                 content: line.text,
                 is_lyric: marker.is_some(),
                 lyric_marker_utf8,
+                runs: line.runs,
+                span: line.span,
+                projected: line.projected,
             };
             if let Some(newline) = line.span.hard_break_utf8 {
                 let hard_start = newline + 1;
-                marker = dialogue_lyric_marker_utf8(hard_lines.next().unwrap_or_default())
+                marker = (kind == BlockKind::Dialogue)
+                    .then(|| dialogue_lyric_marker_utf8(hard_lines.next().unwrap_or_default()))
+                    .flatten()
                     .map(|offset| hard_start + offset);
             }
             prepared
         })
+        .collect()
+}
+
+fn prepare_title_lines(text: &str, width: u16) -> Vec<WrappedLine> {
+    // Title emphasis scopes are source hard lines, never separate fields.
+    text.split('\n')
+        .flat_map(|line| break_lines_with_spans(line, width))
         .collect()
 }
 
@@ -996,6 +1009,8 @@ impl<'a> Paginator<'a> {
                 is_scene_heading: false,
                 is_lyric: false,
                 lyric_marker_utf8: None,
+                resolved_runs: None,
+                source_span: None,
             });
         }
         self.current.sort_by_key(|line| (line.row, line.column));
@@ -1023,6 +1038,8 @@ impl<'a> Paginator<'a> {
                 is_scene_heading: false,
                 is_lyric: false,
                 lyric_marker_utf8: None,
+                resolved_runs: None,
+                source_span: None,
             });
             self.used += 1;
         }
@@ -1332,7 +1349,7 @@ struct PairLane<'a> {
     cue: BlockId,
     column: i16,
     cue_text: &'a str,
-    continued: Option<Vec<String>>,
+    continued: Option<Vec<VisualRow>>,
     raw: bool,
 }
 
@@ -1424,53 +1441,30 @@ impl<'a> PairLane<'a> {
     fn continue_on_next_page(&mut self) {
         debug_assert_eq!(self.prefix.len(), 0);
         let continued = self.continued.get_or_insert_with(|| {
-            break_lines(&continued_cue(self.cue_text), metrics::DUAL_CHARACTER_WIDTH)
+            break_lines_with_spans(&continued_cue(self.cue_text), metrics::DUAL_CHARACTER_WIDTH)
+                .into_iter()
+                .map(|line| {
+                    let mut row =
+                        generated_row(self.column, line.text, self.cue, LayoutLineKind::Continued);
+                    row.fragments[0].resolved_runs = line.projected.then_some(line.runs);
+                    row
+                })
+                .collect()
         });
-        self.prefix = continued
-            .iter()
-            .map(|text| {
-                generated_row(
-                    self.column,
-                    text.clone(),
-                    self.cue,
-                    LayoutLineKind::Continued,
-                )
-            })
-            .collect::<Vec<_>>()
-            .into_iter();
+        self.prefix = continued.clone().into_iter();
     }
 }
 
 fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
-    // Body emphasis pairs across all of a block's wrapped rows, just as it
-    // does in the renderer. Left-aligned and plain-text blocks need no scan.
-    let printed_widths = if block.layout.alignment != Alignment::Left
-        && block
-            .lines
-            .iter()
-            .any(|line| line.content.contains(['*', '_', '\\']))
-    {
-        let rows: Vec<&str> = block
-            .lines
-            .iter()
-            .map(|line| line.content.as_str())
-            .collect();
-        Some(emphasis::printed_widths(&rows))
-    } else {
-        None
-    };
+    // Width and faces were resolved before soft wrapping, so marker-only
+    // fragments and hard-line eligibility cannot change the interpretation.
     block
         .lines
         .iter()
         .enumerate()
         .map(|(index, line)| {
             let content = &line.content;
-            let width = || {
-                printed_widths
-                    .as_ref()
-                    .map_or_else(|| char_count(content), |widths| widths[index])
-                    as i16
-            };
+            let width = || line.span.columns as i16;
             let column = match block.layout.alignment {
                 Alignment::Left => block.layout.indent,
                 Alignment::Right => {
@@ -1495,6 +1489,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                 is_scene_heading: block.kind == BlockKind::SceneHeading,
                 is_lyric: line.is_lyric,
                 lyric_marker_utf8: line.lyric_marker_utf8,
+                resolved_runs: line.projected.then(|| line.runs.clone()),
+                source_span: Some(line.span),
             }];
             if index == 0 && block.kind == BlockKind::SceneHeading {
                 if let Some(number) = &block.scene_number {
@@ -1509,6 +1505,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                         is_scene_heading: false,
                         is_lyric: false,
                         lyric_marker_utf8: None,
+                        resolved_runs: None,
+                        source_span: None,
                     });
                     fragments.push(LayoutLine {
                         row: 0,
@@ -1520,6 +1518,8 @@ fn block_rows(block: &PreparedBlock) -> Vec<VisualRow> {
                         is_scene_heading: false,
                         is_lyric: false,
                         lyric_marker_utf8: None,
+                        resolved_runs: None,
+                        source_span: None,
                     });
                 }
             }
@@ -1559,6 +1559,8 @@ fn generated_row(column: i16, content: String, block: BlockId, kind: LayoutLineK
             is_scene_heading: false,
             is_lyric: false,
             lyric_marker_utf8: None,
+            resolved_runs: None,
+            source_span: None,
         }],
         role: RowRole::Other,
     }
@@ -1619,69 +1621,79 @@ fn layout_title_page(snapshot: &ScriptSnapshot, config: &PageConfig) -> Option<P
             | TitleField::Authors
             | TitleField::Source => {
                 if !main.is_empty() {
-                    main.push(String::new());
+                    main.extend(prepare_title_lines("", metrics::ACTION_WIDTH));
                 }
-                main.extend(break_lines(&entry.value, metrics::ACTION_WIDTH));
+                main.extend(prepare_title_lines(&entry.value, metrics::ACTION_WIDTH));
             }
             TitleField::DraftDate => {
-                lower_right.extend(break_lines(&entry.value, metrics::TITLE_LOWER_RIGHT_WIDTH));
+                lower_right.extend(prepare_title_lines(
+                    &entry.value,
+                    metrics::TITLE_LOWER_RIGHT_WIDTH,
+                ));
             }
             TitleField::Contact | TitleField::Copyright | TitleField::Notes => {
                 if !lower_left.is_empty() {
-                    lower_left.push(String::new());
+                    lower_left.extend(prepare_title_lines("", metrics::TITLE_LOWER_LEFT_WIDTH));
                 }
-                lower_left.extend(break_lines(&entry.value, metrics::TITLE_LOWER_LEFT_WIDTH));
+                lower_left.extend(prepare_title_lines(
+                    &entry.value,
+                    metrics::TITLE_LOWER_LEFT_WIDTH,
+                ));
             }
             TitleField::Other(ref key) => {
                 let line = format!("{}: {}", key, entry.value);
-                lower_left.extend(break_lines(&line, metrics::TITLE_LOWER_LEFT_WIDTH));
+                lower_left.extend(prepare_title_lines(&line, metrics::TITLE_LOWER_LEFT_WIDTH));
             }
         }
     }
 
     let mut lines = Vec::new();
     let main_start = capacity / 3;
-    for (offset, content) in main.into_iter().enumerate() {
+    for (offset, line) in main.into_iter().enumerate() {
         lines.push(LayoutLine {
             row: i16_from_u16(main_start) + offset as i16,
-            column: (i16_from_u16(metrics::ACTION_WIDTH)
-                - emphasis::printed_width(&content) as i16)
-                / 2,
-            content,
+            column: (i16_from_u16(metrics::ACTION_WIDTH) - line.span.columns as i16) / 2,
+            content: line.text,
             block: None,
             source_line: None,
             kind: LayoutLineKind::Title,
             is_scene_heading: false,
             is_lyric: false,
             lyric_marker_utf8: None,
+            resolved_runs: line.projected.then_some(line.runs),
+            source_span: None,
         });
     }
     let lower_count = lower_left.len().max(lower_right.len()) as u16;
     let lower_start = capacity.saturating_sub(lower_count + 2);
-    for (offset, content) in lower_left.into_iter().enumerate() {
+    for (offset, line) in lower_left.into_iter().enumerate() {
         lines.push(LayoutLine {
             row: i16_from_u16(lower_start) + offset as i16,
             column: 0,
-            content,
+            content: line.text,
             block: None,
             source_line: None,
             kind: LayoutLineKind::Title,
             is_scene_heading: false,
             is_lyric: false,
             lyric_marker_utf8: None,
+            resolved_runs: line.projected.then_some(line.runs),
+            source_span: None,
         });
     }
-    for (offset, content) in lower_right.into_iter().enumerate() {
+    for (offset, line) in lower_right.into_iter().enumerate() {
         lines.push(LayoutLine {
             row: i16_from_u16(lower_start) + offset as i16,
-            column: i16_from_u16(metrics::ACTION_WIDTH) - emphasis::printed_width(&content) as i16,
-            content,
+            column: i16_from_u16(metrics::ACTION_WIDTH) - line.span.columns as i16,
+            content: line.text,
             block: None,
             source_line: None,
             kind: LayoutLineKind::Title,
             is_scene_heading: false,
             is_lyric: false,
             lyric_marker_utf8: None,
+            resolved_runs: line.projected.then_some(line.runs),
+            source_span: None,
         });
     }
     lines.sort_by_key(|line| (line.row, line.column));
@@ -1703,6 +1715,103 @@ fn i16_from_u16(value: u16) -> i16 {
 mod tests {
     use super::*;
     use crate::SceneNumberGutters;
+
+    #[test]
+    fn pagination_carries_source_resolved_faces_through_wraps_and_pages() {
+        let action_text = "é🎬 long action ".repeat(300);
+        let source = format!("INT. ROOM - DAY\n\n**{}**\n", action_text.trim_end());
+        let document = Document::parse(&source);
+        let output = paginate(&document, &PageConfig::us_letter());
+        assert!(output.pages.len() > 1);
+        let action = document
+            .blocks()
+            .iter()
+            .find(|block| block.kind() == BlockKind::Action)
+            .unwrap();
+        let lines: Vec<_> = output
+            .pages
+            .iter()
+            .flat_map(|page| page.lines.iter())
+            .filter(|line| line.block == Some(action.id()) && line.kind == LayoutLineKind::Content)
+            .collect();
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|line| {
+            line.source_span
+                .is_some_and(|span| span.columns <= usize::from(metrics::ACTION_WIDTH))
+                && line
+                    .resolved_runs
+                    .as_ref()
+                    .is_some_and(|runs| runs.iter().all(|run| run.emphasis.bold))
+        }));
+        let raw: String = lines.iter().map(|line| line.content.as_str()).collect();
+        assert_eq!(raw.chars().filter(|character| *character == '*').count(), 4);
+    }
+
+    #[test]
+    fn uppercased_glyphs_keep_raw_utf8_source_boundaries() {
+        let text = "INT. **ıſ** - DAY";
+        let document = Document::parse(&format!("{text}\n"));
+        let heading = &document.blocks()[0];
+        let output = paginate(&document, &PageConfig::us_letter());
+        let line = output
+            .pages
+            .iter()
+            .flat_map(|page| page.lines.iter())
+            .find(|line| line.block == Some(heading.id()) && line.kind == LayoutLineKind::Content)
+            .unwrap();
+        let span = line.source_span.unwrap();
+        assert_eq!((span.start_utf8, span.end_utf8), (0, text.len()));
+        assert!(text.is_char_boundary(span.start_utf8) && text.is_char_boundary(span.end_utf8));
+        assert_eq!(line.content, "INT. **IS** - DAY");
+        assert!(line
+            .resolved_runs
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|run| run.text == "IS" && run.emphasis.bold));
+    }
+
+    #[test]
+    fn title_soft_wraps_retain_faces_but_source_hard_lines_do_not_pair() {
+        let lines = prepare_title_lines("**abcdefgh**\n*unpaired\nclose*", 3);
+        assert_eq!(lines[0].span.columns, 3);
+        assert!(lines[..3]
+            .iter()
+            .flat_map(|line| &line.runs)
+            .all(|run| run.emphasis.bold));
+        assert!(lines[3..]
+            .iter()
+            .flat_map(|line| &line.runs)
+            .all(|run| run.emphasis == emphasis::Emphasis::PLAIN));
+    }
+
+    #[test]
+    fn prepared_sung_dialogue_uses_printed_width_and_hard_line_italics() {
+        let lines = prepare_lines(
+            "~**é🎬 sung text**\nordinary",
+            2,
+            BlockKind::Dialogue,
+            false,
+        );
+        let sung: Vec<_> = lines.iter().filter(|line| line.is_lyric).collect();
+        assert!(!sung.is_empty());
+        assert!(sung.iter().all(|line| line.span.columns <= 2));
+        assert!(sung
+            .iter()
+            .flat_map(|line| &line.runs)
+            .all(|run| run.emphasis.italic && run.emphasis.bold));
+        assert_eq!(
+            sung.iter()
+                .filter(|line| line.lyric_marker_utf8.is_some())
+                .count(),
+            1
+        );
+        assert!(lines
+            .iter()
+            .filter(|line| !line.is_lyric)
+            .flat_map(|line| &line.runs)
+            .all(|run| run.emphasis == emphasis::Emphasis::PLAIN));
+    }
 
     #[test]
     fn scene_numbers_are_optional_gutter_fragments() {

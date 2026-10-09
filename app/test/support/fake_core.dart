@@ -31,6 +31,7 @@ class FakeCore implements DocumentCore {
       forced: false,
       dual: false,
       readOnly: false,
+      inlineRuns: const [],
     ),
   ]);
 
@@ -43,7 +44,14 @@ class FakeCore implements DocumentCore {
   /// Every command the editor sent, in order.
   final List<EditCommand> commands = [];
 
-  /// Selections handed in with those commands, for the undo-caret assertions.
+  @override
+  EditOutcome formatSelection(DocSelection at, InlineStyle style) =>
+      const EditOutcome.rejected(
+        reason: EditRejection.badRange,
+        message: 'Formatting semantics require the native core.',
+      );
+
+  /// Selections handed in with commands, for the undo-caret assertions.
   final List<DocSelection?> priorSelections = [];
 
   /// Set to refuse the next edit, the way an Opaque block would.
@@ -260,7 +268,7 @@ class FakeCore implements DocumentCore {
     if (changed.isNotEmpty) {
       final snapshot = List<BlockView>.of(_blocks);
       _dualSelections[snapshot] = before;
-      _sceneOppositeSelections[snapshot] = after;
+      _oppositeSelections[snapshot] = after;
       _undo.add(snapshot);
       _redo.clear();
       for (final block in changed) {
@@ -560,8 +568,7 @@ class FakeCore implements DocumentCore {
   final List<List<BlockView>> _undo = [];
   final List<List<BlockView>> _redo = [];
   final Expando<DocSelection> _dualSelections = Expando<DocSelection>();
-  final Expando<DocSelection> _sceneOppositeSelections =
-      Expando<DocSelection>();
+  final Expando<DocSelection> _oppositeSelections = Expando<DocSelection>();
 
   @override
   EditResult? undo() {
@@ -569,8 +576,8 @@ class FakeCore implements DocumentCore {
     final snapshot = _undo.removeLast();
     final current = List<BlockView>.of(_blocks);
     _dualSelections[current] =
-        _sceneOppositeSelections[snapshot] ?? _dualSelections[snapshot];
-    _sceneOppositeSelections[current] = _dualSelections[snapshot];
+        _oppositeSelections[snapshot] ?? _dualSelections[snapshot];
+    _oppositeSelections[current] = _dualSelections[snapshot];
     _redo.add(current);
     return _restore(snapshot);
   }
@@ -581,8 +588,8 @@ class FakeCore implements DocumentCore {
     final snapshot = _redo.removeLast();
     final current = List<BlockView>.of(_blocks);
     _dualSelections[current] =
-        _sceneOppositeSelections[snapshot] ?? _dualSelections[snapshot];
-    _sceneOppositeSelections[current] = _dualSelections[snapshot];
+        _oppositeSelections[snapshot] ?? _dualSelections[snapshot];
+    _oppositeSelections[current] = _dualSelections[snapshot];
     _undo.add(current);
     return _restore(snapshot);
   }
@@ -1042,5 +1049,6 @@ class FakeCore implements DocumentCore {
     forced: forced ?? block.forced,
     dual: dual ?? block.dual,
     readOnly: block.readOnly,
+    inlineRuns: text == null ? block.inlineRuns : const [],
   );
 }

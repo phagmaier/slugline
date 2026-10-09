@@ -11,7 +11,9 @@ pub mod metrics;
 mod model;
 
 pub use engine::{display_text, paginate, LayoutEngine};
-pub use line_break::{break_lines, line_spans, LineSpan};
+pub use line_break::{
+    break_lines, break_lines_with_runs, line_spans, line_spans_with_runs, LineSpan,
+};
 pub use model::{
     CacheStats, LayoutLine, LayoutLineKind, Page, PageConfig, PageSize, PaginatedScript,
     PaginationCheckpoint, SceneNumberGutters, ScriptSnapshot,

@@ -12,11 +12,11 @@ Invariants:
 
 - The renderer makes no layout decisions. Every row and column comes from
   `layout`; `Geometry` only multiplies a grid cell by its point size.
-- Output emphasis is shared with the preview through resolved runs: body
-  rows pair across wraps/pages, title rows pair individually, unpaired
-  markers stay ordinary characters (ADR 0045).
-- Dual lanes interleave spatially. Resolve emphasis by consecutive source rows
-  of each block across pages, never by adjacent output fragments (ADR 0054).
+- Output emphasis is resolved before wrapping: body scopes cross explicit hard
+  lines/pages; title source hard lines resolve individually before soft wraps.
+  LayoutLine.resolved_runs prevents re-parsing split markup (ADR 0057).
+- Dual lanes consume each source row's resolved runs, never pair markers in
+  spatial output-fragment order (ADR 0054).
 - Do not replace a font face without re-running the golden hash test; the
   editor draws in the same vendored faces via symlinks, so both change
   together (ADR 0032).
@@ -29,6 +29,6 @@ Verify: `cargo test -p slugline_render_pdf`. Hash changes are deliberate or
 they are bugs: `UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf
 --test golden` — with a sentence in the commit message.
 
-Governing ADRs: 0032, 0044, 0045, 0047, 0048, 0054. Full rules in `AGENTS.md`;
+Governing ADRs: 0032, 0044, 0045, 0047, 0048, 0054, 0057. Full rules in `AGENTS.md`;
 the layer map in `docs/ARCHITECTURE.md`. When an ADR changes this crate,
 update this file in the same change.

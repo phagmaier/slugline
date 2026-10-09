@@ -1,6 +1,6 @@
 use slugline_document::{BlockId, BlockKind, BlockSnapshot};
 use slugline_layout::{
-    break_lines, metrics, LayoutEngine, LayoutLine, LayoutLineKind, PageConfig, PaginatedScript,
+    break_lines, LayoutEngine, LayoutLine, LayoutLineKind, PageConfig, PaginatedScript,
     ScriptSnapshot,
 };
 
@@ -69,7 +69,11 @@ fn assert_bounded(output: &PaginatedScript, capacity: u16) {
         .filter(|line| line.block.is_some())
     {
         assert!((0..capacity as i16).contains(&line.row), "{line:?}");
-        let right_edge = line.column + line.content.chars().count() as i16;
+        let printed_width = line.resolved_runs.as_ref().map_or_else(
+            || line.content.chars().count(),
+            |runs| runs.iter().map(|run| run.text.chars().count()).sum(),
+        );
+        let right_edge = line.column + printed_width as i16;
         assert!(line.column >= 0 && right_edge <= 60, "{line:?}");
         assert!(
             right_edge <= 28 || line.column >= 32,
@@ -103,7 +107,6 @@ fn paired_columns_align_cues_and_preserve_source_lyric_and_emphasis_metadata() {
         assert_eq!((lines[0].column, lines[0].row), (column, row));
         assert!(lines.iter().all(|line| line.column == column));
     }
-    assert_source_rows(&result, &snapshot, 2, metrics::DUAL_DIALOGUE_WIDTH);
     let sung_rows = rows(&result, 2);
     assert!(sung_rows[..3].iter().all(|line| line.is_lyric));
     assert_eq!(sung_rows[0].lyric_marker_utf8, Some(0));

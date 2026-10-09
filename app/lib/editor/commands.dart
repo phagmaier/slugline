@@ -143,6 +143,17 @@ List<EditorCommand> editorCommands({
       shortcut: 'Shift+Tab',
       run: () => controller.cycleElement(reverse: true),
     ),
+    for (final (style, label, shortcut) in const [
+      (InlineStyle.bold, 'Bold selection', 'Ctrl+B'),
+      (InlineStyle.italic, 'Italic selection', 'Ctrl+I'),
+      (InlineStyle.underline, 'Underline selection', 'Ctrl+U'),
+    ])
+      EditorCommand(
+        group: 'Edit',
+        label: label,
+        shortcut: shortcut,
+        run: () => controller.formatSelection(style),
+      ),
     EditorCommand(
       group: 'Edit',
       label: 'Insert line break',

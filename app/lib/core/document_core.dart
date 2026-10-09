@@ -60,6 +60,8 @@ export 'package:slugline/src/rust/api/doc.dart'
         FindMatch,
         FindQuery,
         InsertedBlock,
+        InlineRunView,
+        InlineStyle,
         NewBlock,
         NavigatorCharacter,
         NavigatorScene,
@@ -170,6 +172,12 @@ abstract class DocumentCore {
   /// Shift+Enter: Rust chooses a hard line break or the normal Enter workflow.
   /// Replaces the selection in one isolated undo transaction.
   rust.EditOutcome lineBreak(rust.DocSelection at);
+
+  /// Wraps the selected source through Rust's inline semantics, atomically.
+  rust.EditOutcome formatSelection(
+    rust.DocSelection at,
+    rust.InlineStyle style,
+  );
 
   /// Tab, or Shift+Tab, on the block the caret is in. `null` where the table
   /// says Tab does nothing there — not a refusal, just no next element type.
@@ -415,6 +423,12 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   @override
   rust.EditOutcome lineBreak(rust.DocSelection at) =>
       rust.docLineBreak(handle: _handle, at: at);
+
+  @override
+  rust.EditOutcome formatSelection(
+    rust.DocSelection at,
+    rust.InlineStyle style,
+  ) => rust.docFormatSelection(handle: _handle, at: at, style: style);
 
   @override
   rust.EditOutcome? tab(rust.DocSelection at, {required bool shift}) =>

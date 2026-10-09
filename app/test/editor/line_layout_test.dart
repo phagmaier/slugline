@@ -22,6 +22,7 @@ BlockView block(BlockKind kind, String text, {int id = 1}) => BlockView(
   forced: false,
   dual: false,
   readOnly: false,
+  inlineRuns: const [],
 );
 
 void main() {

@@ -38,8 +38,8 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | superseded by 0052 — GTK chooser through the runner |
 | 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
 | 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | refined by 0051 — Shift+Enter always edits |
-| 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — no page indication in the editor |
-| 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | partly superseded by 0044/0045 — printed alignment and shared output emphasis |
+| 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — page indication; refined by 0057 — printed-width projection |
+| 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | superseded by 0044/0045/0057 — shared printed-width emphasis and editable styling |
 | 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | live |
 | 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | refined by 0049 — what a checkpoint records, where a run resumes and stops |
@@ -64,8 +64,8 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0041 | Suggestions follow writing intent, and narrow windows keep the page wide | `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/navigator_sidebar.dart` | refined by 0051 — Shift+Enter always edits |
 | 0042 | Crash journals carry kernel ownership across publication | `crates/storage/src/journal.rs`, `crates/storage/Cargo.toml`, `crates/bridge/tests/persistence.rs` | live |
 | 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
-| 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | live |
-| 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | extended by 0047 — sung-dialogue output |
+| 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | extended by 0057 — printed wrapping |
+| 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | extended by 0047/0057 — sung dialogue and source-resolved wraps |
 | 0046 | Consecutive lyric blocks share one leading blank | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart` | live |
 | 0047 | Sung hard lines remain dialogue and carry lyric output metadata | `crates/fountain/src/syntax.rs`, `crates/fountain/src/lib.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/model.rs`, `crates/render_pdf/src/lib.rs` | live |
 | 0048 | Page 1 is counted, and prints its number only when the page setup asks | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/page_numbers.rs`, `crates/storage/src/prefs.rs`, `app/lib/editor/page_indicator.dart`, `app/lib/settings/preferences_dialog.dart` | live |
@@ -78,6 +78,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0055 | FDX is an interchange copy, while Fountain remains the native document | `crates/fdx/`, `crates/document/src/document.rs`, `crates/bridge/src/api/files.rs`, `app/lib/core/`, `app/lib/app.dart`, `app/lib/preview/export_dialog.dart` | refined by 0062 — imported untitled recovery starts against blank |
 | 0056 | Scene numbering is an explicit grouped Rust edit, not an output fallback | `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
 | 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live |
+| 0057 | Inline emphasis uses printed wraps and an editable source projection | `crates/fountain/src/emphasis.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/line_layout.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `docs/LINE_BREAKING.md` | live |
 
 ---
 
@@ -1266,6 +1267,8 @@ mid-project remediation) · **Narrows:** ADR 0005 for 1.0; does not reverse it
 **Superseded by:** ADR 0040 for "No page breaks, page numbers, or page gutters
 in the editing surface" only; the fluid editor shows output page position in its
 status bar.
+**Refined by:** ADR 0057 supplies Rust-owned printed-width inline projections to
+the same synchronous editor wrapper and differential contract.
 
 ### Context
 
@@ -1367,9 +1370,9 @@ honest statement today is that most of it is not enforced yet.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2 (recorded during the
 mid-project remediation)
-**Superseded by:** ADR 0044 for printed-width alignment and ADR 0045 for shared
-preview/PDF emphasis interpretation; literal editor display and raw-width
-wrapping are unchanged.
+**Superseded by:** ADR 0044 for printed-width alignment, ADR 0045 for shared
+preview/PDF interpretation, and ADR 0057 for printed-width wrapping and resolved
+editor styling with dim editable markers.
 
 ### Context
 
@@ -3347,6 +3350,7 @@ no preference or retention field is added for the hourly tier.
 ## ADR 0044 — Layout aligns emphasis by printed width, without changing wraps
 
 **Date:** 2026-10-06 · **Status:** accepted
+**Historical:** ADR 0057 ends the raw-width wrapping consequence below; this record's printed-alignment decision remains in force.
 **Supersedes:** ADR 0032's raw-marker alignment consequence and ADR 0019's
 restriction of emphasis interpretation to the PDF renderer, for alignment only.
 Literal editor display and raw-width wrapping remain unchanged.
@@ -3402,6 +3406,8 @@ layout coordinates, row content, page breaks and PDF hashes stay unchanged.
 ADR 0032's private PDF-only paragraph interpretation.
 **Extends:** ADR 0037's shared output defaults with scene-heading weight.
 **Superseded by:** ADR 0047 extends resolved output with sung-dialogue italics.
+**Refined by:** ADR 0057 resolves source emphasis before wrapping; title source
+hard lines, rather than already wrapped output rows, define title pairing scopes.
 
 ### Context
 
@@ -4503,4 +4509,93 @@ through one-step undo/redo, inspect the actual combined journal record, save
 and reopen numbered/unnumbered scripts, and check the existing output gutter
 setting and PDF text without automatic source changes. Verification results
 remain for the integrating owner; no checks are claimed here.
+
+## ADR 0057 — Inline emphasis uses printed wraps and an editable source projection
+
+**Date:** 2026-10-08 · **Status:** accepted
+**Supersedes:** ADR 0019's literal-width wrapping and unstyled editor policy.
+**Refines:** ADR 0018's synchronous differential line-breaking contract.
+**Extends:** ADR 0044's printed alignment and ADR 0045's shared output runs.
+
+### Context
+
+Raw markers caused early wrapping although output removed them. Merely removing
+them from a display string would destroy source-coordinate caret, selection and
+IME behavior. Interpreting Fountain in Dart would introduce a second semantic
+authority; asking Rust for wraps on every edit would replace the synchronous
+editor contract with an unnecessary round trip. Re-scanning raw output rows
+after soft wrapping can also change marker eligibility.
+
+### Decision
+
+Extend Fountain's existing tokenizer/pairer with sparse `SourceRun` intervals:
+UTF-8 source start/end, resolved `Emphasis`, and a `hidden` flag. Plain gaps cost
+no run. Paired markers and escaping slashes have zero printed width; unpaired
+markers remain literal. Ordinary/Dialogue pairing spans the block's source hard
+lines, with hard boundaries acting as spaces for opener/closer eligibility.
+Dialogue's semantic leading `~` is hidden before pairing and implies italic only
+on its own hard line. Title values resolve each source hard line independently
+before soft wrapping.
+
+Both wrappers count the retained printed scalar/tab cells. Hidden prefixes
+belong to the following cell, suffixes to the final row, and hidden syntax in a
+consumed space gap extends the preceding row's source span. Width comes from the
+retained cell map, not a substring's length. No source text is rewritten by
+layout. `LayoutLine.resolved_runs` preserves pre-wrap faces through pages and
+dual lanes; `source_span` retains the prepared block's source coordinates.
+Generated furniture can use the existing output scanner fallback.
+
+The bridge translates ranges only through `offsets.rs` and attaches
+`BlockView.inline_runs` to load, changed/inserted patches and history results.
+Each `InlineRunView` has `start_utf16`, `end_utf16`, `bold`, `italic`, `underline`,
+and `hidden`. Dart uses this metadata synchronously; it never pairs markers.
+Plain blocks have empty metadata and keep their existing fast path.
+
+Printed columns and editable display columns are deliberately distinct.
+In the editor each hidden scalar has a dim half-cell slot and half-size regular
+face between the printed cells; content uses the resolved bold/italic/underline
+face. This is readable markup, not glyphs superimposed on script text. Such a
+row may extend beyond the printed measure; it is never rewrapped because of
+editor-only syntax slots. Caret, pointer hit-testing, vertical movement,
+selection/find rectangles and IME/spelling underlines share the display map.
+Page/source anchors still use printed wraps and unchanged EditorGeometry rows.
+IME, semantics and clipboard retain exact Fountain source and UTF-16 offsets.
+
+`doc_format_selection(handle, at, InlineStyle)` owns Ctrl+B/I/U and palette
+formatting. It plans source-preserving marker insertions per selected block/hard
+line, keeps boundary whitespace outside inserted markers, and checks the
+scanner's before/after projection so no original printed character or unrelated
+face changes. Unsafe markup/escape intersections, invalid offsets, empty or
+whitespace-only selections, and read-only content refuse before mutation.
+This wraps, rather than toggles, selected content.
+
+One actor-owned group contains the entire gesture. `Grouped::set_selection`
+records selected-content endpoints and direction for redo; undo restores the
+original source selection. Formatting finishes through journalled `outcome`,
+not reinference: wrapping an entire heading/cue must not demote its element.
+
+### Alternatives
+
+Zero-width overlaid marker glyphs were rejected because adjacent/nested markers
+overlap content and cannot be individually hit-tested. Literal full-width wraps
+retain the observed early-wrap bug. A Dart emphasis scanner or extra bridge
+query on each edit breaks semantic ownership or the synchronous typing path.
+
+### Regression contract
+
+Native scanner, wrapping, output and formatting tests cover marker boundaries,
+escapes/literals, Unicode, hard/sung scopes, title wraps, output page carries,
+whitespace/provenance, atomic refusal and journalled undo/redo selections.
+The differential generator exports scalar-indexed sparse runs alongside source
+spans and printed widths; Dart compares the same projection, including dual
+widths. Editor tests exercise actual painted faces, dim markers, independently
+addressable source boundaries, source IME input and patch/history behavior.
+A real-core Linux integration test drives all three shortcuts and verifies
+printed geometry, retained selections and one-step undo/redo.
+
+Fixture and layout/PDF golden regeneration is deliberate: markup stops counting
+as printed columns, tab stops now follow printed text, pre-wrap output scopes
+survive boundaries, and title emphasis survives source-hard-line soft wraps.
+No verification result is asserted here; the integration owner runs the gates
+and reviews/regenerates affected baselines.
 

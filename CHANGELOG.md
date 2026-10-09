@@ -22,6 +22,11 @@ this file and the others to it.
   is one undo step and preserves the selection, heading words and other
   elements. Numbers survive save/reopen and use the existing Scene numbers
   output setting; saving or exporting never adds them automatically.
+- Inline Fountain emphasis wraps by printed width in the editor, preview and PDF.
+  The editor paints resolved faces with dim, individually editable markers;
+  dense markup can be scrolled horizontally without changing printed wraps.
+  Ctrl+B, Ctrl+I and Ctrl+U wrap a selection in one undo step without losing
+  whitespace, Unicode or selection direction.
 - Dual dialogue prints adjacent speeches side by side in preview and PDF.
   On the second Character cue, use Ctrl+K → “Toggle dual dialogue”; the element
   bar identifies marked cues. Both speeches wrap to the printed column widths

@@ -114,6 +114,11 @@ class EditorSurfaceState extends State<EditorSurface>
   bool get _ownsFocusNode => widget.focusNode == null;
 
   final ScrollController _scroll = ScrollController();
+  final ScrollController _horizontal = ScrollController();
+  late double _displayColumns = _controller.layout.displayColumns;
+
+  double get _horizontalOffset =>
+      _horizontal.hasClients ? _horizontal.offset : 0;
 
   /// Laid-out line painters, shared across frames. Owned here rather than by
   /// the painter delegate so a rebuild — which installs a new delegate without
@@ -231,6 +236,7 @@ class EditorSurfaceState extends State<EditorSurface>
     _scroll.removeListener(_reportScroll);
     if (_ownsFocusNode) _focusNode.dispose();
     _scroll.dispose();
+    _horizontal.dispose();
     super.dispose();
   }
 
@@ -243,6 +249,10 @@ class EditorSurfaceState extends State<EditorSurface>
       _restoreInProgress = false;
     }
     _ensureCaretVisible();
+    if (_displayColumns != _controller.layout.displayColumns) {
+      _displayColumns = _controller.layout.displayColumns;
+      _refreshSemantics(geometryChanged: true);
+    }
     _refreshSemantics();
   }
 
@@ -271,25 +281,27 @@ class EditorSurfaceState extends State<EditorSurface>
 
   /// Whether a rebuild is already queued for the semantics band.
   bool _semanticsRefreshQueued = false;
+  bool _geometryRefreshPending = false;
 
-  /// Rebuilds so that the semantics nodes describe the current document and the
-  /// current visible band.
+  /// Rebuilds the semantics band or a changed horizontal content extent.
   ///
-  /// Painting does not need this — the painter repaints from a `Listenable` and
-  /// never rebuilds — so with no assistive technology attached the surface still
-  /// builds its widget tree once per layout and no more. When something *is*
-  /// attached, an edit or a scroll has to reach the semantics tree, and the only
-  /// way for a widget to change what it put there is to build again.
-  ///
-  /// Deferred to after the frame because both callers can fire mid-layout: a
-  /// `ScrollPosition` notifies its listeners from inside `setPixels`.
-  void _refreshSemantics() {
-    if (!SemanticsBinding.instance.semanticsEnabled) return;
+  /// Ordinary caret moves and vertical scrolls still repaint without rebuilding
+  /// when assistive technology is detached. Deferral also permits notifications
+  /// from a ScrollPosition during layout.
+  void _refreshSemantics({bool geometryChanged = false}) {
+    if (!geometryChanged && !SemanticsBinding.instance.semanticsEnabled) return;
+    _geometryRefreshPending |= geometryChanged;
     if (_semanticsRefreshQueued) return;
     _semanticsRefreshQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _semanticsRefreshQueued = false;
       if (mounted) setState(() {});
+      if (_geometryRefreshPending) {
+        _geometryRefreshPending = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _ensureCaretVisible();
+        });
+      }
     });
   }
 
@@ -583,6 +595,12 @@ class EditorSurfaceState extends State<EditorSurface>
         _controller.deleteBackward();
       case LogicalKeyboardKey.delete:
         _controller.deleteForward();
+      case LogicalKeyboardKey.keyB when control:
+        _controller.formatSelection(InlineStyle.bold);
+      case LogicalKeyboardKey.keyI when control:
+        _controller.formatSelection(InlineStyle.italic);
+      case LogicalKeyboardKey.keyU when control:
+        _controller.formatSelection(InlineStyle.underline);
       case LogicalKeyboardKey.keyA when control:
         _controller.selectAll();
       case LogicalKeyboardKey.keyC when control:
@@ -660,6 +678,11 @@ class EditorSurfaceState extends State<EditorSurface>
     // Flutter expands a touch thumb to its minimum interactive size around the
     // painted track, so reserve that whole edge band for the scrollbar.
     const gutter = kMinInteractiveDimension;
+    if (_horizontal.hasClients &&
+        _horizontal.position.maxScrollExtent > 0 &&
+        local.dy >= _viewportHeight - gutter) {
+      return true;
+    }
     return switch (Directionality.of(context)) {
       TextDirection.ltr => local.dx >= _viewportWidth - gutter,
       TextDirection.rtl => local.dx <= gutter,
@@ -702,11 +725,6 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 
   Future<void> _showSpellingMenu(PointerDownEvent event) async {
-    final geometry = _geometry;
-    if (event.localPosition.dx < geometry.columnLeft ||
-        event.localPosition.dx > geometry.columnRight) {
-      return;
-    }
     final (row, column) = _gridAt(event.localPosition);
     final misspelling = _controller.misspellingAt(
       _controller.positionAt(row, column),
@@ -857,14 +875,15 @@ class EditorSurfaceState extends State<EditorSurface>
   }
 
   /// The grid cell under a point in the viewport.
-  (int, int) _gridAt(Offset local) {
+  (int, double) _gridAt(Offset local) {
     final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
     final geometry = _geometry;
     final row = geometry.rowAtY(local.dy + scrolled);
-    final column = ((local.dx - geometry.columnLeft) / _advance).round();
+    final column =
+        (local.dx + _horizontalOffset - geometry.columnLeft) / _advance;
     return (
       row.clamp(0, math.max(0, _controller.layout.totalRows - 1)),
-      math.max(0, column),
+      math.max(0.0, column),
     );
   }
 
@@ -898,9 +917,34 @@ class EditorSurfaceState extends State<EditorSurface>
     } else if (caretBottom + margin > bottom) {
       target = caretBottom + margin - _scroll.position.viewportDimension;
     }
-    if (target == null) return;
-    _scroll.jumpTo(
-      target.clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent)),
+    if (target != null) {
+      _scroll.jumpTo(
+        target.clamp(0.0, math.max(0.0, _scroll.position.maxScrollExtent)),
+      );
+    }
+    if (!_horizontal.hasClients) return;
+    final layout = _controller.layout;
+    final focus = _controller.selection.focus;
+    final index = _controller.indexOf(focus.block)!;
+    final lineIndex = layout.lineIndexAt(index, focus.offsetUtf16);
+    final column =
+        layout.columnOf(index, lineIndex) +
+        layout
+            .linesOf(index)[lineIndex]
+            .displayColumnAtOffset(focus.offsetUtf16);
+    final x = _geometry.columnLeft + column * _advance;
+    final left = _horizontal.offset;
+    final right = left + _viewportWidth - kMinInteractiveDimension;
+    final horizontalTarget = x < left + _advance
+        ? x - _advance
+        : x + _advance > right
+        ? x + _advance - _viewportWidth + kMinInteractiveDimension
+        : left;
+    _horizontal.jumpTo(
+      horizontalTarget.clamp(
+        0.0,
+        math.max(0.0, _horizontal.position.maxScrollExtent),
+      ),
     );
   }
 
@@ -1030,6 +1074,13 @@ class EditorSurfaceState extends State<EditorSurface>
         _viewportWidth = constraints.maxWidth;
         _viewportHeight = constraints.maxHeight;
         final geometry = _geometry;
+        final contentWidth = math.max(
+          _viewportWidth,
+          geometry.columnLeft +
+              _controller.layout.displayColumns * _advance +
+              _advance +
+              kMinInteractiveDimension,
+        );
 
         return Focus(
           focusNode: _focusNode,
@@ -1038,47 +1089,69 @@ class EditorSurfaceState extends State<EditorSurface>
             controller: _scroll,
             interactive: true,
             thumbVisibility: true,
+            notificationPredicate: (notification) =>
+                notification.metrics.axis == Axis.vertical,
             child: Listener(
               onPointerDown: _onPointerDown,
               onPointerMove: _onPointerMove,
               onPointerUp: _onPointerEnd,
               onPointerCancel: _onPointerEnd,
-              child: SingleChildScrollView(
-                controller: _scroll,
-                child: SizedBox(
-                  height: math.max(
-                    geometry.contentHeight,
-                    constraints.maxHeight,
-                  ),
-                  width: double.infinity,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: RepaintBoundary(
-                          key: const ValueKey('editor paint'),
-                          child: CustomPaint(
-                            painter: _SurfacePainter(
-                              controller: _controller,
-                              scroll: _scroll,
-                              pageIndicator: widget.pageIndicator,
-                              geometry: geometry,
-                              showCaret: _focusNode.hasFocus,
-                              composing: _composing,
-                              colours: _EditorColours.of(context),
-                              fontSize: _fontSize,
-                              lineCache: _lineCache,
-                              boldSceneHeadings: widget.boldSceneHeadings,
-                              highlightMatches: widget.highlightMatches,
+              child: Scrollbar(
+                controller: _horizontal,
+                interactive: true,
+                thumbVisibility: true,
+                scrollbarOrientation: ScrollbarOrientation.bottom,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.horizontal,
+                child: SingleChildScrollView(
+                  controller: _horizontal,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: contentWidth,
+                    child: SingleChildScrollView(
+                      controller: _scroll,
+                      child: SizedBox(
+                        height: math.max(
+                          geometry.contentHeight,
+                          constraints.maxHeight,
+                        ),
+                        width: contentWidth,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: RepaintBoundary(
+                                key: const ValueKey('editor paint'),
+                                child: CustomPaint(
+                                  painter: _SurfacePainter(
+                                    controller: _controller,
+                                    scroll: _scroll,
+                                    pageIndicator: widget.pageIndicator,
+                                    geometry: geometry,
+                                    showCaret: _focusNode.hasFocus,
+                                    composing: _composing,
+                                    colours: _EditorColours.of(context),
+                                    fontSize: _fontSize,
+                                    lineCache: _lineCache,
+                                    boldSceneHeadings: widget.boldSceneHeadings,
+                                    highlightMatches: widget.highlightMatches,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                            ..._blockSemantics(),
+                            AnimatedBuilder(
+                              animation: Listenable.merge([
+                                _controller,
+                                _scroll,
+                                _horizontal,
+                              ]),
+                              builder: (context, _) =>
+                                  _completionOverlay(context),
+                            ),
+                          ],
                         ),
                       ),
-                      ..._blockSemantics(),
-                      AnimatedBuilder(
-                        animation: Listenable.merge([_controller, _scroll]),
-                        builder: (context, _) => _completionOverlay(context),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1127,7 +1200,12 @@ class EditorSurfaceState extends State<EditorSurface>
     final rows = math.min(count, _controller.completions.length);
     final height = rows * rowHeight + footerHeight;
     return Positioned(
-      left: _geometry.columnLeft.clamp(8.0, _viewportWidth - width - 8),
+      left:
+          _horizontalOffset +
+          (_geometry.columnLeft - _horizontalOffset).clamp(
+            8.0,
+            _viewportWidth - width - 8,
+          ),
       top: upwards ? caretTop - height : caretBottom,
       width: width,
       height: height,
@@ -1510,14 +1588,53 @@ class _SurfacePainter extends CustomPainter {
           );
         }
 
-        if (line.columns > 0) {
-          final text = line.textIn(display);
-          // Shared laid-out painter: a scroll frame repaints the same strings
-          // it painted last frame, and re-laying them is the frame's whole
-          // cost. The cache key is the text and the resolved style, so an edit
-          // is a miss by construction, never a stale hit.
+        final cells = line.editorCells;
+        if (cells != null) {
+          InlineRunView? activeRun;
+          var style = blockStyle;
+          for (final cell in cells) {
+            final run = cell.run;
+            final hidden = run?.hidden ?? false;
+            if (run != activeRun) {
+              activeRun = run;
+              style = run == null
+                  ? blockStyle
+                  : hidden
+                  ? blockStyle.copyWith(
+                      color: colours.dim,
+                      fontSize: fontSize / 2,
+                      fontWeight: FontWeight.normal,
+                      fontStyle: FontStyle.normal,
+                      decoration: TextDecoration.none,
+                    )
+                  : blockStyle.copyWith(
+                      fontWeight: run.bold
+                          ? FontWeight.bold
+                          : blockStyle.fontWeight,
+                      fontStyle: run.italic
+                          ? FontStyle.italic
+                          : blockStyle.fontStyle,
+                      decoration: run.underline
+                          ? TextDecoration.underline
+                          : TextDecoration.none,
+                    );
+            }
+            final text = cell.text == ' '
+                ? ' '
+                : display.substring(cell.offset, cell.end);
+            lineCache
+                .line(text, style)
+                .paint(
+                  canvas,
+                  Offset(
+                    x + cell.column * advance,
+                    y + (lineHeight - (hidden ? fontSize / 2 : fontSize)) / 2,
+                  ),
+                );
+          }
+        } else if (line.columns > 0) {
           lineCache
-              .line(text, blockStyle)
+              .line(line.textIn(display), blockStyle)
               .paint(canvas, Offset(x, y + (lineHeight - fontSize) / 2));
         }
 
@@ -1661,8 +1778,8 @@ class _SurfacePainter extends CustomPainter {
       final start = math.max(misspelling.startUtf16, line.start);
       final end = math.min(misspelling.endUtf16, line.end);
       if (end <= start) continue;
-      final from = x + line.columnAtOffset(start) * advance;
-      final to = x + line.columnAtOffset(end) * advance;
+      final from = x + line.displayColumnAtOffset(start) * advance;
+      final to = x + line.displayColumnAtOffset(end) * advance;
       final baseline = y + lineHeight - 1.5;
       final path = Path()..moveTo(from, baseline);
       var cursor = from;
@@ -1701,8 +1818,8 @@ class _SurfacePainter extends CustomPainter {
       final start = math.max(match.startUtf16, line.start);
       final end = math.min(match.endUtf16, line.end);
       if (end <= start) continue;
-      final startColumn = line.columnAtOffset(start);
-      final width = (line.columnAtOffset(end) - startColumn) * advance;
+      final startColumn = line.displayColumnAtOffset(start);
+      final width = (line.displayColumnAtOffset(end) - startColumn) * advance;
       if (width > 0) {
         canvas.drawRect(
           Rect.fromLTWH(x + startColumn * advance, y, width, lineHeight),
@@ -1748,8 +1865,8 @@ class _SurfacePainter extends CustomPainter {
         .clamp(line.start, line.end);
     // Grid cells, not code units: an astral scalar is one cell of two units and
     // a tab is one unit of up to four cells.
-    final startColumn = line.columnAtOffset(startOffset);
-    final endColumn = line.columnAtOffset(endOffset);
+    final startColumn = line.displayColumnAtOffset(startOffset);
+    final endColumn = line.displayColumnAtOffset(endOffset);
     final textWidth = (endColumn - startColumn) * advance;
     if (textWidth > 0) {
       canvas.drawRect(
@@ -1766,7 +1883,7 @@ class _SurfacePainter extends CustomPainter {
       // makes its inclusion visible without shifting the next line's geometry.
       canvas.drawRect(
         Rect.fromLTWH(
-          x + line.columnAtOffset(hardBreak) * advance,
+          x + line.displayColumnAtOffset(hardBreak) * advance,
           y,
           advance / 2,
           lineHeight,
@@ -1788,8 +1905,8 @@ class _SurfacePainter extends CustomPainter {
     final start = math.max(composing.start, line.start);
     final end = math.min(composing.end, line.end);
     if (end <= start) return;
-    final startColumn = line.columnAtOffset(start);
-    final endColumn = line.columnAtOffset(end);
+    final startColumn = line.displayColumnAtOffset(start);
+    final endColumn = line.displayColumnAtOffset(end);
     final x = pageLeft + (column + startColumn) * advance;
     canvas.drawLine(
       Offset(x, y + lineHeight - 2),
@@ -1811,7 +1928,7 @@ class _SurfacePainter extends CustomPainter {
     final line = layout.linesOf(index)[lineIndex];
     final column =
         layout.columnOf(index, lineIndex) +
-        line.columnAtOffset(focus.offsetUtf16);
+        line.displayColumnAtOffset(focus.offsetUtf16);
     // Static, not blinking. A blink is an animation loop and §1.3 asks for 0%
     // idle CPU.
     canvas.drawRect(

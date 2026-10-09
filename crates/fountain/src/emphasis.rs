@@ -11,7 +11,7 @@
 //!
 //! PDF and preview share styled output through `render_pdf::emphasis_runs`;
 //! the paginator uses the same interpretation for alignment (ADR 0044/0045).
-//! Wrapping and editor display still count the literal markers (ADR 0019).
+//! Wrapping and editor display use the same source projection.
 //! Output callers receive a paragraph already broken into rows, and an emphasis
 //! run may well open on one and close on another:
 //!
@@ -63,10 +63,114 @@ impl Emphasis {
 /// one — and every escaping backslash — removed. A row's runs are drawn one
 /// after another from wherever the paginator put the row, without gaps for
 /// removed markers (ADR 0032). Alignment uses printed width (ADR 0044).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EmphasisRun {
     pub text: String,
     pub emphasis: Emphasis,
+}
+
+/// A sparse resolved source interval. Plain visible gaps are implicit.
+/// Offsets are UTF-8 boundaries in the original text; hidden source remains
+/// editable but contributes no printed columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SourceRun {
+    pub start_utf8: usize,
+    pub end_utf8: usize,
+    pub emphasis: Emphasis,
+    pub hidden: bool,
+}
+
+/// Resolves one source paragraph, pairing across its explicit hard lines.
+pub fn source_runs(text: &str) -> Vec<SourceRun> {
+    project(text, false)
+}
+
+/// The same projection for Dialogue, with leading sung-line markers hidden
+/// before emphasis pairing and italic applied to each sung hard line.
+pub fn dialogue_source_runs(text: &str) -> Vec<SourceRun> {
+    project(text, true)
+}
+
+fn project(text: &str, dialogue: bool) -> Vec<SourceRun> {
+    if !text.contains(['*', '_', '\\']) && (!dialogue || !text.contains('~')) {
+        return Vec::new();
+    }
+    let rows: Vec<&str> = text.split('\n').collect();
+    let tokens = tokenise_inner(&rows, dialogue);
+    let paired = pair(&tokens);
+    let mut state = Emphasis::PLAIN;
+    let mut output = Vec::new();
+    let mut base = 0;
+    let mut token_index = 0;
+    for (row, line) in rows.iter().enumerate() {
+        let lyric = dialogue
+            .then(|| crate::dialogue_lyric_marker_utf8(line))
+            .flatten();
+        if let Some(marker) = lyric {
+            push_source(
+                &mut output,
+                base + marker,
+                base + marker + 1,
+                Emphasis::PLAIN,
+                true,
+            );
+        }
+        while token_index < tokens.len() && tokens[token_index].row == row {
+            let token = tokens[token_index];
+            let mut face = state;
+            face.italic |= lyric.is_some();
+            if let Some(escape) = token.escape_utf8 {
+                push_source(&mut output, escape, token.start_utf8, face, true);
+            }
+            let hidden = paired[token_index];
+            push_source(&mut output, token.start_utf8, token.end_utf8, face, hidden);
+            if let Kind::Marker { marker, .. } = token.kind {
+                if hidden {
+                    marker.toggle(&mut state);
+                }
+            }
+            token_index += 1;
+        }
+        if row + 1 < rows.len() {
+            push_source(
+                &mut output,
+                base + line.len(),
+                base + line.len() + 1,
+                state,
+                false,
+            );
+        }
+        base += line.len() + 1;
+    }
+    // Only sung markers can have been inserted ahead of styled indentation.
+    if dialogue {
+        output.sort_unstable_by_key(|run| run.start_utf8);
+    }
+    output
+}
+
+fn push_source(
+    output: &mut Vec<SourceRun>,
+    start: usize,
+    end: usize,
+    emphasis: Emphasis,
+    hidden: bool,
+) {
+    if start == end || (!hidden && emphasis == Emphasis::PLAIN) {
+        return;
+    }
+    if let Some(last) = output.last_mut() {
+        if last.end_utf8 == start && last.emphasis == emphasis && last.hidden == hidden {
+            last.end_utf8 = end;
+            return;
+        }
+    }
+    output.push(SourceRun {
+        start_utf8: start,
+        end_utf8: end,
+        emphasis,
+        hidden,
+    });
 }
 
 /// Splits a paragraph's rows into the runs they are drawn in.
@@ -165,6 +269,16 @@ impl Marker {
             Marker::Underline => state.underline = on,
         }
     }
+
+    fn toggle(self, state: &mut Emphasis) {
+        let on = !match self {
+            Marker::Italic => state.italic,
+            Marker::Bold => state.bold,
+            Marker::BoldItalic => state.italic && state.bold,
+            Marker::Underline => state.underline,
+        };
+        self.apply(state, on);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -183,67 +297,92 @@ enum Kind {
 #[derive(Debug, Clone, Copy)]
 struct Token {
     row: usize,
+    start_utf8: usize,
+    end_utf8: usize,
+    escape_utf8: Option<usize>,
     kind: Kind,
 }
 
 fn tokenise(rows: &[&str]) -> Vec<Token> {
+    tokenise_inner(rows, false)
+}
+
+fn tokenise_inner(rows: &[&str], dialogue: bool) -> Vec<Token> {
     let mut tokens = Vec::new();
+    let mut base = 0;
     for (row, text) in rows.iter().enumerate() {
-        let scalars: Vec<char> = text.chars().collect();
-        let mut index = 0usize;
-        while index < scalars.len() {
-            let character = scalars[index];
+        let lyric = dialogue
+            .then(|| crate::dialogue_lyric_marker_utf8(text))
+            .flatten();
+        let mut scalars = text.char_indices().peekable();
+        let mut before = None;
+        while let Some((offset, character)) = scalars.next() {
+            if lyric == Some(offset) {
+                continue;
+            }
+            let start_utf8 = base + offset;
             match character {
-                '\\' if matches!(scalars.get(index + 1), Some('*' | '_' | '\\')) => {
+                '\\' if scalars
+                    .peek()
+                    .is_some_and(|(_, next)| matches!(next, '*' | '_' | '\\')) =>
+                {
+                    let (escaped, next) = scalars.next().expect("peeked escape");
                     tokens.push(Token {
                         row,
-                        kind: Kind::Text(scalars[index + 1]),
+                        start_utf8: base + escaped,
+                        end_utf8: base + escaped + next.len_utf8(),
+                        escape_utf8: Some(start_utf8),
+                        kind: Kind::Text(next),
                     });
-                    index += 2;
+                    before = Some(next);
                 }
                 '*' | '_' => {
-                    let run = if character == '*' {
-                        scalars[index..]
-                            .iter()
-                            .take_while(|next| **next == '*')
-                            .count()
-                    } else {
-                        1
-                    };
-                    if run > 3 {
-                        // The surplus is printed, and printed first, so that the
-                        // three markers still sit against the text they apply to.
-                        for _ in 0..run - 3 {
-                            tokens.push(Token {
-                                row,
-                                kind: Kind::Text('*'),
-                            });
+                    let mut run: usize = 1;
+                    if character == '*' {
+                        while scalars.peek().is_some_and(|(_, next)| *next == '*') {
+                            scalars.next();
+                            run += 1;
                         }
-                        index += run - 3;
-                        continue;
                     }
-                    let marker = Marker::of(character, run);
-                    let before = index.checked_sub(1).map(|at| scalars[at]);
-                    let after = scalars.get(index + run).copied();
+                    let surplus = run.saturating_sub(3);
+                    for extra in 0..surplus {
+                        tokens.push(Token {
+                            row,
+                            start_utf8: start_utf8 + extra,
+                            end_utf8: start_utf8 + extra + 1,
+                            escape_utf8: None,
+                            kind: Kind::Text('*'),
+                        });
+                        before = Some('*');
+                    }
+                    let marker = Marker::of(character, run - surplus);
+                    let after = scalars.peek().map(|(_, next)| *next);
                     tokens.push(Token {
                         row,
+                        start_utf8: start_utf8 + surplus,
+                        end_utf8: start_utf8 + run,
+                        escape_utf8: None,
                         kind: Kind::Marker {
                             marker,
-                            opens: after.is_some_and(|character| character != ' '),
-                            closes: before.is_some_and(|character| character != ' '),
+                            opens: after.is_some_and(|next| next != ' '),
+                            closes: before.is_some_and(|previous| previous != ' '),
                         },
                     });
-                    index += run;
+                    before = Some(character);
                 }
                 _ => {
                     tokens.push(Token {
                         row,
+                        start_utf8,
+                        end_utf8: start_utf8 + character.len_utf8(),
+                        escape_utf8: None,
                         kind: Kind::Text(character),
                     });
-                    index += 1;
+                    before = Some(character);
                 }
             }
         }
+        base += text.len() + 1;
     }
     tokens
 }
@@ -313,14 +452,7 @@ fn emit(rows: usize, tokens: &[Token], paired: &[bool]) -> Vec<Vec<EmphasisRun>>
         match token.kind {
             Kind::Marker { marker, .. } if paired[index] => {
                 flush!();
-                let on = !match marker {
-                    Marker::Italic => state.italic,
-                    Marker::Bold => state.bold,
-                    Marker::BoldItalic => state.italic && state.bold,
-                    Marker::Underline => state.underline,
-                };
-                marker.apply(&mut state, on);
-                pending_emphasis = state;
+                marker.toggle(&mut state);
             }
             // Unpaired: ordinary characters, as many as it was written with.
             Kind::Marker { marker, .. } => {
@@ -350,6 +482,102 @@ fn emit(rows: usize, tokens: &[Token], paired: &[bool]) -> Vec<Vec<EmphasisRun>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_projection_is_sparse_and_retains_exact_unicode_boundaries() {
+        assert!(source_runs("plain é🎬").is_empty());
+        assert!(source_runs("unpaired **star _literal").is_empty());
+        let text = r"**é🎬** \* _中_";
+        let runs = source_runs(text);
+        assert!(runs
+            .windows(2)
+            .all(|pair| pair[0].end_utf8 <= pair[1].start_utf8));
+        assert!(runs.iter().all(|run| {
+            text.is_char_boundary(run.start_utf8)
+                && text.is_char_boundary(run.end_utf8)
+                && (run.hidden || run.emphasis != Emphasis::PLAIN)
+        }));
+        let hidden: String = runs
+            .iter()
+            .filter(|run| run.hidden)
+            .map(|run| &text[run.start_utf8..run.end_utf8])
+            .collect();
+        assert_eq!(hidden, "****\\__");
+        assert!(runs.iter().any(|run| !run.hidden
+            && run.emphasis.bold
+            && &text[run.start_utf8..run.end_utf8] == "é🎬"));
+        assert!(runs.iter().any(|run| !run.hidden
+            && run.emphasis.underline
+            && &text[run.start_utf8..run.end_utf8] == "中"));
+    }
+
+    #[test]
+    fn source_projection_and_output_scanner_share_pairing_and_style_transitions() {
+        for text in [
+            "*a _b* c_",
+            "_**a**_",
+            "****a***",
+            r"\*literal\* \\",
+            "**one\ntwo**",
+            "one **\n** two",
+            "*a\n\nb*",
+            "***a*b***",
+            "*a**b*",
+            "é**🎬**中",
+        ] {
+            let projection = source_runs(text);
+            let mut projected: Vec<Vec<EmphasisRun>> = vec![Vec::new(); text.split('\n').count()];
+            let mut row = 0;
+            for (offset, character) in text.char_indices() {
+                if character == '\n' {
+                    row += 1;
+                    continue;
+                }
+                let run = projection
+                    .iter()
+                    .find(|run| run.start_utf8 <= offset && offset < run.end_utf8);
+                if run.is_some_and(|run| run.hidden) {
+                    continue;
+                }
+                let face = run.map_or(Emphasis::PLAIN, |run| run.emphasis);
+                match projected[row].last_mut() {
+                    Some(last) if last.emphasis == face => last.text.push(character),
+                    _ => projected[row].push(EmphasisRun {
+                        text: character.to_string(),
+                        emphasis: face,
+                    }),
+                }
+            }
+            assert_eq!(
+                projected,
+                scan(&text.split('\n').collect::<Vec<_>>()),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn dialogue_projection_removes_sung_marker_before_pairing_and_scopes_italics() {
+        let text = "  ~**é🎬**\nordinary\n~*one\ntwo*";
+        let projection = dialogue_source_runs(text);
+        let hidden: String = projection
+            .iter()
+            .filter(|run| run.hidden)
+            .map(|run| &text[run.start_utf8..run.end_utf8])
+            .collect();
+        assert_eq!(hidden, "~****~**");
+        let face_at = |offset| {
+            projection
+                .iter()
+                .find(|run| !run.hidden && run.start_utf8 <= offset && offset < run.end_utf8)
+                .map_or(Emphasis::PLAIN, |run| run.emphasis)
+        };
+        assert!(face_at(text.find('é').unwrap()).bold);
+        assert!(face_at(text.find('é').unwrap()).italic);
+        assert_eq!(face_at(text.find("ordinary").unwrap()), Emphasis::PLAIN);
+        assert!(face_at(text.find("two").unwrap()).italic);
+        assert!(dialogue_source_runs(r"\~literal").is_empty());
+    }
 
     #[test]
     fn printed_width_keeps_literals_and_removes_only_paired_markers_and_escapes() {
@@ -433,9 +661,7 @@ mod tests {
 
     #[test]
     fn the_markers_are_not_printed_and_leave_no_gap() {
-        // ADR 0032: the paginator counted the markers while deciding where the
-        // row broke, and the renderer draws what is left of the row from where
-        // the row starts. A gap where a marker used to be is not a screenplay.
+        // Markers never leave gaps in the printed grid.
         assert_eq!(one("*one* two"), [run("one", "i"), run(" two", "-")]);
         assert_eq!(
             one("plain **bold** and *italic* end"),

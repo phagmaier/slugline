@@ -27,6 +27,7 @@ FakeCore oneBlock(
     forced: false,
     dual: false,
     readOnly: readOnly,
+    inlineRuns: const [],
   ),
 ]);
 
@@ -61,6 +62,7 @@ void main() {
             forced: false,
             dual: false,
             readOnly: false,
+            inlineRuns: [],
           ),
           const BlockView(
             id: 2,
@@ -70,6 +72,7 @@ void main() {
             forced: false,
             dual: false,
             readOnly: false,
+            inlineRuns: [],
           ),
         ]),
       );

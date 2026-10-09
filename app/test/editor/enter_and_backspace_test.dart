@@ -43,6 +43,7 @@ FakeCore twoBlocks(BlockKind kind) => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: const [],
   ),
   const BlockView(
     id: 2,
@@ -52,6 +53,7 @@ FakeCore twoBlocks(BlockKind kind) => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: [],
   ),
 ]);
 
@@ -108,6 +110,7 @@ void main() {
             forced: false,
             dual: false,
             readOnly: false,
+            inlineRuns: [],
           ),
           BlockView(
             id: 2,
@@ -117,6 +120,7 @@ void main() {
             forced: false,
             dual: false,
             readOnly: false,
+            inlineRuns: const [],
           ),
         ]);
         final controller = await pumpEditor(tester, core);

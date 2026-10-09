@@ -17,6 +17,7 @@ void main() {
       forced: false,
       dual: false,
       readOnly: false,
+      inlineRuns: [],
     ),
   ]);
 

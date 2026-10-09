@@ -20,6 +20,7 @@ BlockView _block(int id, BlockKind kind, String text) => BlockView(
   forced: false,
   dual: false,
   readOnly: false,
+  inlineRuns: const [],
 );
 
 FakeCore _script() {

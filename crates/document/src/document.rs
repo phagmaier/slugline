@@ -1651,6 +1651,16 @@ impl Grouped<'_> {
         Ok(result)
     }
 
+    /// Sets the gesture's final selection after its commands have run.
+    ///
+    /// Both the returned patch and redo retain this selection; undo retains
+    /// the selection passed to `apply_group`.
+    pub fn set_selection(&mut self, selection: DocSelection) -> Result<(), EditError> {
+        self.document.check_selection(selection)?;
+        self.merged.selection = Some(selection);
+        Ok(())
+    }
+
     /// The document as it stands part-way through the transaction.
     pub fn document(&self) -> &Document {
         self.document

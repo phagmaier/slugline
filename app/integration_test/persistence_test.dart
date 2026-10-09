@@ -676,7 +676,9 @@ void main() {
         .state<ScrollableState>(
           find.descendant(
             of: find.byType(EditorSurface),
-            matching: find.byType(Scrollable),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+            ),
           ),
         )
         .position;

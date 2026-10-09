@@ -206,10 +206,15 @@ Use the palette for Preferences, Spell checking, Keyboard shortcuts, showing or
 hiding the navigator, distraction-free mode, page/continuous view and text size.
 View commands name the change they will make; text size stays between 12 and 24.
 
-Preview and PDF render Fountain's italic, bold and underline emphasis; the
-editor keeps inline markers visible while you write. Preferences
-(<kbd>Ctrl</kbd>+<kbd>,</kbd>) → Page defaults → **Bold scene headings** changes heading
-weight in all three views. It is off by default and does not change wrapping.
+Editor, preview and PDF render Fountain's italic, bold and underline emphasis.
+In the editor, paired markers remain editable as dim half-size characters;
+wrapping counts printed text, not markup. Dense markup can extend beyond the
+viewport: use the bottom scrollbar, or move the caret to reveal it, without
+changing printed wraps. Use <kbd>Ctrl</kbd>+<kbd>B</kbd>,
+<kbd>Ctrl</kbd>+<kbd>I</kbd> or <kbd>Ctrl</kbd>+<kbd>U</kbd> to wrap a selection
+in one undo step. Preferences (<kbd>Ctrl</kbd>+<kbd>,</kbd>) → Page defaults →
+**Bold scene headings** changes heading weight in all three views; it defaults
+off and does not change wrapping.
 
 Page 1 is left unnumbered, as is conventional; **Number the first page** in the
 same Preferences section prints its `1.` in page view, preview and PDF.

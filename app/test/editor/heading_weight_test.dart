@@ -19,7 +19,7 @@ void main() {
       ..addFont(rootBundle.load('fonts/CourierPrime-Bold.ttf'));
     await loader.load();
     final controller = EditorController(
-      FakeCore.single(BlockKind.sceneHeading, 'INT. **LIBRARY** - DAY'),
+      FakeCore.single(BlockKind.sceneHeading, 'INT. LIBRARY - DAY'),
     );
     addTearDown(controller.dispose);
     await tester.pumpWidget(
@@ -43,7 +43,7 @@ void main() {
     recorder.endRecording().dispose();
     final hits = delegate.lineCache.hits as int;
     delegate.lineCache.line(
-      'INT. **LIBRARY** - DAY',
+      'INT. LIBRARY - DAY',
       TextStyle(
         fontFamily: scriptFontFamily,
         fontSize: delegate.fontSize as double,
@@ -55,7 +55,7 @@ void main() {
       delegate.lineCache.hits,
       hits + 1,
       reason:
-          'The actual painter must cache the literal heading in the regular face.',
+          'The actual painter must cache the plain heading in the regular face.',
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -86,7 +86,7 @@ void main() {
     final boldHits = boldDelegate.lineCache.hits as int;
     final boldPainter =
         boldDelegate.lineCache.line(
-              'INT. **LIBRARY** - DAY',
+              'INT. LIBRARY - DAY',
               TextStyle(
                 fontFamily: scriptFontFamily,
                 fontSize: boldDelegate.fontSize as double,
@@ -100,11 +100,11 @@ void main() {
       boldDelegate.lineCache.hits,
       boldHits + 1,
       reason:
-          'The actual painter must cache the literal heading in the bold face.',
+          'The actual painter must cache the plain heading in the bold face.',
     );
     final regularPainter =
         delegate.lineCache.line(
-              'INT. **LIBRARY** - DAY',
+              'INT. LIBRARY - DAY',
               TextStyle(
                 fontFamily: scriptFontFamily,
                 fontSize: delegate.fontSize as double,

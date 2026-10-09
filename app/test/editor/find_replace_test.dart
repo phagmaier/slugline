@@ -32,6 +32,7 @@ FakeCore script() => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: [],
   ),
   const BlockView(
     id: 2,
@@ -41,6 +42,7 @@ FakeCore script() => FakeCore([
     forced: false,
     dual: false,
     readOnly: false,
+    inlineRuns: [],
   ),
 ]);
 
@@ -718,6 +720,7 @@ void main() {
         forced: false,
         dual: false,
         readOnly: false,
+        inlineRuns: [],
       ),
     ]);
     final controller = await pumpEditorPage(tester, core);
@@ -766,6 +769,7 @@ void main() {
         forced: false,
         dual: false,
         readOnly: false,
+        inlineRuns: [],
       ),
       const BlockView(
         id: 2,
@@ -775,6 +779,7 @@ void main() {
         forced: false,
         dual: false,
         readOnly: false,
+        inlineRuns: [],
       ),
     ]);
     final controller = await pumpEditorPage(tester, core);

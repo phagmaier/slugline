@@ -21,13 +21,19 @@ BlockView _block(int id) => BlockView(
   forced: false,
   dual: false,
   readOnly: false,
+  inlineRuns: const [],
 );
 
 FakeCore _script(int blocks) =>
     FakeCore([for (var id = 1; id <= blocks; id++) _block(id)]);
 
-ScrollPosition _position(WidgetTester tester) =>
-    tester.state<ScrollableState>(find.byType(Scrollable)).position;
+ScrollPosition _position(WidgetTester tester) => tester
+    .state<ScrollableState>(
+      find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+      ),
+    )
+    .position;
 
 Future<void> _pumpSurface(
   WidgetTester tester,
@@ -145,17 +151,19 @@ void main() {
     final position = _position(tester);
     position.jumpTo(1);
     await tester.pump(const Duration(milliseconds: 300));
-    final scrollbar = tester.getRect(find.byType(Scrollbar));
+    final verticalBar = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollbar &&
+          widget.scrollbarOrientation != ScrollbarOrientation.bottom,
+    );
+    final scrollbar = tester.getRect(verticalBar);
     final painter = tester
         .widgetList<CustomPaint>(
-          find.descendant(
-            of: find.byType(Scrollbar),
-            matching: find.byType(CustomPaint),
-          ),
+          find.descendant(of: verticalBar, matching: find.byType(CustomPaint)),
         )
         .map((paint) => paint.foregroundPainter)
         .whereType<ScrollbarPainter>()
-        .single;
+        .first;
     Offset? thumb;
     for (var y = 0.0; y < scrollbar.height && thumb == null; y++) {
       for (var x = 0.0; x < scrollbar.width; x++) {

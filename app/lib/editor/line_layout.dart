@@ -13,16 +13,12 @@ import 'package:slugline/editor/metrics.dart';
 /// plain BMP, and `docs/LINE_BREAKING.md` is what says so.
 class VisualLine {
   /// A row whose columns are its code units: no tab, no astral scalar.
-  const VisualLine(
-    this.start,
-    this.end,
-    this.columns, {
-    this.hardBreakOffsetUtf16,
-  }) : _columnOffsets = null;
+  VisualLine(this.start, this.end, this.columns, {this.hardBreakOffsetUtf16})
+    : _columnOffsets = null;
 
   /// A row that needs a column map, because a tab or an astral scalar makes a
   /// column something other than an offset less [start].
-  const VisualLine.mapped(
+  VisualLine.mapped(
     this.start,
     this.end,
     this.columns,
@@ -36,10 +32,10 @@ class VisualLine {
   /// Exclusive.
   final int end;
 
-  /// Grid cells this row occupies, after tab expansion.
+  /// Printed grid cells after hidden syntax removal and tab expansion.
   ///
-  /// Not `end - start`: an astral scalar is two code units and one column, and
-  /// a tab is one code unit and up to four.
+  /// Not `end - start`: paired markers have no printed cells, an astral scalar
+  /// is two code units and one cell, and a tab has up to four cells.
   final int columns;
 
   /// The model offset of the `\n` that terminates this row, when there is one.
@@ -50,13 +46,91 @@ class VisualLine {
   /// that wrapping may omit from the painted slice.
   final int? hardBreakOffsetUtf16;
 
-  /// The model offset each column starts at, plus [end] at index [columns].
+  /// The actual source offset of each printed cell, plus [end].
   ///
-  /// Null when the row is plain — no tab and no astral scalar — which is almost
-  /// every row of almost every script, and then a column is an offset less
-  /// [start]. Cells of one tab all carry that tab's offset, so no column ever
-  /// points inside it.
+  /// Null on plain BMP rows without syntax/tabs. Hidden source boundaries are
+  /// represented separately by [_editorCells]; tab cells share one offset.
   final List<int>? _columnOffsets;
+
+  List<EditorCell>? _editorCells;
+
+  /// Printed columns stay independent of the editable display. Resolved syntax
+  /// has zero printed width but a dim half-cell in the editor, never an overlay.
+  List<EditorCell>? get editorCells => _editorCells;
+
+  double displayColumnAtOffset(int offset) {
+    final cells = _editorCells;
+    if (cells == null) return columnAtOffset(offset).toDouble();
+    for (final cell in cells) {
+      if (cell.offset >= offset) return cell.column;
+    }
+    return cells.isEmpty ? 0 : cells.last.column + cells.last.width;
+  }
+
+  int offsetAtDisplayColumn(num column) {
+    final cells = _editorCells;
+    if (cells == null) return offsetAtColumn(column.round());
+    if (column <= 0) return start;
+    for (final cell in cells) {
+      if (column < cell.column + cell.width / 2) return cell.offset;
+    }
+    return end;
+  }
+
+  void _project(String source, List<InlineRunView> runs) {
+    if (runs.isEmpty) return;
+    final cells = <EditorCell>[];
+    var runIndex = 0;
+    var printed = 0;
+    var offset = start;
+    var column = 0.0;
+    while (offset < end) {
+      while (runIndex < runs.length && runs[runIndex].endUtf16 <= offset) {
+        runIndex++;
+      }
+      final run = runIndex < runs.length && runs[runIndex].startUtf16 <= offset
+          ? runs[runIndex]
+          : null;
+      final unit = source.codeUnitAt(offset);
+      final units =
+          _isHighSurrogate(unit) &&
+              offset + 1 < end &&
+              _isLowSurrogate(source.codeUnitAt(offset + 1))
+          ? 2
+          : 1;
+      final hidden = run?.hidden ?? false;
+      if (hidden) {
+        cells.add(
+          EditorCell(
+            offset,
+            offset + units,
+            column,
+            0.5,
+            source.substring(offset, offset + units),
+            run,
+          ),
+        );
+        column += 0.5;
+      } else {
+        while (printed < columns && offsetAtColumn(printed) == offset) {
+          cells.add(
+            EditorCell(
+              offset,
+              offset + units,
+              column,
+              1,
+              unit == _tab ? ' ' : source.substring(offset, offset + units),
+              run,
+            ),
+          );
+          column++;
+          printed++;
+        }
+      }
+      offset += units;
+    }
+    _editorCells = cells;
+  }
 
   /// What this row draws, with tabs expanded to their cells.
   ///
@@ -123,6 +197,24 @@ class VisualLine {
   }
 }
 
+/// One painted source scalar (or virtual tab cell), resolved by Rust metadata.
+class EditorCell {
+  const EditorCell(
+    this.offset,
+    this.end,
+    this.column,
+    this.width,
+    this.text,
+    this.run,
+  );
+  final int offset;
+  final int end;
+  final double column;
+  final double width;
+  final String text;
+  final InlineRunView? run;
+}
+
 /// Wraps a block's text to [width] columns.
 ///
 /// Character counting, not text measurement: the screenplay grid is monospace
@@ -138,7 +230,11 @@ class VisualLine {
 /// break never lands inside a scalar or inside a tab's expansion. The other
 /// half is `layout::break_lines`, and a case answered differently there is a
 /// bug on one side or the other, never a preference.
-List<VisualLine> wrapText(String text, int width) {
+List<VisualLine> wrapText(
+  String text,
+  int width, {
+  List<InlineRunView> inlineRuns = const [],
+}) {
   final columns = width < 1 ? 1 : width;
   final lines = <VisualLine>[];
   var hardStart = 0;
@@ -152,8 +248,14 @@ List<VisualLine> wrapText(String text, int width) {
       columns,
       newline < 0 ? null : newline,
       lines,
+      inlineRuns,
     );
-    if (newline < 0) return lines;
+    if (newline < 0) {
+      for (final line in lines) {
+        line._project(text, inlineRuns);
+      }
+      return lines;
+    }
     hardStart = newline + 1;
   }
 }
@@ -165,13 +267,16 @@ const int _tabStop = 4;
 
 /// One hard line expanded onto the grid: one entry per cell.
 class _Cells {
-  _Cells(this.scalars, this.offsets, this.plain);
+  _Cells(this.scalars, this.offsets, this.starts, this.plain);
 
   /// The scalar drawn in each cell. A tab contributes spaces.
   final List<int> scalars;
 
   /// The model offset of the scalar each cell belongs to.
   final List<int> offsets;
+
+  /// Boundary ownership includes a hidden prefix on the following cell.
+  final List<int> starts;
 
   /// True when cells and code units are one to one, so no per-row map is worth
   /// the memory.
@@ -180,13 +285,31 @@ class _Cells {
   int get length => scalars.length;
 }
 
-_Cells _expand(String text, int hardStart, int hardEnd) {
+_Cells _expand(
+  String text,
+  int hardStart,
+  int hardEnd,
+  List<InlineRunView> runs,
+) {
   final scalars = <int>[];
   final offsets = <int>[];
+  final starts = runs.isEmpty ? offsets : <int>[];
+  var pending = hardStart;
+  var runIndex = 0;
   var plain = true;
   var column = 0;
   var index = hardStart;
   while (index < hardEnd) {
+    while (runIndex < runs.length && runs[runIndex].endUtf16 <= index) {
+      runIndex++;
+    }
+    if (runIndex < runs.length &&
+        runs[runIndex].startUtf16 <= index &&
+        runs[runIndex].hidden) {
+      plain = false;
+      index = runs[runIndex].endUtf16.clamp(index, hardEnd);
+      continue;
+    }
     final unit = text.codeUnitAt(index);
     if (unit == _tab) {
       plain = false;
@@ -194,9 +317,13 @@ _Cells _expand(String text, int hardStart, int hardEnd) {
       for (var cell = 0; cell < cells; cell++) {
         scalars.add(_space);
         offsets.add(index);
+        if (!identical(starts, offsets)) {
+          starts.add(cell == 0 ? pending : index);
+        }
       }
       column += cells;
       index += 1;
+      pending = index;
       continue;
     }
     if (unit == _carriageReturn) {
@@ -217,10 +344,12 @@ _Cells _expand(String text, int hardStart, int hardEnd) {
     }
     scalars.add(scalar);
     offsets.add(index);
+    if (!identical(starts, offsets)) starts.add(pending);
     column += 1;
+    pending = index + units;
     index += units;
   }
-  return _Cells(scalars, offsets, plain);
+  return _Cells(scalars, offsets, starts, plain);
 }
 
 void _wrapHardLine(
@@ -230,8 +359,9 @@ void _wrapHardLine(
   int width,
   int? hardBreakOffsetUtf16,
   List<VisualLine> lines,
+  List<InlineRunView> inlineRuns,
 ) {
-  final cells = _expand(text, hardStart, hardEnd);
+  final cells = _expand(text, hardStart, hardEnd, inlineRuns);
   if (cells.length == 0) {
     // An empty hard line still occupies a row: an empty block is where the
     // caret goes after the Enter that made it.
@@ -260,6 +390,26 @@ void _wrapHardLine(
     start += breakAt;
     while (start < cells.length && cells.scalars[start] == _space) {
       start += 1;
+    }
+    final gapEnd = start < cells.length ? cells.starts[start] : hardEnd;
+    final previous = lines.last;
+    var extendedEnd = previous.end;
+    for (final run in inlineRuns) {
+      if (run.startUtf16 >= gapEnd) break;
+      if (run.hidden && run.endUtf16 > extendedEnd) {
+        extendedEnd = run.endUtf16.clamp(extendedEnd, gapEnd);
+      }
+    }
+    if (extendedEnd > previous.end) {
+      lines[lines.length - 1] = VisualLine.mapped(
+        previous.start,
+        extendedEnd,
+        previous.columns,
+        [
+          for (var c = 0; c < previous.columns; c++) previous.offsetAtColumn(c),
+          extendedEnd,
+        ],
+      );
     }
   }
 
@@ -310,10 +460,10 @@ VisualLine _line(
   // A row always begins on a scalar: a break lands either on a non-space cell
   // or after a whole run of spaces, and every cell of a tab is a space.
   assert(from == 0 || cells.offsets[from - 1] != cells.offsets[from]);
-  final start = cells.offsets[from];
+  final start = cells.starts[from];
   // A row ends before the scalar of the next cell, so a tab straddling the
   // boundary stays outside both rows' model slices.
-  final end = to < cells.length ? cells.offsets[to] : hardEnd;
+  final end = to < cells.length ? cells.starts[to] : hardEnd;
   if (cells.plain) {
     return VisualLine(
       start,
@@ -346,13 +496,18 @@ class DocumentLayout {
 
   final List<BlockView> _blocks;
   final List<List<VisualLine>> _lines = [];
+  final List<double> _displayEnds = [];
   final List<BlockView> _wrapContext = [];
   List<int> _widths = [];
   bool _pairingDirty = false;
   List<int> _rowStart = const [0];
   int _totalRows = 0;
+  double _displayColumns = 0;
 
   int get totalRows => _totalRows;
+
+  /// Furthest editable column, including syntax slots, cached with the wraps.
+  double get displayColumns => _displayColumns;
 
   List<VisualLine> linesOf(int blockIndex) => _lines[blockIndex];
 
@@ -366,6 +521,9 @@ class DocumentLayout {
     _lines
       ..clear()
       ..addAll([for (var i = 0; i < _blocks.length; i++) _wrap(i)]);
+    _displayEnds
+      ..clear()
+      ..addAll([for (var i = 0; i < _blocks.length; i++) _displayEnd(i)]);
     reindex();
   }
 
@@ -383,17 +541,20 @@ class DocumentLayout {
     }
     _wrapContext[blockIndex] = block;
     _lines[blockIndex] = _wrap(blockIndex);
+    _displayEnds[blockIndex] = _displayEnd(blockIndex);
   }
 
   void insertAt(int blockIndex) {
     _wrapContext.insert(blockIndex, _blocks[blockIndex]);
     _widths.insert(blockIndex, metricsFor(_blocks[blockIndex].kind).width);
     _lines.insert(blockIndex, _wrap(blockIndex));
+    _displayEnds.insert(blockIndex, _displayEnd(blockIndex));
     _pairingDirty = true;
   }
 
   void removeAt(int blockIndex) {
     _lines.removeAt(blockIndex);
+    _displayEnds.removeAt(blockIndex);
     _wrapContext.removeAt(blockIndex);
     _widths.removeAt(blockIndex);
     _pairingDirty = true;
@@ -408,18 +569,22 @@ class DocumentLayout {
         if (widths[i] == _widths[i]) continue;
         _widths[i] = widths[i];
         _lines[i] = _wrap(i);
+        _displayEnds[i] = _displayEnd(i);
       }
       _pairingDirty = false;
     }
     final starts = List<int>.filled(_blocks.length + 1, 0);
     var row = 0;
+    var displayColumns = 0.0;
     for (var i = 0; i < _blocks.length; i++) {
       starts[i] = row;
       row += blankRowsBefore(i) + _lines[i].length;
+      if (_displayEnds[i] > displayColumns) displayColumns = _displayEnds[i];
     }
     starts[_blocks.length] = row;
     _rowStart = starts;
     _totalRows = row;
+    _displayColumns = displayColumns;
   }
 
   /// Blank rows above a block. Lyric runs share one leading blank; the first
@@ -486,8 +651,23 @@ class DocumentLayout {
     };
   }
 
-  List<VisualLine> _wrap(int blockIndex) =>
-      wrapText(_blocks[blockIndex].text, _widths[blockIndex]);
+  double _displayEnd(int blockIndex) {
+    var end = 0.0;
+    final lines = _lines[blockIndex];
+    for (var i = 0; i < lines.length; i++) {
+      final right =
+          columnOf(blockIndex, i) +
+          lines[i].displayColumnAtOffset(lines[i].end);
+      if (right > end) end = right;
+    }
+    return end;
+  }
+
+  List<VisualLine> _wrap(int blockIndex) => wrapText(
+    _blocks[blockIndex].text,
+    _widths[blockIndex],
+    inlineRuns: _blocks[blockIndex].inlineRuns,
+  );
 
   /// Mirrors only Rust's wrapping context, not pagination or document state.
   /// Source-adjacent speeches pair greedily and disjointly; every other kind,

@@ -20,6 +20,7 @@ BlockView _block(int id, BlockKind kind, String text, {bool dual = false}) =>
       forced: false,
       dual: dual,
       readOnly: false,
+      inlineRuns: const [],
     );
 
 List<BlockView> _pair({bool dual = true}) => [

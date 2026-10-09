@@ -88,6 +88,7 @@ void main() {
           forced: false,
           dual: false,
           readOnly: false,
+          inlineRuns: const [],
         ),
     ];
     final core = FakeCore(blocks)

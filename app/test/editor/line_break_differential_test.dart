@@ -117,7 +117,11 @@ void _compare(Iterable<_Case> cases) {
     final scalarAt = _scalarIndices(display);
     for (final run in testCase.runs) {
       compared++;
-      final rows = wrapText(display, run.width);
+      final rows = wrapText(
+        display,
+        run.width,
+        inlineRuns: testCase.inlineRuns,
+      );
       final actual = <List<int?>>[];
       var addressable = true;
       for (final row in rows) {
@@ -309,7 +313,14 @@ String _escape(String text) {
 }
 
 class _Case {
-  _Case(this.name, this.text, this.display, this.uppercase, this.runs);
+  _Case(
+    this.name,
+    this.text,
+    this.display,
+    this.uppercase,
+    this.inlineRuns,
+    this.runs,
+  );
 
   final String name;
 
@@ -321,6 +332,7 @@ class _Case {
 
   final bool uppercase;
   final List<_Run> runs;
+  final List<InlineRunView> inlineRuns;
 }
 
 class _Run {
@@ -349,9 +361,28 @@ _Case _case(Map<String, dynamic> entry) {
     entry['display'] as String? ?? text,
     entry['uppercase'] as bool,
     [
+      for (final raw in entry['inline_runs'] as List<dynamic>)
+        _inlineRun(text, raw as List<dynamic>),
+    ],
+    [
       for (final run in entry['runs'] as List<dynamic>)
         _run(run as Map<String, dynamic>),
     ],
+  );
+}
+
+InlineRunView _inlineRun(String source, List<dynamic> row) {
+  final offsets = <int>[0];
+  for (final scalar in source.runes) {
+    offsets.add(offsets.last + (scalar > 0xffff ? 2 : 1));
+  }
+  return InlineRunView(
+    startUtf16: offsets[row[0] as int],
+    endUtf16: offsets[row[1] as int],
+    bold: row[2] as bool,
+    italic: row[3] as bool,
+    underline: row[4] as bool,
+    hidden: row[5] as bool,
   );
 }
 

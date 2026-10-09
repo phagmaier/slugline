@@ -76,10 +76,32 @@ pub struct BlockView {
     pub section_level: u8,
     /// The user-visible text, with Fountain emphasis markup retained inline.
     pub text: String,
+    /// Sparse source-coordinate styles and nonprinting markers. Plain gaps
+    /// remain literal source text; hidden markers stay editable in the editor.
+    pub inline_runs: Vec<InlineRunView>,
     pub forced: bool,
     pub dual: bool,
     /// The block cannot be edited. Only `Opaque` blocks are.
     pub read_only: bool,
+}
+
+/// Resolved inline emphasis over an exact half-open source range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineRunView {
+    pub start_utf16: u32,
+    pub end_utf16: u32,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub hidden: bool,
+}
+
+/// The Fountain style applied by a selection-formatting gesture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineStyle {
+    Bold,
+    Italic,
+    Underline,
 }
 
 /// One scene in §Phase 8's navigator.
@@ -783,6 +805,44 @@ pub fn doc_line_break(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
     })
 }
 
+/// Wraps selected content in Fountain markers as one isolated undo gesture.
+///
+/// Hard lines and blocks are formatted separately, leaving boundary whitespace
+/// and all existing source intact. Empty or syntactically unsafe selections are
+/// refused without editing; this is wrapping, not a style toggle.
+#[frb(sync)]
+pub fn doc_format_selection(
+    handle: DocumentHandle,
+    at: DocSelection,
+    style: InlineStyle,
+) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        let document = session.document();
+        let at = match to_model_selection(document, Some(at)) {
+            Ok(selection) => selection.expect("Some in, Some out"),
+            Err(rejection) => return rejection,
+        };
+        let plan = match formatting_plan(document, at, style) {
+            Ok(plan) => plan,
+            Err(error) => return rejected(rejection_of(&error), error.to_string()),
+        };
+        let result = session.interrupt().apply_group(Some(at), |group| {
+            for edit in plan.edits {
+                group.apply(model::EditCommand::ReplaceText {
+                    block: edit.block,
+                    range: 0..edit.original_len,
+                    with: edit.text,
+                })?;
+            }
+            group.set_selection(plan.selection)
+        });
+        outcome(session, result)
+    })
+}
+
 /// Tab, or Shift+Tab, on the block the caret is in.
 ///
 /// `None` — not a rejection — where the table says Tab does nothing. There is
@@ -1191,6 +1251,190 @@ fn adopt(
 }
 
 // ---------------------------------------------------------------------------
+// Selection formatting — source surgery checked by Fountain's one scanner
+// ---------------------------------------------------------------------------
+
+struct FormattingEdit {
+    block: model::BlockId,
+    original_len: u32,
+    text: String,
+}
+
+struct FormattingPlan {
+    edits: Vec<FormattingEdit>,
+    selection: model::DocSelection,
+}
+
+fn formatting_plan(
+    document: &model::Document,
+    at: model::DocSelection,
+    style: InlineStyle,
+) -> Result<FormattingPlan, model::EditError> {
+    let (from, to) = ordered(document, at);
+    if from == to {
+        return Err(model::EditError::BadRange);
+    }
+    let first = document.index_of(from.block).expect("validated position");
+    let last = document.index_of(to.block).expect("validated position");
+    let marker = match style {
+        InlineStyle::Bold => "**",
+        InlineStyle::Italic => "*",
+        InlineStyle::Underline => "_",
+    };
+    let mut edits = Vec::new();
+    let mut selection = at;
+    for block in &document.blocks()[first..=last] {
+        let text = block.text();
+        let start = if block.id() == from.block {
+            from.offset as usize
+        } else {
+            0
+        };
+        let end = if block.id() == to.block {
+            to.offset as usize
+        } else {
+            text.len()
+        };
+        if start == end {
+            continue;
+        }
+        if block.kind() == model::BlockKind::Opaque {
+            return Err(model::EditError::NotEditable(block.id()));
+        }
+        let mut ranges = Vec::new();
+        let mut line_start = start;
+        for line in text[start..end].split_inclusive('\n') {
+            let mut content = line;
+            let mut content_start = line_start;
+            if block.kind() == model::BlockKind::Dialogue
+                && (line_start == 0 || text.as_bytes()[line_start - 1] == b'\n')
+            {
+                if let Some(marker) = slugline_fountain::dialogue_lyric_marker_utf8(line) {
+                    content_start += marker + 1;
+                    content = &line[marker + 1..];
+                }
+            }
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                let leading = content.len() - content.trim_start().len();
+                ranges.push(content_start + leading..content_start + leading + trimmed.len());
+            }
+            line_start += line.len();
+        }
+        if ranges.is_empty() {
+            continue;
+        }
+        let mut formatted = String::with_capacity(text.len() + ranges.len() * marker.len() * 2);
+        let mut copied = 0;
+        for range in &ranges {
+            formatted.push_str(&text[copied..range.start]);
+            formatted.push_str(marker);
+            formatted.push_str(&text[range.clone()]);
+            formatted.push_str(marker);
+            copied = range.end;
+        }
+        formatted.push_str(&text[copied..]);
+        if !formatting_is_sound(text, &formatted, &ranges, marker.len(), style, block.kind()) {
+            return Err(model::EditError::BadRange);
+        }
+        for position in [&mut selection.anchor, &mut selection.focus] {
+            if position.block == block.id() {
+                let offset = position.offset as usize;
+                // A boundary at an opening marker moves inside it, while a
+                // boundary at a closing marker stays before it. Whitespace
+                // outside the wrapped ranges remains part of the selection.
+                let added = ranges
+                    .iter()
+                    .map(|range| {
+                        usize::from(range.start <= offset) + usize::from(range.end < offset)
+                    })
+                    .sum::<usize>()
+                    * marker.len();
+                position.offset = clamp_u32(offset + added);
+            }
+        }
+        edits.push(FormattingEdit {
+            block: block.id(),
+            original_len: clamp_u32(text.len()),
+            text: formatted,
+        });
+    }
+    if edits.is_empty() {
+        return Err(model::EditError::BadRange);
+    }
+    Ok(FormattingPlan { edits, selection })
+}
+
+fn source_style_at(
+    runs: &[slugline_fountain::emphasis::SourceRun],
+    cursor: &mut usize,
+    offset: usize,
+) -> (slugline_fountain::emphasis::Emphasis, bool) {
+    while *cursor < runs.len() && runs[*cursor].end_utf8 <= offset {
+        *cursor += 1;
+    }
+    match runs.get(*cursor).filter(|run| run.start_utf8 <= offset) {
+        Some(run) => (run.emphasis, run.hidden),
+        None => (slugline_fountain::emphasis::Emphasis::PLAIN, false),
+    }
+}
+
+/// Refuse wrapping that would swallow literal characters, escape a new marker,
+/// turn off an existing face, or alter text outside the selection. All syntax
+/// decisions come from the same scanner used for printed output.
+fn formatting_is_sound(
+    original: &str,
+    formatted: &str,
+    ranges: &[std::ops::Range<usize>],
+    marker_len: usize,
+    style: InlineStyle,
+    kind: model::BlockKind,
+) -> bool {
+    let before = block_source_runs(original, kind);
+    let after = block_source_runs(formatted, kind);
+    let mut before_cursor = 0;
+    let mut after_cursor = 0;
+    let mut range_cursor = 0;
+    let mut added = 0;
+    for (offset, character) in original.char_indices() {
+        while range_cursor < ranges.len() && ranges[range_cursor].end <= offset {
+            added += 2 * marker_len;
+            range_cursor += 1;
+        }
+        let selected = ranges
+            .get(range_cursor)
+            .is_some_and(|range| range.start <= offset);
+        let mapped = offset + added + if selected { marker_len } else { 0 };
+        let (mut expected, hidden) = source_style_at(&before, &mut before_cursor, offset);
+        let (actual, now_hidden) = source_style_at(&after, &mut after_cursor, mapped);
+        if hidden != now_hidden {
+            return false;
+        }
+        if selected {
+            match style {
+                InlineStyle::Bold => expected.bold = true,
+                InlineStyle::Italic => expected.italic = true,
+                InlineStyle::Underline => expected.underline = true,
+            }
+        }
+        if !hidden && character != '\n' && expected != actual {
+            return false;
+        }
+    }
+    let mut cursor = 0;
+    for (index, range) in ranges.iter().enumerate() {
+        let opening = range.start + index * 2 * marker_len;
+        let closing = range.end + (index * 2 + 1) * marker_len;
+        for offset in (opening..opening + marker_len).chain(closing..closing + marker_len) {
+            if !source_style_at(&after, &mut cursor, offset).1 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
 // Conversion — the only direction-changing code in the surface
 // ---------------------------------------------------------------------------
 
@@ -1201,9 +1445,36 @@ fn view_of(block: &model::Block) -> BlockView {
         kind,
         section_level,
         text: block.text().to_owned(),
+        inline_runs: block_source_runs(block.text(), block.kind())
+            .into_iter()
+            .map(|run| {
+                let range =
+                    offsets::utf8_range_to_utf16(block.text(), run.start_utf8..run.end_utf8)
+                        .expect("scanner runs lie on source character boundaries");
+                InlineRunView {
+                    start_utf16: range.start,
+                    end_utf16: range.end,
+                    bold: run.emphasis.bold,
+                    italic: run.emphasis.italic,
+                    underline: run.emphasis.underline,
+                    hidden: run.hidden,
+                }
+            })
+            .collect(),
         forced: block.forced(),
         dual: block.dual(),
         read_only: block.kind() == model::BlockKind::Opaque,
+    }
+}
+
+fn block_source_runs(
+    text: &str,
+    kind: model::BlockKind,
+) -> Vec<slugline_fountain::emphasis::SourceRun> {
+    match kind {
+        model::BlockKind::Opaque | model::BlockKind::PageBreak => Vec::new(),
+        model::BlockKind::Dialogue => slugline_fountain::emphasis::dialogue_source_runs(text),
+        _ => slugline_fountain::emphasis::source_runs(text),
     }
 }
 
@@ -3220,5 +3491,340 @@ mod tests {
             doc_set_title_field(handle, "Title".to_owned(), "x".to_owned()),
             EditOutcome::Rejected { .. }
         ));
+    }
+
+    fn formatted(doc: &Doc, at: DocSelection, style: InlineStyle) -> EditResult {
+        match doc_format_selection(doc.handle(), at, style) {
+            EditOutcome::Applied { result } => result,
+            EditOutcome::Rejected { reason, message } => {
+                panic!("formatting refused: {reason:?}: {message}")
+            }
+        }
+    }
+
+    fn inline_at(block: &BlockView, offset_utf16: u32) -> Option<&InlineRunView> {
+        block
+            .inline_runs
+            .iter()
+            .find(|run| run.start_utf16 <= offset_utf16 && offset_utf16 < run.end_utf16)
+    }
+
+    #[test]
+    fn formatting_unicode_preserves_direction_and_undo_redo_content_selection() {
+        for (style, marker) in [
+            (InlineStyle::Bold, "**"),
+            (InlineStyle::Italic, "*"),
+            (InlineStyle::Underline, "_"),
+        ] {
+            for reversed in [false, true] {
+                let source = "!aé日🎬\n";
+                let doc = Doc::parse(source);
+                let mut at = DocSelection {
+                    anchor: doc.caret(0, 0).anchor,
+                    focus: doc.caret(0, 5).focus,
+                };
+                if reversed {
+                    std::mem::swap(&mut at.anchor, &mut at.focus);
+                }
+                let result = formatted(&doc, at, style);
+                assert_eq!(result.changed[0].text, format!("{marker}{MIXED}{marker}"));
+                assert_eq!(result.changed[0], doc.blocks()[0]);
+                let after = result.selection.unwrap();
+                let shift = marker.len() as u32;
+                assert_eq!(after.anchor.offset_utf16, at.anchor.offset_utf16 + shift);
+                assert_eq!(after.focus.offset_utf16, at.focus.offset_utf16 + shift);
+                assert_eq!(
+                    doc_extract(doc.handle(), after.anchor, after.focus),
+                    Some(MIXED.into())
+                );
+                assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+                assert_eq!(doc.text(), source, "undo restores original provenance");
+                assert!(doc_undo(doc.handle()).is_none(), "one formatting gesture");
+                assert_eq!(doc_redo(doc.handle()).unwrap().selection, Some(after));
+                assert_eq!(doc.blocks()[0].text, format!("{marker}{MIXED}{marker}"));
+            }
+        }
+    }
+
+    #[test]
+    fn formatting_keeps_hard_lines_boundary_whitespace_and_block_ids() {
+        let doc = Doc::parse("First.\n\nLast.\n");
+        let first = doc.id(0);
+        let last = doc.id(1);
+        let text = " \tFirst  \n \n\tSecond 🎬 \t";
+        doc.apply(EditCommand::ReplaceText {
+            block: first,
+            start_utf16: 0,
+            end_utf16: 6,
+            with: text.into(),
+        });
+        let before = doc.text();
+        let at = DocSelection {
+            anchor: doc.caret(1, 4).anchor,
+            focus: doc.caret(0, 0).focus,
+        };
+        let result = formatted(&doc, at, InlineStyle::Bold);
+        assert_eq!(
+            doc.blocks()[0].text,
+            " \t**First**  \n \n\t**Second 🎬** \t"
+        );
+        assert_eq!(doc.blocks()[1].text, "**Last**.");
+        assert_eq!(doc.id(0), first);
+        assert_eq!(doc.id(1), last);
+        assert_eq!(result.changed.len(), 2);
+        let after = result.selection.unwrap();
+        assert_eq!(after.anchor, doc.caret(1, 6).anchor);
+        assert_eq!(after.focus, at.focus, "leading whitespace remains selected");
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.text(), before);
+        assert_eq!(doc_redo(doc.handle()).unwrap().selection, Some(after));
+    }
+
+    #[test]
+    fn formatting_composes_with_existing_faces_without_reinterpreting_literals() {
+        let doc = Doc::parse("**Bold** and _underlined_.\n");
+        let at = DocSelection {
+            anchor: doc.caret(0, 0).anchor,
+            focus: doc.caret(0, 8).focus,
+        };
+        formatted(&doc, at, InlineStyle::Italic);
+        assert_eq!(doc.blocks()[0].text, "***Bold*** and _underlined_.");
+        let blocks = doc.blocks();
+        let bold = inline_at(&blocks[0], 3).unwrap();
+        assert!(bold.bold && bold.italic && !bold.hidden);
+        let underlined = inline_at(&blocks[0], 16).unwrap();
+        assert!(underlined.underline && !underlined.italic);
+
+        for (text, applies) in [
+            (r"literal\*", true),
+            (r"literal\", false),
+            ("*unpaired", false),
+        ] {
+            let doc = Doc::parse(&format!("!{text}\n"));
+            let before = doc.text();
+            let at = DocSelection {
+                anchor: doc.caret(0, 0).anchor,
+                focus: doc.caret(0, offsets::utf16_len(text)).focus,
+            };
+            match doc_format_selection(doc.handle(), at, InlineStyle::Italic) {
+                EditOutcome::Applied { result } => {
+                    assert!(applies, "unsafe wrapping must be refused: {text:?}");
+                    let block = &result.changed[0];
+                    let projected: String = block
+                        .text
+                        .char_indices()
+                        .filter_map(|(byte, ch)| {
+                            let unit = offsets::utf8_to_utf16(&block.text, byte).unwrap();
+                            (!inline_at(block, unit).is_some_and(|run| run.hidden)).then_some(ch)
+                        })
+                        .collect();
+                    let original: String = slugline_fountain::emphasis::scan_row(text)
+                        .into_iter()
+                        .map(|run| run.text)
+                        .collect();
+                    assert_eq!(projected, original);
+                }
+                EditOutcome::Rejected { .. } => {
+                    assert!(!applies, "safe escaped literal must format: {text:?}");
+                    assert_eq!(doc.text(), before);
+                    assert!(doc_undo(doc.handle()).is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn formatting_refuses_invalid_empty_whitespace_and_read_only_ranges_atomically() {
+        let doc = Doc::parse("a🎬b\n");
+        for at in [
+            doc.caret(0, 0),
+            DocSelection {
+                anchor: doc.caret(0, 0).anchor,
+                focus: doc.caret(0, 2).focus,
+            },
+            DocSelection {
+                anchor: doc.caret(0, 0).anchor,
+                focus: doc.caret(0, 99).focus,
+            },
+        ] {
+            assert!(matches!(
+                doc_format_selection(doc.handle(), at, InlineStyle::Bold),
+                EditOutcome::Rejected { .. }
+            ));
+        }
+        assert_eq!(doc.text(), "a🎬b\n");
+        assert!(doc_undo(doc.handle()).is_none());
+
+        let doc = Doc::parse("Before.\n\n/* hidden */\n\nAfter.\n");
+        let before = doc.text();
+        let at = DocSelection {
+            anchor: doc.caret(0, 0).anchor,
+            focus: doc.caret(doc.blocks().len() - 1, 6).focus,
+        };
+        assert!(matches!(
+            doc_format_selection(doc.handle(), at, InlineStyle::Underline),
+            EditOutcome::Rejected {
+                reason: EditRejection::NotEditable,
+                ..
+            }
+        ));
+        assert_eq!(doc.text(), before);
+        assert!(doc_undo(doc.handle()).is_none());
+
+        let doc = Doc::parse("A   B\n");
+        let at = DocSelection {
+            anchor: doc.caret(0, 1).anchor,
+            focus: doc.caret(0, 4).focus,
+        };
+        assert!(matches!(
+            doc_format_selection(doc.handle(), at, InlineStyle::Italic),
+            EditOutcome::Rejected {
+                reason: EditRejection::BadRange,
+                ..
+            }
+        ));
+        assert!(doc_undo(doc.handle()).is_none());
+    }
+
+    #[test]
+    fn inline_metadata_uses_exact_utf16_and_refreshes_inserted_changed_and_undo_patches() {
+        let doc = Doc::parse("Plain *unpaired\n");
+        assert!(doc.blocks()[0].inline_runs.is_empty());
+        let result = doc.apply(EditCommand::InsertBlocks {
+            after: Some(doc.id(0)),
+            blocks: vec![NewBlock {
+                kind: BlockKind::Action,
+                section_level: 0,
+                text: "**é🎬**".into(),
+                forced: false,
+                dual: false,
+            }],
+        });
+        let inserted = &result.inserted[0].block;
+        assert_eq!(inserted, &doc.blocks()[1]);
+        assert!(inline_at(inserted, 0).unwrap().hidden);
+        assert!(inline_at(inserted, 1).unwrap().hidden);
+        let content = inline_at(inserted, 2).unwrap();
+        assert_eq!((content.start_utf16, content.end_utf16), (2, 5));
+        assert!(content.bold && !content.hidden);
+        assert!(inline_at(inserted, 5).unwrap().hidden);
+        assert!(inline_at(inserted, 6).unwrap().hidden);
+        let result = doc.apply(EditCommand::ReplaceText {
+            block: inserted.id,
+            start_utf16: 0,
+            end_utf16: 7,
+            with: r"\*plain\*".into(),
+        });
+        let changed = &result.changed[0];
+        assert!(inline_at(changed, 0).unwrap().hidden);
+        assert!(inline_at(changed, 7).unwrap().hidden);
+        assert!(inline_at(changed, 1).is_none());
+        assert_eq!(changed, &doc.blocks()[1]);
+        let undone = doc_undo(doc.handle()).unwrap();
+        assert_eq!(undone.changed[0].inline_runs, inserted.inline_runs);
+    }
+
+    #[test]
+    fn sung_dialogue_metadata_and_formatting_keep_semantic_marker_and_hard_line_scope() {
+        let doc = Doc::parse("JOHN\n~Sing 🎬.\nSpoken.\n~**Again**.\n");
+        let block = &doc.blocks()[1];
+        assert!(inline_at(block, 0).unwrap().hidden);
+        assert!(inline_at(block, 1).unwrap().italic);
+        let spoken =
+            offsets::utf8_to_utf16(&block.text, block.text.find("Spoken").unwrap()).unwrap();
+        assert!(inline_at(block, spoken).is_none());
+        let again = offsets::utf8_to_utf16(&block.text, block.text.find("Again").unwrap()).unwrap();
+        let run = inline_at(block, again).unwrap();
+        assert!(run.bold && run.italic && !run.hidden);
+        let at = DocSelection {
+            anchor: doc.caret(1, 0).anchor,
+            focus: doc.caret(1, 9).focus,
+        };
+        formatted(&doc, at, InlineStyle::Underline);
+        assert!(doc.blocks()[1].text.starts_with("~_Sing 🎬._\nSpoken."));
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.blocks()[1], *block);
+    }
+
+    #[test]
+    fn formatting_is_isolated_from_typing_on_both_sides() {
+        let doc = Doc::parse("Start.\n");
+        doc.types(0, " Before.");
+        let before = doc.text();
+        let at = DocSelection {
+            anchor: doc.caret(0, 0).anchor,
+            focus: doc.caret(0, 5).focus,
+        };
+        let result = formatted(&doc, at, InlineStyle::Bold);
+        let formatted_source = doc.text();
+        doc.types(0, " After.");
+        doc_undo(doc.handle()).unwrap();
+        assert_eq!(doc.text(), formatted_source);
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.text(), before);
+        assert_eq!(doc_redo(doc.handle()).unwrap().selection, result.selection);
+    }
+
+    #[test]
+    fn formatting_journals_one_complete_patch_and_recovery_matches_undo_redo() {
+        use slugline_storage::journal::{self, Journal};
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "slugline-formatting-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = "First 🎬.\n\nINT. HOUSE - DAY\n\nLast.\n";
+        let script = directory.join("script.fountain");
+        std::fs::write(&script, source).unwrap();
+        let record = Journal::create(&directory, "formatting", &script, source).unwrap();
+        let journal_path = record.path().to_owned();
+        let doc = Doc::parse(source);
+        let handle = doc.handle();
+        actor().run(move |state| {
+            state
+                .session_mut(handle.id)
+                .unwrap()
+                .set_journal(Some(record))
+        });
+        let at = DocSelection {
+            anchor: doc.caret(0, 0).anchor,
+            focus: doc.caret(2, 5).focus,
+        };
+        let result = formatted(&doc, at, InlineStyle::Bold);
+        assert_eq!(result.changed.len(), 3);
+        assert_eq!(journal::read(&journal_path).unwrap().patches.len(), 1);
+        assert!(matches!(
+            doc_format_selection(doc.handle(), doc.caret(0, 9), InlineStyle::Italic),
+            EditOutcome::Rejected { .. }
+        ));
+        assert_eq!(journal::read(&journal_path).unwrap().patches.len(), 1);
+        doc_undo(doc.handle()).unwrap();
+        assert_eq!(doc.text(), source);
+        doc_redo(doc.handle()).unwrap();
+        let expected = doc.text();
+        let recovery = journal::read(&journal_path).unwrap();
+        assert_eq!(recovery.patches.len(), 3);
+        assert_eq!(journal::verify(&recovery.header).unwrap(), source);
+        let mut recovered = model::Document::parse(source);
+        for patch in &recovery.patches {
+            recovered.replay(patch).unwrap();
+        }
+        assert_eq!(recovered.serialise(), expected);
+        assert_eq!(
+            recovered
+                .blocks()
+                .iter()
+                .map(|block| block.id().0)
+                .collect::<Vec<_>>(),
+            doc.blocks()
+                .iter()
+                .map(|block| block.id)
+                .collect::<Vec<_>>()
+        );
+        drop(doc);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

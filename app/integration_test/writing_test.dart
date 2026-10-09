@@ -123,6 +123,93 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets(
+    'native inline shortcuts preserve printed wraps and directional history',
+    (tester) async {
+      List<(int, String)> printedRows(EditorController controller) => [
+        for (final line in controller.layout.linesOf(0))
+          (line.columns, line.textIn(controller.focusedBlock.text)),
+      ];
+      final text = 'plain 🎬 text. ${List.filled(12, 'unchanged').join(' ')}';
+      final source = '!$text\n';
+      for (final (key, marker, face) in [
+        (LogicalKeyboardKey.keyB, '**', InlineStyle.bold),
+        (LogicalKeyboardKey.keyI, '*', InlineStyle.italic),
+        (LogicalKeyboardKey.keyU, '_', InlineStyle.underline),
+      ]) {
+        for (final reverse in [false, true]) {
+          final controller = await open(tester, source);
+          final id = controller.blocks.single.id;
+          final widths = printedRows(controller);
+          expect(widths.length, greaterThan(1));
+          final before = DocSelection(
+            anchor: DocPosition(block: id, offsetUtf16: reverse ? 8 : 6),
+            focus: DocPosition(block: id, offsetUtf16: reverse ? 6 : 8),
+          );
+          final after = DocSelection(
+            anchor: DocPosition(
+              block: id,
+              offsetUtf16: (reverse ? 8 : 6) + marker.length,
+            ),
+            focus: DocPosition(
+              block: id,
+              offsetUtf16: (reverse ? 6 : 8) + marker.length,
+            ),
+          );
+          final formatted = text.replaceFirst('🎬', '$marker🎬$marker');
+          controller.setSelection(before);
+          await press(tester, key, control: true);
+          expect(controller.focusedBlock.text, formatted);
+          expect(controller.focusedBlock.id, id);
+          expect(controller.focusedBlock.kind, BlockKind.action);
+          expect(controller.focusedBlock.forced, isTrue);
+          expect(printedRows(controller), widths);
+          expect(controller.selection, after);
+          final selected = controller.focusedBlock.inlineRuns.singleWhere(
+            (run) =>
+                !run.hidden &&
+                run.startUtf16 == 6 + marker.length &&
+                run.endUtf16 == 8 + marker.length,
+          );
+          expect(
+            (selected.bold, selected.italic, selected.underline),
+            (
+              face == InlineStyle.bold,
+              face == InlineStyle.italic,
+              face == InlineStyle.underline,
+            ),
+          );
+          await press(tester, LogicalKeyboardKey.keyZ, control: true);
+          expect(controller.focusedBlock.text, text);
+          expect(controller.selection, before);
+          expect(controller.core.source(), source);
+          expect(printedRows(controller), widths);
+          expect(
+            controller.core.undo(),
+            isNull,
+            reason: 'a formatting gesture must be exactly one undo step',
+          );
+          await press(tester, LogicalKeyboardKey.keyY, control: true);
+          expect(controller.focusedBlock.text, formatted);
+          expect(controller.selection, after);
+          expect(controller.focusedBlock.id, id);
+          expect(controller.focusedBlock.kind, BlockKind.action);
+          expect(controller.focusedBlock.forced, isTrue);
+          expect(printedRows(controller), widths);
+          final line = controller.layout.linesOf(0).first;
+          controller.placeCaretAt(
+            0,
+            line.displayColumnAtOffset(6 + marker.length),
+          );
+          expect(
+            controller.selection.focus,
+            DocPosition(block: id, offsetUtf16: 6 + marker.length),
+          );
+        }
+      }
+    },
+  );
+
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
 
@@ -529,7 +616,10 @@ void main() {
           .state<ScrollableState>(
             find.descendant(
               of: find.byType(EditorSurface),
-              matching: find.byType(Scrollable),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable && widget.axis == Axis.vertical,
+              ),
             ),
           )
           .position;

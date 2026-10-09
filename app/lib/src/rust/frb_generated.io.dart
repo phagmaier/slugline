@@ -152,6 +152,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  InlineRunView dco_decode_inline_run_view(dynamic raw);
+
+  @protected
+  InlineStyle dco_decode_inline_style(dynamic raw);
+
+  @protected
   InsertedBlock dco_decode_inserted_block(dynamic raw);
 
   @protected
@@ -183,6 +189,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<FindMatch> dco_decode_list_find_match(dynamic raw);
+
+  @protected
+  List<InlineRunView> dco_decode_list_inline_run_view(dynamic raw);
 
   @protected
   List<InsertedBlock> dco_decode_list_inserted_block(dynamic raw);
@@ -490,6 +499,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  InlineRunView sse_decode_inline_run_view(SseDeserializer deserializer);
+
+  @protected
+  InlineStyle sse_decode_inline_style(SseDeserializer deserializer);
+
+  @protected
   InsertedBlock sse_decode_inserted_block(SseDeserializer deserializer);
 
   @protected
@@ -523,6 +538,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<FindMatch> sse_decode_list_find_match(SseDeserializer deserializer);
+
+  @protected
+  List<InlineRunView> sse_decode_list_inline_run_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<InsertedBlock> sse_decode_list_inserted_block(
@@ -925,6 +945,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_inline_run_view(InlineRunView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_inline_style(InlineStyle self, SseSerializer serializer);
+
+  @protected
   void sse_encode_inserted_block(InsertedBlock self, SseSerializer serializer);
 
   @protected
@@ -981,6 +1007,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_find_match(
     List<FindMatch> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_inline_run_view(
+    List<InlineRunView> self,
     SseSerializer serializer,
   );
 

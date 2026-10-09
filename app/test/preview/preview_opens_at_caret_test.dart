@@ -105,6 +105,7 @@ BlockView _block(int id, BlockKind kind, String text) => BlockView(
   forced: false,
   dual: false,
   readOnly: false,
+  inlineRuns: const [],
 );
 
 class _OutputCore extends FakeCore implements ScreenplayOutput {

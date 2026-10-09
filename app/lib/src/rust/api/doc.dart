@@ -8,8 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `scene_numbers`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `adopt`, `block_source_runs`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `formatting_is_sound`, `formatting_plan`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `scene_numbers`, `selection_view`, `source_style_at`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FormattingEdit`, `FormattingPlan`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
 ///
@@ -195,6 +196,21 @@ EditOutcome docLineBreak({
   required DocSelection at,
 }) => RustLib.instance.api.crateApiDocDocLineBreak(handle: handle, at: at);
 
+/// Wraps selected content in Fountain markers as one isolated undo gesture.
+///
+/// Hard lines and blocks are formatted separately, leaving boundary whitespace
+/// and all existing source intact. Empty or syntactically unsafe selections are
+/// refused without editing; this is wrapping, not a style toggle.
+EditOutcome docFormatSelection({
+  required DocumentHandle handle,
+  required DocSelection at,
+  required InlineStyle style,
+}) => RustLib.instance.api.crateApiDocDocFormatSelection(
+  handle: handle,
+  at: at,
+  style: style,
+);
+
 /// Tab, or Shift+Tab, on the block the caret is in.
 ///
 /// `None` — not a rejection — where the table says Tab does nothing. There is
@@ -299,6 +315,10 @@ class BlockView {
 
   /// The user-visible text, with Fountain emphasis markup retained inline.
   final String text;
+
+  /// Sparse source-coordinate styles and nonprinting markers. Plain gaps
+  /// remain literal source text; hidden markers stay editable in the editor.
+  final List<InlineRunView> inlineRuns;
   final bool forced;
   final bool dual;
 
@@ -310,6 +330,7 @@ class BlockView {
     required this.kind,
     required this.sectionLevel,
     required this.text,
+    required this.inlineRuns,
     required this.forced,
     required this.dual,
     required this.readOnly,
@@ -321,6 +342,7 @@ class BlockView {
       kind.hashCode ^
       sectionLevel.hashCode ^
       text.hashCode ^
+      inlineRuns.hashCode ^
       forced.hashCode ^
       dual.hashCode ^
       readOnly.hashCode;
@@ -334,6 +356,7 @@ class BlockView {
           kind == other.kind &&
           sectionLevel == other.sectionLevel &&
           text == other.text &&
+          inlineRuns == other.inlineRuns &&
           forced == other.forced &&
           dual == other.dual &&
           readOnly == other.readOnly;
@@ -622,6 +645,49 @@ class FindQuery {
           wholeWord == other.wholeWord &&
           kinds == other.kinds;
 }
+
+/// Resolved inline emphasis over an exact half-open source range.
+class InlineRunView {
+  final int startUtf16;
+  final int endUtf16;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final bool hidden;
+
+  const InlineRunView({
+    required this.startUtf16,
+    required this.endUtf16,
+    required this.bold,
+    required this.italic,
+    required this.underline,
+    required this.hidden,
+  });
+
+  @override
+  int get hashCode =>
+      startUtf16.hashCode ^
+      endUtf16.hashCode ^
+      bold.hashCode ^
+      italic.hashCode ^
+      underline.hashCode ^
+      hidden.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is InlineRunView &&
+          runtimeType == other.runtimeType &&
+          startUtf16 == other.startUtf16 &&
+          endUtf16 == other.endUtf16 &&
+          bold == other.bold &&
+          italic == other.italic &&
+          underline == other.underline &&
+          hidden == other.hidden;
+}
+
+/// The Fountain style applied by a selection-formatting gesture.
+enum InlineStyle { bold, italic, underline }
 
 /// A block that appeared, and the index it appeared at.
 ///

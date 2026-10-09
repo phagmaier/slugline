@@ -309,8 +309,9 @@ fn place(script: &PaginatedScript, config: &PageConfig) -> Vec<Vec<Placed>> {
 /// Resolves the text and output emphasis for every positioned line.
 ///
 /// Sheets are in title-first order, and rows match each page's `lines` exactly,
-/// including empty run lists for empty text. Body paragraphs retain pairing
-/// across wraps and page breaks; title rows are interpreted independently.
+/// including empty run lists for empty text. Layout resolves source paragraphs
+/// before wrapping: body scopes span hard lines/pages, title scopes are source
+/// hard lines rather than their soft-wrapped fragments.
 /// Generated page numbers and gutters remain literal. Scene-heading weight and
 /// sung-dialogue italics are additive to inline emphasis; raw content is intact.
 pub fn emphasis_runs(
@@ -337,8 +338,8 @@ pub fn emphasis_runs(
     scanned
 }
 
-/// Reads each source block's rows together, even when dual-dialogue lanes
-/// interleave across rows or pages. Title and continuation rows pair alone.
+/// Uses layout's pre-wrap source projection, even across interleaved dual lanes
+/// and pages. Unprojected furniture retains the standalone scanner fallback.
 fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
     let mut scanned: Vec<Vec<Vec<emphasis::EmphasisRun>>> = sheets
         .iter()
@@ -385,6 +386,10 @@ fn scan_paragraphs(sheets: &[&Page]) -> Vec<Vec<Vec<emphasis::EmphasisRun>>> {
     for (sheet, page) in sheets.iter().enumerate() {
         for (index, line) in page.lines.iter().enumerate() {
             if line.content.is_empty() {
+                continue;
+            }
+            if let Some(runs) = &line.resolved_runs {
+                scanned[sheet][index] = runs.clone();
                 continue;
             }
             match line.kind {

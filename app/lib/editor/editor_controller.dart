@@ -53,7 +53,7 @@ class EditorController extends ChangeNotifier {
   /// The column vertical movement is aiming for, so that moving down through a
   /// short line and out the other side lands where the caret started rather than
   /// where the short line ended.
-  int? _stickyColumn;
+  num? _stickyColumn;
 
   /// Why the last edit was refused, if it was. The surface shows it and clears
   /// it; nothing else depends on it.
@@ -271,7 +271,7 @@ class EditorController extends ChangeNotifier {
   // --- spelling ------------------------------------------------------------
 
   /// The document position under a grid cell, for the context menu.
-  DocPosition positionAt(int row, int column) {
+  DocPosition positionAt(int row, num column) {
     final block = _layout.blockAtRow(row);
     final lines = _layout.linesOf(block);
     final line = (row - _layout.firstRowOf(block)).clamp(0, lines.length - 1);
@@ -621,7 +621,7 @@ class EditorController extends ChangeNotifier {
         _layout.columnOf(index, lineIndex) +
             _layout
                 .linesOf(index)[lineIndex]
-                .columnAtOffset(_selection.focus.offsetUtf16);
+                .displayColumnAtOffset(_selection.focus.offsetUtf16);
 
     var block = index;
     var line = lineIndex + rows;
@@ -668,7 +668,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// The caret nearest a point on the grid, for a click or a drag.
-  void placeCaretAt(int row, int column, {bool extend = false}) {
+  void placeCaretAt(int row, num column, {bool extend = false}) {
     final block = _layout.blockAtRow(row);
     final lines = _layout.linesOf(block);
     final line = (row - _layout.firstRowOf(block)).clamp(0, lines.length - 1);
@@ -676,7 +676,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// A double-click: the word under the point.
-  void selectWordAt(int row, int column) {
+  void selectWordAt(int row, num column) {
     final block = _layout.blockAtRow(row);
     final at = _pointIn(block, row, column);
     final text = _blocks[block].text;
@@ -704,7 +704,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// A triple-click: the whole element.
-  void selectBlockAt(int row, int column) {
+  void selectBlockAt(int row, num column) {
     final index = _layout.blockAtRow(row);
     final block = _blocks[index];
     setSelection(
@@ -716,7 +716,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// The offset in [blockIndex] a grid point lands on.
-  int _pointIn(int blockIndex, int row, int column) {
+  int _pointIn(int blockIndex, int row, num column) {
     final lines = _layout.linesOf(blockIndex);
     final line = (row - _layout.firstRowOf(blockIndex)).clamp(
       0,
@@ -725,10 +725,10 @@ class EditorController extends ChangeNotifier {
     return _positionAt(blockIndex, line, column).offsetUtf16;
   }
 
-  DocPosition _positionAt(int blockIndex, int lineIndex, int column) {
+  DocPosition _positionAt(int blockIndex, int lineIndex, num column) {
     final line = _layout.linesOf(blockIndex)[lineIndex];
     final startColumn = _layout.columnOf(blockIndex, lineIndex);
-    final offset = line.offsetAtColumn(column - startColumn);
+    final offset = line.offsetAtDisplayColumn(column - startColumn);
     return DocPosition(
       block: _blocks[blockIndex].id,
       offsetUtf16: _snapToBoundary(_blocks[blockIndex].text, offset),
@@ -902,6 +902,11 @@ class EditorController extends ChangeNotifier {
     } else {
       _apply(EditCommand.deleteRange(from: start, to: end));
     }
+  }
+
+  /// Inline formatting is one core-owned gesture, including its new selection.
+  void formatSelection(InlineStyle style) {
+    _outcome(core.formatSelection(_selection, style));
   }
 
   /// Changes the element type of the block the caret is in, without touching a
