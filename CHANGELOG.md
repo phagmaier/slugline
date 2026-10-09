@@ -82,6 +82,8 @@ this file and the others to it.
   repeats a key or leaves one empty. Only a field that was actually edited is
   written; looking adds nothing to Undo, the unsaved state or the recovery
   record.
+- The preview stays on the sheet at the top of its pane when the preview size
+  or the paper changes, instead of jumping to a different page.
 - Omitted text remains recoverable after Save followed by Restore/Undo/Redo,
   including partial scene headings. Restoration also refuses changed seam
   whitespace instead of silently putting that whitespace back.

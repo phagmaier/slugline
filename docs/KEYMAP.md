@@ -308,7 +308,8 @@ draw, by the caret's own wrapped line, so a paragraph that crosses pages opens o
 the page the caret's line prints on. A caret in something that prints nothing —
 a note, a synopsis, a section — opens where the text above it ends. Page 1 opens
 at the top, title page included. It happens once, as the preview opens: changing
-the paper or the preview size afterwards is not a reason to go back there.
+the paper or the preview size afterwards is not a reason to go back there, and
+keeps the sheet at the top of the pane where it is.
 
 `Ctrl+S` on a script that has never been saved asks where to put it. A save that
 fails says why — read-only, no permission, full disk each get their own sentence

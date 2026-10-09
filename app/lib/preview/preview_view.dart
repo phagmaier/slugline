@@ -39,6 +39,13 @@ import 'package:slugline/typography.dart';
 /// out anywhere else. The editor's status line has a snapshot of its own, but
 /// that one trails the text by a debounce and may not have arrived at all; the
 /// sheet a place lands on is a fact about *this* pagination.
+///
+/// ## Where it stays
+///
+/// On the sheet the reader has at the top of the pane. A new [scale] or [paper]
+/// changes how tall a sheet is on screen, and the list's position is restated
+/// at the new height rather than left as the pixels it was — which would be a
+/// different sheet, twenty pages off from page 47 between 58% and actual size.
 class PreviewView extends StatefulWidget {
   const PreviewView({
     required this.pagination,
@@ -58,8 +65,8 @@ class PreviewView extends StatefulWidget {
   /// The place in the script the preview is scrolled to when it first appears,
   /// or null for the top.
   ///
-  /// Read once. A later pagination, paper or scale leaves the view where the
-  /// reader has it, and so does a different value here.
+  /// Read once. A later pagination, paper or scale leaves the reader on the
+  /// sheet they have, and so does a different value here.
   final PreviewAnchor? opensAt;
 
   /// Every sheet of a pagination, title page first.
@@ -161,10 +168,61 @@ class _PreviewViewState extends State<PreviewView> {
   ScrollController? _scroll;
 
   @override
+  void didUpdateWidget(PreviewView old) {
+    super.didUpdateWidget(old);
+    _keepSheet(
+      PreviewGeometry(paper: old.paper, scale: old.scale),
+      PreviewGeometry(paper: widget.paper, scale: widget.scale),
+    );
+  }
+
+  @override
   void dispose() {
     _scroll?.dispose();
     _lineCache.dispose();
     super.dispose();
+  }
+
+  /// From one sheet's top to the next: a sheet and the gap under it, which is
+  /// the extent [build] gives the list.
+  static double _pitch(PreviewGeometry geometry) => geometry.height + _gap;
+
+  /// [offset], or as near to it as the end of a list of [sheetCount] sheets
+  /// allows in a pane [viewport] tall.
+  static double _inRange(
+    double offset,
+    int sheetCount,
+    double pitch,
+    double viewport,
+  ) => math.min(offset, math.max(0.0, _gap + sheetCount * pitch - viewport));
+
+  /// Keeps the list on the sheet it is on when the sheets change height.
+  ///
+  /// A position is a count of pixels, and [after] makes a sheet a different
+  /// number of them than [before] did. So it is restated as what it was — this
+  /// many sheets down the list, part of a sheet included — at the new height.
+  /// Sheets, not pages: what a sheet carries is the pagination's answer and is
+  /// not asked. A new paper brings a new pagination a moment later, and the
+  /// list is then on the same sheet of that one.
+  ///
+  /// Corrected, not jumped to. This runs as the list is rebuilt with its new
+  /// extent, so the layout that follows reads the new offset and no frame is
+  /// drawn at the old one; and nothing has scrolled, so there is no one to tell.
+  void _keepSheet(PreviewGeometry before, PreviewGeometry after) {
+    if (before.height == after.height) return;
+    final scroll = _scroll;
+    if (scroll == null || !scroll.hasClients) return;
+    final position = scroll.position;
+    if (!position.hasPixels || !position.hasViewportDimension) return;
+    final sheets = position.pixels / _pitch(before);
+    position.correctPixels(
+      _inRange(
+        sheets * _pitch(after),
+        PreviewView.sheetsOf(widget.pagination).length,
+        _pitch(after),
+        position.viewportDimension,
+      ),
+    );
   }
 
   /// How far down the list opens, for a pane [viewport] tall.
@@ -190,9 +248,8 @@ class _PreviewViewState extends State<PreviewView> {
     final sheet = PreviewView.sheetOf(widget.pagination, anchor);
     final firstPage = widget.pagination.titlePage == null ? 0 : 1;
     if (sheet == null || sheet <= firstPage) return 0;
-    final extent = geometry.height + _gap;
-    final length = _gap + sheetCount * extent;
-    return math.min(sheet * extent, math.max(0.0, length - viewport));
+    final pitch = _pitch(geometry);
+    return _inRange(sheet * pitch, sheetCount, pitch, viewport);
   }
 
   @override
@@ -216,7 +273,7 @@ class _PreviewViewState extends State<PreviewView> {
         // straight there and its scroll bar is exact. The gap under a sheet is
         // part of its item, so the last one keeps the margin the first has.
         padding: const EdgeInsets.fromLTRB(_gap, _gap, _gap, 0),
-        itemExtent: geometry.height + _gap,
+        itemExtent: _pitch(geometry),
         itemCount: sheets.length,
         itemBuilder: (context, index) => Padding(
           padding: const EdgeInsets.only(bottom: _gap),

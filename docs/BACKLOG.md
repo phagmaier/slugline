@@ -119,6 +119,7 @@ This is the only place boxes are ticked.
 - [x] [W8](#w8) Find highlights only the current match
 - [x] [W9](#w9) Previous versions can be restored but not looked at
 - [x] [W10](#w10) Slugline is not installed on the owner's machine
+- [x] [W11](#w11) The preview loses its page when the preview size or paper changes
 
 **5. Larger features — plan and use judgment where needed**
 
@@ -2327,6 +2328,31 @@ path was exercised with `gio open`. No W10 desktop integration check was
 unreachable. The unpaced synthetic-input finding below is not fixed; the known
 local idle-budget failure and real-GPU manual memory gate remain unresolved.
 
+<a id="w11"></a>
+### W11 — The preview loses its page when the preview size or paper changes
+
+**Evidence (reproduced in a widget test).** The sheet list keeps its scroll
+offset in pixels, and a new preview size or paper changes how many pixels a
+sheet is (`app/lib/preview/preview_view.dart`). Opened on page 47 of a 60-page
+pagination at the default 58%, "Actual size" leaves page 28 at the top of the
+pane, "Fit width" page 29 and switching to A4 page 27. Promoted from the
+2026-10-06 W5 note under [Found along the way](#found-along-the-way).
+
+**Change.** When the scale or the paper changes, keep the sheet at the top of
+the pane: restate the offset from the sheet index and the new sheet extent,
+using `PreviewGeometry`. No Rust, pagination or bridge change; the preview
+still only reads Rust's snapshot and decides nothing about where a page ends.
+
+**Effort.** S.
+**Result:** 2026-10-09 — reproduced in `app/test/preview/preview_keeps_page_test.dart`: pages 28, 29 and 27
+at the top instead of 47. `PreviewView` now restates its scroll position in
+sheets at the new sheet height when the scale or paper changes, in the same
+frame and kept within the list; that file and the five existing preview test
+files pass, and the touched Dart is formatted and analyses clean. Limitation: it
+keeps the sheet's index, not its text, so the pagination a new paper brings may
+put different lines on that sheet. Commit:
+`W11 — the preview keeps its sheet when its size or paper changes`.
+
 ---
 
 ## 5. Larger features
@@ -2975,6 +3001,7 @@ not part of that item.
   Worth its own small item: `PreviewView` already knows the sheet extent, so
   keeping the sheet at the top of the pane across a scale or paper change is
   arithmetic on the existing controller. Left unchanged here.
+  Promoted to [W11](#w11) on 2026-10-09.
 - 2026-10-06 — W5, reproduced: the status line's page for a block that prints
   nothing is the page its predecessor *began* on. `PageIndicator._adopt` fills
   `_pageAtBlock` from `firstPageAtBlock`, so a note under a paragraph running
