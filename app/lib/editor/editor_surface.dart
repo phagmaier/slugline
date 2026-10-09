@@ -115,7 +115,7 @@ class EditorSurfaceState extends State<EditorSurface>
 
   final ScrollController _scroll = ScrollController();
   final ScrollController _horizontal = ScrollController();
-  late double _displayColumns = _controller.layout.displayColumns;
+  late double _displayColumns;
 
   double get _horizontalOffset =>
       _horizontal.hasClients ? _horizontal.offset : 0;
@@ -203,6 +203,7 @@ class EditorSurfaceState extends State<EditorSurface>
   void initState() {
     super.initState();
     _initialFocus = _controller.selection.focus;
+    _displayColumns = _controller.layout.displayColumns;
     _controller.addListener(_onDocumentChanged);
     _focusNode.addListener(_onFocusChanged);
     _scroll.addListener(_refreshSemantics);
@@ -219,6 +220,7 @@ class EditorSurfaceState extends State<EditorSurface>
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onDocumentChanged);
       widget.controller.addListener(_onDocumentChanged);
+      _displayColumns = _controller.layout.displayColumns;
       _reportedRow = -1;
       _initialScrollPending = true;
       _restoreInProgress = true;

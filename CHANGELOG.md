@@ -63,6 +63,9 @@ this file and the others to it.
 
 ### Fixed
 
+- Pasting dense emphasis into a fresh editor now reveals the end caret after
+  horizontal layout, without requiring another edit.
+
 - Closing Find no longer makes every later keystroke synchronously rescan the
   script. Its query still works with Ctrl+G; matches refresh when Find displays,
   navigates or replaces them, including after undo/redo or reload.

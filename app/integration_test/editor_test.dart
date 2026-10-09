@@ -24,6 +24,7 @@ import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/find_bar.dart';
+import 'package:slugline/editor/metrics.dart';
 import 'package:slugline/editor/page_geometry.dart';
 
 void main() {
@@ -45,6 +46,67 @@ void main() {
     await tester.pump();
     return controller;
   }
+
+  testWidgets(
+    'the first dense edit reveals the end caret after horizontal layout',
+    (tester) async {
+      final core = RustDocumentCore.create();
+      await core.configureSpelling(enabled: false);
+      final controller = EditorController(core);
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EditorSurface(controller: controller, focusNode: focus),
+          ),
+        ),
+      );
+      focus.requestFocus();
+      await tester.pumpAndSettle();
+
+      // No prior caret move may initialize the surface's width cache.
+      final dense = List.filled(30, '***x***').join(' ');
+      controller.insertText(dense);
+      await tester.pumpAndSettle();
+      final scroll = tester
+          .state<ScrollableState>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is Scrollable && widget.axis == Axis.horizontal,
+            ),
+          )
+          .position;
+      final width = tester.getSize(find.byType(EditorSurface)).width;
+      final surface = tester.widget<EditorSurface>(find.byType(EditorSurface));
+      final geometry = EditorGeometry(
+        metrics: ScreenplayMetrics.forFontSize(
+          ScreenplayMetrics.fittedFontSize(
+            preferredFontSize: surface.textSize,
+            viewportWidth: width,
+            pageView: surface.pageView,
+          ),
+        ),
+        viewportWidth: width,
+        totalRows: controller.layout.totalRows,
+        pageView: surface.pageView,
+        scrollbarWidth: kMinInteractiveDimension,
+      );
+      final line = controller.layout.linesOf(0).single;
+      final caretX =
+          geometry.columnLeft +
+          line.displayColumnAtOffset(controller.selection.focus.offsetUtf16) *
+              geometry.advance -
+          scroll.pixels;
+      expect(controller.selection.focus.offsetUtf16, dense.length);
+      expect(
+        caretX,
+        inInclusiveRange(0, width - kMinInteractiveDimension),
+        reason: 'the first paste must reveal its caret without another edit',
+      );
+    },
+  );
 
   testWidgets(
     'typing 500 characters produces exactly those characters in the core',
