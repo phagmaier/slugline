@@ -17,7 +17,7 @@ PAGE 1
    15 -> (  0, "")
    16 -> (  0, "A ROOM WITH NO NAME")
    17 -> (  0, "")
-   18 -> ( 22, "MCCLANE")
+   18 -> ( 22, "mcCLANE")
    19 -> ( 10, "Yippee.")
    20 -> (  0, "")
    21 -> ( 39, "FADE THROUGH TO BLACK")

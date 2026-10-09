@@ -102,7 +102,7 @@ void _compare(Iterable<_Case> cases) {
     // when it built the fixture; the editor applies `displayText`, and the two
     // have to agree before a wrap can be compared at all.
     final kind = testCase.uppercase ? BlockKind.sceneHeading : BlockKind.action;
-    final display = displayText(kind, testCase.text);
+    final display = displayText(kind, testCase.text, forced: false);
     final casing = _casingDifference(testCase.text, testCase.display, display);
     if (casing != null) {
       failures.add(

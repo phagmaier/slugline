@@ -420,6 +420,9 @@ impl LayoutEngine {
             .enumerate()
             .filter_map(|(index, block)| {
                 let mut layout = layout_for(block.kind)?;
+                if block.kind == BlockKind::Character && block.forced {
+                    layout.uppercase = false;
+                }
                 let context = contexts[index];
                 if let Some(right) = context.right_lane {
                     match block.kind {
@@ -649,20 +652,7 @@ fn layout_for(kind: BlockKind) -> Option<ElementLayout> {
 /// `INT. STRAßE - TAG` in capitals instead of showing the whole heading as
 /// typed. Dart's `String.toUpperCase` already behaves this way, and the
 /// editor's `displayText` holds it to it.
-pub fn display_text(text: &str, uppercase: bool) -> String {
-    if !uppercase {
-        return text.to_owned();
-    }
-    let mut upper = String::with_capacity(text.len());
-    for character in text.chars() {
-        let mut mapped = character.to_uppercase();
-        match (mapped.next(), mapped.next()) {
-            (Some(one), None) if one.len_utf16() == character.len_utf16() => upper.push(one),
-            _ => upper.push(character),
-        }
-    }
-    upper
-}
+pub use slugline_fountain::case::display_text;
 
 fn fingerprint(block: &slugline_document::BlockSnapshot, width: u16) -> u64 {
     // FNV-1a is sufficient for invalidation and stable across Rust versions.
@@ -689,7 +679,7 @@ fn fingerprint(block: &slugline_document::BlockSnapshot, width: u16) -> u64 {
     for byte in kind
         .to_le_bytes()
         .into_iter()
-        .chain([u8::from(block.dual)])
+        .chain([u8::from(block.forced), u8::from(block.dual)])
         .chain(width.to_le_bytes())
     {
         hash ^= u64::from(byte);
@@ -1567,7 +1557,10 @@ fn generated_row(column: i16, content: String, block: BlockId, kind: LayoutLineK
 }
 
 fn continued_cue(cue: &str) -> String {
-    if cue.ends_with("(CONT'D)") {
+    if cue
+        .get(cue.len().saturating_sub("(CONT'D)".len())..)
+        .is_some_and(|suffix| suffix.eq_ignore_ascii_case("(CONT'D)"))
+    {
         cue.to_owned()
     } else {
         format!("{cue} (CONT'D)")

@@ -194,6 +194,10 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
 - **The preview and PDF share the paginated snapshot and resolved runs.**
   `app/lib/preview/preview_view.dart` paints Rust's runs and makes no layout
   or emphasis-parsing decision. Raw row content and source identity stay intact.
+  Forced Character cues retain authored case in the editor, resolved output
+  runs and continuation labels; ordinary cues and scene headings still display
+  capitals. Rendering never changes stored text, kind or source offsets
+  (ADR 0060).
   “Bold scene headings” is an output preference, off by default, followed by
   editor, preview and PDF. Both line breakers use printed-width source projections;
   editor paired markers stay dim and individually editable (ADR 0057).

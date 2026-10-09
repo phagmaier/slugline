@@ -50,14 +50,16 @@ Two consequences worth stating out loud:
 * **Saving preserves syntax, not redundant pins.** A naturally recognized heading,
   uppercase cue with dialogue, transition or ordinary Action needs no extra
   `.`, `@`, `>` or `!`. A marker remains wherever Fountain requires one, including
-  mixed/lowercase cues, orphan cues and Action text resembling another element.
+  mixed/lowercase cues and forced lowercase extensions, orphan cues and Action
+  text resembling another element.
   The element bar's pin stays live through Save; after reload source syntax is
   authority, with no hidden pin cache.
 
 Your text and capitalization are always stored as authored, never automatically
 uppercased. A deliberately typed Character named `McCLANE` or `mary` needs `@`.
-When F7's forced-cue display change lands, it will print in that authored case
-in editor, preview and PDF; type `MCCLANE` or `MARY` for an uppercase cue.
+Forced cues retain authored case in editor, preview and PDF (ADR 0060);
+`@` is also necessary when an authored extension would otherwise change case
+on reopen. Type `MCCLANE` or `MARY` for an uppercase cue.
 Unedited explicit markers remain byte-exact until that block is edited.
 
 **Dual dialogue:** on a Character cue, `Ctrl+K` → “Toggle dual dialogue” flips

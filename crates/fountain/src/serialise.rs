@@ -17,7 +17,7 @@
 use std::ops::Range;
 
 use crate::parse::looks_like_title_key;
-use crate::syntax;
+use crate::{case, syntax};
 use crate::{BlockKind, ElementRef, LineEnding, TitlePage};
 
 /// Everything the serialiser needs. `document` builds one of these from its own
@@ -254,7 +254,8 @@ fn canonical(
             // so a cue whose dialogue was deleted has to say so with `@`. And a
             // character called INT. is a scene heading unless it says
             // otherwise — the heading rule is checked first.
-            let forced = syntax::character_of(&cue).is_none()
+            let forced = (element.forced && case::changes_when_uppercased(text))
+                || syntax::character_of(&cue).is_none()
                 || syntax::is_scene_heading(&cue)
                 || syntax::marker_of(&cue).is_some()
                 || !next.is_some_and(BlockKind::continues_dialogue)
@@ -534,10 +535,16 @@ mod tests {
         }
         assert_eq!(canonical_text("@McCLANE\nHello.\n"), "@McCLANE\nHello.\n");
         assert_eq!(canonical_text("@mary\nHello.\n"), "@mary\nHello.\n");
-        // An uppercase base name with a lowercase extension is naturally a cue.
+        // Classification is natural, but `@` is necessary to keep a forced
+        // extension's authored rendering through Save/reopen (ADR 0060).
         assert_eq!(
             canonical_text("@ÉLODIE (on the phone)\nBonjour.\n"),
-            "ÉLODIE (on the phone)\nBonjour.\n"
+            "@ÉLODIE (on the phone)\nBonjour.\n"
+        );
+        // Offset-expanding uppercase maps are displayed verbatim already.
+        assert_eq!(
+            canonical_text("@ÉLODIE (ß)\nBonjour.\n"),
+            "ÉLODIE (ß)\nBonjour.\n"
         );
     }
 

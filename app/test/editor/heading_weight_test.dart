@@ -11,6 +11,65 @@ import 'package:slugline/typography.dart';
 import '../support/fake_core.dart';
 
 void main() {
+  testWidgets('a forcing-only patch refreshes the live painted cue cache', (
+    tester,
+  ) async {
+    final core = FakeCore([
+      const BlockView(
+        id: 1,
+        kind: BlockKind.character,
+        sectionLevel: 0,
+        text: 'McCLANE',
+        forced: false,
+        dual: false,
+        readOnly: false,
+        inlineRuns: [],
+      ),
+    ]);
+    final controller = EditorController(core);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: EditorSurface(controller: controller)),
+      ),
+    );
+    dynamic painter() => tester
+        .widgetList<CustomPaint>(
+          find.descendant(
+            of: find.byType(EditorSurface),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+        .firstWhere(
+          (paint) => paint.painter.runtimeType.toString() == '_SurfacePainter',
+        )
+        .painter!;
+    void assertPainted(String text) {
+      final dynamic current = painter();
+      final hits = current.lineCache.hits as int;
+      current.lineCache.line(
+        text,
+        TextStyle(
+          fontFamily: scriptFontFamily,
+          fontSize: current.fontSize as double,
+          height: 1,
+          color: current.colours.text as Color,
+        ),
+      );
+      expect(current.lineCache.hits, hits + 1);
+    }
+
+    assertPainted('MCCLANE');
+    final before = controller.selection;
+    controller.setKind(BlockKind.character);
+    await tester.pump();
+    assertPainted('McCLANE');
+    expect(controller.blocks.single.forced, true);
+    expect(controller.blocks.single.text, 'McCLANE');
+    expect(controller.selection, before);
+    expect(core.commands, hasLength(1));
+  });
+
   testWidgets('editor scene headings default to the regular painted face', (
     tester,
   ) async {
@@ -133,4 +192,98 @@ void main() {
       );
     });
   });
+
+  for (final forced in [false, true]) {
+    testWidgets(
+      'the actual cue painter honors forced=$forced without editing',
+      (tester) async {
+        const text = '**éßMcClane😀**';
+        final core = FakeCore([
+          BlockView(
+            id: 1,
+            kind: BlockKind.character,
+            sectionLevel: 0,
+            text: text,
+            forced: forced,
+            dual: false,
+            readOnly: false,
+            inlineRuns: const [
+              InlineRunView(
+                startUtf16: 0,
+                endUtf16: 2,
+                bold: false,
+                italic: false,
+                underline: false,
+                hidden: true,
+              ),
+              InlineRunView(
+                startUtf16: 2,
+                endUtf16: 13,
+                bold: true,
+                italic: false,
+                underline: false,
+                hidden: false,
+              ),
+              InlineRunView(
+                startUtf16: 13,
+                endUtf16: 15,
+                bold: false,
+                italic: false,
+                underline: false,
+                hidden: true,
+              ),
+            ],
+          ),
+        ]);
+        final controller = EditorController(core);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: EditorSurface(controller: controller)),
+          ),
+        );
+        final dynamic painter = tester
+            .widgetList<CustomPaint>(
+              find.descendant(
+                of: find.byType(EditorSurface),
+                matching: find.byType(CustomPaint),
+              ),
+            )
+            .firstWhere(
+              (paint) =>
+                  paint.painter.runtimeType.toString() == '_SurfacePainter',
+            )
+            .painter!;
+        final recorder = ui.PictureRecorder();
+        painter.paint(Canvas(recorder), const Size(800, 600));
+        recorder.endRecording().dispose();
+        final printed = forced ? 'éßMcClane😀' : 'ÉßMCCLANE😀';
+        for (final scalar in printed.runes) {
+          final glyph = String.fromCharCode(scalar);
+          final hits = painter.lineCache.hits as int;
+          final drawn =
+              painter.lineCache.line(
+                    glyph,
+                    TextStyle(
+                      fontFamily: scriptFontFamily,
+                      fontSize: painter.fontSize as double,
+                      height: 1,
+                      color: painter.colours.text as Color,
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.none,
+                    ),
+                  )
+                  as TextPainter;
+          expect(
+            painter.lineCache.hits,
+            hits + 1,
+            reason: 'the X4 surface paints each resolved styled source cell',
+          );
+          expect(drawn.text!.toPlainText(), glyph);
+        }
+        expect(controller.blocks.single.text, text);
+        expect(core.commands, isEmpty);
+      },
+    );
+  }
 }

@@ -49,6 +49,12 @@ always will.
 - **Fluid Fountain editing** — type scene headings, character cues, dialogue,
   transitions and more without reaching for the mouse. Slugline recognises
   Fountain syntax as you type and keeps the formatting invisible.
+- **Authored character case** — `@McCLANE` stays `McCLANE` in the editor,
+  preview, PDF and continued speech cues. Ordinary cues and scene headings
+  still display in capitals. Deliberately lowercase or mixed-case names need
+  Fountain's `@`; typing them or selecting Character never silently changes
+  the stored spelling to uppercase. Authored extensions such as
+  `@MARY (on radio)` retain their case through Save and reopen too.
 - **Keyboard-first** — every action has a shortcut. The command palette
   (<kbd>Ctrl</kbd>+<kbd>K</kbd>) lets you reach anything by
   name. See `docs/KEYMAP.md` for the full map.

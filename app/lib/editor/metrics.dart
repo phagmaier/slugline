@@ -386,6 +386,9 @@ ElementMetrics metricsFor(BlockKind kind) =>
 
 /// How a block's text is drawn.
 ///
+/// Forced Character cues keep the author's case. The forcing flag is required
+/// from every caller; other kinds retain their usual capitalisation.
+///
 /// A scalar is capitalised only when its upper case is exactly one scalar of
 /// the same UTF-16 width. `ß` would become `SS`, and a display string one code
 /// unit longer than the model's would put every caret column after it in the
@@ -398,8 +401,10 @@ ElementMetrics metricsFor(BlockKind kind) =>
 /// string is the fast path — but the walk below proves the offsets line up
 /// rather than assuming it, and falls back to the text as written if they ever
 /// do not.
-String displayText(BlockKind kind, String text) {
-  if (!metricsFor(kind).upperCase) return text;
+String displayText(BlockKind kind, String text, {required bool forced}) {
+  if (!metricsFor(kind).upperCase || (kind == BlockKind.character && forced)) {
+    return text;
+  }
   final upper = text.toUpperCase();
   if (upper.length != text.length) return text;
   // Equal totals are not enough on their own: the scalars have to line up one

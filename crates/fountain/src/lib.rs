@@ -30,6 +30,7 @@
 //!    original bytes exactly, including line endings, trailing whitespace and a
 //!    UTF-8 BOM. See [`parse`] for the provenance invariant that makes this so.
 
+pub mod case;
 pub mod emphasis;
 mod infer;
 mod lines;

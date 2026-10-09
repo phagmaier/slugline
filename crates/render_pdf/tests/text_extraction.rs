@@ -188,6 +188,78 @@ fn sung_dialogue_extracts_without_its_marker_but_literal_tildes_remain() {
 }
 
 #[test]
+fn forced_styled_cues_keep_case_in_resolved_runs_and_extracted_continuations() {
+    use slugline_layout::LayoutLineKind;
+
+    let body = (0..24)
+        .map(|n| format!("Speech line {n}."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for dual in [false, true] {
+        let source = format!(
+            ".int. office - day\n\n@**McCLANE**\n{body}\n\n@_éßMcClane_{}\n{body}\n\n\
+             ORDINARY (on radio)\nAn ordinary cue still uses capitals.\n",
+            if dual { " ^" } else { "" }
+        );
+        let document = Document::parse(&source);
+        let config = PageConfig::us_letter().with_line_capacity(8);
+        let script = paginate(&document, &config);
+        assert!(script.pages.len() > 2);
+        let resolved = slugline_render_pdf::emphasis_runs(&script, &config);
+        for (name, bold, underline) in [("McCLANE", true, false), ("éßMcClane", false, true)] {
+            let mut original = 0;
+            let mut continued = 0;
+            for (page, runs) in script.pages.iter().zip(&resolved) {
+                for (line, runs) in page.lines.iter().zip(runs) {
+                    let text = runs.iter().map(|run| run.text.as_str()).collect::<String>();
+                    if text == name {
+                        original += 1;
+                        assert_eq!(line.kind, LayoutLineKind::Content);
+                        assert_eq!(line.source_line, Some(0));
+                    } else if text == format!("{name} (CONT'D)") {
+                        continued += 1;
+                        assert_eq!(line.kind, LayoutLineKind::Continued);
+                        assert!(line.source_line.is_none());
+                    } else {
+                        continue;
+                    }
+                    assert!(runs
+                        .iter()
+                        .filter(|run| run.text.contains(name))
+                        .all(
+                            |run| run.emphasis.bold == bold && run.emphasis.underline == underline
+                        ));
+                }
+            }
+            assert_eq!(original, 1);
+            assert!(continued > 0, "the styled speech must cross a page");
+        }
+        let bytes = render(
+            &script,
+            &config,
+            &DocumentInfo {
+                title: "Authored cues".to_owned(),
+                author: String::new(),
+                created_epoch_seconds: 1_700_000_000,
+            },
+        );
+        let Some(text) = require_pdftotext(extract(&bytes, &["-layout"])) else {
+            return;
+        };
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        for name in ["McCLANE", "éßMcClane"] {
+            assert!(text.contains(name), "{name:?} is missing from:\n{text}");
+            assert!(text.contains(&format!("{name} (CONT'D)")));
+        }
+        assert!(text.contains("INT. OFFICE - DAY"));
+        assert!(text.contains("ORDINARY (ON RADIO)"));
+        assert!(!text.contains("MCCLANE"));
+        assert!(!text.contains("ÉßMCCLANE"));
+        assert!(!text.contains(['*', '_']));
+    }
+}
+
+#[test]
 fn the_title_page_is_the_first_page_and_the_screenplay_starts_at_page_one() {
     let bytes = export(SCRIPT);
     let Some(first) = require_pdftotext(extract(&bytes, &["-f", "1", "-l", "1"])) else {

@@ -22,12 +22,13 @@ void main() {
     BlockKind kind,
     String text, {
     bool readOnly = false,
+    bool forced = false,
   }) => BlockView(
     id: id,
     kind: kind,
     sectionLevel: 0,
     text: text,
-    forced: false,
+    forced: forced,
     dual: false,
     readOnly: readOnly,
     inlineRuns: const [],
@@ -115,6 +116,29 @@ void main() {
     }
     handle.dispose();
   });
+
+  testWidgets(
+    'forced cue case and Unicode selection reach semantics unchanged',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+      const text = 'éßMcClane😀';
+      final core = FakeCore([
+        block(1, BlockKind.character, text, forced: true),
+        block(2, BlockKind.character, text),
+      ]);
+      final controller = await pumpEditor(tester, core);
+      selectFromTo(controller, 0, 2, 0, text.length);
+      await tester.pump();
+      final nodes = surfaceNodes(tester);
+      expect(nodes.map((node) => node.value), [text, 'ÉßMCCLANE😀']);
+      expect(nodes.first.textSelection!.baseOffset, 2);
+      expect(nodes.first.textSelection!.extentOffset, text.length);
+      expect(controller.blocks.first.text, text);
+      expect(controller.blocks.first.kind, BlockKind.character);
+      expect(core.commands, isEmpty);
+      handle.dispose();
+    },
+  );
 
   testWidgets('the caret is reported on the block that holds it', (
     tester,

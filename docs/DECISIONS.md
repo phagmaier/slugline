@@ -79,7 +79,8 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0056 | Scene numbering is an explicit grouped Rust edit, not an output fallback | `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
 | 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live |
 | 0057 | Inline emphasis uses printed wraps and an editable source projection | `crates/fountain/src/emphasis.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/line_layout.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `docs/LINE_BREAKING.md` | live |
-| 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | live |
+| 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | refined by 0060 — necessary authored-case syntax |
+| 0060 | Forced Character cues retain authored case on every surface | `crates/fountain/src/case.rs`, `crates/fountain/src/serialise.rs`, `crates/layout/src/engine.rs`, `app/lib/editor/metrics.dart`, `app/lib/editor/editor_surface.dart`, `crates/render_pdf/tests/text_extraction.rs`, `app/integration_test/export_test.dart`, `app/integration_test/persistence_test.dart` | live |
 
 ---
 
@@ -4610,6 +4611,8 @@ and reviews/regenerates affected baselines.
 
 **Date:** 2026-10-09 · **Status:** accepted · **Backlog:** X6
 
+**Superseded by:** ADR 0060 refines marker necessity for authored Character case only.
+
 **Supersedes:** ADR 0007's edited canonical flag equality and ADR 0011's unconditional serialization of live pins only.
 
 ### Context
@@ -4676,3 +4679,98 @@ base, first Save, later Unicode edits, Undo/Redo and production recovery
 offer/accept. Save is checked against actor identity, revision, generation,
 selection and live pins. Verification evidence belongs in the X6 backlog
 Result; no corpus source or golden fixture is reformatted by this change.
+
+## ADR 0060 — Forced Character cues retain authored case on every surface
+
+**Date:** 2026-10-09 · **Status:** accepted · **Backlog:** F7
+
+**Refines:** ADR 0059 — necessary syntax also preserves forced Character rendering case.
+
+### Context
+
+The baseline prints `@McCLANE` as `MCCLANE` in the editor, preview and
+selectable PDF text. The parser and worker snapshot already retain both
+`text` and `forced`; the information is lost only at display preparation.
+
+ADR 0059 resolves the X6 prerequisite: canonical Fountain retains only forcing
+markers required to preserve classification, keeps the author's exact text and
+case, and stores no hidden kind pin. A live UI pin lasts until reload, after
+which Fountain source syntax is authority. Deliberately lowercase or mixed-case
+Character names need `@` and print in that authored case. This is the intentional
+product tradeoff; automatically uppercasing stored names is not an alternative.
+
+### Decision
+
+A Character block with `forced = true` is displayed as authored. Unforced
+Character cues, SceneHeading and Transition retain their existing
+locale-independent, stable-UTF-16 uppercase display mapping. No new parser
+rule, case preference, persisted flag or capitalization normalization is added.
+
+Layout selects this policy before wrapping, so original single/dual cues,
+styled runs and generated continuation names all inherit the same spelling.
+The appended `(CONT'D)` furniture keeps its conventional case. Preview and PDF
+consume the resolved case and never uppercase again. With pre-wrap source
+projection, case selection must apply to both raw display content and resolved
+run text without rewriting source spans or block identity.
+An unstyled authored `(cont'd)` extension is recognized without ASCII case
+normalization and is not followed by a duplicate `(CONT'D)` on later pages.
+
+Dart's `displayText` requires an explicit forcing flag. Both actual production
+callers — surface painting and surface semantics — supply it. Stable scalar and
+UTF-16 boundaries keep caret, selection, hit testing, find and spelling on the
+writer's source offsets; those consumers never mutate the source to match the
+display. Forced Unicode cues bypass uppercase mapping entirely.
+
+The layout fingerprint gains exactly one byte, `forced`, per block. It needs
+no new block lookahead or `blocks_read` dependency: the flag belongs to the
+same snapshot block already read. Toggling it must invalidate the cue wrap
+and preserve full/incremental pages and checkpoints.
+
+### Necessary case syntax through Save/reopen
+
+With F7 active, classification alone does not decide whether `@` is redundant.
+After editing `@MARY` to `ÉLODIE (on the phone)`, the initial X6 canonical path
+removed `@`; reopen then uppercased the extension despite the live authored
+rendering. The failing consumer is retained as
+`target/retained-features/f7/case-save-reopen-red.log`.
+
+Retain `@` for a forced cue whenever ordinary display would change its text,
+including a naturally recognized uppercase base with a lowercase extension.
+The offset-stable Rust uppercase mapping now lives once in `fountain::case`,
+used by both layout and serialization. Layout's public helper remains a
+re-export, so the existing differential contract still holds. Expanding maps
+such as `(ß)` remain verbatim already and do not justify an extra marker.
+Untouched provenance stays exact; serialization still changes no actor text,
+selection, history, revision or live pin. This is the final necessary-marker
+policy future omission witnesses must use.
+
+### Consequences
+
+Typing a mixed/lowercase name and choosing Character does not secretly change
+its stored spelling or promise an uppercase printed name. Use uppercase source
+when uppercase printing is wanted; `@` is the source notation for authored
+case. Existing forced uppercase names remain visibly unchanged.
+
+Source files and corpus bytes are not rewritten. Golden layout/PDF output may
+change only for forced names or extensions containing lowercase text; uppercase
+forced cues and ordinary cues keep their previous presentation. Changes after
+X4's projected wraps are separate from this case decision and must be reviewed
+separately, not accepted as incidental capitalization churn.
+
+### Evidence and enforcement
+
+On finalized X6 main `6aa026c`, all four retained layout consumer tests
+fail before the display change. The retained tests first required an iterator
+repair for today's `Arc` page lines; both the compile failure and semantic red
+run are preserved. The baseline PDF and Poppler extraction at
+`target/retained-features/f7/baseline.pdf` and `baseline-bbox.html` show
+`MCCLANE` and `ÉßMCCLANE` for authored mixed-case cues.
+
+Consumer regressions cover single/dual long speeches and continuation names,
+full/incremental forcing toggles, Unicode widths and caret boundaries, exact
+original UTF-8 source spans despite `ı` → `I`, actual per-cell editor painting
+and semantics, find/hit-test/spelling source cells, styled resolved output,
+native editor/preview painting, real-actor forcing-only pagination and Undo,
+native BOM/CRLF Save/reopen with Undo/Redo, and Poppler PDF extraction. The golden change is deliberate and limited to
+`02-every-element`'s authored `mcCLANE` cue and its Letter/A4 PDF hashes.
+Verification evidence belongs in the F7 backlog Result.

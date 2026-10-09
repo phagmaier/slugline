@@ -75,6 +75,12 @@ this file and the others to it.
   script. Its query still works with Ctrl+G; matches refresh when Find displays,
   navigates or replaces them, including after undo/redo or reload.
 
+- Forced character cues retain their author's case everywhere: `@McCLANE`
+  now reads `McCLANE` in the editor, dual dialogue, continued speeches,
+  preview and selectable PDF text. Ordinary cues and scene headings still
+  display in capitals. A deliberately lowercase or mixed-case Character uses
+  Fountain's `@` and prints in that case; stored spelling is never normalized.
+
 - Hosted Rust verification refreshes Ubuntu package metadata before installing
   Poppler, avoiding stale package-version HTTP 404 failures before tests start.
 

@@ -268,6 +268,85 @@ void main() {
     },
   );
 
+  testWidgets('forced cue extension case survives actual Save and reopen', (
+    tester,
+  ) async {
+    final file = path('forced-extension-case.fountain');
+    const source = '\uFEFF!Untouched.\t  \r\n\r\n@MARY\r\nHello.\r\n';
+    File(file).writeAsBytesSync(utf8.encode(source));
+    final core = (await Core.instance.openDocument(file))!;
+    addTearDown(core.close);
+    final controller = await openEditor(tester, core);
+    final cue = controller.blocks.firstWhere(
+      (block) => block.kind == BlockKind.character,
+    );
+    controller.setSelection(
+      DocSelection(
+        anchor: DocPosition(block: cue.id, offsetUtf16: 0),
+        focus: DocPosition(block: cue.id, offsetUtf16: cue.text.length),
+      ),
+    );
+    controller.insertText('ÉLODIE (on the phone)');
+    await tester.pump();
+    final expected = source.replaceFirst('@MARY', '@ÉLODIE (on the phone)');
+    const setup = PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
+      numberFirstPage: false,
+    );
+    Future<String> printedCue(DocumentCore document) async {
+      final output = document as ScreenplayOutput;
+      final pagination = switch (await output.paginate(setup)) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        _ => fail('the current document has output'),
+      };
+      final cue = document
+          .blocks(0, document.blockCount)
+          .firstWhere((block) => block.kind == BlockKind.character);
+      return pagination.pages
+          .expand((page) => page.lines)
+          .firstWhere(
+            (line) =>
+                line.block == cue.id && line.kind == LayoutLineKind.content,
+          )
+          .runs
+          .map((run) => run.text)
+          .join();
+    }
+
+    expect(await printedCue(core), 'ÉLODIE (on the phone)');
+    final selection = controller.selection;
+    final revision = controller.documentRevision;
+    expect(await core.save(), isA<SaveOutcome_Saved>());
+    expect(File(file).readAsBytesSync(), utf8.encode(expected));
+    expect(controller.selection, selection);
+    expect(controller.documentRevision, revision);
+    expect(
+      controller.blocks.firstWhere((block) => block.id == cue.id).forced,
+      true,
+    );
+    controller.undo();
+    await tester.pump();
+    expect(core.source(), source.substring(1));
+    controller.redo();
+    await tester.pump();
+    expect(core.source(), expected.substring(1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    core.close();
+    final reopened = (await Core.instance.openDocument(file))!;
+    addTearDown(reopened.close);
+    expect(await printedCue(reopened), 'ÉLODIE (on the phone)');
+    expect(
+      reopened
+          .blocks(0, reopened.blockCount)
+          .firstWhere((block) => block.kind == BlockKind.character)
+          .forced,
+      true,
+    );
+    expect(File(file).readAsBytesSync(), utf8.encode(expected));
+  });
+
   testWidgets('a new script is a real file, and typing into it saves', (
     tester,
   ) async {

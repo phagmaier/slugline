@@ -251,7 +251,7 @@ void main() {
 
     test('capitals leave every offset where it was', () {
       const model = 'int. café - jour';
-      final display = displayText(BlockKind.sceneHeading, model);
+      final display = displayText(BlockKind.sceneHeading, model, forced: false);
       expect(display, 'INT. CAFÉ - JOUR');
       expect(display.length, model.length);
       expect(_ranges(wrapText(display, 12)), _ranges(wrapText(model, 12)));
@@ -262,10 +262,31 @@ void main() {
       // the rest of the block is still capitals. `layout::engine`'s
       // `display_text` answers this block identically.
       const model = 'straße to:';
-      final display = displayText(BlockKind.transition, model);
+      final display = displayText(BlockKind.transition, model, forced: false);
       expect(display, 'STRAßE TO:');
       expect(display.length, model.length);
       expect(_ranges(wrapText(display, 6)), _ranges(wrapText(model, 6)));
+    });
+
+    test('forced cue Unicode keeps source, wrap and caret boundaries', () {
+      const model = 'éßMcClane😀中e\u0301';
+      final forced = displayText(BlockKind.character, model, forced: true);
+      final ordinary = displayText(BlockKind.character, model, forced: false);
+      expect(forced, model);
+      expect(ordinary, 'ÉßMCCLANE😀中E\u0301');
+      final sourceLines = wrapText(model, 6);
+      for (final display in [forced, ordinary]) {
+        final lines = wrapText(display, 6);
+        expect(_ranges(lines), _ranges(sourceLines));
+        for (var i = 0; i < lines.length; i++) {
+          expect(lines[i].columns, sourceLines[i].columns);
+          for (var column = 0; column <= lines[i].columns; column++) {
+            final offset = lines[i].offsetAtColumn(column);
+            expect(offset, sourceLines[i].offsetAtColumn(column));
+            expect(lines[i].columnAtOffset(offset), column);
+          }
+        }
+      }
     });
   });
 
@@ -296,13 +317,41 @@ void main() {
 
     test('headings, cues and transitions are shown in capitals', () {
       expect(
-        displayText(BlockKind.sceneHeading, 'int. house - day'),
+        displayText(BlockKind.sceneHeading, 'int. house - day', forced: false),
         'INT. HOUSE - DAY',
       );
-      expect(displayText(BlockKind.character, 'john'), 'JOHN');
-      expect(displayText(BlockKind.transition, 'cut to:'), 'CUT TO:');
-      expect(displayText(BlockKind.action, 'john enters'), 'john enters');
+      expect(displayText(BlockKind.character, 'john', forced: false), 'JOHN');
+      expect(
+        displayText(BlockKind.transition, 'cut to:', forced: false),
+        'CUT TO:',
+      );
+      expect(
+        displayText(BlockKind.action, 'john enters', forced: false),
+        'john enters',
+      );
     });
+
+    test(
+      'forced cues alone preserve case, including literal style markers',
+      () {
+        expect(
+          displayText(BlockKind.character, '**McCLANE**', forced: true),
+          '**McCLANE**',
+        );
+        expect(
+          displayText(BlockKind.character, '**McCLANE**', forced: false),
+          '**MCCLANE**',
+        );
+        expect(
+          displayText(BlockKind.sceneHeading, 'int. house - day', forced: true),
+          'INT. HOUSE - DAY',
+        );
+        expect(
+          displayText(BlockKind.transition, 'cut to:', forced: true),
+          'CUT TO:',
+        );
+      },
+    );
 
     test('every Latin letter with a capital is shown with one', () {
       // A heading is shown in capitals, and that is not negotiable. Across the
@@ -313,7 +362,7 @@ void main() {
       for (var scalar = 0; scalar <= 0x024F; scalar++) {
         final source = String.fromCharCode(scalar);
         expect(
-          displayText(BlockKind.sceneHeading, source),
+          displayText(BlockKind.sceneHeading, source, forced: false),
           source.toUpperCase(),
           reason: 'U+${scalar.toRadixString(16).padLeft(4, '0')}',
         );
@@ -323,7 +372,10 @@ void main() {
       // `every_latin_letter_with_a_capital_gets_one` pins on the Rust side.
       for (final letter in ['ß', 'ŉ', 'ǰ']) {
         expect(letter.toUpperCase(), letter);
-        expect(displayText(BlockKind.sceneHeading, letter), letter);
+        expect(
+          displayText(BlockKind.sceneHeading, letter, forced: false),
+          letter,
+        );
       }
     });
 
@@ -331,10 +383,16 @@ void main() {
       // Full-Unicode 'ß' upper-cases to 'SS'. One code unit longer means every
       // caret column after it would be drawn in the wrong place, so that one
       // scalar is left as the writer wrote it and the rest is capitalised.
-      expect(displayText(BlockKind.character, 'straße'), 'STRAßE');
-      expect(displayText(BlockKind.character, 'STRAßE'), 'STRAßE');
       expect(
-        displayText(BlockKind.sceneHeading, 'int. ﬁnca - day'),
+        displayText(BlockKind.character, 'straße', forced: false),
+        'STRAßE',
+      );
+      expect(
+        displayText(BlockKind.character, 'STRAßE', forced: false),
+        'STRAßE',
+      );
+      expect(
+        displayText(BlockKind.sceneHeading, 'int. ﬁnca - day', forced: false),
         'INT. ﬁNCA - DAY',
       );
     });

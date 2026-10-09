@@ -27,16 +27,17 @@ import '../support/pump_editor.dart';
 
 const _action = 'John leaves the house and the house is quiet.';
 
-BlockView _block(int id, BlockKind kind, String text) => BlockView(
-  id: id,
-  kind: kind,
-  sectionLevel: 0,
-  text: text,
-  forced: false,
-  dual: false,
-  readOnly: false,
-  inlineRuns: const [],
-);
+BlockView _block(int id, BlockKind kind, String text, {bool forced = false}) =>
+    BlockView(
+      id: id,
+      kind: kind,
+      sectionLevel: 0,
+      text: text,
+      forced: forced,
+      dual: false,
+      readOnly: false,
+      inlineRuns: const [],
+    );
 
 FakeCore _script() => FakeCore([
   _block(1, BlockKind.sceneHeading, 'INT. HOUSE - DAY'),
@@ -178,6 +179,42 @@ Matcher _closeTo(Rect expected) => predicate<Rect>(
 );
 
 void main() {
+  testWidgets(
+    'forced cue find and hit testing stay on authored Unicode cells',
+    (tester) async {
+      const text = 'éßMcClane😀';
+      final core = _CaseCore([
+        _block(1, BlockKind.character, text, forced: true),
+      ]);
+      final controller = await pumpEditorPage(tester, core);
+      await _find(tester, controller, 'McClane');
+      final expected = _cells(tester, controller, 0, 2, 9);
+      expect(_tints(tester).single, _closeTo(expected));
+      expect(_selected(tester).single, _closeTo(expected));
+      final geometry = _painter(tester).geometry as EditorGeometry;
+      final row = controller.layout.firstRowOf(0);
+      final column = controller.layout.columnOf(0, 0);
+      final surface = tester.getTopLeft(find.byType(EditorSurface));
+      await tester.tapAt(
+        surface +
+            Offset(
+              geometry.columnLeft + (column + 9) * geometry.advance,
+              geometry.yOfRow(row) + geometry.lineHeight / 2,
+            ),
+      );
+      await tester.pump();
+      expect(
+        controller.selection.focus.offsetUtf16,
+        9,
+        reason:
+            'the emoji starts after nine scalars and consumes two UTF-16 units',
+      );
+      expect(_tints(tester).single, _closeTo(expected));
+      expect(controller.blocks.single.text, text);
+      expect(core.commands, isEmpty);
+    },
+  );
+
   testWidgets('every match on screen is tinted while the find bar is open', (
     tester,
   ) async {

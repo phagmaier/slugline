@@ -998,7 +998,7 @@ class EditorSurfaceState extends State<EditorSurface>
           child: ScriptBlockSemantics(
             key: ValueKey(block.id),
             label: kindLabel(block.kind, block.sectionLevel),
-            value: displayText(block.kind, block.text),
+            value: displayText(block.kind, block.text, forced: block.forced),
             focused: focused,
             selection: withinOneBlock
                 ? TextSelection(
@@ -1538,7 +1538,7 @@ class _SurfacePainter extends CustomPainter {
       // Capitalised once for the block, not once per row: the rule is per
       // scalar and never moves an offset, so a row still slices this string by
       // its own model bounds.
-      final display = displayText(block.kind, block.text);
+      final display = displayText(block.kind, block.text, forced: block.forced);
       // One style per block, not one per row: `copyWith` allocates, and a
       // visible block paints several rows per frame while scrolling.
       final muted = _isMuted(block.kind);

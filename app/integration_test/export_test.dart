@@ -14,6 +14,7 @@
 // write the library index, journals or backups of the person running it.
 
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' hide PageView;
 import 'package:flutter/services.dart';
@@ -29,6 +30,7 @@ import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/preview/export_dialog.dart';
 import 'package:slugline/preview/preview_view.dart';
 import 'package:slugline/settings/preferences_dialog.dart';
+import 'package:slugline/typography.dart';
 
 const _script = '''
 Title: The Long Way Round
@@ -132,6 +134,213 @@ void main() {
     expect(core.dirty, isFalse);
     expect(await File(path('export.fountain')).readAsString(), _script);
   });
+
+  for (final dual in [false, true]) {
+    testWidgets('forced cue case reaches paginated preview and PDF, dual=$dual', (
+      tester,
+    ) async {
+      final speech = List.generate(24, (n) => 'Speech line $n.').join('\n');
+      final text =
+          '.int. office - day\n\n@**McCLANE**\n$speech\n\n'
+          '@_éßMcClane_${dual ? ' ^' : ''}\n$speech\n\n'
+          'ORDINARY (on radio)\nAn ordinary cue still uses capitals.\n';
+      final file = File(path('forced-case-$dual.fountain'))
+        ..writeAsStringSync(text);
+      final bytes = file.readAsBytesSync();
+      final core = (await Core.instance.openDocument(file.path))!;
+      addTearDown(core.close);
+      final output = core as ScreenplayOutput;
+      const setup = PageSetup(
+        paper: PaperSize.usLetter,
+        sceneNumbers: SceneNumbers.off,
+        boldSceneHeadings: false,
+        numberFirstPage: false,
+        debugLinesPerPage: 8,
+      );
+      final pagination = switch (await output.paginate(setup)) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        _ => fail('the immutable source has current pagination'),
+      };
+      expect(pagination.pages.length, greaterThan(2));
+      final cues = core
+          .blocks(0, core.blockCount)
+          .where((block) => block.kind == BlockKind.character)
+          .toList();
+      expect(cues.map((block) => block.forced), [true, true, false]);
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: EditorSurface(controller: controller)),
+        ),
+      );
+      await tester.pump();
+      final dynamic editorPainter = tester
+          .widgetList<CustomPaint>(
+            find.descendant(
+              of: find.byType(EditorSurface),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .firstWhere(
+            (paint) =>
+                paint.painter.runtimeType.toString() == '_SurfacePainter',
+          )
+          .painter!;
+      final editorHits = editorPainter.lineCache.hits as int;
+      editorPainter.lineCache.line(
+        'c',
+        TextStyle(
+          fontFamily: scriptFontFamily,
+          fontSize: editorPainter.fontSize as double,
+          height: 1,
+          color: editorPainter.colours.text as Color,
+          fontWeight: FontWeight.bold,
+          decoration: TextDecoration.none,
+        ),
+      );
+      expect(
+        editorPainter.lineCache.hits,
+        editorHits + 1,
+        reason:
+            'the real native editor paints authored McCLANE through X4 source cells',
+      );
+      for (final (index, name) in [(0, 'McCLANE'), (1, 'éßMcClane')]) {
+        final lines = pagination.pages
+            .expand((page) => page.lines)
+            .where((line) => line.block == cues[index].id)
+            .toList();
+        String printed(LayoutLineView line) =>
+            line.runs.map((run) => run.text).join();
+        expect(printed(lines.first), name);
+        final continued = lines
+            .where((line) => line.kind == LayoutLineKind.continued)
+            .toList();
+        expect(continued, isNotEmpty);
+        expect(continued.map(printed), everyElement('$name (CONT\'D)'));
+        expect(continued.every((line) => line.sourceLine == null), true);
+        expect(lines.first.sourceLine, 0);
+        final nameRuns = lines
+            .expand((line) => line.runs)
+            .where((run) => run.text.contains(name));
+        expect(nameRuns, isNotEmpty);
+        expect(
+          nameRuns.every((run) => index == 0 ? run.bold : run.underline),
+          true,
+        );
+      }
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PreviewView(
+              pagination: pagination,
+              paper: PaperSize.usLetter,
+              scale: 2.4,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final view = tester.widget<PreviewView>(find.byType(PreviewView));
+      expect(view.pagination, pagination);
+      final dynamic painter = tester
+          .widgetList<CustomPaint>(
+            find.descendant(
+              of: find.byType(PreviewView),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .firstWhere(
+            (paint) => paint.painter.runtimeType.toString() == '_PagePainter',
+          )
+          .painter!;
+      final geometry = painter.geometry as PreviewGeometry;
+      final recorder = ui.PictureRecorder();
+      painter.paint(Canvas(recorder), Size(geometry.width, geometry.height));
+      recorder.endRecording().dispose();
+      final hits = painter.lineCache.hits as int;
+      painter.lineCache.line(
+        'McCLANE',
+        TextStyle(
+          fontFamily: scriptFontFamily,
+          fontSize: geometry.fontSize,
+          height: 1,
+          color: painter.ink as Color,
+          fontWeight: FontWeight.bold,
+          fontStyle: FontStyle.normal,
+          decoration: TextDecoration.none,
+        ),
+      );
+      expect(
+        painter.lineCache.hits,
+        hits + 1,
+        reason: 'the actual paginated preview paints the authored resolved run',
+      );
+      final pdf = path('forced-case-$dual.pdf');
+      expect(
+        await output.exportPdf(pdf, setup: setup),
+        isA<SaveOutcome_Saved>(),
+      );
+      final extracted = await Process.run('pdftotext', ['-layout', pdf, '-']);
+      expect(extracted.exitCode, 0);
+      final words = (extracted.stdout as String)
+          .split(RegExp(r'\s+'))
+          .join(' ');
+      expect(words, contains('McCLANE (CONT\'D)'));
+      expect(words, contains('éßMcClane (CONT\'D)'));
+      expect(words, contains('ORDINARY (ON RADIO)'));
+      expect(words, isNot(contains('MCCLANE')));
+      expect(words, isNot(contains('ÉßMCCLANE')));
+      expect(words, isNot(contains('**')));
+      expect(core.source(), text);
+      expect(core.dirty, false);
+      expect(file.readAsBytesSync(), bytes);
+      // A real actor edit of only the forcing flag must invalidate its cached
+      // cue. The natural uppercase base permits both live policies here.
+      core.apply(
+        EditCommand.setKind(
+          block: cues.last.id,
+          kind: BlockKind.character,
+          sectionLevel: 0,
+          forced: true,
+        ),
+      );
+      final repaginated = switch (await output.paginate(setup)) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        _ => fail('the forcing-only revision has current output'),
+      };
+      final changedCue = repaginated.pages
+          .expand((page) => page.lines)
+          .firstWhere(
+            (line) =>
+                line.block == cues.last.id &&
+                line.kind == LayoutLineKind.content,
+          );
+      expect(
+        changedCue.runs.map((run) => run.text).join(),
+        'ORDINARY (on radio)',
+      );
+      expect(core.undo(), isNotNull);
+      final restored = switch (await output.paginate(setup)) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        _ => fail('Undo has current output'),
+      };
+      final restoredCue = restored.pages
+          .expand((page) => page.lines)
+          .firstWhere(
+            (line) =>
+                line.block == cues.last.id &&
+                line.kind == LayoutLineKind.content,
+          );
+      expect(
+        restoredCue.runs.map((run) => run.text).join(),
+        'ORDINARY (ON RADIO)',
+      );
+      expect(core.source(), text);
+      expect(file.readAsBytesSync(), bytes);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets(
     'the title page is editable and reaches both the file and the PDF',

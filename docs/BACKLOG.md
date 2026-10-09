@@ -1473,15 +1473,51 @@ default and with `1.` when the stored preference is on.
 <a id="f7"></a>
 ### F7 — `@McCLANE` prints as `MCCLANE`
 
-**Evidence (reproduced).** Fountain's `@` exists to keep a cue's own
-capitalisation. Slugline upper-cases every character block for display
-(`layout_for`, `crates/layout/src/engine.rs:441`).
+**Evidence (reproduced).** On finalized X6 main `6aa026c`, all four retained
+layout consumers fail before the fix, and a fresh PDF exports `@McCLANE` as
+`MCCLANE` and `@éßMcClane` as `ÉßMCCLANE`. The saved PDF and Poppler bbox
+extraction are retained under `target/retained-features/f7/`, alongside the
+semantic red log and the retained test's initial compile failure.
 
-**Dependency resolved:** X6 (`360af81`, ADR 0059) preserves authored case
-and emits only necessary markers. F7 can now honor deliberately mixed/lowercase
-cues without Save normalizing the actor document or persisting redundant pins.
+**Prerequisite resolved by ADR 0059.** X6 preserves authored source case,
+removes only redundant canonical forcing markers, and leaves no hidden
+persisted pin. A deliberately typed lowercase or mixed-case Character therefore
+needs `@` on reload and prints in that authored case. That is an intentional
+product choice, not silent uppercase normalization. F7 follows it in ADR 0060.
 
-**Effort.** S once unblocked.
+**Change.** Forced Character blocks keep their case in the editor, single/dual
+pagination, generated continuation names, preview resolved runs and PDF.
+Unforced Character, SceneHeading and Transition capitalisation is unchanged.
+Neither source text, classification, identity nor offset boundaries change.
+
+A second reproduced interaction held a live forced `ÉLODIE (on the phone)`
+but dropped `@` on Save and reopened the extension in capitals. ADR 0060 refines
+marker necessity: retain `@` when the shared offset-stable uppercase mapping
+would change authored rendering. Expanding mappings such as `ß` still need no
+extra marker. Save remains read-only with respect to the actor, selection,
+history and pins. This is the final serialization policy for X7.
+
+Verified: 743 Rust tests, 750 Flutter widget tests, all seven native suites
+(97 tests), binding drift, formatting/clippy/analyze, layering/version/docs and
+reference checks. Native coverage includes actual painting, single/dual
+pagination and continuation runs, selectable PDF output, force-only cache
+invalidation, BOM/CRLF Save/reopen and one-step Undo/Redo. The deliberate golden
+change preserves `mcCLANE` in the layout and Letter/A4 PDF hashes; no source or
+line-breaking fixtures changed. After-Find journalled p99 is 4.79 ms.
+Evidence and rejected draft runs are retained in `target/retained-features/f7/`.
+
+**Effort.** S; prerequisite decision is resolved.
+
+**Source projection.** The current X4 integration projects original UTF-8
+spans before display casing. F7 keeps that path intact and chooses casing before
+row/run preparation; Unicode source-boundary regressions hold the two policies.
+
+**Found along the way (read).** The pre-existing continuation formatter checks
+the raw cue's trailing `(CONT'D)`: paired markup after an authored continuation
+extension can still produce a duplicate suffix. That separate furniture defect
+is unchanged by authored-case rendering; no marker interpretation is duplicated
+in this change.
+
 **Result:** _open_
 
 ---

@@ -17,6 +17,9 @@ Invariants:
   LayoutLine.resolved_runs prevents re-parsing split markup (ADR 0057).
 - Dual lanes consume each source row's resolved runs, never pair markers in
   spatial output-fragment order (ADR 0054).
+- Case is already resolved by layout: forced Character cues retain their own
+  case in content, styled runs and continuation labels. Neither preview nor
+  PDF uppercases them again, and source identity stays intact (ADR 0060).
 - Do not replace a font face without re-running the golden hash test; the
   editor draws in the same vendored faces via symlinks, so both change
   together (ADR 0032).
@@ -29,6 +32,6 @@ Verify: `cargo test -p slugline_render_pdf`. Hash changes are deliberate or
 they are bugs: `UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf
 --test golden` — with a sentence in the commit message.
 
-Governing ADRs: 0032, 0044, 0045, 0047, 0048, 0054, 0057. Full rules in `AGENTS.md`;
+Governing ADRs: 0032, 0044, 0045, 0047, 0048, 0054, 0057, 0060. Full rules in `AGENTS.md`;
 the layer map in `docs/ARCHITECTURE.md`. When an ADR changes this crate,
 update this file in the same change.

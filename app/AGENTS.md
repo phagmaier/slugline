@@ -40,6 +40,10 @@ Invariants:
 - Dual-dialogue editing stays linear, but paired cue/body wraps use output
   widths. Kind/flag/structural patches must invalidate unchanged partners'
   contextual wraps; page ends still come only from Rust (ADR 0054).
+- Every `displayText` caller supplies the block's forcing flag explicitly.
+  Forced Character cues retain authored case; ordinary cues and headings keep
+  capitals. Painting and semantics share that string, while selection,
+  hit testing, find and spelling retain its stable source boundaries (ADR 0060).
 - Widget tests drive `DocumentCore` through `fake_core.dart`, which does
   list surgery only. Anything deciding what a screenplay *is* is tested
   with `cargo test` (ADR 0011).
@@ -64,6 +68,6 @@ area), `flutter build linux --release`. Real-window suites run under Xvfb
 via `./tools/test_linux_integration.sh`. After touching the runner or
 upgrading Flutter, also `xvfb-run -a python3 ../tools/check_clean_close.py`.
 
-Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0059. Full rules in
+Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0059, 0060. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this surface, update this file in the same change.

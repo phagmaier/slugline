@@ -27,6 +27,13 @@ Invariants:
   include pairing context; count partner/lookahead dependencies in
   `blocks_read`. Independent lane continuations retain source-line identity
   (ADR 0054).
+- Forced Character cues preserve authored case in both lanes and continuation
+  labels. Unforced cues and scene headings keep capitals. Case presentation
+  never alters text, source identity or source/UTF-16 boundaries (ADR 0060).
+  The wrap fingerprint includes `forced`; no extra block lookahead is needed.
+
+Rust uppercase display is shared with `fountain::case`, so necessary saved cue
+markers and rendering agree through reopen (ADR 0060).
 
 Verify: `cargo test -p slugline_layout`. Golden changes are deliberate or
 they are bugs:
@@ -34,6 +41,6 @@ they are bugs:
 `UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential`
 — each needs a sentence in the commit message.
 
-Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049, 0054, 0057. Full rules in
+Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049, 0054, 0057, 0060. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

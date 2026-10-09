@@ -30,10 +30,14 @@ the printed projection. A tab advances to the next four-column stop measured
 from the start of its hard line: columns 0, 4, 8, and so on. A hard newline
 resets the tab column; a soft wrap does not. Expanded spaces wrap like ASCII spaces.
 
-Scene headings, character cues, and transitions use locale-independent Unicode
-uppercase for display. The transformation is decided **one scalar at a time**: a
-scalar is uppercased only when its uppercase is exactly one scalar of the same
-UTF-16 width, and is otherwise displayed as written. Thus `é` becomes `É`, while
+Scene headings, **unforced** character cues, and transitions use
+locale-independent Unicode uppercase for display. A forced Character cue keeps
+its author's exact case, including in dual lanes, resolved styled runs and
+continuation names (ADR 0060). This rendering rule never edits source text or
+reclassifies a block. When capitals are requested, the transformation is decided
+**one scalar at a time**: a scalar is uppercased only when its uppercase is
+exactly one scalar of the same UTF-16 width, and is otherwise displayed as
+written. Thus `é` becomes `É`, while
 `ß` stays `ß` rather than becoming `SS`, and `int. straße - tag` displays as
 `INT. STRAßE - TAG`. This keeps every display boundary mapped one-to-one to a
 source boundary, so uppercasing can never move a wrap.

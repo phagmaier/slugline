@@ -55,6 +55,56 @@ void main() {
     expect(core.commands, isEmpty, reason: 'a spell result is paint-only');
   });
 
+  testWidgets(
+    'forced Unicode cue spelling targets source cells without recasing',
+    (tester) async {
+      const text = '😀McClaneß';
+      final core =
+          FakeCore([
+              const BlockView(
+                id: 1,
+                kind: BlockKind.character,
+                sectionLevel: 0,
+                text: text,
+                forced: true,
+                dual: false,
+                readOnly: false,
+                inlineRuns: [],
+              ),
+            ])
+            ..spellStatusData = const SpellStatus(
+              enabled: true,
+              language: 'en_US',
+              languages: [_language],
+              message: 'Checking.',
+            );
+      final misspelling = _misspelling(1, 'McClane', 2);
+      core.spellings[1] = [misspelling];
+      final controller = await pumpEditor(tester, core);
+      await _finishInitialCheck(tester);
+      expect(controller.misspellingsFor(1), [misspelling]);
+      expect(
+        controller.misspellingAt(const DocPosition(block: 1, offsetUtf16: 2)),
+        misspelling,
+      );
+      final topLeft = tester.getTopLeft(find.byType(EditorSurface));
+      final row = controller.layout.firstRowOf(0);
+      final column = controller.layout.columnOf(0, 0);
+      await tester.tapAt(
+        topLeft + editorCell(row, column + 2),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('McClane-suggestion'), findsOneWidget);
+      expect(controller.blocks.single.text, text);
+      expect(core.commands, isEmpty);
+      await tester.tap(find.text('Ignore Once'));
+      await tester.pumpAndSettle();
+      expect(core.spellActions, contains(('once', 'McClane')));
+      expect(core.commands, isEmpty);
+    },
+  );
+
   testWidgets('changed blocks are checked only after the Dart debounce', (
     tester,
   ) async {
