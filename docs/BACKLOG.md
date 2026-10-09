@@ -2644,27 +2644,34 @@ budgets or retrying to discard the failure. This shared, unattributed idle gate
 remains open outside X7's functional acceptance.
 
 **Effort.** M.
-**Result:** 2026-10-09 — individually verified in `fcae98c`. The reported `café`
-remainder now has identical live and reopened semantics; restoration reattaches
-the exact original Dialogue. Delimiter hazards, directed/one-step history,
-late atomic refusals and Redo recovery patches have retained consumer regressions.
-Actual recovery offers/acceptance pass both before and after a saved checkpoint,
-followed by editable restoration and exact BOM/CRLF Save/reopen.
+**Result:** 2026-10-09 — implemented in `fcae98c` and finally verified with
+checkpoint/witness fixes in `ff31629`. The reported `café` remainder has identical
+live and reopened semantics; restoration reattaches the exact original Dialogue.
+Delimiter hazards, directed/one-step history, late atomic refusals, live and
+saved-source whitespace changes, and Redo recovery have consumer regressions.
+Actual recovery offers/acceptance pass for Unicode Dialogue and partial headings
+before and after a saved checkpoint, followed by exact BOM/CRLF restoration and
+Save/reopen. Save preserves actor identities, provenance, pins, revision and
+history. Buffered journal outcomes, later inserts and second-crash replay pass.
 
-All 778 Rust tests, 763 widget tests and 103 native tests across all seven suites
-pass. Native palette/F1, partial Unicode Save/reopen, whole-scene dual-cue
-restoration, preview and Poppler PDF exclusion are exercised. FRB generation and
-binding drift, formatting, clippy, analysis, enforced lockfile, layering/version,
-reference and docs checks pass. The actual full-disk test passes in a private
-mount namespace, leaving host `/tmp` alone. The Linux release builds; after-Find
-journalled p99 is 2.54 ms and frame-build p99 is 6.15 ms with unchanged budgets.
+All 781 Rust tests, 763 widget tests and 103 native tests across all seven suites
+pass. Native palette/F1, Unicode Save/reopen, whole-scene dual-cue restoration,
+preview and Poppler PDF exclusion are exercised. FRB generation and binding drift,
+formatting, clippy, analysis, enforced lockfile, layering/version/reference and
+docs checks pass. The real full-disk test passes in a private mount namespace,
+leaving host `/tmp` alone. The Linux release builds; after-Find journalled p99 is
+4.56 ms and frame-build p99 is 7.01 ms with unchanged budgets.
 
-Release startup best is 377.880 ms; Xvfb RSS best is 273.219 MiB. The third
-ten-second idle interval has zero CPU ticks and voluntary switches; all samples
-are retained. All 15 ordinary closes exit zero with exact saved bytes. The
-no-network linkage and isolated `--version` checks pass. Full reproduction,
-failed experiments, process JSON and release hashes remain under
-`target/retained-features/x7/`. Manual desktop gates 1–5 remain pending.
+Final release startup best is 368.463 ms and Xvfb RSS best is 287.559 MiB. Idle
+fails: otherwise zero-tick intervals contain one voluntary main-thread switch.
+The unchanged `593e6ad` release control reproduces the same failure, so the idle
+gate remains unattributed and open; no retry replaced either report. All 15
+ordinary closes exit zero with exact saved bytes. No-network linkage and isolated
+`--version` checks pass. Initial verification, failed experiments, final `seam-*`
+logs, matched control JSON and immutable release hashes remain under
+`target/retained-features/x7/`, with final summaries in
+`checkpoint-verification.json` and `checkpoint-release-hashes.json`.
+Manual desktop gates 1–5 and the inherited startup investigation remain pending.
 
 ---
 
