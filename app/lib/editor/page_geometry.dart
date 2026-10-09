@@ -158,7 +158,11 @@ class EditorGeometry {
         if (y < gapTop + pageGap) return inGap(start, y - gapTop);
       }
     }
-    return ((y - topPadding - breaks * pageGap) / lineHeight).floor();
+    // A row is not a whole number of pixels at a fitted size, so the top of
+    // one can come back as a double a hair short of itself. The row that
+    // starts there is the answer; a billionth of a row is nothing a pointer
+    // can land in.
+    return ((y - topPadding - breaks * pageGap) / lineHeight + 1e-9).floor();
   }
 
   /// The total height of the scrollable content.

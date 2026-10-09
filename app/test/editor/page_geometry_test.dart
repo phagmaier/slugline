@@ -394,6 +394,43 @@ void main() {
     }
   });
 
+  test('rowAtY inverts yOfRow at the sizes a window fits the script to', () {
+    // A fitted row is not a whole number of pixels, and neither is a gap. The
+    // top of a row, as a double, can then come back a hair short of itself —
+    // and the row a view is parked on is asked for at exactly that point.
+    for (final width in [640.0, 800.0, 1280.0, 1400.0, 1920.0]) {
+      for (final preferred in [12.0, 15.0, 18.0, 24.0]) {
+        for (final pageView in [false, true]) {
+          final geometry = EditorGeometry(
+            metrics: ScreenplayMetrics.forFontSize(
+              ScreenplayMetrics.fittedFontSize(
+                preferredFontSize: preferred,
+                viewportWidth: width,
+                pageView: pageView,
+              ),
+            ),
+            viewportWidth: width,
+            totalRows: 6600,
+            firstPage: 1,
+            pageStarts: [
+              for (var page = 2; page <= 120; page++)
+                PageStart(row: (page - 1) * 54, number: page),
+            ],
+            pageView: pageView,
+            scrollbarWidth: kMinInteractiveDimension,
+          );
+          for (var row = 0; row < 6600; row++) {
+            expect(
+              geometry.rowAtY(geometry.yOfRow(row)),
+              row,
+              reason: 'row $row at width $width, size $preferred, $pageView',
+            );
+          }
+        }
+      }
+    }
+  });
+
   group('the element table', () {
     // The inch measurements §5.2 gives, and the columns they must come to.
     // `layout::metrics` holds the same numbers in Rust and the corpus-wide

@@ -294,7 +294,8 @@ class EditorSurfaceState extends State<EditorSurface>
     _refreshSemantics();
   }
 
-  /// The geometry the last build laid the rows out with.
+  /// The geometry the scroll offset belongs to: the one the last build laid
+  /// the rows out with, or the one a pagination has since been allowed for.
   EditorGeometry? _builtGeometry;
 
   /// A pagination that lands changes where the sheets are, and nothing else
@@ -309,11 +310,48 @@ class EditorSurfaceState extends State<EditorSurface>
         SchedulerPhase.persistentCallbacks) {
       // A scroll position correcting itself during layout reports a row too.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
+        if (mounted) _adoptPagination();
       });
     } else {
-      setState(() {});
+      _adoptPagination();
     }
+  }
+
+  /// Rebuilds for pages that have moved, with the view left on the text it
+  /// was on.
+  ///
+  /// Every page break above a row puts a gap's worth of pixels above it, and
+  /// the scroll offset is pixels. Left as it was, a view parked on page 3 would
+  /// be two gaps short of its text once the sheets arrived — which is what a
+  /// restored session is, since it opens before its pages are known. So the
+  /// first whole row in the view is found in the geometry the offset belongs
+  /// to and put back where it was in the new one. The very top is the
+  /// exception: a script showing its first line goes on showing the top of its
+  /// first sheet.
+  void _adoptPagination() {
+    final from = _builtGeometry;
+    final to = _geometry;
+    if (to == from) return;
+    _builtGeometry = to;
+    if (from != null &&
+        !_initialScrollPending &&
+        _scroll.hasClients &&
+        _scroll.offset > 0) {
+      final top = _scroll.offset;
+      // The first row that starts in the view, give or take half a pixel: a
+      // sliver of the row above is not what is being read, and a break that
+      // lands between the two should move the sliver, not everything else.
+      var row = math.max(0, from.rowAtY(top));
+      if (from.yOfRow(row) < top - 0.5) row += 1;
+      final was = from.yOfRow(row);
+      final now = to.yOfRow(row);
+      if (now != was) {
+        // Silently: the layout this rebuild brings is what reads the position,
+        // and the extent it is checked against is not known until then.
+        _scroll.position.correctPixels(math.max(0.0, now - (was - top)));
+      }
+    }
+    setState(() {});
   }
 
   void _scheduleInitialScroll() {

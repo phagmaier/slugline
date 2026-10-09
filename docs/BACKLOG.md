@@ -103,6 +103,7 @@ This is the only place boxes are ticked.
 - [x] [B25](#b25) `Ctrl+Home` does nothing in a restored session whose caret is at the top
 - [x] [B26](#b26) Late spell-check results pull a scrolled view back to the caret
 - [x] [B27](#b27) An ordinary quit restores no session
+- [x] [B28](#b28) A restored page-view session is left on earlier text when its sheets arrive
 
 **3. Fountain and output fidelity**
 
@@ -1436,6 +1437,37 @@ passes, and its third launch now has to come back to the script and put it
 away. Limitation: a process that dies within two seconds of a scroll comes
 back to the row before it. Commit:
 `B27 — a quit comes back to the script that was open`.
+
+<a id="b28"></a>
+### B28 — A restored page-view session is left on earlier text when its sheets arrive
+
+**Evidence (reproduced in widget tests).** Promoted from the 2026-10-09 B24 note
+under [Found along the way](#found-along-the-way). The parked row is applied
+against the plain column a script opens as. When the pagination lands, every
+page break above the view puts a gap of pixels above its text and the scroll
+offset stays where it was: row 217 at the top instead of 250, with two breaks
+above. Holding the row exposed a second defect: at fitted sizes
+`EditorGeometry.rowAtY(yOfRow(r))` could answer `r − 1` — row 4 at 640 px and
+size 12 — so the row reported for a view sitting exactly on a row, which a
+restored one is, could be one short.
+
+**Change.** When a landed pagination moves rows, the surface puts the first
+whole row in view back where it was before it rebuilds; a script at its very
+top stays at its top, on the first sheet's margin. `rowAtY` takes a row's own
+top as that row. Dart only, and the editor still decides nothing about where a
+page ends: it reads the same snapshot and moves the view with it.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `EditorSurfaceState._adoptPagination` and a
+billionth-of-a-row allowance in `EditorGeometry._rowAt`.
+`page_indicator_test.dart` holds a restored row, a view part-way into a row, a
+break landing under a sliver of one, the top of a script and pages that move
+again; `page_geometry_test.dart` holds the inverse at fitted sizes; the widget
+suite passes. On the rebuilt bundle a quit on page 7 comes back to the same
+lines, sheeted and at rest (`target/b27/after/`). Limitation: only a
+pagination landing holds the view — a text-size, window-width or page-view
+change still keeps the pixel offset. Commit:
+`B28 — pages that land leave the view on the text it was on`.
 
 ---
 
@@ -3153,6 +3185,7 @@ not part of that item.
   geometry. When the sheets arrive, every row moves down by the page gaps above
   it and the view is left on earlier text — row 217 instead of 250 with two
   breaks above. It predates B24, which only makes the sheets arrive at once.
+  Promoted to [B28](#b28) on 2026-10-09.
 - 2026-10-09 — B24, observed on the release bundle: an ordinary quit restores no
   session. `shutdown` closes every document, `Library::closed` marks each one
   not open, and the next launch shows the library — `scroll_row` 328 parked,

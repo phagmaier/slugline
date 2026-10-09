@@ -97,6 +97,9 @@ this file and the others to it.
   away with `Ctrl+W` is not reopened. After a crash the script also comes back
   where it had been scrolled to, not at its top. Save As no longer leaves the
   old file as one to come back to.
+- In page view a script that comes back scrolled part of the way down shows
+  the lines it was left on. It used to slip back a few lines for every page
+  above them, once the sheets were drawn.
 - A script scrolled away from the caret to read stays there. Spell-check
   results arriving, ignoring a misspelling and a search with no matches no
   longer bring the view back to the caret; moving it, typing and stepping to a

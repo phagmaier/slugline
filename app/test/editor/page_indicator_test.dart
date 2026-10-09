@@ -737,6 +737,179 @@ void main() {
     });
   });
 
+  group('pages that land leave the view on the text it was on', () {
+    EditorGeometry geometry(WidgetTester tester) =>
+        (tester
+                        .widget<CustomPaint>(
+                          find.descendant(
+                            of: find.byType(EditorSurface),
+                            matching: find.byWidgetPredicate(
+                              (widget) =>
+                                  widget is CustomPaint &&
+                                  widget.painter.runtimeType.toString() ==
+                                      '_SurfacePainter',
+                            ),
+                          ),
+                        )
+                        .painter!
+                    as dynamic)
+                .geometry
+            as EditorGeometry;
+
+    ScrollPosition scroll(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(EditorSurface),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+            ),
+          ),
+        )
+        .position;
+
+    const letter = PageSetup(
+      paper: PaperSize.usLetter,
+      sceneNumbers: SceneNumbers.off,
+      boldSceneHeadings: false,
+      numberFirstPage: false,
+      debugLinesPerPage: null,
+    );
+
+    /// Three hundred rows in three pages, on screen and settled with the
+    /// pagination asked for and not yet landed: a plain column.
+    Future<_OutputCore> open(
+      WidgetTester tester, {
+      required int initialScrollRow,
+      PageSetup setup = letter,
+      _OutputCore? reopen,
+    }) async {
+      final core =
+          reopen ??
+                _OutputCore(
+                  [_block(1, 300)],
+                  _pagination([
+                    _page(1, 1, 0, 100),
+                    _page(2, 1, 100, 200),
+                    _page(3, 1, 200, 300),
+                  ]),
+                )
+            ..hold = Completer<void>();
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditorPage(
+            controller: controller,
+            initialScrollRow: initialScrollRow,
+            initialPageSetup: setup,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(geometry(tester).sheeted, isFalse);
+      return core;
+    }
+
+    Future<void> land(WidgetTester tester, _OutputCore core) async {
+      core.hold!.complete();
+      core.hold = null;
+      await tester.pump();
+      await tester.pump();
+      expect(geometry(tester).sheeted, isTrue);
+    }
+
+    testWidgets('a restored row is still at the top when the sheets arrive', (
+      tester,
+    ) async {
+      final core = await open(tester, initialScrollRow: 250);
+      expect(scroll(tester).pixels, geometry(tester).yOfRow(250));
+
+      await land(tester, core);
+
+      // Two page breaks above it, each with its margins and the gap between
+      // the sheets: the row is that much further down the scroll extent.
+      expect(geometry(tester).rowAtY(scroll(tester).pixels), 250);
+      expect(scroll(tester).pixels, geometry(tester).yOfRow(250));
+      expect(find.textContaining('Page 3 of 3'), findsOneWidget);
+      expect(core.scrollRow, 250, reason: 'and that is the row parked');
+    });
+
+    testWidgets('a view part of the way into a row keeps the part', (
+      tester,
+    ) async {
+      final core = await open(tester, initialScrollRow: 0);
+      final position = scroll(tester);
+      position.jumpTo(geometry(tester).yOfRow(150) + 5);
+      await tester.pump();
+
+      await land(tester, core);
+
+      expect(position.pixels, closeTo(geometry(tester).yOfRow(150) + 5, 1e-6));
+    });
+
+    testWidgets('a break landing under a sliver of a row moves the sliver', (
+      tester,
+    ) async {
+      // All but five pixels of row 199 are above the view and row 200 is the
+      // first whole one. Page 3 turns out to start there: what was being read
+      // stays put, and the last of page 2 goes up with its sheet.
+      final core = await open(tester, initialScrollRow: 0);
+      final position = scroll(tester);
+      final before = geometry(tester);
+      position.jumpTo(before.yOfRow(200) - 5);
+      await tester.pump();
+
+      await land(tester, core);
+
+      expect(position.pixels, closeTo(geometry(tester).yOfRow(200) - 5, 1e-6));
+    });
+
+    testWidgets('a script at its top stays at its top', (tester) async {
+      final core = await open(tester, initialScrollRow: 0);
+      expect(scroll(tester).pixels, 0);
+
+      await land(tester, core);
+
+      // The first sheet's top margin is taller than the column's was, and it
+      // is shown, not scrolled past to keep the first row where it sat.
+      expect(scroll(tester).pixels, 0);
+    });
+
+    testWidgets('and pages that move later leave it there too', (tester) async {
+      final core = await open(tester, initialScrollRow: 250);
+      await land(tester, core);
+      final controller = tester
+          .widget<EditorPage>(find.byType(EditorPage))
+          .controller;
+
+      // Another paper: every break is somewhere else, and there are more.
+      core.pagination = _pagination([
+        for (var page = 0; page < 6; page++)
+          _page(page + 1, 1, page * 50, (page + 1) * 50),
+      ]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditorPage(
+            controller: controller,
+            initialScrollRow: 250,
+            initialPageSetup: const PageSetup(
+              paper: PaperSize.a4,
+              sceneNumbers: SceneNumbers.off,
+              boldSceneHeadings: false,
+              numberFirstPage: false,
+              debugLinesPerPage: null,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(geometry(tester).pageStarts, hasLength(5));
+      expect(scroll(tester).pixels, geometry(tester).yOfRow(250));
+      expect(find.textContaining('Page 6 of 6'), findsOneWidget);
+    });
+  });
+
   testWidgets('the writing view displays current and total output pages', (
     tester,
   ) async {
