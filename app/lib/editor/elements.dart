@@ -31,6 +31,10 @@ class ElementChoice {
 /// Palette-only cue command: no keyboard shortcut is assigned.
 const String toggleDualDialogueLabel = 'Toggle dual dialogue';
 
+/// Whole-script commands, available only through the palette.
+const String numberScenesLabel = 'Number scenes';
+const String removeSceneNumbersLabel = 'Remove scene numbers';
+
 /// The element types a writer can set, in the order the selector lists them:
 /// the six that make up a scene first, then the rest.
 ///

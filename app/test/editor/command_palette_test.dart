@@ -16,9 +16,12 @@ Future<void> _key(
   WidgetTester tester,
   LogicalKeyboardKey key, {
   bool control = false,
+  bool shift = false,
 }) async {
   if (control) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
   await tester.sendKeyEvent(key);
+  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
   if (control) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
   await tester.pumpAndSettle();
 }

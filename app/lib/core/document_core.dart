@@ -149,6 +149,11 @@ abstract class DocumentCore {
   /// edit, so that undo restores the caret as well as the text (§3.4).
   rust.EditOutcome apply(rust.EditCommand command, {rust.DocSelection? before});
 
+  /// Explicit whole-document suffix edits, each an isolated undo transaction.
+  /// Rust preserves heading text and returns the mapped selection in its patch.
+  rust.EditOutcome numberScenes(rust.DocSelection at);
+  rust.EditOutcome removeSceneNumbers(rust.DocSelection at);
+
   /// Replaces [at] with [text] in one undo transaction. [plain] is
   /// `Ctrl+Shift+V`: Action blocks, no element inference.
   rust.EditOutcome paste(
@@ -387,6 +392,14 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
     rust.EditCommand command, {
     rust.DocSelection? before,
   }) => rust.docApply(handle: _handle, command: command, before: before);
+
+  @override
+  rust.EditOutcome numberScenes(rust.DocSelection at) =>
+      rust.docNumberScenes(handle: _handle, at: at);
+
+  @override
+  rust.EditOutcome removeSceneNumbers(rust.DocSelection at) =>
+      rust.docRemoveSceneNumbers(handle: _handle, at: at);
 
   @override
   rust.EditOutcome paste(

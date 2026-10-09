@@ -57,6 +57,13 @@ class FakeCore implements DocumentCore {
   /// from blocks: scene parsing and entity indexing belong to Rust.
   NavigatorView navigatorData = const NavigatorView(scenes: [], characters: []);
 
+  /// Explicit semantic answers: this double applies supplied text patches, it
+  /// does not recognise or generate Fountain scene-number suffixes.
+  Map<int, String> numberedSceneTexts = {};
+  Map<int, String> removedSceneNumberTexts = {};
+  DocSelection? numberedSceneSelection;
+  DocSelection? removedSceneNumberSelection;
+
   SpellStatus spellStatusData = const SpellStatus(
     enabled: false,
     language: null,
@@ -227,6 +234,40 @@ class FakeCore implements DocumentCore {
       for (var i = first + 1; i < last; i++) _blocks[i].text,
       _blocks[last].text.substring(0, to.offsetUtf16),
     ].join('\n\n');
+  }
+
+  @override
+  EditOutcome numberScenes(DocSelection at) =>
+      _sceneNumbers(numberedSceneTexts, at, numberedSceneSelection ?? at);
+
+  @override
+  EditOutcome removeSceneNumbers(DocSelection at) => _sceneNumbers(
+    removedSceneNumberTexts,
+    at,
+    removedSceneNumberSelection ?? at,
+  );
+
+  EditOutcome _sceneNumbers(
+    Map<int, String> texts,
+    DocSelection before,
+    DocSelection after,
+  ) {
+    final changed = [
+      for (final block in _blocks)
+        if (texts.containsKey(block.id) && texts[block.id] != block.text)
+          _copy(block, text: texts[block.id]),
+    ];
+    if (changed.isNotEmpty) {
+      final snapshot = List<BlockView>.of(_blocks);
+      _dualSelections[snapshot] = before;
+      _sceneOppositeSelections[snapshot] = after;
+      _undo.add(snapshot);
+      _redo.clear();
+      for (final block in changed) {
+        _blocks[_indexOf(block.id)] = block;
+      }
+    }
+    return _applied(changed: changed, caret: null, selection: after);
   }
 
   @override
@@ -519,13 +560,17 @@ class FakeCore implements DocumentCore {
   final List<List<BlockView>> _undo = [];
   final List<List<BlockView>> _redo = [];
   final Expando<DocSelection> _dualSelections = Expando<DocSelection>();
+  final Expando<DocSelection> _sceneOppositeSelections =
+      Expando<DocSelection>();
 
   @override
   EditResult? undo() {
     if (_undo.isEmpty) return null;
     final snapshot = _undo.removeLast();
     final current = List<BlockView>.of(_blocks);
-    _dualSelections[current] = _dualSelections[snapshot];
+    _dualSelections[current] =
+        _sceneOppositeSelections[snapshot] ?? _dualSelections[snapshot];
+    _sceneOppositeSelections[current] = _dualSelections[snapshot];
     _redo.add(current);
     return _restore(snapshot);
   }
@@ -535,7 +580,9 @@ class FakeCore implements DocumentCore {
     if (_redo.isEmpty) return null;
     final snapshot = _redo.removeLast();
     final current = List<BlockView>.of(_blocks);
-    _dualSelections[current] = _dualSelections[snapshot];
+    _dualSelections[current] =
+        _sceneOppositeSelections[snapshot] ?? _dualSelections[snapshot];
+    _sceneOppositeSelections[current] = _dualSelections[snapshot];
     _undo.add(current);
     return _restore(snapshot);
   }
@@ -961,6 +1008,7 @@ class FakeCore implements DocumentCore {
     List<int> removed = const [],
     List<InsertedBlock> inserted = const [],
     required DocPosition? caret,
+    DocSelection? selection,
   }) {
     if (changed.isNotEmpty || removed.isNotEmpty || inserted.isNotEmpty) {
       _dirty = true;
@@ -971,10 +1019,10 @@ class FakeCore implements DocumentCore {
         changed: changed,
         removed: removed,
         inserted: inserted,
-        selection: caret == null
-            ? null
-            : DocSelection(anchor: caret, focus: caret),
         blockCount: _blocks.length,
+        selection:
+            selection ??
+            (caret == null ? null : DocSelection(anchor: caret, focus: caret)),
       ),
     );
   }

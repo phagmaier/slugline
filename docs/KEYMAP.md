@@ -62,6 +62,16 @@ shortcut. The cue serializes with a trailing `^`, but do not type that marker
 into its text. It pairs with the immediately preceding speech when both have
 a body and no intervening element; an unmatched flag prints normally.
 
+**Scene numbering:** `Ctrl+K` → “Number scenes” numbers all Scene headings
+from 1 in document order, replacing existing Fountain `#12A#` numbers.
+“Remove scene numbers” removes recognised trailing number suffixes. Each
+command is one undo/redo step, including selection restoration. They preserve
+heading words, element kinds and flags; removal consumes at most one separating
+ASCII space, retaining other whitespace. Already-numbered and already-unnumbered
+scripts are not dirtied by a no-op command. Numbers are saved in Fountain and
+printed according to the existing Scene numbers output setting. Save and export
+never number a script automatically. Neither command has a dedicated shortcut.
+
 
 ---
 

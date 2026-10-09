@@ -122,6 +122,16 @@ List<EditorCommand> editorCommands({
         run: controller.toggleDual,
       ),
     EditorCommand(
+      group: 'Script',
+      label: numberScenesLabel,
+      run: controller.numberScenes,
+    ),
+    EditorCommand(
+      group: 'Script',
+      label: removeSceneNumbersLabel,
+      run: controller.removeSceneNumbers,
+    ),
+    EditorCommand(
       group: 'Element',
       label: 'Next element type',
       shortcut: 'Tab',

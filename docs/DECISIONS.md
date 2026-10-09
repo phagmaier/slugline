@@ -76,6 +76,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0053 | The runner stops the engine before the process exits | `app/linux/runner/my_application.cc`, `tools/check_clean_close.py`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | live |
 | 0054 | Dual dialogue is a disjoint pair with independent page continuations | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/editor_controller.dart` | live |
 | 0055 | FDX is an interchange copy, while Fountain remains the native document | `crates/fdx/`, `crates/document/src/document.rs`, `crates/bridge/src/api/files.rs`, `app/lib/core/`, `app/lib/app.dart`, `app/lib/preview/export_dialog.dart` | refined by 0062 — imported untitled recovery starts against blank |
+| 0056 | Scene numbering is an explicit grouped Rust edit, not an output fallback | `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
 | 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live |
 
 ---
@@ -4425,4 +4426,81 @@ block count; snapshot each block directly, not with repeated identity scans.
 The initial-crash regression verifies the offered document's ordered content
 and title, accepted session and empty undo history. Import/edit/replay/save
 tests also verify identity continuity and source-file isolation.
+
+## ADR 0056 — Scene numbering is an explicit grouped Rust edit, not an output fallback
+
+**Date:** 2026-10-08 · **Status:** accepted · **Backlog:** X3
+
+### Context
+
+Fountain's existing scene-number suffixes already survive save/reopen and
+print when the output scene-number setting asks for a gutter. A script with
+no suffixes prints no numbers, and the pre-change release palette cannot add
+or remove them. Production scene identifiers belong to the script: changing
+them only while exporting would leave the editor, collaborators and saved
+Fountain describing different scene numbers.
+
+### Decision
+
+Offer “Number scenes” and “Remove scene numbers” under Script in the palette,
+with labels in `elements.dart` and no new keyboard shortcuts. Number every
+SceneHeading from 1 in source order, replacing existing suffixes rather than
+attempting production-style insertion numbering. Removal recognises only
+suffixes accepted by Fountain's existing `split_scene_number`; an interior
+hash or an empty `##` is heading text, not a second syntax implementation.
+
+Rust owns both operations. `Document::number_scenes` and
+`Document::remove_scene_numbers` accept the caller's optional UTF-8 selection,
+use the existing atomic grouping primitive and return one combined patch.
+They replace only the suffix's text through `ReplaceText`, preserving ids,
+kinds, forced/dual flags, title page and untouched block provenance. Existing
+suffixes become `#N#`; new suffixes are ` #N#` inserted before trailing
+whitespace. Removal deletes the recognised `#…#` and at most one separating
+ASCII space. Extra spaces, tabs, leading and trailing whitespace remain;
+this makes adding/removing a new suffix reversible without normalising a
+heading's spacing. Undo restores the original source bytes/provenance.
+
+Map both selection endpoints through each suffix replacement in Rust. A
+position before the suffix stays fixed, a position after it shifts by the
+byte-length delta, and a position inside replaced numeric text goes to the
+suffix start, an exact UTF-8 boundary. Keep selection direction. Store before
+and after selections in the grouped transaction, so undo/redo restores them
+without Dart clamping or recreating semantic offsets.
+
+The bridge's synchronous `doc_number_scenes(handle, at)` and
+`doc_remove_scene_numbers(handle, at)` interrupt typing, convert the caller's
+UTF-16 selection using `offsets.rs`, and finish through the journalled
+`outcome` path. Do not reinfer: changing a numeric suffix is not changing an
+element's meaning. No-op operations record no inverse, change no revision,
+leave dirty state and redo intact, and append no journal line.
+
+Dart exposes `DocumentCore.numberScenes(at)` and `removeSceneNumbers(at)`,
+then applies Rust's text/selection patch through the editor's ordinary path.
+The widget fake applies explicit supplied patches and never recognises
+Fountain or generates numbers. Save, Fountain export, pagination and PDF
+export do not invoke these edits. The existing output scene-number setting
+still controls whether the stored numbers print.
+
+### Consequences
+
+Renumbering is deliberately destructive to custom production identifiers,
+but explicit and reversible in one step. Removing numbers can leave original
+extra separator whitespace; deleting all of it would be an unrelated heading
+rewrite. There is no automatic numbering preference and no duplicated
+recogniser in Dart. The bridge needs generated function bindings, not new
+DTO fields or command variants.
+
+### Regression coverage
+
+Document regressions cover source-order replacement, mixed/forced headings,
+non-heading hash text, dual/title/id/provenance preservation, exact spacing,
+save/reparse, reverse selections and suffix caret mapping, isolated
+undo/redo, no-op revision/redo preservation and atomic invalid selections.
+Bridge regressions cover UTF-16 mapping, whole-document patches, no-op dirty
+state, stale handles and invalid surrogate boundaries. Widget/native
+regressions invoke both palette commands, apply patches, restore selections
+through one-step undo/redo, inspect the actual combined journal record, save
+and reopen numbered/unnumbered scripts, and check the existing output gutter
+setting and PDF text without automatic source changes. Verification results
+remain for the integrating owner; no checks are claimed here.
 

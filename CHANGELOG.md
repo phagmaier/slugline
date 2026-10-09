@@ -17,6 +17,11 @@ this file and the others to it.
   or omitted text can make that text visible to the recipient. Cancelled/failed
   imports preserve the current editor and never overwrite the source FDX.
   Imported scripts are recoverable even before their first keystroke.
+- Ctrl+K → “Number scenes” numbers every scene heading from 1 in document
+  order; “Remove scene numbers” removes their Fountain suffixes. Each command
+  is one undo step and preserves the selection, heading words and other
+  elements. Numbers survive save/reopen and use the existing Scene numbers
+  output setting; saving or exporting never adds them automatically.
 - Dual dialogue prints adjacent speeches side by side in preview and PDF.
   On the second Character cue, use Ctrl+K → “Toggle dual dialogue”; the element
   bar identifies marked cues. Both speeches wrap to the printed column widths

@@ -23,6 +23,9 @@ Invariants:
   in `src/api/doc.rs`, and both append to the crash journal — never a bare
   `document.apply`. Paste and Enter are composed here into one transaction
   each (ADR 0010).
+- `doc_number_scenes` and `doc_remove_scene_numbers` interrupt typing, convert
+  the exact selection through `offsets.rs`, and journal one grouped outcome
+  without reinference (ADR 0056).
 - Keep `flutter_rust_bridge = "=2.12.0"` aligned with the Dart package and
   regenerate in the same change. Commit the generated bindings; never edit
   them by hand.
@@ -37,6 +40,6 @@ Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
 `cd app && flutter_rust_bridge_codegen generate`, then
 `./tools/check_bridge_bindings.sh` (the same check CI runs).
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0062. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0062. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

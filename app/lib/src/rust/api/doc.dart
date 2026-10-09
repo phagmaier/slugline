@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
+// These functions are ignored because they are not marked as `pub`: `adopt`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `scene_numbers`, `selection_view`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
@@ -220,6 +220,21 @@ EditOutcome docReplaceAll({
   handle: handle,
   query: query,
   with_: with_,
+);
+
+/// Explicitly numbers every scene from one, or removes recognised scene
+/// numbers. The selection and all heading edits share one journalled undo step.
+EditOutcome docNumberScenes({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocNumberScenes(handle: handle, at: at);
+
+EditOutcome docRemoveSceneNumbers({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocRemoveSceneNumbers(
+  handle: handle,
+  at: at,
 );
 
 /// Inserts `text` at `at`, replacing the selection if there is one, as **one**

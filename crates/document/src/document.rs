@@ -397,6 +397,88 @@ impl Document {
         })
     }
 
+    /// Numbers every scene heading from one in source order, replacing existing
+    /// Fountain numbers. The entire operation is one isolated undo transaction.
+    pub fn number_scenes(&mut self, before: Option<DocSelection>) -> Result<EditResult, EditError> {
+        self.scene_numbers(true, before)
+    }
+
+    /// Removes recognised Fountain scene-number suffixes in one undo step.
+    pub fn remove_scene_numbers(
+        &mut self,
+        before: Option<DocSelection>,
+    ) -> Result<EditResult, EditError> {
+        self.scene_numbers(false, before)
+    }
+
+    fn scene_numbers(
+        &mut self,
+        numbered: bool,
+        before: Option<DocSelection>,
+    ) -> Result<EditResult, EditError> {
+        self.apply_group(before, |group| {
+            let mut number = 0;
+            let mut selection = before;
+            for index in 0..group.document.blocks.len() {
+                let block = &group.document.blocks[index];
+                if block.kind != BlockKind::SceneHeading {
+                    continue;
+                }
+                number += 1;
+                let text = block.text();
+                let trimmed = text.trim_end();
+                let (_, existing) = slugline_fountain::split_scene_number(text);
+                let (start, end, with) = if existing.is_some() {
+                    // Recognition belongs to Fountain. Once recognised, these
+                    // delimiters locate only the suffix, not the heading words.
+                    let opening = trimmed[..trimmed.len() - 1].rfind('#').unwrap();
+                    if numbered {
+                        (opening, trimmed.len(), format!("#{number}#"))
+                    } else {
+                        // One separating ASCII space is part of the suffix we
+                        // add. Extra spaces, tabs and trailing whitespace stay.
+                        let start = if text[..opening].ends_with(' ') {
+                            opening - 1
+                        } else {
+                            opening
+                        };
+                        (start, trimmed.len(), String::new())
+                    }
+                } else if numbered {
+                    (trimmed.len(), trimmed.len(), format!(" #{number}#"))
+                } else {
+                    continue;
+                };
+                if text[start..end] == with {
+                    continue;
+                }
+                let id = block.id;
+                if let Some(at) = &mut selection {
+                    for position in [&mut at.anchor, &mut at.focus] {
+                        if position.block != id || position.offset as usize <= start {
+                            continue;
+                        }
+                        let offset = position.offset as usize;
+                        position.offset = if offset >= end {
+                            (offset - (end - start) + with.len()) as u32
+                        } else {
+                            // A caret inside a replaced number goes to its
+                            // start, always an exact UTF-8 boundary.
+                            start as u32
+                        };
+                    }
+                }
+                group.apply(EditCommand::ReplaceText {
+                    block: id,
+                    range: start as u32..end as u32,
+                    with,
+                })?;
+            }
+            group.merged.selection = selection;
+            Ok(())
+        })
+    }
+
     /// The same, for a sequence that cannot be written down in advance.
     ///
     /// `plan` applies commands through the [`Grouped`] it is handed and sees

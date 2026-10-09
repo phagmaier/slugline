@@ -828,6 +828,39 @@ pub fn doc_replace_all(handle: DocumentHandle, query: FindQuery, with: String) -
     })
 }
 
+/// Explicitly numbers every scene from one, or removes recognised scene
+/// numbers. The selection and all heading edits share one journalled undo step.
+#[frb(sync)]
+pub fn doc_number_scenes(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    scene_numbers(handle, at, true)
+}
+
+#[frb(sync)]
+pub fn doc_remove_scene_numbers(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    scene_numbers(handle, at, false)
+}
+
+fn scene_numbers(handle: DocumentHandle, at: DocSelection, numbered: bool) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        let document = session.interrupt();
+        let before = match to_model_selection(document, Some(at)) {
+            Ok(selection) => selection,
+            Err(rejection) => return rejection,
+        };
+        let result = if numbered {
+            document.number_scenes(before)
+        } else {
+            document.remove_scene_numbers(before)
+        };
+        // These commands change only suffixes, never kinds or neighbouring
+        // blocks. Use the journalled outcome path without reinference.
+        outcome(session, result)
+    })
+}
+
 /// Inserts `text` at `at`, replacing the selection if there is one, as **one**
 /// undo transaction.
 ///
@@ -1588,6 +1621,7 @@ fn clamp_u32(value: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::files::doc_dirty;
 
     const SCRIPT: &str = "INT. HOUSE - DAY\n\nJohn enters.\n\nJOHN\n(quietly)\nHello.\n";
 
@@ -1719,6 +1753,93 @@ mod tests {
         fn drop(&mut self) {
             doc_close(self.0);
         }
+    }
+
+    #[test]
+    fn scene_number_commands_map_utf16_selection_and_undo_all_headings() {
+        let source = "INT. CAFÉ 🎬 - DAY #123456#\n\nAction #99#.\n\nEXT. ROAD - NIGHT #A#\n";
+        let doc = Doc::parse(source);
+        let at = DocSelection {
+            anchor: doc.caret(2, 5).focus,
+            focus: doc
+                .caret(
+                    0,
+                    "INT. CAFÉ 🎬 - DAY #123456#".encode_utf16().count() as u32,
+                )
+                .focus,
+        };
+        let EditOutcome::Applied { result } = doc_number_scenes(doc.handle(), at) else {
+            panic!("numbering applies");
+        };
+        assert_eq!(result.changed.len(), 2);
+        assert_eq!(result.changed[0].text, "INT. CAFÉ 🎬 - DAY #1#");
+        assert_eq!(doc.blocks()[1].text, "Action #99#.");
+        let after = result.selection.unwrap();
+        assert_eq!(after.anchor, at.anchor);
+        assert_eq!(
+            after.focus.offset_utf16,
+            "INT. CAFÉ 🎬 - DAY #1#".encode_utf16().count() as u32
+        );
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.text(), source);
+        assert!(doc_undo(doc.handle()).is_none());
+        assert_eq!(doc_redo(doc.handle()).unwrap().selection, Some(after));
+        let numbered = doc.text();
+        let EditOutcome::Applied { result } = doc_remove_scene_numbers(doc.handle(), after) else {
+            panic!("removal applies");
+        };
+        assert_eq!(result.changed.len(), 2);
+        assert_eq!(doc.blocks()[0].text, "INT. CAFÉ 🎬 - DAY");
+        assert_eq!(doc.blocks()[2].text, "EXT. ROAD - NIGHT");
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(after));
+        assert_eq!(doc.text(), numbered);
+        doc_redo(doc.handle()).unwrap();
+        assert_eq!(doc.blocks()[0].text, "INT. CAFÉ 🎬 - DAY");
+    }
+
+    #[test]
+    fn scene_number_noops_do_not_dirty_or_add_undo() {
+        for source in ["INT. LAB - DAY #1#\n\nEXT. ROAD - NIGHT #2#\n", "Action.\n"] {
+            let doc = Doc::parse(source);
+            let EditOutcome::Applied { result } = doc_number_scenes(doc.handle(), doc.caret(0, 0))
+            else {
+                panic!("no-op applies");
+            };
+            assert!(result.changed.is_empty());
+            assert!(!doc_dirty(doc.handle()));
+            assert!(doc_undo(doc.handle()).is_none());
+            assert_eq!(doc.text(), source);
+        }
+        let doc = Doc::parse("INT. LAB - DAY ##\n");
+        doc_remove_scene_numbers(doc.handle(), doc.caret(0, 0));
+        assert!(!doc_dirty(doc.handle()));
+        assert!(doc_undo(doc.handle()).is_none());
+    }
+
+    #[test]
+    fn scene_number_commands_refuse_invalid_utf16_and_stale_handles_atomically() {
+        let source = "INT. 🎬 - DAY #12A#\n\nEXT. ROAD - NIGHT\n";
+        let doc = Doc::parse(source);
+        for command in [doc_number_scenes, doc_remove_scene_numbers] {
+            assert!(matches!(
+                command(doc.handle(), doc.caret(0, 6)),
+                EditOutcome::Rejected {
+                    reason: EditRejection::BadUtf16Offset,
+                    ..
+                }
+            ));
+            assert_eq!(doc.text(), source);
+            assert!(!doc_dirty(doc.handle()));
+            let at = doc.caret(0, 0);
+            assert!(matches!(
+                command(DocumentHandle { id: u64::MAX }, at),
+                EditOutcome::Rejected {
+                    reason: EditRejection::NoSuchDocument,
+                    ..
+                }
+            ));
+        }
+        assert!(doc_undo(doc.handle()).is_none());
     }
 
     #[test]

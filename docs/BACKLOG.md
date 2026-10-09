@@ -72,7 +72,7 @@ This is the only place boxes are ticked.
 - [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [x] [B15](#b15) Same-burst Save can precede the final native text update
 - [x] [B16](#b16) Closing the window can end the process in SIGSEGV
-- [x] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
+- [ ] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
 
 **3. Fountain and output fidelity**
 
@@ -1052,16 +1052,7 @@ runtime-budget change.
 formatting, Clippy, workspace/full-disk tests, layering, version and docs gates.
 
 **Effort.** S.
-**Result:** 2026-10-09 — fixed in `68370a7`. Refresh apt metadata before installing
-Poppler, matching the other hosted jobs; no dependency pin, retry, fallback or
-runtime-threshold change. Hosted
-[37862474236](https://github.com/phagmaier/slugline/actions/runs/37862474236)
-completed successfully: Poppler installation and every Rust check actually ran,
-including workspace tests with the real full-disk fixture. Fuzz, MSRV, Flutter
-(bindings, formatting, analyze, widgets, release, process/close budgets and
-all seven native suites) and packaging/network/install smoke also passed.
-`./tools/agent.sh docs` passed before implementation commit and after this
-completion record. No deviation.
+**Result:** _open_
 
 ---
 
@@ -2319,12 +2310,17 @@ key and no-op-title-journal findings are recorded below and not fixed.
 <a id="x3"></a>
 ### X3 — Scene numbering commands
 
-**Evidence (read).** Scene numbers print only for headings that already carry
-`#12#` (`crates/layout/src/engine.rs:964`). Turning the setting on for a script
-without them prints nothing, and there is no command that adds them.
+**Evidence (reproduced).** The pre-change release palette has no matching
+“Number scenes” command (`target/x3-smoke/baseline-number-scenes.png`).
+Opening and saving the disposable mixed-number script preserves its bytes.
+Scene numbers print only for headings carrying a Fountain suffix; the output
+setting does not create them.
 
-**Change.** "Number scenes" and "Remove scene numbers" commands, each one undo
-step. Alternatively, number automatically at output when no heading has one.
+**Change.** Explicit “Number scenes” and “Remove scene numbers” commands,
+each one journalled undo step with selection restoration. Number from 1 in
+source order and deterministically replace existing numbers. Save and export
+remain non-numbering operations. ADR 0056 records suffix/whitespace policy and
+the reason numbering is an editor operation rather than an output fallback.
 
 **Effort.** S–M.
 **Result:** _open_

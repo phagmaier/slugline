@@ -126,6 +126,228 @@ void main() {
   List<BlockKind> kinds(EditorController controller) =>
       controller.blocks.map((block) => block.kind).toList();
 
+  testWidgets(
+    'scene palette numbering persists and is one journalled undo step',
+    (tester) async {
+      const source =
+          'Title: Numbering\n\n'
+          'INT. CAFÉ 🎬 - DAY #12A#\n\n'
+          '!Keep #88# here.\n\n'
+          'ALICE\nHello.\n\nBOB ^\nGoodbye.\n\n'
+          '.An unusual depot\n\n'
+          'EXT. ROAD - NIGHT ##\n';
+      final file = File('${scratch.path}/scene-numbering.fountain')
+        ..writeAsStringSync(source);
+      var core = (await Core.instance.openDocument(file.path))!;
+      var controller = EditorController(core);
+      addTearDown(() => core.close());
+      addTearDown(() => controller.dispose());
+      Future<void> mount() async {
+        await tester.pumpWidget(
+          MaterialApp(home: EditorPage(controller: controller)),
+        );
+        await tester.tap(find.byType(EditorSurface));
+        await tester.pump();
+      }
+
+      Future<void> palette(String label) async {
+        await press(tester, LogicalKeyboardKey.keyK, control: true);
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Element or command'),
+          label,
+        );
+        await tester.pump();
+        expect(find.text('No matching command'), findsNothing);
+        await press(tester, LogicalKeyboardKey.enter);
+      }
+
+      Future<List<String>> gutters(SceneNumbers setting) async {
+        final pagination = switch (await (core as ScreenplayOutput).paginate(
+          PageSetup(
+            paper: PaperSize.usLetter,
+            sceneNumbers: setting,
+            boldSceneHeadings: false,
+            numberFirstPage: false,
+          ),
+        )) {
+          PaginationOutcome_Current(:final pagination) => pagination,
+          _ => throw StateError('Expected current pagination'),
+        };
+        return [
+          for (final page in pagination.pages)
+            for (final line in page.lines)
+              if (line.kind == LayoutLineKind.sceneNumberLeft) line.content,
+        ];
+      }
+
+      await mount();
+      final original = List<BlockView>.of(controller.blocks);
+      final scenes = original
+          .where((b) => b.kind == BlockKind.sceneHeading)
+          .toList();
+      expect(scenes, hasLength(3));
+      expect(await gutters(SceneNumbers.left), ['12A']);
+      expect(core.source(), source, reason: 'output never invents numbers');
+      await core.save();
+      expect(
+        file.readAsStringSync(),
+        source,
+        reason: 'save never invents numbers',
+      );
+      final before = DocSelection(
+        anchor: DocPosition(block: scenes.last.id, offsetUtf16: 4),
+        focus: DocPosition(
+          block: scenes.first.id,
+          offsetUtf16: scenes.first.text.length,
+        ),
+      );
+      controller.setSelection(before);
+      final recorded = core.journalState.$1;
+      await palette('Number scenes');
+      final numbered = controller.source;
+      expect(
+        controller.blocks
+            .where((b) => b.kind == BlockKind.sceneHeading)
+            .map((b) => b.text),
+        [
+          'INT. CAFÉ 🎬 - DAY #1#',
+          'An unusual depot #2#',
+          'EXT. ROAD - NIGHT ## #3#',
+        ],
+      );
+      final after = controller.selection;
+      expect(after.anchor, before.anchor);
+      expect(after.focus.offsetUtf16, 'INT. CAFÉ 🎬 - DAY #1#'.length);
+      expect(controller.blocks.map((b) => b.id), original.map((b) => b.id));
+      for (final block in original.where(
+        (b) => b.kind != BlockKind.sceneHeading,
+      )) {
+        expect(controller.blocks.singleWhere((b) => b.id == block.id), block);
+      }
+      for (final scene in scenes) {
+        final actual = controller.blocks.singleWhere((b) => b.id == scene.id);
+        expect(
+          (actual.kind, actual.forced, actual.dual),
+          (scene.kind, scene.forced, scene.dual),
+        );
+      }
+      expect(core.titlePage().single.value, 'Numbering');
+      expect(core.journalState, (recorded + 1, false));
+      // Read the real outcome record: all headings are in one patch.
+      final journals = Directory(
+        '${scratch.path}/state',
+      ).listSync(recursive: true).whereType<File>();
+      final records = journals
+          .where((f) => f.path.endsWith('.log'))
+          .map((f) {
+            return f
+                .readAsLinesSync()
+                .map((line) => jsonDecode(line) as Map<String, dynamic>)
+                .toList();
+          })
+          .where(
+            (lines) => lines.isNotEmpty && lines.first['script'] == file.path,
+          )
+          .single;
+      expect(records.last['changed'], hasLength(3));
+      expect(
+        (records.last['changed'] as List).map((b) => b['id']),
+        scenes.map((b) => b.id),
+      );
+      await press(tester, LogicalKeyboardKey.keyZ, control: true);
+      expect(controller.source, source);
+      expect(controller.selection, before);
+      expect(core.dirty, isFalse);
+      expect(core.undo(), isNull, reason: 'all three headings were one step');
+      await press(tester, LogicalKeyboardKey.keyZ, control: true, shift: true);
+      expect(controller.source, numbered);
+      expect(controller.selection, after);
+      expect(await gutters(SceneNumbers.left), ['1', '2', '3']);
+      expect(await gutters(SceneNumbers.off), isEmpty);
+      expect(
+        core.source(),
+        numbered,
+        reason: 'output preference changes no source',
+      );
+      for (final setting in [SceneNumbers.left, SceneNumbers.off]) {
+        final pdf = '${scratch.path}/scene-numbering-${setting.name}.pdf';
+        expect(
+          await (core as ScreenplayOutput).exportPdf(
+            pdf,
+            setup: PageSetup(
+              paper: PaperSize.usLetter,
+              sceneNumbers: setting,
+              boldSceneHeadings: false,
+              numberFirstPage: false,
+            ),
+          ),
+          isA<SaveOutcome_Saved>(),
+        );
+        final extracted = await Process.run('pdftotext', ['-layout', pdf, '-']);
+        expect(extracted.exitCode, 0);
+        final words = (extracted.stdout as String).split(RegExp(r'\s+'));
+        for (final number in ['1', '2', '3']) {
+          expect(words.contains(number), setting == SceneNumbers.left);
+        }
+        expect(extracted.stdout, isNot(contains('#1#')));
+        expect(core.source(), numbered);
+      }
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      final noOpJournal = core.journalState;
+      await palette('Number scenes');
+      expect(core.dirty, isFalse);
+      expect(core.journalState, noOpJournal);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      core.close();
+      core = (await Core.instance.openDocument(file.path))!;
+      controller = EditorController(core);
+      await mount();
+      expect(core.source(), numbered);
+      expect(await gutters(SceneNumbers.left), ['1', '2', '3']);
+      final reopenedScenes = controller.blocks
+          .where((b) => b.kind == BlockKind.sceneHeading)
+          .toList();
+      final removalBefore = DocSelection(
+        anchor: DocPosition(block: reopenedScenes.first.id, offsetUtf16: 0),
+        focus: DocPosition(
+          block: reopenedScenes.last.id,
+          offsetUtf16: reopenedScenes.last.text.length,
+        ),
+      );
+      controller.setSelection(removalBefore);
+      await palette('Remove scene numbers');
+      final removed = controller.source;
+      final removalAfter = controller.selection;
+      expect(core.journalState, (1, false));
+      expect(
+        controller.blocks
+            .where((b) => b.kind == BlockKind.sceneHeading)
+            .map((b) => b.text),
+        ['INT. CAFÉ 🎬 - DAY', 'An unusual depot', 'EXT. ROAD - NIGHT ##'],
+      );
+      expect(await gutters(SceneNumbers.left), isEmpty);
+      await press(tester, LogicalKeyboardKey.keyZ, control: true);
+      expect(controller.source, numbered);
+      expect(controller.selection, removalBefore);
+      expect(core.undo(), isNull);
+      await press(tester, LogicalKeyboardKey.keyZ, control: true, shift: true);
+      expect(controller.source, removed);
+      expect(controller.selection, removalAfter);
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      await palette('Remove scene numbers');
+      expect(core.dirty, isFalse);
+      expect(core.journalState, (0, false));
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      core.close();
+      core = (await Core.instance.openDocument(file.path))!;
+      controller = EditorController(core);
+      expect(core.source(), removed);
+      expect(await gutters(SceneNumbers.left), isEmpty);
+    },
+  );
+
   for (final pageView in [false, true]) {
     for (final (name, source) in [
       ('empty', ''),

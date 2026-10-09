@@ -934,6 +934,11 @@ class EditorController extends ChangeNotifier {
     _restoreCaret(was);
   }
 
+  /// Rust edits the whole document and maps the caret through changed suffixes.
+  void numberScenes() => _outcome(core.numberScenes(_selection));
+
+  void removeSceneNumbers() => _outcome(core.removeSceneNumbers(_selection));
+
   /// Tab, or Shift+Tab: the next element type at this position, or nothing at
   /// all where the table has none. See `docs/KEYMAP.md`.
   void cycleElement({bool reverse = false}) {

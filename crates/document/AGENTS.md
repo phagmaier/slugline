@@ -28,9 +28,12 @@ Invariants:
 - A semantic import with no body still has an editable forced empty Action.
   Its explicit `!` representation survives Save/reopen, so later edits and
   recovery patches retain block identity instead of acting on a missing caret.
+- Explicit scene-number commands edit only recognised suffixes through one
+  group, mapping both selection endpoints in Rust. No-op commands change
+  neither revision nor undo depth (ADR 0056).
 
 Verify: `cargo test -p slugline_document`.
 
-Governing ADRs: 0008, 0010, 0011, 0055. Full rules in `AGENTS.md`; the layer map
+Governing ADRs: 0008, 0010, 0011, 0055, 0056. Full rules in `AGENTS.md`; the layer map
 in `docs/ARCHITECTURE.md`. When an ADR changes this crate, update this file
 in the same change.
