@@ -128,6 +128,7 @@ class SaveStatus extends ChangeNotifier {
     // is what the writer sees behind it, and what they go on seeing if they
     // dismiss it without deciding.
     SaveFailure.changedOnDisk => 'the file changed on disk',
+    SaveFailure.libraryDestination => 'Library unavailable or protected',
     SaveFailure.io => 'the write failed',
   };
 }

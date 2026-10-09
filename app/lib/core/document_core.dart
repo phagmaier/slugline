@@ -275,25 +275,22 @@ abstract class DocumentCore {
   /// Writes the file. Never throws: a failure comes back as
   /// [files.SaveOutcome_Failed] with the reason, because §Phase 4 wants
   /// read-only, full-disk and permission-denied each handled with their own
-  /// message and a Save As escape hatch.
+  /// message and an Export a copy escape hatch.
   Future<files.SaveOutcome> save();
+  Future<files.SaveOutcome> commitProject();
+  Future<DocumentCore?> openBackupCopy(String source);
 
-  /// Writes the file somewhere else, and **follows it there**: path, journal,
-  /// backups, watch and library entry all move.
-  ///
-  /// Refuses a destination that already exists — unless it is this script's own
-  /// file, or [overwrite] says otherwise — and refuses one that is a *different*
-  /// script open here at all. Both refusals are the core's, so the confirmation
-  /// below is a question the dialog asks rather than a check it performs.
+  /// Compatibility API: saves only to the current managed script's own file.
+  /// Other destinations are refused; callers sharing a snapshot use
+  /// [exportFountain] (ADR 0068).
   Future<files.SaveOutcome> saveAs(String path, {bool overwrite = false});
 
   /// Writes a copy somewhere else and **stays where it is** (§6's
   /// `doc_export_fountain`). The session, its path, its journal and its dirty
-  /// flag are all untouched, so this is what an export command calls and
-  /// [saveAs] is what Save As calls — they are not interchangeable (ADR 0029).
+  /// flag are all untouched (ADRs 0029 and 0068).
   ///
   /// Refuses a destination that already exists unless [overwrite] says
-  /// otherwise, and refuses one that is a script open here at all.
+  /// otherwise, and protects open scripts and all managed project contents.
   Future<files.SaveOutcome> exportFountain(
     String path, {
     bool overwrite = false,
@@ -572,6 +569,16 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   Future<files.SaveOutcome> save() => files.docSave(handle: _handle);
 
   @override
+  Future<files.SaveOutcome> commitProject() =>
+      files.docCommitProject(handle: _handle);
+
+  @override
+  Future<DocumentCore?> openBackupCopy(String source) async {
+    final handle = await files.backupOpenCopy(handle: _handle, source: source);
+    return handle == null ? null : RustDocumentCore.of(handle);
+  }
+
+  @override
   Future<files.SaveOutcome> saveAs(String path, {bool overwrite = false}) =>
       files.docSaveAs(handle: _handle, path: path, overwrite: overwrite);
 
@@ -616,8 +623,23 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
       files.backupsList(handle: _handle);
 
   @override
-  Future<files.BackupReadOutcome> readBackup(String backupPath) =>
-      files.backupRead(backupPath: backupPath);
+  Future<files.BackupReadOutcome> readBackup(String backupPath) async {
+    final outcome = await files.backupRead(backupPath: backupPath);
+    // FRB's UTF-8 decoder consumes a leading BOM. Carry it explicitly so a
+    // captured version copy can preserve the exact native snapshot.
+    if (outcome case files.BackupReadOutcome_Read(
+      :final source,
+      :final hasBom,
+    )) {
+      return files.BackupReadOutcome.read(
+        source: hasBom == true && !source.startsWith('\uFEFF')
+            ? '\uFEFF$source'
+            : source,
+        hasBom: hasBom,
+      );
+    }
+    return outcome;
+  }
 
   @override
   Future<files.SaveOutcome> copyBackup(String source, String path) =>

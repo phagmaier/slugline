@@ -211,7 +211,7 @@ void main() {
     expect(find.text('Keep mine'), findsOneWidget);
     expect(it.core.saves, isEmpty, reason: 'the conflict is still unresolved');
 
-    await tester.tap(find.text('Save as…'));
+    await tester.tap(find.text('Export a copy…'));
     await tester.pumpAndSettle();
     choice.complete(null);
     await tester.pumpAndSettle();

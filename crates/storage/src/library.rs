@@ -1,21 +1,16 @@
-//! The script library: §Phase 4's list of scripts, and the session it restores.
+//! The managed library's rebuildable index and session convenience state.
 //!
-//! **The index is a cache.** §Phase 4 says so in as many words — "it is a
-//! *cache*, and the app must work correctly if it is deleted" — and everything
-//! here follows from it:
+//! [`Library::load`] tolerates missing/corrupt caches. [`Library::rebuild`]
+//! discovers projects in the active root and reads authoritative identity,
+//! display name, archive state and entity pins from their sidecars (ADR 0068).
+//! The index retains only reading position, recency, page counts and open state.
+//! Losing it cannot lose or unarchive a project.
 //!
-//! * [`Library::load`] cannot fail. A missing, truncated or hand-mangled index
-//!   is an empty one.
-//! * Nothing is stored here that cannot be recovered by opening the file again.
-//!   The path is the only fact; the title, size and modification time are
-//!   restated from the filesystem on every [`Library::refresh`].
-//! * Removing a script from the library never touches the file. §Phase 4 lists
-//!   "remove-from-library" and "delete-file" as two different commands, and the
-//!   difference is the whole point of a library that is only a cache.
-//!
-//! A missing file stays in the list, marked [`ScriptEntry::missing`] — §Phase 4:
-//! "missing files shown as missing, not silently dropped". A script on an
-//! unmounted drive is not a script the user threw away.
+//! Missing script files remain visible as damaged entries. An unavailable root
+//! must be reported by the caller while retaining the last known convenience
+//! state. The legacy arbitrary-path index is retained as migration input before
+//! the managed cache replaces it; neither rebuilding nor migration deletes its
+//! external sources.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,12 +25,11 @@ use crate::journal::script_id;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScriptEntry {
-    /// Stable name derived from the path — the same one the journal and the
-    /// backup directory use, so all three can be found from any one of them.
+    /// Path-derived cache/journal locator. Durable identity is [Self::project_id].
     pub id: String,
     pub path: PathBuf,
-    /// The script's title, from its title page if it has one, else its file
-    /// name. Restated on refresh; never authoritative.
+    /// Cached project display name, read from project metadata on rebuild.
+    /// Legacy entries instead derive their title from the external file.
     pub title: String,
     pub modified_millis: u64,
     pub bytes: u64,
@@ -50,9 +44,13 @@ pub struct ScriptEntry {
     /// application last exited, and where the writer was in it.
     pub open: bool,
     pub scroll_row: u32,
-    /// §7 entities the writer chose to keep even with no occurrences. This is
-    /// per-script cache metadata and is never serialised into Fountain.
+    /// Entities the writer chose to keep even with no occurrences. Managed
+    /// sidecars own these values; legacy cache values are migration input.
     pub pinned_entities: Vec<PinnedEntity>,
+    pub project_id: String,
+    pub archived: bool,
+    pub problem: Option<String>,
+    pub migration_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +74,10 @@ impl Default for ScriptEntry {
             open: false,
             scroll_row: 0,
             pinned_entities: Vec::new(),
+            project_id: String::new(),
+            archived: false,
+            problem: None,
+            migration_status: None,
         }
     }
 }
@@ -98,15 +100,18 @@ impl ScriptEntry {
 struct Index {
     version: u32,
     #[serde(default)]
+    root: Option<PathBuf>,
+    #[serde(default)]
     scripts: Vec<ScriptEntry>,
 }
 
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 2;
 
 /// The library, in memory.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Library {
     entries: Vec<ScriptEntry>,
+    root: Option<PathBuf>,
 }
 
 impl Library {
@@ -122,6 +127,7 @@ impl Library {
         // An entry with no path is not a script; nothing can be done with it and
         // showing it would be showing a row that does nothing.
         Library {
+            root: index.root,
             entries: index
                 .scripts
                 .into_iter()
@@ -142,6 +148,7 @@ impl Library {
         }
         let index = Index {
             version: INDEX_VERSION,
+            root: self.root.clone(),
             scripts: self.entries.clone(),
         };
         let text = serde_json::to_string_pretty(&index)
@@ -159,6 +166,93 @@ impl Library {
     /// Every script, most recently opened first, then by title.
     pub fn entries(&self) -> &[ScriptEntry] {
         &self.entries
+    }
+
+    pub fn retain_legacy(path: &Path, retained: &Path) -> Result<(), SaveError> {
+        if retained.exists() || !path.exists() {
+            return Ok(());
+        }
+        let bytes = fs::read(path).map_err(|e| SaveError::from_io(path, &e))?;
+        let version = serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .and_then(|v| v.get("version").and_then(|v| v.as_u64()));
+        if version == Some(INDEX_VERSION as u64) {
+            return Ok(());
+        }
+        // Raw compatibility input, including damaged older data, is never overwritten.
+        crate::atomic::save_new_atomically(retained, &bytes)
+    }
+
+    /// Old arbitrary-path entries are compatibility input, never editable state.
+    pub fn legacy(path: &Path) -> Vec<ScriptEntry> {
+        fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Index>(&bytes).ok())
+            .filter(|index| index.version == 1)
+            .map(|index| index.scripts)
+            .unwrap_or_default()
+    }
+
+    pub fn rebuild(&mut self, root: &Path) -> Result<(), SaveError> {
+        let resolved = crate::project::root(root, false)?;
+        let projects = crate::project::scan(&resolved)?;
+        let old = if self.root.as_ref() == Some(&resolved) {
+            std::mem::take(&mut self.entries)
+        } else {
+            Vec::new()
+        };
+        self.root = Some(resolved);
+        self.entries = projects
+            .iter()
+            .map(|project| {
+                let path = project.script();
+                let id = script_id(&path);
+                let mut entry = old
+                    .iter()
+                    .find(|entry| entry.id == id)
+                    .cloned()
+                    .unwrap_or_else(|| ScriptEntry::for_path(&path));
+                entry.project_id = project.metadata.id.clone();
+                entry.title = project.metadata.name.clone();
+                entry.archived = project.metadata.archived;
+                entry.pinned_entities = project.metadata.pinned_entities.clone();
+                entry.problem = project.problem.clone();
+                entry.migration_status = project.migration_status();
+                if entry.archived {
+                    entry.open = false;
+                }
+                entry
+            })
+            .collect();
+        self.refresh();
+        Ok(())
+    }
+
+    pub fn merge_cached_state(&mut self, latest: &Library) {
+        for entry in &mut self.entries {
+            if let Some(current) = latest.get(&entry.id) {
+                entry.scroll_row = current.scroll_row;
+                entry.page_count = current.page_count;
+                entry.last_opened_millis = current.last_opened_millis;
+                entry.open = current.open && !entry.archived;
+            }
+        }
+        self.sort();
+    }
+
+    pub fn cache_project(&mut self, project: &crate::project::Project) -> String {
+        let id = self.add(&project.script());
+        self.root = project.directory.parent().map(Path::to_path_buf);
+        if let Some(index) = self.position(&id) {
+            let entry = &mut self.entries[index];
+            entry.project_id = project.metadata.id.clone();
+            entry.title = project.metadata.name.clone();
+            entry.archived = project.metadata.archived;
+            entry.pinned_entities = project.metadata.pinned_entities.clone();
+            entry.problem = project.problem.clone();
+            entry.migration_status = project.migration_status();
+        }
+        id
     }
 
     pub fn get(&self, id: &str) -> Option<&ScriptEntry> {
@@ -248,7 +342,9 @@ impl Library {
     pub fn session(&self) -> Vec<ScriptEntry> {
         self.entries
             .iter()
-            .filter(|entry| entry.open && !entry.missing)
+            .filter(|entry| {
+                entry.open && !entry.missing && !entry.archived && entry.problem.is_none()
+            })
             .cloned()
             .collect()
     }

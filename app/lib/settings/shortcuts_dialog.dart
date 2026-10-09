@@ -53,7 +53,9 @@ class ShortcutsDialog extends StatelessWidget {
                   Text(
                     'Tab follows screenplay context: it accepts a visible '
                     'completion, otherwise cycles the current element where the '
-                    'workflow allows it. Escape never changes text.',
+                    'workflow allows it. Escape never changes text. '
+                    'Ctrl+K also offers Rename, Duplicate, Archive and Reveal. '
+                    'Imports copy external sources before editing; Export a copy leaves the draft state unchanged.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -102,12 +104,12 @@ const _sections = <(String, List<(String, String)>)>[
   (
     'Files and view',
     [
-      ('Ctrl+N', 'New script…'),
+      ('Ctrl+N', 'New script in the library'),
       ('Ctrl+O', 'Quick-open scripts; Browse… for Fountain or FDX'),
       ('Ctrl+W', 'Back to the library'),
       ('↑ / ↓ / Enter', 'Select / open a library or quick-open script'),
       ('Ctrl+S', 'Save'),
-      ('Ctrl+Shift+S', 'Save as…'),
+      ('Ctrl+Shift+S', 'Export a copy…'),
       ('Ctrl+P', 'Preview and export…'),
       ('Ctrl+,', 'Preferences'),
       ('Ctrl++ / Ctrl+-', 'Increase / decrease editor text size'),

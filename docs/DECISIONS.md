@@ -36,12 +36,12 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | extended by 0063 — saved checkpoint identity translation |
 | 0014 | The autosave clock lives in Dart | `app/lib/editor/autosave.dart`, `app/lib/editor/editor_page.dart` | partly superseded by 0043 — "autosave writes no backup" |
 | 0015 | The file chooser is ours, because `file_selector` brings `http` | `app/lib/library/file_chooser.dart`, `tools/check_no_network.sh`, `app/pubspec.yaml` | superseded by 0052 — GTK chooser through the runner |
-| 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock |
+| 0016 | Accepting a recovery rewrites the journal; it does not write the script | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs`, `crates/bridge/tests/persistence.rs` | partly superseded by 0042 — recovery takes no journal lock; narrowed by 0068 — managed projects |
 | 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | refined by 0051 — Shift+Enter always edits |
 | 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — page indication; refined by 0057 — printed-width projection |
 | 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | superseded by 0044/0045/0057 — shared printed-width emphasis and editable styling |
 | 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | extended by 0058 — scene pagination metadata |
-| 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live |
+| 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live; narrowed by 0068 — managed projects |
 | 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | refined by 0049 — what a checkpoint records, where a run resumes and stops |
 | 0023 | One crash recovery is offered per launch | `app/lib/app.dart`, `app/lib/library/recovery_dialog.dart`, `crates/bridge/src/api/files.rs` | live |
 | 0024 | The interval autosave keeps running while the writer types | `app/lib/editor/autosave.dart`, `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs` | superseded by 0028 — own-write suppression mechanism |
@@ -49,7 +49,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0026 | One save of a script at a time, by a per-session lock | `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
 | 0027 | A save rebuilds its journal around what was typed during it | `crates/bridge/src/api/files.rs`, `crates/storage/src/journal.rs` | live |
 | 0028 | A save is recognised by the file it left, not by a counted event | `crates/storage/src/watch.rs`, `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs` | live |
-| 0029 | Exporting a copy is not Save As, and it refuses two destinations | `crates/bridge/src/api/files.rs`, `app/lib/preview/export_dialog.dart`, `app/lib/core/document_core.dart`, `app/lib/library/save_dialogs.dart` | live |
+| 0029 | Exporting a copy is not Save As, and it refuses two destinations | `crates/bridge/src/api/files.rs`, `app/lib/preview/export_dialog.dart`, `app/lib/core/document_core.dart`, `app/lib/library/save_dialogs.dart` | live; narrowed by 0068 — managed projects |
 | 0030 | The completion popup names its gestures, and its rows are not click targets | `app/lib/editor/editor_surface.dart`, `app/test/editor/autocomplete_test.dart` | partly superseded by 0041 — popup activation and row cap |
 | 0031 | A character extension is recognised by its letters, not its punctuation | `crates/document/src/entities.rs` | live |
 | 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044/0045 — printed alignment and shared preview interpretation |
@@ -58,12 +58,12 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041; extended by 0058 — navigator drawer below 900 px |
 | 0036 | Spell checking is an immutable Rust snapshot and a Dart overlay | `crates/spell/src/lib.rs`, `crates/bridge/src/api/spell.rs`, `app/lib/editor/spell_dialog.dart` | live |
 | 0037 | Preferences split display policy from screenplay output | `crates/storage/src/prefs.rs`, `app/lib/settings/preferences_dialog.dart`, `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` | partly superseded by 0052 — retained in-app chooser |
-| 0038 | The save path checks the file it is replacing; the watcher only asks early | `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
+| 0038 | The save path checks the file it is replacing; the watcher only asks early | `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live; narrowed by 0068 — managed projects |
 | 0039 | The release build unwinds; `panic = "abort"` is superseded | `Cargo.toml`, `app/linux/CMakeLists.txt` | live |
 | 0040 | The fluid editor shows output page position in its status bar | `app/lib/editor/page_indicator.dart`, `app/lib/editor/editor_page.dart`, `crates/bridge/src/api/layout.rs` | live |
 | 0041 | Suggestions follow writing intent, and narrow windows keep the page wide | `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/navigator_sidebar.dart` | refined by 0051 — Shift+Enter always edits |
 | 0042 | Crash journals carry kernel ownership across publication | `crates/storage/src/journal.rs`, `crates/storage/Cargo.toml`, `crates/bridge/tests/persistence.rs` | live |
-| 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live |
+| 0043 | Previous versions include bounded automatic snapshots | `crates/storage/src/backup.rs`, `crates/bridge/src/api/files.rs`, `app/lib/library/backups_dialog.dart` | live; narrowed by 0068 — managed projects |
 | 0044 | Layout aligns emphasis by printed width, without changing wraps | `crates/layout/src/engine.rs`, `crates/fountain/src/emphasis.rs`, `crates/layout/Cargo.toml` | extended by 0057 — printed wrapping |
 | 0045 | Preview and PDF share resolved emphasis and heading weight | `crates/render_pdf/src/lib.rs`, `crates/bridge/src/api/layout.rs`, `crates/layout/src/model.rs`, `crates/storage/src/prefs.rs`, `app/lib/preview/preview_view.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/settings/preferences_dialog.dart` | extended by 0047/0057 — sung dialogue and source-resolved wraps |
 | 0046 | Consecutive lyric blocks share one leading blank | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart` | live |
@@ -72,22 +72,23 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0049 | An incremental run resumes and stops only where the paginator recorded that it could | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental_differential.rs` | live |
 | 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | live |
 | 0051 | Shift+Enter is a core-owned line break with its own undo transaction | `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/commands.dart` | live |
-| 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live |
+| 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live; narrowed by 0068 — managed projects |
 | 0053 | The runner stops the engine before the process exits | `app/linux/runner/my_application.cc`, `tools/check_clean_close.py`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | live |
 | 0054 | Dual dialogue is a disjoint pair with independent page continuations | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/editor_controller.dart` | live |
-| 0055 | FDX is an interchange copy, while Fountain remains the native document | `crates/fdx/`, `crates/document/src/document.rs`, `crates/bridge/src/api/files.rs`, `app/lib/core/`, `app/lib/app.dart`, `app/lib/preview/export_dialog.dart` | refined by 0062 — imported untitled recovery starts against blank |
+| 0055 | FDX is an interchange copy, while Fountain remains the native document | `crates/fdx/`, `crates/document/src/document.rs`, `crates/bridge/src/api/files.rs`, `app/lib/core/`, `app/lib/app.dart`, `app/lib/preview/export_dialog.dart` | refined by 0062 — imported untitled recovery starts against blank; narrowed by 0068 — managed projects |
 | 0056 | Scene numbering is an explicit grouped Rust edit, not an output fallback | `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
-| 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live |
+| 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live; narrowed by 0068 — managed projects |
 | 0057 | Inline emphasis uses printed wraps and an editable source projection | `crates/fountain/src/emphasis.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/line_layout.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `docs/LINE_BREAKING.md` | live |
 | 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | refined by 0060 — necessary authored-case syntax |
 | 0060 | Forced Character cues retain authored case on every surface | `crates/fountain/src/case.rs`, `crates/fountain/src/serialise.rs`, `crates/layout/src/engine.rs`, `app/lib/editor/metrics.dart`, `app/lib/editor/editor_surface.dart`, `crates/render_pdf/tests/text_extraction.rs`, `app/integration_test/export_test.dart`, `app/integration_test/persistence_test.dart` | live |
 | 0058 | The outline is source-ordered Rust structure and scene length is paginated occupied eighths | `crates/bridge/src/api/doc.rs`, `crates/bridge/src/api/layout.rs`, `app/lib/editor/navigator_sidebar.dart`, `app/lib/editor/page_indicator.dart` | live |
 | 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | refined by 0063 — provenance-only seam normalization and checkpoint recovery |
 | 0063 | Saved checkpoint outcomes use the base's identities without changing live state | `crates/storage/src/journal.rs`, `crates/bridge/src/api/files.rs`, `crates/document/src/omission.rs`, `crates/document/tests/omission.rs`, `app/integration_test/writing_test.dart` | live |
-| 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | refined by 0067 — reading row on explicit open and recovery |
+| 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | refined by 0067 — reading row on explicit open and recovery; narrowed by 0068 — managed projects |
 | 0065 | The headless budget profile does not join the desktop's session bus | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md` | live |
 | 0066 | Repeated title entries are shown and edited individually | `crates/fountain/src/model.rs`, `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/title_page_dialog.dart` | live |
 | 0067 | Reopening and recovery reuse the saved reading row | `app/lib/app.dart`, `app/test/file_workflow_test.dart`, `app/integration_test/persistence_test.dart` | live |
+| 0068 | Editable scripts are portable managed projects; import and migration copy sources | `crates/storage/src/project.rs`, `crates/bridge/src/api/files.rs`, `app/lib/app.dart`, `app/lib/library/` | live |
 
 ---
 
@@ -1087,10 +1088,7 @@ for.
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 4 (repaired during the
 mid-project remediation) · **Supersedes:** nothing; it states a sequence ADR 0013
 left implicit
-**Superseded by:** ADR 0042 for the recovery sequence below, which takes no
-journal lock: a live journal's kernel ownership now gates accepting and
-discarding a recovery. The rest of this record stands.
-
+**Superseded by:** ADR 0042 for kernel-owned recovery; ADR 0068 for explicit managed succession of legacy candidates. Managed recovery remains dirty without writing the script.
 ### Context
 
 Crash recovery is the one moment in this program where the writer's text exists
@@ -1540,6 +1538,8 @@ before remediation Phase 6 closes:
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 5 (recorded during the
 mid-project remediation)
+
+**Superseded by:** ADR 0068 for managed project workflows.
 
 ### Context
 
@@ -2279,6 +2279,8 @@ in-flight one does.
 **Date:** 2026-07-26 · **Status:** accepted · **Phase:** 4 (mid-project
 remediation, Phase 7)
 
+**Superseded by:** ADR 0068 for managed project workflows.
+
 ### Context
 
 §6 lists `doc_save_as` and `doc_export_fountain` as different functions. The
@@ -3009,6 +3011,8 @@ to disagree.
 **Date:** 2026-07-27
 **Phase:** Post-Phase 10 refinement
 
+**Superseded by:** ADR 0068 for managed project workflows.
+
 ### Context
 
 §Phase 4's external-modification rule was implemented entirely around the file
@@ -3307,6 +3311,8 @@ releases the lock when the last descriptor for that open file description closes
 **Date:** 2026-10-06 · **Status:** accepted
 **Supersedes:** ADR 0014's "Autosave writes no backup" consequence only.
 Its Dart-owned timers, suppression rules and save-failure behavior remain.
+
+**Superseded by:** ADR 0068 for managed project workflows.
 
 ### Context
 
@@ -3981,6 +3987,8 @@ save and reopen Action, Dialogue and Note through the real core and filesystem.
 **Date:** 2026-10-07 · **Status:** accepted · **Backlog:** W7
 **Supersedes:** ADR 0015, and ADR 0037's retained in-app chooser decision only.
 
+**Superseded by:** ADR 0068 for managed project workflows.
+
 ### Context
 
 The in-app chooser starts at home, with no bookmarks, search, folder creation
@@ -4309,7 +4317,7 @@ gates in `docs/MANUAL_GATES.md`.
 
 **Date:** 2026-10-09 · **Status:** accepted · **Backlog:** X2
 **Extends:** ADR 0004 with a syntax-only FDX codec and its bridge edge.
-**Superseded by:** ADR 0062 refines only the initial import journal base; the interchange and native-format decisions remain in force.
+**Superseded by:** ADR 0062 for the initial import journal base; ADR 0068 for managed publication before adoption. The interchange and native-format decisions remain.
 
 ### Context and evidence
 
@@ -4420,6 +4428,8 @@ unless a real consumer can be exercised. Final evidence belongs in X2's Result.
 
 **Date:** 2026-10-09 · **Status:** accepted · **Backlog:** X2
 **Refines:** ADR 0055's import journal initialization.
+
+**Superseded by:** ADR 0068 for managed project workflows.
 
 ### Evidence
 
@@ -5097,7 +5107,7 @@ forcing policy, dependency, budget or golden output changes.
 
 **Date:** 2026-10-09 · **Status:** accepted
 
-**Superseded by:** ADR 0067 refines reading-row restoration for explicit opens and accepted recovery.
+**Superseded by:** ADR 0067 for reading-row restoration; ADR 0068 for managed project binding. Quit and put-away rules remain.
 
 ### Context
 
@@ -5285,3 +5295,90 @@ an explicit zero session row and quit/unmount during lookup. Focused native
 persistence tests exercise actual library opening and accepted journal recovery,
 check the viewport's reported row, preserve file bytes before Save and verify
 the recovered text and BOM/untouched CRLF bytes through Save and actual reopen.
+
+## ADR 0068 — Editable scripts are portable managed projects
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Narrows:** ADR 0016, ADR 0021, ADR 0029, ADR 0038, ADR 0043, ADR 0052, ADR 0055, ADR 0062 and ADR 0064 for managed project workflows.
+
+### Context
+
+Arbitrary external paths made every New and first imported Save ask for a destination,
+and autosave could replace the imported Fountain original. Pins lived only in a
+central cache; moving that cache lost user metadata. The approved
+[managed library plan](MANAGED_LIBRARY_PLAN.md) makes copying into a portable
+library the boundary before text entry.
+
+### Decision
+
+Rust owns the library root, stable random project identity, validation and
+transactions. A lazy first-run default uses Documents/Slugline, falling back to
+home/Slugline. Explicit test paths use their own data/library directory. Once a
+root is used or selected it is persisted; disappearance reports unavailability
+and never creates another working copy. Selecting another root validates it
+and saves preferences before activation; it leaves the old files in place.
+
+A project is an ordinary direct-child directory named from its initial display
+name and a 128-bit lowercase hexadecimal ID. Its script.fountain is ordinary
+UTF-8 Fountain. A version-1 project.json owns ID, display name, archive state,
+user entity pins and optional import/migration origin. Unknown JSON fields
+survive updates. Rename changes metadata only. A root scan reconstructs the
+library; central index version 2 owns convenience state such as recency, pages,
+open state and reading row. Missing, damaged, future-format, conflicting and
+interrupted projects stay visible for explicit repair or text rescue. Repair
+preserves raw damaged metadata first; unsupported formats are never rewritten.
+Root aliases canonicalize to one location, while project child symlinks cannot
+escape validation. Copies of an ID are conflicts, not additional editable identities.
+
+New and both import formats prepare an isolated candidate. Fountain captures
+exact UTF-8 bytes, including BOM, CRLF and untouched regions. FDX captures its
+original bytes under imports/source.fdx and stores Rust-produced Fountain.
+Warnings, copy confirmation and the old document's close decision precede
+publication. Exclusively owned staging uses atomic saves and Linux
+RENAME_NOREPLACE with parent synchronization and a directory flock; cleanup
+removes only that operation's staging. The actor's live Document, history and
+identities survive adoption. Its initial outcome is journalled against blank,
+then checkpointed against the exact published base. A durable transaction marker
+reconciles interrupted publication without overwriting or creating repeated copies.
+
+Save and autosave write only a validated managed project. Missing files, roots,
+archive state or identity conflicts refuse the write and retain dirty text and
+recovery evidence. Exports copy a captured snapshot without rebinding or clearing
+dirty state. Ctrl+Shift+S is Export a copy. Exports require explicit replacement
+approval and refuse managed project contents, closed projects and aliases.
+The compatibility Save As API permits only a save onto the session's own file.
+
+Previous versions live in each project's versions directory. Opening baselines,
+manual snapshots, the autosave age gate and retention policy remain from ADR 0043.
+The old global backup preference remains readable only as migration input.
+Duplicate captures active unsaved text (saved bytes when closed), copies pins,
+allocates a new ID and starts independent versions. Archive and Restore change
+metadata without deleting text or versions. Open as copy captures viewed version
+text, resolves the current editor, then creates an independent managed project.
+
+Legacy index version 1 is retained atomically as compatibility input before the
+new cache is written. Migration is selective, copy based and resumable from
+per-project origin markers; it retains external files, old versions, pins and
+reading position. Version collisions are copied without overwriting; failures
+report partial status and keep completed copies for retry. Pending recovery
+precedes saved-file migration. Legacy recovery remains an unbound candidate;
+cancel or failed protection leaves its predecessor intact. Explicit migration
+publishes saved recovered bytes and establishes a kernel-owned successor before
+retiring that predecessor. Managed recovery still arrives dirty without saving.
+Ordinary quit parking, put-away, late callback checks and saved-row restoration
+remain in force.
+
+### Consequences and verification
+
+The library directory is portable user data. The central list remains a cache;
+deleting it may lose reading convenience but cannot lose labels, pins, archive
+state, identity or screenplay text. Origin records explain copies and offer an
+existing-copy choice; they never establish synchronization or content identity.
+
+Storage tests cover exact publication, no-clobber collisions, metadata damage,
+unknown fields and root/child alias boundaries. Bridge tests cover independent
+active duplicates, export isolation, missing-library guards, resumable legacy
+history and predecessor/live-successor ownership. Widget tests cover keyboard
+creation, copy/export confirmation, cancellation, dirty close and late adoption.
+Selected Linux native persistence, bridge, export and writing checks preserve
+byte/reopen, input, recovery, history and output assertions through generated APIs.

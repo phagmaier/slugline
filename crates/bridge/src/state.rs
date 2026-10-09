@@ -48,6 +48,9 @@ pub struct Storage {
     pub paths: Paths,
     pub prefs: Preferences,
     pub library: Library,
+    pub library_root: PathBuf,
+    pub library_error: Option<String>,
+    pub legacy: Vec<slugline_storage::library::ScriptEntry>,
     /// `None` when `notify` could not start — a kernel without inotify, or a
     /// process out of watch descriptors.
     ///
@@ -192,6 +195,8 @@ impl AppState {
 
 /// One open script.
 pub struct Session {
+    pub(crate) project: Option<ProjectContext>,
+    pub(crate) candidate: Option<ProjectCandidate>,
     /// The handle Dart names this session by. Kept here so that anything with a
     /// session in hand can say which document it is talking about — an event
     /// pushed from an edit, for one.
@@ -281,10 +286,27 @@ pub struct Session {
     spelling: SessionSpelling,
 }
 
+#[derive(Clone)]
+pub(crate) struct ProjectContext {
+    pub root: PathBuf,
+    pub id: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct ProjectCandidate {
+    pub metadata: slugline_storage::project::Metadata,
+    pub bytes: Option<Vec<u8>>,
+    pub fdx: Option<Vec<u8>>,
+    pub predecessor: Option<PathBuf>,
+    pub published: Option<PathBuf>,
+}
+
 impl Session {
     fn new(handle: u64, document: Document) -> Session {
         let entities = EntityIndex::build(&document);
         Session {
+            project: None,
+            candidate: None,
             handle,
             document,
             entities,
@@ -473,6 +495,14 @@ impl Session {
         self.journal = None;
         self.journal_broken = true;
         self.saving = None;
+    }
+
+    pub(crate) fn journal_path(&self) -> Option<PathBuf> {
+        self.journal.as_ref().map(|j| j.path().to_path_buf())
+    }
+
+    pub(crate) fn take_journal(&mut self) -> Option<Journal> {
+        self.journal.take()
     }
 
     pub fn journal_mut(&mut self) -> Option<&mut Journal> {

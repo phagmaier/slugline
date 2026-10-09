@@ -696,32 +696,55 @@ pub fn doc_set_entity_pinned(
     pinned: bool,
 ) -> bool {
     actor().run(move |state| {
-        let (id, pins) = {
+        let (id, pins, path, previous_pins) = {
             let Some(session) = state.session_mut(handle.id) else {
                 return false;
             };
+            let previous_pins = session.entities().pinned();
             let kind = model_entity_kind(kind);
             if pinned {
                 session.entities_mut().pin(kind, &value);
             } else {
                 session.entities_mut().unpin(kind, &value);
             }
-            (session.id().map(str::to_owned), session.entities().pinned())
+            (
+                session.id().map(str::to_owned),
+                session.entities().pinned(),
+                session.path().map(std::path::Path::to_path_buf),
+                previous_pins,
+            )
         };
         let Some(id) = id else { return true };
         let Some(storage) = state.storage_mut() else {
             return true;
         };
-        storage.library.set_pinned(
-            &id,
-            pins.into_iter()
-                .map(|(kind, value)| slugline_storage::library::PinnedEntity {
-                    kind: entity_kind_name(kind).to_owned(),
-                    value,
-                })
-                .collect(),
-        );
-        storage.library.save(&storage.paths.library_index()).is_ok()
+        let pins = pins
+            .into_iter()
+            .map(|(kind, value)| slugline_storage::library::PinnedEntity {
+                kind: entity_kind_name(kind).to_owned(),
+                value,
+            })
+            .collect::<Vec<_>>();
+        let Some(path) = path else {
+            return false;
+        };
+        let Ok(project) = slugline_storage::project::resolve(&storage.library_root, &path) else {
+            if let Some(session) = state.session_mut(handle.id) {
+                session.load_pins(previous_pins);
+            }
+            return false;
+        };
+        let mut metadata = project.metadata.clone();
+        metadata.pinned_entities = pins.clone();
+        if slugline_storage::project::update(&project, &metadata).is_err() {
+            if let Some(session) = state.session_mut(handle.id) {
+                session.load_pins(previous_pins);
+            }
+            return false;
+        }
+        storage.library.set_pinned(&id, pins);
+        let _ = storage.library.save(&storage.paths.library_index());
+        true
     })
 }
 

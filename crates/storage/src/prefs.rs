@@ -91,6 +91,8 @@ pub struct Preferences {
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
+    /// Managed library. None selects the lazy platform default.
+    pub library_dir: Option<PathBuf>,
     pub backup_keep_versions: u32,
     pub backup_keep_days: u32,
 }
@@ -116,6 +118,7 @@ impl Default for Preferences {
             distraction_free: false,
             page_view: true,
             backup_dir: None,
+            library_dir: None,
             backup_keep_versions: retention.keep_versions,
             backup_keep_days: retention.keep_days,
         }
@@ -155,6 +158,7 @@ impl Preferences {
         self.backup_keep_versions = self.backup_keep_versions.clamp(1, 100);
         self.backup_keep_days = self.backup_keep_days.clamp(1, 3_650);
         self.backup_dir = nonempty_path(self.backup_dir);
+        self.library_dir = nonempty_path(self.library_dir);
         self.pdf_font_path = nonempty_path(self.pdf_font_path);
         self
     }

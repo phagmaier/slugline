@@ -19,6 +19,8 @@
 // CJK input method as well, and `SPEC.md`'s Phase 2 list records whether it has
 // been run.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,8 +34,18 @@ import 'package:slugline/editor/editor_surface.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  late Directory root;
   setUpAll(() async {
-    await Core.init();
+    root = Directory.systemTemp.createTempSync('slugline-native-ime-');
+    await Core.init(
+      configDir: '${root.path}/config',
+      dataDir: '${root.path}/data',
+      stateDir: '${root.path}/state',
+    );
+  });
+  tearDownAll(() async {
+    await Core.instance.shutdown();
+    root.deleteSync(recursive: true);
   });
 
   Future<EditorController> open(WidgetTester tester, [String? source]) async {

@@ -10,7 +10,14 @@ this file and the others to it.
 
 ### Added
 
-- Import Final Draft `.fdx` into an unsaved Fountain script, or export an editable
+- Managed script folders with stable identity, portable names/pins, archive/restore
+  and project-local previous versions. New and Save need no destination chooser;
+  Fountain/FDX imports copy and preserve originals before editing. Ctrl+Shift+S
+  exports a copy without moving or cleaning the current session. Rename, active
+  Duplicate, Reveal, library selection and resumable legacy/recovery migration
+  are available through the library and keyboard command palette.
+
+- Import Final Draft `.fdx` into a managed Fountain script, or export an editable
   FDX copy without moving or saving the current script. Existing numbers, dual
   dialogue, title text and bold/italic/underline are converted in Rust.
   Conversion warnings require approval; exporting nonprinting notes, outline

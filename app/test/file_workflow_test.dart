@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slugline/app.dart';
+import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/command_palette.dart';
@@ -44,9 +45,11 @@ const _preferences = PreferencesView(
 );
 
 ScriptView _script(String id, int modified, {int scrollRow = 0}) => ScriptView(
+  projectId: 'test-project',
+  archived: false,
   id: id,
   path: '/scripts/$id.fountain',
-  title: id,
+  title: "$id.fountain",
   modifiedMillis: modified,
   bytes: 10,
   pageCount: 1,
@@ -71,6 +74,27 @@ class _AppCore implements Core {
   FdxImportResult importResult = const FdxImportFailed(message: 'Invalid XML');
   Completer<void>? holdImport;
   final eventBus = StreamController<CoreEvent>.broadcast();
+
+  @override
+  Future<String> resolvePath(String path) async => path;
+  @override
+  Future<ScriptView?> managedEntry(String path) async {
+    for (final id in ['alpha', 'beta']) {
+      if (path == '/scripts/$id.fountain') return _script(id, 1);
+    }
+    return null;
+  }
+
+  @override
+  files.LibraryStatus libraryStatus() =>
+      const files.LibraryStatus(path: '/library', legacyCount: 0);
+  @override
+  Future<DocumentCore?> createDocument([String name = 'Untitled']) =>
+      openDocument('/scripts/new.fountain');
+  @override
+  Future<List<ScriptView>> originCopies(String path) async => [];
+  @override
+  Future<FdxImportResult> importFountain(String path) => importFdx(path);
 
   @override
   Stream<CoreEvent> get events => eventBus.stream;
@@ -210,6 +234,34 @@ Future<void> _runPalette(WidgetTester tester, String label) async {
 }
 
 void main() {
+  Future<FakeCore> prepareImport(_AppCore core, {bool warnings = true}) async {
+    final candidate = FakeCore.single(BlockKind.action, '')
+      ..eventHandle = 999
+      ..commitPath = '/library/imported/script.fountain';
+    candidate.apply(
+      EditCommand.replaceText(
+        block: 1,
+        startUtf16: 0,
+        endUtf16: 0,
+        with_: 'Imported screenplay words.',
+      ),
+    );
+    core.importResult = FdxImported(
+      document: candidate,
+      warnings: warnings ? ['Custom margins were not retained.'] : [],
+    );
+    return candidate;
+  }
+
+  Future<void> chooseImport(WidgetTester tester) async {
+    final choice = pendingFileChoice(tester);
+    await _runPalette(tester, 'Import…');
+    choice.complete('/scripts/source.fdx');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import copy'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('library and quick open restore each script at its saved row', (
     tester,
   ) async {
@@ -447,6 +499,10 @@ void main() {
       expect(find.byType(QuickOpenDialog), findsNothing);
       choice.complete('/scripts/new.fountain');
       await tester.pumpAndSettle();
+      if (find.text('Import copy').evaluate().isNotEmpty) {
+        await tester.tap(find.text('Import copy'));
+        await tester.pumpAndSettle();
+      }
       expect(_editor(tester).controller.core.path, '/scripts/new.fountain');
       expect(core.opened[1].closes, 1);
       await _key(tester, LogicalKeyboardKey.keyW, control: true);
@@ -463,24 +519,18 @@ void main() {
   );
 
   for (final key in [LogicalKeyboardKey.keyN, LogicalKeyboardKey.keyO]) {
-    testWidgets(
-      '${key.keyLabel} works in the library; cancellation leaves it open',
-      (tester) async {
-        final core = await _pump(tester, open: false);
-        final choice = key == LogicalKeyboardKey.keyN
-            ? pendingFileChoice(tester)
-            : null;
-        await _key(tester, key, control: true);
-        if (choice != null) {
-          choice.complete(null);
-          await tester.pumpAndSettle();
-        } else {
-          await _key(tester, LogicalKeyboardKey.escape);
-        }
+    testWidgets('${key.keyLabel} works in the library', (tester) async {
+      final core = await _pump(tester, open: false);
+      await _key(tester, key, control: true);
+      if (key == LogicalKeyboardKey.keyN) {
+        expect(core.requests, ['/scripts/new.fountain']);
+        expect(find.byType(EditorPage), findsOneWidget);
+      } else {
+        await _key(tester, LogicalKeyboardKey.escape);
         expect(core.requests, isEmpty);
         expect(find.byType(LibraryPage), findsOneWidget);
-      },
-    );
+      }
+    });
   }
 
   for (final key in [
@@ -667,7 +717,7 @@ void main() {
     expect(_editor(tester).controller, same(controller));
     expect(core.opened.single.closes, 0);
     expect(
-      find.text('The script could not be opened or created.'),
+      find.textContaining('The managed script could not be opened.'),
       findsOneWidget,
     );
     expect(tester.testTextInput.hasAnyClients, isTrue);
@@ -685,6 +735,10 @@ void main() {
     await _key(tester, LogicalKeyboardKey.keyN, control: true);
     choice.complete('/scripts/new.fountain');
     await tester.pumpAndSettle();
+    if (find.text('Import copy').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Import copy'));
+      await tester.pumpAndSettle();
+    }
     core.holdOpen!.complete();
     await tester.pumpAndSettle();
     expect(_editor(tester).controller, isNot(same(controller)));
@@ -747,10 +801,11 @@ void main() {
       if (choice != null) {
         choice.complete('/scripts/palette-new.fountain');
         await tester.pumpAndSettle();
-        expect(
-          _editor(tester).controller.core.path,
-          '/scripts/palette-new.fountain',
-        );
+        if (find.text('Import copy').evaluate().isNotEmpty) {
+          await tester.tap(find.text('Import copy'));
+          await tester.pumpAndSettle();
+        }
+        expect(_editor(tester).controller.core.path, '/scripts/new.fountain');
       } else if (label == 'Open script…') {
         await tester.enterText(
           find.byKey(const Key('quick-open-search')),
@@ -767,7 +822,8 @@ void main() {
   testWidgets('Browse is keyboard reachable even with no matches', (
     tester,
   ) async {
-    await _pump(tester);
+    final core = await _pump(tester);
+    await prepareImport(core, warnings: false);
     final choice = pendingFileChoice(tester);
     await _key(tester, LogicalKeyboardKey.keyO, control: true);
     await tester.enterText(
@@ -778,37 +834,21 @@ void main() {
     expect(find.byType(QuickOpenDialog), findsNothing);
     choice.complete('/scripts/browsed.fountain');
     await tester.pumpAndSettle();
-    expect(_editor(tester).controller.core.path, '/scripts/browsed.fountain');
+    if (find.text('Import copy').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Import copy'));
+      await tester.pumpAndSettle();
+    }
+    expect(
+      _editor(tester).controller.core.path,
+      '/library/imported/script.fountain',
+    );
   });
 
-  Future<FakeCore> prepareImport(_AppCore core, {bool warnings = true}) async {
-    final candidate = FakeCore.single(BlockKind.action, '')..eventHandle = 999;
-    candidate.apply(
-      EditCommand.replaceText(
-        block: 1,
-        startUtf16: 0,
-        endUtf16: 0,
-        with_: 'Imported screenplay words.',
-      ),
-    );
-    core.importResult = FdxImported(
-      document: candidate,
-      warnings: warnings ? ['Custom margins were not retained.'] : [],
-    );
-    return candidate;
-  }
-
-  Future<void> chooseImport(WidgetTester tester) async {
-    final choice = pendingFileChoice(tester);
-    await _runPalette(tester, 'Import…');
-    choice.complete('/scripts/source.fdx');
-    await tester.pumpAndSettle();
-  }
-
   testWidgets(
-    'Library Import opens Fountain in place with both format filters',
+    'Library Import publishes a Fountain copy with both format filters',
     (tester) async {
       final core = await _pump(tester, open: false);
+      await prepareImport(core, warnings: false);
       Map<Object?, Object?>? arguments;
       final choice = pendingFileChoice(
         tester,
@@ -824,17 +864,21 @@ void main() {
       expect(arguments, containsPair('screenplayFiles', true));
       choice.complete('/scripts/original.FoUnTaIn');
       await tester.pumpAndSettle();
-      expect(core.requests, ['/scripts/original.FoUnTaIn']);
-      expect(core.importRequests, isEmpty);
+      if (find.text('Import copy').evaluate().isNotEmpty) {
+        await tester.tap(find.text('Import copy'));
+        await tester.pumpAndSettle();
+      }
+      expect(core.requests, isEmpty);
+      expect(core.importRequests, ['/scripts/original.FoUnTaIn']);
       expect(
         _editor(tester).controller.core.path,
-        '/scripts/original.FoUnTaIn',
+        '/library/imported/script.fountain',
       );
       expect(_editor(tester).controller.core.dirty, isFalse);
     },
   );
 
-  testWidgets('Library Import converts FDX into an unsaved script', (
+  testWidgets('Library Import commits FDX before exposing its editor', (
     tester,
   ) async {
     final core = await _pump(tester, open: false);
@@ -844,11 +888,15 @@ void main() {
     await tester.pumpAndSettle();
     choice.complete('/scripts/source.FDX');
     await tester.pumpAndSettle();
+    if (find.text('Import copy').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Import copy'));
+      await tester.pumpAndSettle();
+    }
     expect(core.requests, isEmpty);
     expect(core.importRequests, ['/scripts/source.FDX']);
     expect(_editor(tester).controller.core, same(candidate));
-    expect(candidate.path, isNull);
-    expect(candidate.dirty, isTrue);
+    expect(candidate.path, '/library/imported/script.fountain');
+    expect(candidate.dirty, isFalse);
   });
 
   testWidgets(
@@ -876,42 +924,52 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Fountain Import checks unsaved changes before opening the file',
-    (tester) async {
-      final core = await _pump(tester);
-      final controller = _editor(tester).controller;
-      controller.insertText('Keep my draft. ');
-      final source = controller.source;
-      final choice = pendingFileChoice(tester);
-      await _runPalette(tester, 'Import…');
-      choice.complete('/scripts/source.fountain');
+  testWidgets('Fountain Import checks unsaved changes before publication', (
+    tester,
+  ) async {
+    final core = await _pump(tester);
+    final candidate = await prepareImport(core, warnings: false);
+    final controller = _editor(tester).controller;
+    controller.insertText('Keep my draft. ');
+    final source = controller.source;
+    final choice = pendingFileChoice(tester);
+    await _runPalette(tester, 'Import…');
+    choice.complete('/scripts/source.fountain');
+    await tester.pumpAndSettle();
+    if (find.text('Import copy').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Import copy'));
       await tester.pumpAndSettle();
-      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(core.requests, ['/scripts/alpha.fountain']);
-      expect(core.importRequests, isEmpty);
-      expect(_editor(tester).controller, same(controller));
-      expect(controller.source, source);
-      expect(core.opened.single.closes, 0);
-    },
-  );
+    }
+    expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(core.requests, ['/scripts/alpha.fountain']);
+    expect(core.importRequests, ['/scripts/source.fountain']);
+    expect(candidate.closes, 1);
+    expect(candidate.path, isNull);
+    expect(_editor(tester).controller, same(controller));
+    expect(controller.source, source);
+    expect(core.opened.single.closes, 0);
+  });
 
   for (final editorOpen in [false, true]) {
-    testWidgets('New stays a native creation with editor open: $editorOpen', (
+    testWidgets('New creates a managed project with editor open: $editorOpen', (
       tester,
     ) async {
       final core = await _pump(tester, open: editorOpen);
-      final choice = pendingFileChoice(tester);
+      var pickers = 0;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('slugline/window'),
+        (call) async {
+          if (call.method == "chooseFile") pickers++;
+          return null;
+        },
+      );
       await _key(tester, LogicalKeyboardKey.keyN, control: true);
-      // A save chooser preserves explicit suffixes. Creation must not dispatch
-      // the requested destination to the FDX importer.
-      choice.complete('/scripts/new.fdx');
-      await tester.pumpAndSettle();
-      expect(core.requests.last, '/scripts/new.fdx');
+      expect(core.requests.last, '/scripts/new.fountain');
       expect(core.importRequests, isEmpty);
-      expect(_editor(tester).controller.core.path, '/scripts/new.fdx');
+      expect(_editor(tester).controller.core.path, '/scripts/new.fountain');
+      expect(pickers, 0);
     });
 
     testWidgets('Ctrl+O Browse imports FDX with editor open: $editorOpen', (
@@ -930,6 +988,10 @@ void main() {
       expect(arguments, containsPair('screenplayFiles', true));
       choice.complete('/scripts/browsed.FdX');
       await tester.pumpAndSettle();
+      if (find.text('Import copy').evaluate().isNotEmpty) {
+        await tester.tap(find.text('Import copy'));
+        await tester.pumpAndSettle();
+      }
       expect(core.requests, editorOpen ? ['/scripts/alpha.fountain'] : isEmpty);
       expect(core.importRequests, ['/scripts/browsed.FdX']);
       expect(_editor(tester).controller.core, same(candidate));
@@ -959,7 +1021,7 @@ void main() {
       final source = controller.source;
       await chooseImport(tester);
       expect(
-        find.textContaining('Could not import FDX: Invalid XML'),
+        find.textContaining('Could not import screenplay: Invalid XML'),
         findsOneWidget,
       );
       expect(find.text('Save changes to alpha.fountain?'), findsNothing);
@@ -1011,50 +1073,55 @@ void main() {
   );
 
   testWidgets(
-    'adopted FDX is unsaved and Save asks for a Fountain destination',
+    'adopted FDX saves to its managed file without a destination picker',
     (tester) async {
       final core = await _pump(tester);
       final candidate = await prepareImport(core, warnings: false);
       await chooseImport(tester);
       expect(_editor(tester).controller.core, same(candidate));
       expect(core.opened.single.closes, 1);
-      expect(candidate.path, isNull);
-      expect(candidate.dirty, isTrue);
-      expect(_editor(tester).title, 'Untitled');
-      const channel = MethodChannel('slugline/window');
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        channel,
-        (_) async => '/scripts/imported.fountain',
-      );
-      await _key(tester, LogicalKeyboardKey.keyS, control: true);
-      expect(candidate.path, '/scripts/imported.fountain');
+      expect(candidate.path, '/library/imported/script.fountain');
       expect(candidate.dirty, isFalse);
-      expect(_editor(tester).title, 'imported.fountain');
-      expect(find.text('Untitled', findRichText: true), findsNothing);
+      var pickers = 0;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('slugline/window'),
+        (call) async {
+          if (call.method == "chooseFile") pickers++;
+          return null;
+        },
+      );
+      _editor(tester).controller.insertText('Later. ');
+      await _key(tester, LogicalKeyboardKey.keyS, control: true);
+      expect(candidate.path, '/library/imported/script.fountain');
+      expect(candidate.dirty, isFalse);
+      expect(pickers, 0);
     },
   );
 
-  testWidgets('Save As renames the script in the bar and the close prompt', (
-    tester,
-  ) async {
-    final core = await _pump(tester);
-    final choice = pendingFileChoice(tester);
-    expect(_editor(tester).title, 'alpha.fountain');
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await _key(tester, LogicalKeyboardKey.keyS, control: true);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-    choice.complete('/scripts/gamma.fountain');
-    await tester.pumpAndSettle();
-    expect(core.opened.single.saveAsCalls, [
-      ('/scripts/gamma.fountain', false),
-    ]);
-    expect(_editor(tester).title, 'gamma.fountain');
-    expect(find.text('gamma', findRichText: true), findsOneWidget);
-    expect(find.text('alpha', findRichText: true), findsNothing);
-    _editor(tester).controller.insertText('More. ');
-    await _key(tester, LogicalKeyboardKey.keyW, control: true);
-    expect(find.text('Save changes to gamma.fountain?'), findsOneWidget);
-  });
+  testWidgets(
+    'Export a copy retains the script title, session and close prompt',
+    (tester) async {
+      final core = await _pump(tester);
+      final choice = pendingFileChoice(tester);
+      expect(_editor(tester).title, 'alpha.fountain');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await _key(tester, LogicalKeyboardKey.keyS, control: true);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      choice.complete('/scripts/gamma.fountain');
+      await tester.pumpAndSettle();
+      if (find.text('Import copy').evaluate().isNotEmpty) {
+        await tester.tap(find.text('Import copy'));
+        await tester.pumpAndSettle();
+      }
+      expect(core.opened.single.exports, [('/scripts/gamma.fountain', false)]);
+      expect(_editor(tester).title, 'alpha.fountain');
+      expect(find.text('gamma', findRichText: true), findsNothing);
+      expect(find.text('alpha', findRichText: true), findsOneWidget);
+      _editor(tester).controller.insertText('More. ');
+      await _key(tester, LogicalKeyboardKey.keyW, control: true);
+      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'candidate journal failure is not attributed to the old session',

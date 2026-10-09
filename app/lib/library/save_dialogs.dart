@@ -14,14 +14,15 @@ import 'package:slugline/widgets/escape_dismissible.dart';
 ///   so in as many words, and the reason is that a toast is a thing a writer
 ///   scrolls past. If the file did not get written, the writer has to know
 ///   before they type another word.
-/// * **Every failure offers Save As.** Read-only, no permission, full disk: in
+/// * **Every failure offers Export a copy.** Read-only, no permission, full disk: in
 ///   all three the writer's text exists and only the destination is wrong, so
 ///   the useful answer is always "then put it somewhere else".
 
 /// What the writer chose when a save failed.
 enum SaveFailureChoice {
   /// Try again at a path they picked.
-  saveAs,
+  exportCopy,
+  retry,
 
   /// Give up on this save. The document stays dirty and the journal keeps
   /// covering it.
@@ -69,10 +70,14 @@ Future<SaveFailureChoice> showSaveFailure(
                 Navigator.of(context).pop(SaveFailureChoice.cancel),
             child: const Text('Not now'),
           ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(SaveFailureChoice.retry),
+            child: const Text('Retry'),
+          ),
           FilledButton(
             onPressed: () =>
-                Navigator.of(context).pop(SaveFailureChoice.saveAs),
-            child: const Text('Save as…'),
+                Navigator.of(context).pop(SaveFailureChoice.exportCopy),
+            child: const Text('Export a copy…'),
           ),
         ],
       ),
@@ -92,6 +97,7 @@ String _headline(SaveFailure failure) => switch (failure) {
   SaveFailure.scriptIsOpen => 'That script is open here',
   SaveFailure.changedOnDisk => 'That file changed on disk',
   SaveFailure.io => 'The file could not be written',
+  SaveFailure.libraryDestination => 'The library destination is protected',
 };
 
 String _explanation(SaveFailure failure, String path) => switch (failure) {
@@ -109,7 +115,7 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
   SaveFailure.noSuchDocument =>
     'The editor and the core disagree about what is open. Reopening the '
         'script will fix it.',
-  // The two refusals an export and a Save As share. The first is a question
+  // The export refusals. The first is a question
   // rather than a fault and is normally answered by [confirmReplace] before
   // it ever gets here; this sentence is what a writer sees if they declined
   // and the failure came back up.
@@ -125,6 +131,8 @@ String _explanation(SaveFailure failure, String path) => switch (failure) {
     'Something else has written to $path since it was last read here, so '
         '$applicationName did not replace it.',
   SaveFailure.io => 'The operating system refused to write $path.',
+  SaveFailure.libraryDestination =>
+    'Scripts stay in the library. Export a copy outside project folders to rescue or share text.',
 };
 
 /// §Phase 4's external-modification prompt.
@@ -172,7 +180,7 @@ Future<ExternalChangeChoice?> showExternalChange(
           TextButton(
             onPressed: () =>
                 Navigator.of(context).pop(ExternalChangeChoice.saveAs),
-            child: const Text('Save as…'),
+            child: const Text('Export a copy…'),
           ),
           FilledButton(
             onPressed: () =>
@@ -223,12 +231,10 @@ Future<UnsavedChoice> showUnsavedChanges(
   return choice ?? UnsavedChoice.cancel;
 }
 
-/// Asks the writer where the script should go. Null if they closed the chooser.
+/// Asks where to export a snapshot. Null if they closed the chooser.
 ///
-/// The application's own chooser, and a seam a test replaces — the same one the
-/// export dialog has, for the same reason: what §Phase 4 specifies about Save As
-/// is what happens to the *answer*, and a widget test should not need a real
-/// directory to exercise it.
+/// The application's own chooser, and a seam a test replaces. A widget test
+/// can exercise replacement confirmation without a real directory.
 typedef SavePathChooser =
     Future<String?> Function(
       BuildContext context, {
@@ -236,8 +242,8 @@ typedef SavePathChooser =
       required String suggestedName,
     });
 
-/// Saves, and deals with whatever comes back — including asking for a new path
-/// and trying again.
+/// Saves, offering Retry or a rescue export on failure. [forcePath] requests
+/// an export directly and leaves the managed session unchanged.
 ///
 /// Every save in the application goes through here, so there is one answer to
 /// "what happens when it fails" rather than one per button.
@@ -247,9 +253,16 @@ Future<SaveOutcome> saveWithDialogs(
   bool forcePath = false,
   SavePathChooser chooseFile = _chooseWithFileChooser,
 }) async {
-  var outcome = forcePath || core.path == null
-      ? await _askAndSave(context, core, chooseFile)
-      : await core.save();
+  if (forcePath) {
+    final exported = await _askAndSave(context, core, chooseFile);
+    if (exported is SaveOutcome_Failed &&
+        exported.failure != SaveFailure.noPath &&
+        context.mounted) {
+      await showSaveFailure(context, exported);
+    }
+    return exported;
+  }
+  var outcome = await core.save();
 
   while (outcome is SaveOutcome_Failed) {
     // `noPath` here can only mean the writer closed the chooser — the one path
@@ -259,7 +272,7 @@ Future<SaveOutcome> saveWithDialogs(
     // Nor `changedOnDisk`. The core refused because the file is not the one it
     // last read, and it pushed the same `FileChangedOnDisk` the watcher would
     // have — so §Phase 4's external-modification prompt is already on its way,
-    // with the three answers that fit ("keep mine", "take theirs", "save as").
+    // with the three answers that fit ("keep mine", "take theirs", "export").
     // A second dialog here would ask a worse version of the same question over
     // the top of it.
     if (outcome.failure == SaveFailure.changedOnDisk) return outcome;
@@ -267,7 +280,18 @@ Future<SaveOutcome> saveWithDialogs(
     final choice = await showSaveFailure(context, outcome);
     if (choice == SaveFailureChoice.cancel) return outcome;
     if (!context.mounted) return outcome;
-    outcome = await _askAndSave(context, core, chooseFile);
+    if (choice == SaveFailureChoice.retry) {
+      outcome = await core.save();
+    } else {
+      final exported = await _askAndSave(context, core, chooseFile);
+      if (exported is SaveOutcome_Failed &&
+          exported.failure != SaveFailure.noPath &&
+          context.mounted) {
+        await showSaveFailure(context, exported);
+      }
+      // A rescue export leaves the library save unresolved and dirty.
+      return outcome;
+    }
   }
   return outcome;
 }
@@ -275,7 +299,7 @@ Future<SaveOutcome> saveWithDialogs(
 /// "There is already a file there." Answered by calling again with
 /// `overwrite: true`, and by nothing else.
 ///
-/// Shared by Save As and by the export dialog, so that replacing a file is one
+/// Shared by Fountain copy and by the export dialog, so that replacing a file is one
 /// question with one wording however the writer arrived at it. It is a
 /// confirmation, not a check: the core has already refused the write, and
 /// declining here simply leaves that refusal standing.
@@ -303,13 +327,11 @@ Future<bool> confirmReplace(BuildContext context, String path) async {
   return replace ?? false;
 }
 
-/// Asks where the script should go, and writes it there.
+/// Asks where to export a snapshot, and writes the copy there.
 ///
 /// The loop is the replace confirmation: the core refuses an occupied
 /// destination, and a writer who declines to replace it is back at the chooser
-/// picking another name rather than out of Save As altogether — which is what
-/// every other Save As on the desktop does, and the only reading of "Cancel"
-/// that does not throw away the intent to save.
+/// picking another name. Closing the chooser cancels the export.
 ///
 /// Only two things leave it: a chosen path that was written (or refused for some
 /// other reason, which [saveWithDialogs] reports), and a closed chooser.
@@ -332,7 +354,7 @@ Future<SaveOutcome> _askAndSave(
       suggestedName: suggested,
     );
     if (path == null || !context.mounted) return _noPath;
-    final outcome = await core.saveAs(path);
+    final outcome = await core.exportFountain(path);
     if (outcome is! SaveOutcome_Failed ||
         outcome.failure != SaveFailure.alreadyExists) {
       return outcome;
@@ -340,7 +362,7 @@ Future<SaveOutcome> _askAndSave(
     if (!context.mounted) return outcome;
     if (await confirmReplace(context, path)) {
       if (!context.mounted) return outcome;
-      return core.saveAs(path, overwrite: true);
+      return core.exportFountain(path, overwrite: true);
     }
     if (!context.mounted) return outcome;
     directory = _parent(path);
@@ -354,8 +376,8 @@ Future<String?> _chooseWithFileChooser(
   required String suggestedName,
 }) => FileChooser.show(
   context,
-  title: 'Save script as',
-  action: 'Save',
+  title: 'Export a Fountain copy',
+  action: 'Export',
   directory: directory,
   suggestedName: suggestedName,
 );

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,7 +10,6 @@ import 'package:slugline/library/backups_dialog.dart';
 import 'package:slugline/theme.dart';
 
 import '../support/fake_core.dart';
-import '../support/pending_file_choice.dart';
 
 const _old = 'Title: Earlier draft\n\nINT. ROOM - DAY\n\nOld words.\n';
 const _backup = BackupView(
@@ -163,7 +161,7 @@ void main() {
       await tester.tap(find.text('View'));
       await tester.pumpAndSettle();
       expect(find.text('Version disappeared'), findsOneWidget);
-      expect(find.text('Open as copy…'), findsNothing);
+      expect(find.text('Open as copy'), findsNothing);
       core.read = Future.value(const BackupReadOutcome.read(source: _old));
       await tester.tap(find.text('View'));
       await tester.pumpAndSettle();
@@ -172,104 +170,29 @@ void main() {
     },
   );
 
-  testWidgets(
-    'canceling the copy chooser leaves the version view and script alone',
-    (tester) async {
-      final core = _Backups();
-      var launched = false;
-      final choice = pendingFileChoice(tester);
-      await _show(
-        tester,
-        core,
-        openCopy: (_) async {
-          launched = true;
-        },
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('View'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Open as copy…'));
-      await tester.pump();
-      choice.complete(null);
-      await tester.pumpAndSettle();
-      expect(find.text(_old), findsOneWidget);
-      expect(core.copies, 0);
-      expect(launched, isFalse);
-      expect(core.path, '/scripts/current.fountain');
-      expect(
-        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-        isNotNull,
-      );
-    },
-  );
-
-  testWidgets(
-    'a refused destination is reported without launching or closing the view',
-    (tester) async {
-      final core = _Backups()
-        ..copyOutcome = const SaveOutcome.failed(
-          failure: SaveFailure.alreadyExists,
-          path: '/scripts/copy.fountain',
-          message: 'Choose a new filename',
-        );
-      var launched = false;
-      final choice = pendingFileChoice(tester);
-      await _show(
-        tester,
-        core,
-        openCopy: (_) async {
-          launched = true;
-        },
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('View'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Open as copy…'));
-      await tester.pump();
-      choice.complete('/scripts/copy.fountain');
-      await tester.pumpAndSettle();
-      expect(find.text('Choose a new filename'), findsOneWidget);
-      expect(find.text(_old), findsOneWidget);
-      expect(launched, isFalse);
-      expect(find.text('Open as copy…'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'launch failure keeps the saved path; retry opens without writing again',
-    (tester) async {
-      final core = _Backups();
-      var launches = 0;
-      final choice = pendingFileChoice(tester);
-      await _show(
-        tester,
-        core,
-        openCopy: (path) async {
-          launches++;
-          if (launches == 1) {
-            throw ProcessException('slugline', [path], 'Launch refused');
-          }
-        },
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('View'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Open as copy…'));
-      await tester.pump();
-      choice.complete('/scripts/copy.fountain');
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('The copy is saved at /scripts/copy.fountain'),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Open saved copy'));
-      await tester.pumpAndSettle();
-      expect(core.copies, 1);
-      expect(launches, 2);
-      expect(find.byType(BackupsDialog), findsNothing);
-      expect(core.path, '/scripts/current.fountain');
-    },
-  );
+  testWidgets('Open as copy hands the captured text to the shell once', (
+    tester,
+  ) async {
+    final core = _Backups();
+    final snapshots = <String>[];
+    await _show(
+      tester,
+      core,
+      openCopy: (source) async => snapshots.add(source),
+    );
+    await tester.tap(find.text('View'));
+    await tester.pumpAndSettle();
+    core.read = Future.value(
+      const BackupReadOutcome.read(source: 'Changed on disk'),
+    );
+    await tester.tap(find.text('Open as copy'));
+    await tester.pumpAndSettle();
+    expect(snapshots, [_old]);
+    expect(find.byType(BackupsDialog), findsNothing);
+    expect(core.copies, 0);
+    expect(core.path, '/scripts/current.fountain');
+    expect(core.commands, isEmpty);
+  });
 
   testWidgets('Escape cannot abandon a version read in flight', (tester) async {
     final read = Completer<BackupReadOutcome>();

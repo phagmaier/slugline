@@ -16,6 +16,7 @@
 // `flutter test` (the CI unit-test step) does not run this; it needs the .so
 // out of the built bundle.
 
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -31,8 +32,18 @@ const proof = 'café 日本 🎬';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  late Directory root;
   setUpAll(() async {
-    await Core.init();
+    root = Directory.systemTemp.createTempSync('slugline-native-bridge-');
+    await Core.init(
+      configDir: '${root.path}/config',
+      dataDir: '${root.path}/data',
+      stateDir: '${root.path}/state',
+    );
+  });
+  tearDownAll(() async {
+    await Core.instance.shutdown();
+    root.deleteSync(recursive: true);
   });
 
   /// A fresh in-memory document with [text] in its first block.

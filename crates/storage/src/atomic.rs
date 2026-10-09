@@ -63,7 +63,7 @@ impl SaveError {
     }
 
     /// Classifies an OS error against the path it happened on.
-    fn from_io(path: &Path, error: &io::Error) -> SaveError {
+    pub(crate) fn from_io(path: &Path, error: &io::Error) -> SaveError {
         // ENOSPC is 28 and EDQUOT is 122 on Linux. `io::ErrorKind` has had
         // `StorageFull` and `QuotaExceeded` since 1.83, and the workspace floor
         // is 1.85, so this raw-number guard is now a fallback the named kinds
@@ -118,6 +118,14 @@ impl std::error::Error for SaveError {}
 /// On success the file at `path` holds exactly `contents` and has reached the
 /// disk. On failure the file at `path` is untouched and no temporary file is
 /// left behind.
+/// Atomic exclusive file publication, used for migration snapshots.
+pub fn save_new_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), SaveError> {
+    prepare_save(path, contents.as_ref(), |_| Ok(()))?
+        .publish_new()
+        .map(drop)
+        .map_err(|e| SaveError::from_io(path, &e))
+}
+
 pub fn save_atomically(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), SaveError> {
     let prepared = prepare_save(path, contents.as_ref(), |_| Ok(()))?;
     prepared

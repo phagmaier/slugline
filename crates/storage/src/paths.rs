@@ -23,6 +23,7 @@ pub struct Paths {
     config: PathBuf,
     data: PathBuf,
     state: PathBuf,
+    library: PathBuf,
 }
 
 impl Paths {
@@ -43,19 +44,27 @@ impl Paths {
                 .state_dir()
                 .unwrap_or_else(|| dirs.data_dir())
                 .to_path_buf(),
+            library: {
+                let user = directories::UserDirs::new()?;
+                user.document_dir()
+                    .unwrap_or(user.home_dir())
+                    .join("Slugline")
+            },
         })
     }
 
-    /// Explicit roots. The bridge's `init(config_dir, state_dir)` takes this
+    /// Explicit roots. The bridge's `init(config_dir, data_dir, state_dir)` takes this
     /// path, and so does every test.
     pub fn at(
         config: impl Into<PathBuf>,
         data: impl Into<PathBuf>,
         state: impl Into<PathBuf>,
     ) -> Paths {
+        let data = data.into();
         Paths {
             config: config.into(),
-            data: data.into(),
+            library: data.join("library"),
+            data,
             state: state.into(),
         }
     }
@@ -84,8 +93,8 @@ impl Paths {
         self.state.join("journal")
     }
 
-    /// `$XDG_STATE_HOME/slugline/backups/` — the default; a preference can move
-    /// it (§Phase 4, "a configurable location").
+    /// The old global backup store, retained as read-only migration input.
+    /// Managed projects write their own `versions/` directory (ADR 0068).
     pub fn backup_dir(&self) -> PathBuf {
         self.state.join("backups")
     }
@@ -94,6 +103,14 @@ impl Paths {
     /// list.
     pub fn library_index(&self) -> PathBuf {
         self.data.join("library.json")
+    }
+
+    pub fn default_library(&self) -> &Path {
+        &self.library
+    }
+
+    pub fn legacy_library_index(&self) -> PathBuf {
+        self.data.join("library-legacy.json")
     }
 
     pub fn preferences(&self) -> PathBuf {

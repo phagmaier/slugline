@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from managed_fixture import create_project
 import shutil
 import signal
 import subprocess
@@ -213,9 +214,8 @@ def launch(source, desktop, record):
             directory.mkdir(mode=0o700)
             suffix = "DIR" if name == "RUNTIME" else "HOME"
             env[f"XDG_{name}_{suffix}"] = str(directory)
-        script = work / ("reference.fountain" if source else "empty.fountain")
         expected = source.read_bytes() if source else b""
-        script.write_bytes(expected)
+        script = create_project(work, "reference" if source else "empty", expected)
         with (work / "process.log").open("w+") as log:
             start = time.monotonic_ns()
             process = subprocess.Popen(

@@ -58,6 +58,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BlockKind dco_decode_box_autoadd_block_kind(dynamic raw);
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw);
+
+  @protected
   CoreEvent dco_decode_box_autoadd_core_event(dynamic raw);
 
   @protected
@@ -169,6 +172,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LayoutLineView dco_decode_layout_line_view(dynamic raw);
 
   @protected
+  LibraryStatus dco_decode_library_status(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_CastedPrimitive_u_64(dynamic raw);
 
   @protected
@@ -238,6 +244,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TitleEntryView> dco_decode_list_title_entry_view(dynamic raw);
 
   @protected
+  MigrationResult dco_decode_migration_result(dynamic raw);
+
+  @protected
   Misspelling dco_decode_misspelling(dynamic raw);
 
   @protected
@@ -266,6 +275,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BlockKind? dco_decode_opt_box_autoadd_block_kind(dynamic raw);
+
+  @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
   DocSelection? dco_decode_opt_box_autoadd_doc_selection(dynamic raw);
@@ -407,6 +419,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BlockKind sse_decode_box_autoadd_block_kind(SseDeserializer deserializer);
 
   @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
+
+  @protected
   CoreEvent sse_decode_box_autoadd_core_event(SseDeserializer deserializer);
 
   @protected
@@ -528,6 +543,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LayoutLineView sse_decode_layout_line_view(SseDeserializer deserializer);
 
   @protected
+  LibraryStatus sse_decode_library_status(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_CastedPrimitive_u_64(SseDeserializer deserializer);
 
   @protected
@@ -619,6 +637,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MigrationResult sse_decode_migration_result(SseDeserializer deserializer);
+
+  @protected
   Misspelling sse_decode_misspelling(SseDeserializer deserializer);
 
   @protected
@@ -653,6 +674,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BlockKind? sse_decode_opt_box_autoadd_block_kind(
     SseDeserializer deserializer,
   );
+
+  @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
   DocSelection? sse_decode_opt_box_autoadd_doc_selection(
@@ -819,6 +843,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     BlockKind self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_core_event(
@@ -998,6 +1025,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_library_status(LibraryStatus self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_CastedPrimitive_u_64(
     List<int> self,
     SseSerializer serializer,
@@ -1127,6 +1157,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_migration_result(
+    MigrationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_misspelling(Misspelling self, SseSerializer serializer);
 
   @protected
@@ -1167,6 +1203,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     BlockKind? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_doc_selection(

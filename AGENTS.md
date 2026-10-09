@@ -245,20 +245,27 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   (ADR 0038). `storage::watch::DiskState` is what a session last knew its file
   to hold, and `write_document` compares it against the file immediately before
   replacing it. Identical bytes written again proceed silently and a file that
-  is gone is recreated; bytes nobody here has seen come back as
+  is gone is refused without recreation (ADR 0068); bytes nobody here has seen come back as
   `SaveFailure::ChangedOnDisk`. Every path that establishes what is in the file
   records a new `DiskState` — open, save, reload, restore, accepted recovery,
-  and the external-change check when it finds the file identical. Save As is
-  exempt: its destination came from a chooser that already asked. The watch
+  and the external-change check when it finds the file identical. Exports use
+  explicit destination/replacement approval; managed saves always
+  validate their root and project identity (ADR 0068). The watch
   failing marks the session `watch_broken`, pushes `ExternalWatchUnavailable`
   once, and the status line says "external changes not watched" for the rest of
   the session.
-- **Save As moves the session; an export copies the text and moves nothing**
-  (ADR 0029). `doc_save_as` rebinds path, journal, watch, backups and library
-  entry; `doc_export_fountain` writes one file and leaves every one of them —
-  and the dirty flag — alone. `doc_save_as` refuses `AlreadyExists` (retry with
-  `overwrite: true`) and `ScriptIsOpen`; the session's own file is the one
-  exception — Save As onto where the script already lives is a save.
+- **Editable scripts are managed projects** (ADR 0068). New and import publish
+  complete portable projects before text entry. Fountain copies preserve exact
+  source bytes; FDX archives raw input. External files never become autosave
+  bindings. Stable identity, name, archive state and user entity pins belong to
+  `project.json`; the central list owns only convenience caches. Rename changes
+  metadata; Duplicate starts an independent identity/history. Save refuses missing
+  roots/files or conflicting metadata, retaining dirty text and journals.
+  Exports copy without moving or cleaning the session and protect all project
+  contents. The compatibility `doc_save_as` accepts only the current own file.
+  Versions live in `versions/`; the old global backup folder is migration input.
+  Explicit legacy recovery migration establishes a protected managed successor
+  before retiring its predecessor; cancellation never consumes the old offer.
 
 ## The Fountain core
 

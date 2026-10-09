@@ -119,10 +119,10 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String source)?  read,TResult Function( String message)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String source,  bool? hasBom)?  read,TResult Function( String message)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BackupReadOutcome_Read() when read != null:
-return read(_that.source);case BackupReadOutcome_Failed() when failed != null:
+return read(_that.source,_that.hasBom);case BackupReadOutcome_Failed() when failed != null:
 return failed(_that.message);case _:
   return orElse();
 
@@ -141,10 +141,10 @@ return failed(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String source)  read,required TResult Function( String message)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String source,  bool? hasBom)  read,required TResult Function( String message)  failed,}) {final _that = this;
 switch (_that) {
 case BackupReadOutcome_Read():
-return read(_that.source);case BackupReadOutcome_Failed():
+return read(_that.source,_that.hasBom);case BackupReadOutcome_Failed():
 return failed(_that.message);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -159,10 +159,10 @@ return failed(_that.message);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String source)?  read,TResult? Function( String message)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String source,  bool? hasBom)?  read,TResult? Function( String message)?  failed,}) {final _that = this;
 switch (_that) {
 case BackupReadOutcome_Read() when read != null:
-return read(_that.source);case BackupReadOutcome_Failed() when failed != null:
+return read(_that.source,_that.hasBom);case BackupReadOutcome_Failed() when failed != null:
 return failed(_that.message);case _:
   return null;
 
@@ -175,10 +175,11 @@ return failed(_that.message);case _:
 
 
 class BackupReadOutcome_Read extends BackupReadOutcome {
-  const BackupReadOutcome_Read({required this.source}): super._();
+  const BackupReadOutcome_Read({required this.source, this.hasBom}): super._();
   
 
  final  String source;
+ final  bool? hasBom;
 
 /// Create a copy of BackupReadOutcome
 /// with the given fields replaced by the non-null parameter values.
@@ -190,16 +191,16 @@ $BackupReadOutcome_ReadCopyWith<BackupReadOutcome_Read> get copyWith => _$Backup
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BackupReadOutcome_Read&&(identical(other.source, source) || other.source == source));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BackupReadOutcome_Read&&(identical(other.source, source) || other.source == source)&&(identical(other.hasBom, hasBom) || other.hasBom == hasBom));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,source);
+int get hashCode => Object.hash(runtimeType,source,hasBom);
 
 @override
 String toString() {
-  return 'BackupReadOutcome.read(source: $source)';
+  return 'BackupReadOutcome.read(source: $source, hasBom: $hasBom)';
 }
 
 
@@ -210,7 +211,7 @@ abstract mixin class $BackupReadOutcome_ReadCopyWith<$Res> implements $BackupRea
   factory $BackupReadOutcome_ReadCopyWith(BackupReadOutcome_Read value, $Res Function(BackupReadOutcome_Read) _then) = _$BackupReadOutcome_ReadCopyWithImpl;
 @useResult
 $Res call({
- String source
+ String source, bool? hasBom
 });
 
 
@@ -227,10 +228,11 @@ class _$BackupReadOutcome_ReadCopyWithImpl<$Res>
 
 /// Create a copy of BackupReadOutcome
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? source = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? source = null,Object? hasBom = freezed,}) {
   return _then(BackupReadOutcome_Read(
 source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
-as String,
+as String,hasBom: freezed == hasBom ? _self.hasBom : hasBom // ignore: cast_nullable_to_non_nullable
+as bool?,
   ));
 }
 

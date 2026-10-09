@@ -1,9 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
-import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/theme.dart';
 import 'package:slugline/typography.dart';
 import 'package:slugline/widgets/escape_dismissible.dart';
@@ -11,11 +8,7 @@ import 'package:slugline/widgets/escape_dismissible.dart';
 /// Previous versions can be read without changing the current script, restored,
 /// or saved to a new file and opened in another window.
 class BackupsDialog extends StatefulWidget {
-  const BackupsDialog({
-    required this.core,
-    this.openCopy = _openCopyWindow,
-    super.key,
-  });
+  const BackupsDialog({required this.core, required this.openCopy, super.key});
 
   final DocumentCore core;
 
@@ -23,11 +16,15 @@ class BackupsDialog extends StatefulWidget {
   final Future<void> Function(String path) openCopy;
 
   /// Returns true only if a backup replaced the current script.
-  static Future<bool> show(BuildContext context, DocumentCore core) async {
+  static Future<bool> show(
+    BuildContext context,
+    DocumentCore core, {
+    required Future<void> Function(String source) openCopy,
+  }) async {
     final restored = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => BackupsDialog(core: core),
+      builder: (context) => BackupsDialog(core: core, openCopy: openCopy),
     );
     return restored ?? false;
   }
@@ -36,17 +33,10 @@ class BackupsDialog extends StatefulWidget {
   State<BackupsDialog> createState() => _BackupsDialogState();
 }
 
-Future<void> _openCopyWindow(String path) async {
-  await Process.start(Platform.resolvedExecutable, [
-    path,
-  ], mode: ProcessStartMode.detached);
-}
-
 class _BackupsDialogState extends State<BackupsDialog> {
   List<BackupView>? _backups;
   BackupView? _viewing;
   String? _source;
-  String? _copyPath;
   String? _error;
   bool _working = false;
 
@@ -106,55 +96,16 @@ class _BackupsDialogState extends State<BackupsDialog> {
       _working = true;
       _error = null;
     });
-    try {
-      if (_copyPath == null) {
-        final original = widget.core.path;
-        final name = original == null
-            ? 'untitled'
-            : File(original).uri.pathSegments.last.replaceFirst(
-                RegExp(r'\.fountain$', caseSensitive: false),
-                '',
-              );
-        final path = await FileChooser.show(
-          context,
-          title: 'Open previous version as a copy',
-          action: 'Save copy',
-          directory: original == null ? null : File(original).parent.path,
-          suggestedName: '$name-copy.fountain',
-        );
-        if (path == null || !mounted) return;
-        final outcome = await widget.core.copyBackup(_source!, path);
-        if (!mounted) return;
-        switch (outcome) {
-          case SaveOutcome_Saved(:final path):
-            _copyPath = path;
-          case SaveOutcome_Failed(:final message):
-            setState(() => _error = message);
-            return;
-          case SaveOutcome_Unchanged():
-            return;
-        }
-      }
-      await widget.openCopy(_copyPath!);
-      if (mounted) Navigator.of(context).pop(false);
-    } on ProcessException catch (error) {
-      if (mounted) {
-        setState(() {
-          _error =
-              'The copy is saved at $_copyPath, but its window could not '
-              'be opened: ${error.message}';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
+    final source = _source;
+    if (source == null) return;
+    Navigator.of(context).pop(false);
+    await widget.openCopy(source);
   }
 
   void _back() {
     setState(() {
       _viewing = null;
       _source = null;
-      _copyPath = null;
       _error = null;
     });
   }
@@ -182,7 +133,7 @@ class _BackupsDialogState extends State<BackupsDialog> {
                 Text(
                   viewing == null
                       ? 'View a version without changing your script, or open it '
-                            'as a copy in another window. Restoring backs up '
+                            'as a new library script. Restoring backs up '
                             'the current version first.'
                       : 'Read-only Fountain text. Open as copy leaves your '
                             'current script untouched.',
@@ -274,9 +225,7 @@ class _BackupsDialogState extends State<BackupsDialog> {
               ),
               FilledButton(
                 onPressed: _working ? null : _copy,
-                child: Text(
-                  _copyPath == null ? 'Open as copy…' : 'Open saved copy',
-                ),
+                child: Text('Open as copy'),
               ),
             ],
             TextButton(

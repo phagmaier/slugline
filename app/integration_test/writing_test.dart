@@ -12,9 +12,9 @@
 // prove is the whole chain at once: keystroke → EditCommand → re-classification →
 // patch → Fountain, and that the Fountain reads back as the scene that was typed.
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'managed_fixture.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -66,8 +66,11 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory scratch;
+  late ManagedFixtures managed;
+  var fixtureNumber = 0;
   setUpAll(() async {
     scratch = Directory.systemTemp.createTempSync('slugline-writing-');
+    managed = ManagedFixtures(scratch);
     await Core.init(
       configDir: '${scratch.path}/config',
       dataDir: '${scratch.path}/data',
@@ -80,10 +83,10 @@ void main() {
   });
 
   Future<EditorController> open(WidgetTester tester, [String? source]) async {
+    final file = managed.path('writing-${fixtureNumber++}.fountain');
+    File(file).writeAsStringSync(source ?? '');
     final controller = EditorController(
-      source == null
-          ? RustDocumentCore.create()
-          : RustDocumentCore.parse(source),
+      (await Core.instance.openDocument(file))!,
     );
     addTearDown(controller.dispose);
     await tester.pumpWidget(
@@ -169,8 +172,8 @@ void main() {
           controller.blocks.map((b) => (b.kind, b.text, b.dual)),
         );
         decoded.close();
-        final file = '${scratch.path}/partial-${selected.length}.fountain';
-        expect(await controller.core.saveAs(file), isA<SaveOutcome_Saved>());
+        final file = controller.core.path!;
+        expect(await controller.core.save(), isA<SaveOutcome_Saved>());
         final bytes = File(file).readAsBytesSync();
         expect(bytes, utf8.encode('\uFEFF$omittedSource'));
         expect(controller.selection, comment);
@@ -181,8 +184,7 @@ void main() {
         controller.redo();
         expect(controller.selection, comment);
         expect(controller.source, omittedSource);
-        final reopenedFile =
-            '${scratch.path}/reopen-${selected.length}.fountain';
+        final reopenedFile = managed.path('reopen-${selected.length}.fountain');
         File(reopenedFile).writeAsBytesSync(bytes);
         final reopenedCore = (await Core.instance.openDocument(reopenedFile))!;
         final reopened = EditorController(reopenedCore);
@@ -580,7 +582,7 @@ void main() {
           'ALICE\nHello.\n\nBOB ^\nGoodbye.\n\n'
           '.An unusual depot\n\n'
           'EXT. ROAD - NIGHT ##\n';
-      final file = File('${scratch.path}/scene-numbering.fountain')
+      final file = File(managed.path('scene-numbering.fountain'))
         ..writeAsStringSync(source);
       var core = (await Core.instance.openDocument(file.path))!;
       var controller = EditorController(core);
@@ -806,9 +808,8 @@ void main() {
       testWidgets(
         'zero printed pages edit save reopen $name pageView=$pageView',
         (tester) async {
-          final file = File(
-            '${scratch.path}/zero-pages-$name-$pageView.fountain',
-          )..writeAsStringSync(source);
+          final file = File(managed.path('zero-pages-$name-$pageView.fountain'))
+            ..writeAsStringSync(source);
           final originalBytes = file.readAsBytesSync();
           var core = (await Core.instance.openDocument(file.path))!;
           addTearDown(() => core.close());
@@ -934,11 +935,17 @@ void main() {
     testWidgets('go to page uses real pagination, pageView=$pageView', (
       tester,
     ) async {
+      // A continuous page target can already be visible in a tall desktop.
+      // Establish an off-screen target before asserting that navigation scrolls.
+      tester.view.physicalSize = const Size(1000, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final source =
           '\uFEFFTitle: Reader notes\r\n\r\n'
           '[[A private opening note.]]\r\n\r\n'
           '${List.generate(150, (line) => 'Action line $line with 🎬.').join('\r\n')}\r\n';
-      final file = File('${scratch.path}/go-to-page-$pageView.fountain')
+      final file = File(managed.path('go-to-page-$pageView.fountain'))
         ..writeAsStringSync(source);
       final bytes = file.readAsBytesSync();
       final core = (await Core.instance.openDocument(file.path))!;
@@ -1054,7 +1061,7 @@ void main() {
     testWidgets(
       'Shift+Enter saves adjacent lines in ${kind.name} and reopens',
       (tester) async {
-        final file = File('${scratch.path}/line-break-${kind.name}.fountain')
+        final file = File(managed.path('line-break-${kind.name}.fountain'))
           ..writeAsStringSync(source);
         final core = (await Core.instance.openDocument(file.path))!;
         final controller = EditorController(core);
@@ -1110,7 +1117,7 @@ void main() {
   testWidgets(
     'palette display and dialog commands preserve native source and persist preferences',
     (tester) async {
-      final file = File('${scratch.path}/palette.fountain')
+      final file = File(managed.path('palette.fountain'))
         ..writeAsStringSync(
           '\uFEFFTitle: Palette\r\n\r\nINT. ROOM - DAY\r\n\r\nDraft **text**.  \r\n',
         );
@@ -1198,14 +1205,13 @@ void main() {
     'keyboard script switching saves the native draft before leaving',
     (tester) async {
       const channel = MethodChannel('slugline/window');
-      final choice = Completer<String?>();
-      final requested = Completer<MethodCall>();
+      var pickers = 0;
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
         call,
-      ) {
+      ) async {
         if (call.method != 'chooseFile') throw MissingPluginException();
-        requested.complete(call);
-        return choice.future;
+        pickers++;
+        return null;
       });
       addTearDown(() {
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -1213,9 +1219,9 @@ void main() {
           null,
         );
       });
-      final alpha = File('${scratch.path}/alpha.fountain')
+      final alpha = File(managed.path('alpha.fountain'))
         ..writeAsStringSync('Original draft.\n');
-      final beta = File('${scratch.path}/beta.fountain')
+      final beta = File(managed.path('beta.fountain'))
         ..writeAsStringSync('Another draft.\n');
       for (final file in [alpha, beta]) {
         final document = await Core.instance.openDocument(file.path);
@@ -1262,7 +1268,7 @@ void main() {
       );
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+      expect(find.text('Save changes to alpha?'), findsOneWidget);
       // Tab traverses the modal's controls; Enter activates Save.
       bool saveFocused() {
         final button = FocusManager.instance.primaryFocus?.context
@@ -1280,14 +1286,18 @@ void main() {
       expect(current().core.path, beta.path);
       expect(alpha.readAsStringSync(), 'Native unsaved words.\n');
       await press(tester, LogicalKeyboardKey.keyN, control: true);
-      final request = await requested.future.timeout(
-        const Duration(seconds: 10),
-      );
-      expect(request.arguments, containsPair('title', 'New script'));
-      final newPath = '${scratch.path}/new.fountain';
-      choice.complete(newPath);
-      await _waitForScript(tester, newPath);
-      expect(current().core.path, newPath);
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while ((find.byType(EditorPage).evaluate().isEmpty ||
+              current().core.path == beta.path) &&
+          DateTime.now().isBefore(deadline)) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      final newPath = current().core.path!;
+      expect(newPath, isNot(beta.path));
+      expect(newPath, startsWith('${scratch.path}/data/library/'));
+      expect(File(newPath).existsSync(), isTrue);
+      expect(pickers, 0);
       await press(tester, LogicalKeyboardKey.keyW, control: true);
       await tester.pumpAndSettle();
       expect(find.byType(LibraryPage), findsOneWidget);
@@ -1567,7 +1577,7 @@ void main() {
         const source =
             'INT. CHECK - DAY\r\n\r\nA river meets another river.\r\n';
         final file = File(
-          '${scratch.path}/find-focus-${control.replaceAll(' ', '-')}.fountain',
+          managed.path('find-focus-${control.replaceAll(' ', '-')}.fountain'),
         )..writeAsStringSync(source);
         final bytes = file.readAsBytesSync();
         final core = (await Core.instance.openDocument(file.path))!;

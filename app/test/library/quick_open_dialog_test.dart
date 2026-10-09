@@ -19,6 +19,8 @@ class _Library implements LibraryCore {
 }
 
 ScriptView _script(int n, {bool missing = false}) => ScriptView(
+  projectId: 'test-project',
+  archived: false,
   id: '$n',
   path: '/scripts/file-$n.fountain',
   title: 'Script $n',
@@ -101,7 +103,7 @@ void main() {
     failure.completeError(StateError('unavailable'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Could not load recent scripts. Browse to open a file.'),
+      find.text('Could not load recent scripts. Import a screenplay copy.'),
       findsOneWidget,
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);

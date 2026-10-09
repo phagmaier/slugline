@@ -14,6 +14,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'managed_fixture.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,10 +35,12 @@ void main() {
 
   late Directory root;
   late Directory scripts;
+  late ManagedFixtures managed;
 
   setUpAll(() async {
     root = await Directory.systemTemp.createTemp('slugline-phase4-');
     scripts = await Directory('${root.path}/scripts').create(recursive: true);
+    managed = ManagedFixtures(root);
     await Core.init(
       configDir: '${root.path}/config',
       dataDir: '${root.path}/data',
@@ -90,6 +93,92 @@ void main() {
     }
   }
 
+  testWidgets(
+    'managed import isolates read-only source through save, versions, export and reopen',
+    (tester) async {
+      const raw =
+          '\uFEFFTitle: Authored Case\r\nX-Unknown: keep  \r\n\r\nINT. IMPORT ROOM - DAY\r\n\r\nOriginal words.  \r\n\r\n/* untouched */\r\n';
+      final original = File(path('outside.fountain'))
+        ..writeAsBytesSync(utf8.encode(raw));
+      final permission = await Process.run('chmod', ['444', original.path]);
+      expect(permission.exitCode, 0);
+      final prepared = await Core.instance.importFountain(original.path);
+      expect(prepared, isA<FdxImported>());
+      final core = (prepared as FdxImported).document;
+      expect(core.path, isNull);
+      expect(await core.commitProject(), isA<SaveOutcome_Saved>());
+      final destination = core.path!;
+      expect(destination, startsWith('${root.path}/data/library/'));
+      expect(File(destination).readAsBytesSync(), utf8.encode(raw));
+      expect(core.undo(), isNull, reason: 'import does not manufacture Undo');
+      final controller = await openEditor(tester, core);
+      controller.moveToDocumentEdge(start: true);
+      controller.insertText('Edited. ');
+      await tester.pump();
+      expect(await core.autosave(), isA<SaveOutcome_Saved>());
+      final expected = core.source();
+      expect(original.readAsBytesSync(), utf8.encode(raw));
+      final backups = await core.backups();
+      expect(backups, isNotEmpty);
+      expect(
+        backups.every(
+          (b) =>
+              b.path.startsWith('${File(destination).parent.path}/versions/'),
+        ),
+        true,
+      );
+      final baseline = backups.firstWhere(
+        (b) =>
+            File(b.path).readAsBytesSync().toString() ==
+            utf8.encode(raw).toString(),
+      );
+      final captured =
+          await core.readBackup(baseline.path) as BackupReadOutcome_Read;
+      expect(captured.source.startsWith('\uFEFF'), true);
+      final versionCopy = (await core.openBackupCopy(captured.source))!;
+      expect(File(versionCopy.path!).readAsBytesSync(), utf8.encode(raw));
+      expect(versionCopy.path, isNot(destination));
+      versionCopy.close();
+      final exported = path('outside-copy.fountain');
+      expect(await core.exportFountain(exported), isA<SaveOutcome_Saved>());
+      expect(File(exported).readAsStringSync(), expected);
+      controller.insertText('Unsaved. ');
+      final entry = (await files.libraryList()).singleWhere(
+        (e) => e.path == destination,
+      );
+      expect(
+        await Core.instance.rename(entry.id, 'Portable label'),
+        isA<SaveOutcome_Saved>(),
+      );
+      final duplicated = (await Core.instance.duplicate(entry.id))!;
+      expect(duplicated.projectId, isNot(entry.projectId));
+      expect(File(duplicated.path).readAsStringSync(), core.source());
+      expect(core.path, destination);
+      expect(core.dirty, true);
+      controller.undo();
+      expect(core.source(), expected);
+      await tester.pumpWidget(const SizedBox.shrink());
+      core.close();
+      final reopened = (await Core.instance.openDocument(destination))!;
+      expect(reopened.source(), expected);
+      reopened.close();
+      expect(await Core.instance.archive(entry.id, true), true);
+      File('${root.path}/data/library.json').deleteSync();
+      final discovered = (await Core.instance.library()).singleWhere(
+        (e) => e.id == entry.id,
+      );
+      expect(discovered.archived, true);
+      expect(discovered.title, 'Portable label');
+      expect(await Core.instance.openDocument(destination), isNull);
+      expect(await Core.instance.archive(entry.id, false), true);
+      final restored = (await Core.instance.openDocument(destination))!;
+      expect(restored.source(), expected);
+      restored.close();
+      expect(original.readAsBytesSync(), utf8.encode(raw));
+      expect((await Core.instance.originCopies(original.path)).length, 1);
+    },
+  );
+
   testWidgets('explicit Save crosses the actual native input queue once', (
     tester,
   ) async {
@@ -100,7 +189,7 @@ void main() {
     ).invokeMethod<void>('flushTextInput');
     const source = 'Before.\n';
     const expected = 'Before. Complete.\n';
-    final file = path('input-queue-save.fountain');
+    final file = managed.path('input-queue-save.fountain');
     File(file).writeAsStringSync(source);
     final core = (await Core.instance.openDocument(file))!;
     addTearDown(core.close);
@@ -133,7 +222,7 @@ void main() {
   testWidgets(
     'typed kind choices save clean bytes and reload source authority',
     (tester) async {
-      final file = path('clean-typed-kinds.fountain');
+      final file = managed.path('clean-typed-kinds.fountain');
       const untouched = '\uFEFF!Untouched.\t  \r\n\r\n';
       File(file).writeAsStringSync('${untouched}Before.\r\n');
       final core = (await Core.instance.openDocument(file))!;
@@ -272,7 +361,7 @@ void main() {
   testWidgets('forced cue extension case survives actual Save and reopen', (
     tester,
   ) async {
-    final file = path('forced-extension-case.fountain');
+    final file = managed.path('forced-extension-case.fountain');
     const source = '\uFEFF!Untouched.\t  \r\n\r\n@MARY\r\nHello.\r\n';
     File(file).writeAsBytesSync(utf8.encode(source));
     final core = (await Core.instance.openDocument(file))!;
@@ -351,12 +440,12 @@ void main() {
   testWidgets('a new script is a real file, and typing into it saves', (
     tester,
   ) async {
-    final file = path('new.fountain');
-    final handle = await files.libraryCreate(path: file);
+    final handle = await files.libraryCreate(path: 'new');
+    final file = files.docPath(handle: handle!)!;
     expect(handle, isNotNull, reason: 'create writes the file immediately');
     expect(File(file).existsSync(), isTrue);
 
-    final core = RustDocumentCore.of(handle!);
+    final core = RustDocumentCore.of(handle);
     addTearDown(core.close);
     final controller = await openEditor(tester, core);
 
@@ -384,7 +473,7 @@ void main() {
       const source =
           'INT. INSTALLATION CHECK - DAY\n\nInstalled command ready.\n';
       const burst = ' Verified through installed association.';
-      final file = path('platform-burst.fountain');
+      final file = managed.path('platform-burst.fountain');
       File(file).writeAsStringSync(source);
       final core = (await Core.instance.openDocument(file))!;
       addTearDown(core.close);
@@ -428,7 +517,7 @@ void main() {
   testWidgets('a save writes atomically and leaves no temp file behind', (
     tester,
   ) async {
-    final file = path('atomic.fountain');
+    final file = managed.path('atomic.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final handle = await files.libraryOpen(path: file);
     final core = RustDocumentCore.of(handle!);
@@ -439,7 +528,7 @@ void main() {
     await tester.pump();
     await core.save();
 
-    final leftovers = scripts
+    final leftovers = Directory(File(file).parent.path)
         .listSync()
         .map((entry) => entry.path)
         .where((name) => name.contains('.tmp-'))
@@ -457,79 +546,84 @@ void main() {
   /// library; what this adds is that the generated binding carries the
   /// distinction — including the `overwrite` argument a Phase 7 dialog has to
   /// pass to replace anything.
-  testWidgets('an export writes a copy and Save As moves the session', (
-    tester,
-  ) async {
-    final file = path('export.fountain');
-    File(file).writeAsStringSync('INT. HOUSE - DAY\n');
-    final handle = await files.libraryOpen(path: file);
-    final core = RustDocumentCore.of(handle!);
-    addTearDown(core.close);
+  testWidgets(
+    'an export preserves the managed session and Save As cannot detach it',
+    (tester) async {
+      final file = managed.path('export.fountain');
+      File(file).writeAsStringSync('INT. HOUSE - DAY\n');
+      final handle = await files.libraryOpen(path: file);
+      final core = RustDocumentCore.of(handle!);
+      addTearDown(core.close);
 
-    final controller = await openEditor(tester, core);
-    controller.insertText('X');
-    await tester.pump();
-    final typed = core.source();
+      final controller = await openEditor(tester, core);
+      controller.insertText('X');
+      await tester.pump();
+      final typed = core.source();
 
-    final copy = path('export-copy.fountain');
-    expect(await core.exportFountain(copy), isA<SaveOutcome_Saved>());
-    expect(File(copy).readAsStringSync(), typed);
-    expect(core.path, file, reason: 'the session did not follow the copy');
-    expect(core.dirty, isTrue, reason: 'a copy is not where this script lives');
-    expect(
-      File(file).readAsStringSync(),
-      'INT. HOUSE - DAY\n',
-      reason: 'and the script itself is still unsaved',
-    );
+      final copy = path('export-copy.fountain');
+      expect(await core.exportFountain(copy), isA<SaveOutcome_Saved>());
+      expect(File(copy).readAsStringSync(), typed);
+      expect(core.path, file, reason: 'the session did not follow the copy');
+      expect(
+        core.dirty,
+        isTrue,
+        reason: 'a copy is not where this script lives',
+      );
+      expect(
+        File(file).readAsStringSync(),
+        'INT. HOUSE - DAY\n',
+        reason: 'and the script itself is still unsaved',
+      );
 
-    // The copy exists now, so exporting there again has to be told to replace it.
-    final refused = await core.exportFountain(copy);
-    expect(refused, isA<SaveOutcome_Failed>());
-    expect((refused as SaveOutcome_Failed).failure, SaveFailure.alreadyExists);
-    expect(
-      await core.exportFountain(copy, overwrite: true),
-      isA<SaveOutcome_Saved>(),
-    );
+      // The copy exists now, so exporting there again has to be told to replace it.
+      final refused = await core.exportFountain(copy);
+      expect(refused, isA<SaveOutcome_Failed>());
+      expect(
+        (refused as SaveOutcome_Failed).failure,
+        SaveFailure.alreadyExists,
+      );
+      expect(
+        await core.exportFountain(copy, overwrite: true),
+        isA<SaveOutcome_Saved>(),
+      );
 
-    // The script being edited is never a destination, however firmly asked.
-    final onto = await core.exportFountain(file, overwrite: true);
-    expect((onto as SaveOutcome_Failed).failure, SaveFailure.scriptIsOpen);
+      // The script being edited is never a destination, however firmly asked.
+      final onto = await core.exportFountain(file, overwrite: true);
+      expect((onto as SaveOutcome_Failed).failure, SaveFailure.scriptIsOpen);
 
-    // Save As answers the same two refusals, and for the same reasons: it
-    // reaches the same atomic replacement through the same chooser.
-    final occupied = path('export-occupied.fountain');
-    File(occupied).writeAsStringSync('Somebody else.\n');
-    final wouldReplace = await core.saveAs(occupied);
-    expect(
-      (wouldReplace as SaveOutcome_Failed).failure,
-      SaveFailure.alreadyExists,
-    );
-    expect(
-      File(occupied).readAsStringSync(),
-      'Somebody else.\n',
-      reason: 'a refused Save As writes nothing',
-    );
-    expect(core.path, file, reason: 'and moves nothing either');
+      // Save As answers the same two refusals, and for the same reasons: it
+      // reaches the same atomic replacement through the same chooser.
+      final occupied = path('export-occupied.fountain');
+      File(occupied).writeAsStringSync('Somebody else.\n');
+      final wouldReplace = await core.exportFountain(occupied);
+      expect(
+        (wouldReplace as SaveOutcome_Failed).failure,
+        SaveFailure.alreadyExists,
+      );
+      expect(
+        File(occupied).readAsStringSync(),
+        'Somebody else.\n',
+        reason: 'a refused Save As writes nothing',
+      );
+      expect(core.path, file, reason: 'and moves nothing either');
 
-    // Save As, by contrast to an export, moves the session onto the file it
-    // writes — and an unoccupied destination needs no confirmation at all.
-    final moved = path('export-moved.fountain');
-    expect(await core.saveAs(moved), isA<SaveOutcome_Saved>());
-    expect(core.path, moved);
-    expect(core.dirty, isFalse);
-    expect(File(moved).readAsStringSync(), typed);
-
-    // Saving again onto the file this session now *is* is a save, not a
-    // replacement, so it is not asked about.
-    expect(await core.saveAs(moved), isA<SaveOutcome_Saved>());
-  });
+      final moved = path('export-moved.fountain');
+      final detached = await core.saveAs(moved) as SaveOutcome_Failed;
+      expect(detached.failure, SaveFailure.libraryDestination);
+      expect(File(moved).existsSync(), isFalse);
+      expect(core.path, file);
+      expect(core.dirty, isTrue);
+      expect(await core.saveAs(file), isA<SaveOutcome_Saved>());
+      expect(File(file).readAsStringSync(), typed);
+    },
+  );
 
   testWidgets('what was typed comes back when the file is opened again', (
     tester,
   ) async {
-    final file = path('roundtrip.fountain');
-    final created = await files.libraryCreate(path: file);
-    final core = RustDocumentCore.of(created!);
+    final created = await files.libraryCreate(path: 'roundtrip');
+    final file = files.docPath(handle: created!)!;
+    final core = RustDocumentCore.of(created);
     final controller = await openEditor(tester, core);
 
     controller.insertText('INT. HOUSE - DAY');
@@ -554,7 +648,7 @@ void main() {
   testWidgets(
     'a read-only file is refused with the reason, and stays as it was',
     (tester) async {
-      final file = path('readonly.fountain');
+      final file = managed.path('readonly.fountain');
       File(file).writeAsStringSync('INT. HOUSE - DAY\n');
       final handle = await files.libraryOpen(path: file);
       final core = RustDocumentCore.of(handle!);
@@ -585,9 +679,9 @@ void main() {
   );
 
   testWidgets('a save leaves a backup that can be restored', (tester) async {
-    final file = path('backups.fountain');
-    final created = await files.libraryCreate(path: file);
-    final core = RustDocumentCore.of(created!);
+    final created = await files.libraryCreate(path: 'backups');
+    final file = files.docPath(handle: created!)!;
+    final core = RustDocumentCore.of(created);
     addTearDown(core.close);
     final controller = await openEditor(tester, core);
 
@@ -621,7 +715,7 @@ void main() {
     testWidgets('restore refreshes the editor, fromView=$fromView', (
       tester,
     ) async {
-      final file = path('restore-refresh-$fromView.fountain');
+      final file = managed.path('restore-refresh-$fromView.fountain');
       const earlier = 'Earlier words.\n';
       File(file).writeAsStringSync(earlier);
       final handle = await files.libraryOpen(path: file);
@@ -683,9 +777,9 @@ void main() {
   testWidgets('the journal grows with typing and is cleared by a save', (
     tester,
   ) async {
-    final file = path('journal.fountain');
-    final created = await files.libraryCreate(path: file);
-    final core = RustDocumentCore.of(created!);
+    final created = await files.libraryCreate(path: 'journal');
+    expect(files.docPath(handle: created!), isNotNull);
+    final core = RustDocumentCore.of(created);
     addTearDown(core.close);
     final controller = await openEditor(tester, core);
 
@@ -708,7 +802,7 @@ void main() {
   testWidgets(
     'a file changed on disk is noticed, with the two facts that decide',
     (tester) async {
-      final file = path('external.fountain');
+      final file = managed.path('external.fountain');
       File(file).writeAsStringSync('INT. HOUSE - DAY\n');
       final handle = await files.libraryOpen(path: file);
       final core = RustDocumentCore.of(handle!);
@@ -737,7 +831,7 @@ void main() {
   testWidgets('a save does not replace an edit made by something else', (
     tester,
   ) async {
-    final file = path('conflict.fountain');
+    final file = managed.path('conflict.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final handle = await files.libraryOpen(path: file);
     final core = RustDocumentCore.of(handle!);
@@ -779,7 +873,7 @@ void main() {
   testWidgets('our own save is not reported as somebody else writing the file', (
     tester,
   ) async {
-    final file = path('own-save.fountain');
+    final file = managed.path('own-save.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final handle = await files.libraryOpen(path: file);
     final core = RustDocumentCore.of(handle!);
@@ -835,7 +929,7 @@ void main() {
   testWidgets(
     'the library lists what has been opened, and remembers a session',
     (tester) async {
-      final file = path('library.fountain');
+      final file = managed.path('library.fountain');
       File(file).writeAsStringSync('INT. HOUSE - DAY\n');
       final handle = await files.libraryOpen(path: file);
       final core = RustDocumentCore.of(handle!);
@@ -868,8 +962,8 @@ void main() {
           .firstWhere((script) => script['path'] == file);
     }
 
-    final quit = path('session-quit.fountain');
-    final putAway = path('session-put-away.fountain');
+    final quit = managed.path('session-quit.fountain');
+    final putAway = managed.path('session-put-away.fountain');
     File(quit).writeAsStringSync('INT. HOUSE - DAY\n');
     File(putAway).writeAsStringSync('INT. HOUSE - DAY\n');
 
@@ -905,7 +999,7 @@ void main() {
   testWidgets('session restore applies the parked row to the editor viewport', (
     tester,
   ) async {
-    final file = path('scroll-restore.fountain');
+    final file = managed.path('scroll-restore.fountain');
     File(file).writeAsStringSync(
       [for (var i = 1; i <= 100; i++) 'Action line $i.\n\n'].join(),
     );
@@ -965,7 +1059,7 @@ void main() {
         for (final entry in await Core.instance.sessionToRestore()) {
           (await Core.instance.openDocument(entry.path))?.close();
         }
-        final file = path('reading-row-$recover.fountain');
+        final file = managed.path('reading-row-$recover.fountain');
         final source =
             '\uFEFF${[for (var i = 1; i <= 200; i++) '!Action line $i.\t  \r\n\r\n'].join()}';
         File(file).writeAsStringSync(source);
@@ -1042,7 +1136,7 @@ void main() {
   testWidgets('a script whose file has gone is shown as missing, not dropped', (
     tester,
   ) async {
-    final file = path('vanishing.fountain');
+    final file = managed.path('vanishing.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final handle = await files.libraryOpen(path: file);
     RustDocumentCore.of(handle!).close();
@@ -1058,7 +1152,7 @@ void main() {
   ) async {
     final index = File('${root.path}/data/library.json');
     expect(index.existsSync(), isTrue);
-    final file = path('cache.fountain');
+    final file = managed.path('cache.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
 
     index.deleteSync();
@@ -1074,7 +1168,7 @@ void main() {
   });
 
   testWidgets('opening the same file twice is one document', (tester) async {
-    final file = path('once.fountain');
+    final file = managed.path('once.fountain');
     File(file).writeAsStringSync('INT. HOUSE - DAY\n');
     final first = await files.libraryOpen(path: file);
     final second = await files.libraryOpen(path: file);

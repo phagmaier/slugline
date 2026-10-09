@@ -240,14 +240,14 @@ editable while the text uses its resolved face; wrapping counts printed width.
 | `Ctrl+O` | Quick-open a library script, or Browse… |
 | `Ctrl+W` | Back to the library |
 | `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | Save as… |
+| `Ctrl+Shift+S` | Export a copy… |
 | `Ctrl+P` | Preview and export… |
 | `Ctrl+,` | Preferences |
 | `Ctrl++`, `Ctrl+-` | Increase or decrease editor text size |
 | `F1` | Keyboard shortcut reference |
 | `F11` | Distraction-free full screen |
 
-New, Open, Import, Back to the library, Save, Save as and Preview are also in
+New, Open, Import, Back to the library, Save, Export a copy and Preview are also in
 the command palette, along with "Previous versions…" and "Title page…".
 Preferences, Spell checking, Keyboard shortcuts, navigator visibility,
 distraction-free mode, page/continuous view and text-size changes are there too.
@@ -262,18 +262,17 @@ attached.
 `Ctrl+O` opens a searchable recent-script list. Type to filter by title or path,
 use `↑` / `↓` to select, and `Enter` to open. The last entry, "Browse…", opens
 the file chooser and remains available even when no scripts match. `Escape`
-closes either chooser without changing the draft. `Ctrl+N` asks where to create
-the new script. Choosing the current script in quick-open keeps its session and
+closes either chooser without changing the draft. `Ctrl+N` creates a script
+in the managed library without a destination chooser. Choosing the current script in quick-open keeps its session and
 undo history.
 
-New, Browse, Import, Save As, Rename and Export use GTK's local file dialog,
-with system bookmarks, search, keyboard navigation and folder creation.
-File dialogs start beside the current script when one is open; otherwise they remember the last
-accepted folder during this launch, falling back to home. Fountain/FDX/PDF/font
-filters have an All files choice. Extensionless save names gain the selected
-format's extension. GTK does not ask about replacement: Save As and Export
-still ask once in Slugline after the core refuses an occupied destination.
-Preferences uses the same dialog for a TrueType font or a backup folder.
+Browse, Import, Export and the font/library preferences use GTK's local file
+dialog with bookmarks, search and folder creation. New writes inside the library;
+Rename edits a display name without moving any file. Extensionless export names
+gain the selected format's extension. Slugline asks once before replacing an
+external destination; managed project contents and open scripts are refused.
+Preferences chooses and reveals the library folder. Previous versions live
+with each project; retention settings still apply.
 
 The library focuses its search field when it opens. Typing filters by title or
 path, `↑` / `↓` selects a row, and `Enter` opens it; a missing file cannot be
@@ -284,22 +283,25 @@ dialog as the back arrow. Input and autosave are held during that action, and
 the current session stays open until the destination has loaded successfully.
 These keys also work in distraction-free mode.
 
-**Import…** opens a file picker showing Fountain (`.fountain`) and Final Draft
-(`.fdx`) together, with optional filters for each format. Quick-open's
-**Browse…** accepts both formats too. A Fountain selection opens the original
-file for editing. An FDX selection decodes an isolated candidate
-before asking to close the current script. Cancelling the chooser, conversion
-warnings or unsaved-changes prompt keeps the current editor untouched; decode
-failure is reported without closing it. An accepted FDX import is a new, unsaved
-Fountain script with no binding to its source FDX. Save asks for a Fountain
-destination, and the source is never watched, autosaved or library-indexed.
+**Import…** and quick-open's **Browse…** accept Fountain and Final Draft together.
+Both create a library copy after explicit confirmation. Fountain retains its exact
+initial bytes; FDX preserves raw input separately and converts into native Fountain.
+Conversion or close cancellation keeps the old draft and source untouched. The
+candidate is stored and journalled before becoming editable. Save and autosave
+write the managed copy, never its external origin. Repeated imports offer opening
+an existing copy or deliberately creating another.
 
-`Ctrl+P` opens the pages as they will print, with PDF, Fountain copy and FDX copy
-exports inside it. **An export is not a Save As.** Each writes a file somewhere
-else. Only Save As makes the writer's session follow it there — after an export the
-script is still the script it was, with its own path, its own journal and its own
-unsaved changes (ADR 0029). The core refuses a destination that is already there
-until it is asked twice, and refuses a script this application has open outright.
+File commands also include Rename script, Duplicate script, Archive script and
+Reveal project folder. Duplicate includes active unsaved text without changing
+its original. Archive requires the current draft's close decision and keeps all
+files; the library's Archived view offers Restore. Bring existing scripts into
+the library selects legacy entries for a resumable, non-destructive copy.
+
+`Ctrl+P` opens printed pages with PDF, Fountain copy and FDX copy exports.
+`Ctrl+Shift+S` exports a Fountain copy. Neither changes the session, dirty flag,
+history, watcher or journal (ADR 0068). Replacement confirmation applies to
+external destinations. All managed contents and open scripts are protected.
+
 FDX copies convert screenplay content, not exact production revisions, locked
 pages, fonts or margins. Review conversion warnings before a copy is written.
 Approval applies only to that document revision: changed content requires a new
@@ -315,11 +317,10 @@ at the top, title page included. It happens once, as the preview opens: changing
 the paper or the preview size afterwards is not a reason to go back there, and
 keeps the sheet at the top of the pane where it is.
 
-`Ctrl+S` on a script that has never been saved asks where to put it. A save that
-fails says why — read-only, no permission, full disk each get their own sentence
-— and offers Save As, blocking, in a dialog that cannot be clicked away. §Phase 4
-requires exactly that, and the reason is that a toast is a thing a writer scrolls
-past.
+`Ctrl+S` saves directly to the managed file. A failure says why and offers Retry
+or Export a copy to rescue text. Export leaves the draft dirty; close still needs
+Save, Discard or Cancel. Missing configured libraries and missing project scripts
+are reported and never silently recreated.
 
 Saving by hand is a habit, not a requirement: autosave writes two seconds after
 you stop typing and every thirty seconds while you do not, and every edit in
@@ -335,13 +336,10 @@ saving the script.
 
 Open “Previous versions…” from the overflow menu or command palette. **View**
 shows selectable, read-only Fountain text, including the title page and literal
-markup; **Back** returns to the list. **Open as copy…** asks for a new filename,
-saves the exact viewed text and opens it in a separate Slugline window. Existing
-files and open scripts are refused: choose another name, rather than replacing
-them. The original script, unsaved edits and crash record stay where they were.
-If the new window cannot start, the dialog names the saved copy and offers
-**Open saved copy** to retry without writing it again. **Restore** remains the
-way to replace the current script, after backing up its current text first.
+markup; **Back** returns to the list. **Open as copy** hands the exact viewed text
+to the shell, resolves the current draft, then creates an independent managed
+project. Cancelling the close decision writes nothing. **Restore** replaces the
+current script after backing up its current text first.
 
 Retention combines the newest N versions, the newest version in each UTC-hour
 bucket across the current hour and the previous 23 hours, and M daily versions.

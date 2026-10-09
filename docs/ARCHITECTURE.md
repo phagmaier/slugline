@@ -19,7 +19,7 @@ together with `Cargo.toml` when adding a crate or an edge.
 | [document](../crates/document/) | Identity and history: `BlockId`, `Block`, `Document`, `EditCommand`, undo, find/replace, Enter/Tab tables | `fountain` (ADR 0008, ADR 0011) |
 | [layout](../crates/layout/) | Pagination engine; incremental repagination by checkpoint | `document`, `fountain` (ADR 0022, ADR 0049) |
 | [render_pdf](../crates/render_pdf/) | PDF bytes: subsetter, sfnt writer, object writer, SHA-256 | `layout`, `fountain` (ADR 0032) |
-| [storage](../crates/storage/) | Atomic save, crash journal, backups, preferences, library index | `document` (ADR 0013) |
+| [storage](../crates/storage/) | Managed projects, atomic save, crash journal, versions, preferences, cache | `document` (ADR 0013) |
 | [spell](../crates/spell/) | Pure Hunspell-compatible checker over immutable snapshots | Nothing (ADR 0036) |
 | [bridge](../crates/bridge/) | Actor thread and the API surface under `src/api/`; generated Dart is `app/lib/src/rust/` | All (ADR 0009) |
 | [app](../app/) | Editor, keyboard workflow, preview, export, navigator, library | The bridge only; Dart never re-derives screenplay semantics (ADR 0018) |
@@ -38,14 +38,19 @@ together with `Cargo.toml` when adding a crate or an edge.
 - **Pagination:** `doc_paginate` runs the engine as an async snapshot job.
   Preview and PDF share the paginated snapshot and resolved emphasis runs;
   the renderer makes no layout decisions (ADR 0045, ADR 0049).
-- **Export:** an export copies text elsewhere and moves nothing; Save As
-  rebinds the session. Both refuse `AlreadyExists` and `ScriptIsOpen`
-  (ADR 0029).
+- **Managed library:** `project.rs` owns stable IDs, portable metadata, shallow
+  discovery, staged publication and project-local versions. The v2 central index
+  is a convenience cache. Explicit imports/migration capture and copy external
+  bytes before adoption; external paths never become autosave bindings (ADR 0068).
+- **Export:** a snapshot copy moves nothing, requires replacement approval and
+  protects all managed contents. Ctrl+Shift+S exports Fountain. The compatibility
+  Save As API accepts only the session's own file (ADR 0029, ADR 0068).
 - **FDX import:** decode and validate the native semantic boundaries on a worker,
   then construct an isolated dirty document on the actor. Its full initial
   outcome is journalled against the normal untitled blank base, without an undo
   entry. Warn before adoption; cancellation leaves the old
-  editor and FDX source untouched. FDX export is an immutable copy with
+  editor and FDX source untouched. Commit the complete managed project and
+  checkpoint its exact base before exposing the editor. FDX export is an immutable copy with
   revision-bound conversion approval, never a native save (ADR 0055).
 
 ## Working here

@@ -59,8 +59,10 @@ Invariants:
 - The tree is formatter-clean including generated bindings: run `dart
   format` on the Dart you touch. The lockfile belongs to Flutter 3.44.8;
   restore it unless bumping deliberately.
-- FDX remains Rust-owned conversion: import adopts an isolated unsaved Fountain
-  candidate only after warnings and close confirmation. Cancel/failure closes
+- Import adopts a committed managed project only after copy confirmation,
+  conversion warnings and the current draft's close decision. Rust owns capture,
+  publication and project paths; no uncommitted candidate becomes editable
+  (ADR 0068). FDX remains Rust-owned conversion. Cancel/failure closes
   only the candidate. Export is a copy with revision-bound warning approval,
   shared replacement confirmation and no open-script overwrite (ADR 0055).
 - `linux/runner/my_application.cc` disposes the engine in
@@ -82,6 +84,6 @@ shutdown changes or a Flutter upgrade, run `tools/check_clean_close.py` from
 the root under Xvfb against the relevant bundle. Build only if needed for that
 check or reproduction. Release/packaging work waits for the final release task.
 
-Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060, 0061. Full rules in
+Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060, 0061, 0068. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes only
 when their invariants or pointers change.

@@ -27,6 +27,7 @@ pub mod journal;
 pub mod library;
 pub mod paths;
 pub mod prefs;
+pub mod project;
 pub mod watch;
 
 #[cfg(test)]

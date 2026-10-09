@@ -66,6 +66,11 @@ class EditorPage extends StatefulWidget {
     this.onClosed,
     this.onNewScript,
     this.onOpenScript,
+    this.onVersionCopy,
+    this.onRenameScript,
+    this.onDuplicateScript,
+    this.onArchiveScript,
+    this.onRevealProject,
     this.onImport,
     this.onSaved,
     this.title,
@@ -106,6 +111,11 @@ class EditorPage extends StatefulWidget {
   final Future<void> Function()? onClosed;
   final Future<void> Function()? onNewScript;
   final Future<void> Function()? onOpenScript;
+  final Future<void> Function(String source)? onVersionCopy;
+  final Future<void> Function()? onRenameScript,
+      onDuplicateScript,
+      onArchiveScript,
+      onRevealProject;
   final Future<void> Function()? onImport;
 
   /// A save this page ran wrote the file. Save As is the one that gives the
@@ -455,7 +465,11 @@ class EditorPageState extends State<EditorPage> {
 
   Future<void> _showBackups() => withModal(() async {
     final controller = widget.controller;
-    final restored = await BackupsDialog.show(context, controller.core);
+    final restored = await BackupsDialog.show(
+      context,
+      controller.core,
+      openCopy: widget.onVersionCopy ?? (_) async {},
+    );
     if (!restored || !mounted || widget.controller != controller) return;
     controller.reloadFromCore();
     widget.saveStatus?.refresh();
@@ -952,6 +966,38 @@ class EditorPageState extends State<EditorPage> {
                                           ? null
                                           : () => unawaited(_showGoToPage()),
                                       save: () => unawaited(save()),
+                                      renameScript:
+                                          widget.onRenameScript == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onRenameScript!,
+                                              ),
+                                            ),
+                                      duplicateScript:
+                                          widget.onDuplicateScript == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onDuplicateScript!,
+                                              ),
+                                            ),
+                                      archiveScript:
+                                          widget.onArchiveScript == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onArchiveScript!,
+                                              ),
+                                            ),
+                                      revealProject:
+                                          widget.onRevealProject == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onRevealProject!,
+                                              ),
+                                            ),
                                       saveAs: () =>
                                           unawaited(save(forcePath: true)),
                                       showBackups: () =>
@@ -1262,7 +1308,7 @@ class _OverflowMenu extends StatelessWidget {
       onSelected: (action) => action(),
       itemBuilder: (context) => [
         _entry(context, 'Save', 'Ctrl+S', onSave),
-        _entry(context, 'Save as…', 'Ctrl+Shift+S', onSaveAs),
+        _entry(context, 'Export a copy…', 'Ctrl+Shift+S', onSaveAs),
         _entry(context, 'Previous versions…', '', onBackups),
         if (onImport case final action?) _entry(context, 'Import…', '', action),
         const PopupMenuDivider(),

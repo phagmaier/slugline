@@ -14,6 +14,7 @@
 // write the library index, journals or backups of the person running it.
 
 import 'dart:io';
+import 'managed_fixture.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' hide PageView;
@@ -55,10 +56,12 @@ void main() {
 
   late Directory root;
   late Directory scripts;
+  late ManagedFixtures managed;
 
   setUpAll(() async {
     root = await Directory.systemTemp.createTemp('slugline-phase7-');
     scripts = await Directory('${root.path}/scripts').create(recursive: true);
+    managed = ManagedFixtures(root);
     await Core.init(
       configDir: '${root.path}/config',
       dataDir: '${root.path}/data',
@@ -75,7 +78,7 @@ void main() {
 
   /// Opens a script through the library, the way the application does.
   Future<(DocumentCore, ScreenplayOutput)> open(String name) async {
-    final file = File(path(name));
+    final file = File(managed.path(name));
     await file.writeAsString(_script);
     final handle = await files.libraryOpen(path: file.path);
     expect(handle, isNotNull, reason: 'the script opens');
@@ -130,9 +133,9 @@ void main() {
     expect('/Type /Page /Parent'.allMatches(text).length, 2);
 
     // ADR 0029: an export copies and the session stays where it is.
-    expect(core.path, path('export.fountain'));
+    expect(core.path, managed.path('export.fountain'));
     expect(core.dirty, isFalse);
-    expect(await File(path('export.fountain')).readAsString(), _script);
+    expect(await File(managed.path('export.fountain')).readAsString(), _script);
   });
 
   testWidgets(
@@ -140,7 +143,7 @@ void main() {
     (tester) async {
       const source =
           'INT. OMIT - DAY #12A#\n\n@McCLANE\nSECRET CAFÉ.\n\n@Partner ^\nSecret reply.\n\n/* nested /* kept */ note */\n\nEXT. KEEP - NIGHT #13#\n\nVisible ending.\n';
-      final file = File(path('omitted-native.fountain'))
+      final file = File(managed.path('omitted-native.fountain'))
         ..writeAsStringSync(source);
       final core = (await Core.instance.openDocument(file.path))!;
       final controller = EditorController(core);
@@ -255,7 +258,7 @@ void main() {
           '.int. office - day\n\n@**McCLANE**\n$speech\n\n'
           '@_éßMcClane_${dual ? ' ^' : ''}\n$speech\n\n'
           'ORDINARY (on radio)\nAn ordinary cue still uses capitals.\n';
-      final file = File(path('forced-case-$dual.fountain'))
+      final file = File(managed.path('forced-case-$dual.fountain'))
         ..writeAsStringSync(text);
       final bytes = file.readAsBytesSync();
       final core = (await Core.instance.openDocument(file.path))!;
@@ -472,7 +475,7 @@ void main() {
       final saved = await core.save();
       expect(saved, isA<SaveOutcome_Saved>());
       expect(
-        await File(path('titled.fountain')).readAsString(),
+        await File(managed.path('titled.fountain')).readAsString(),
         contains('Draft date: 26 July 2026'),
       );
 
@@ -587,11 +590,17 @@ void main() {
         isTrue,
         reason: 'undo cannot turn an unsaved import into a saved file',
       );
-      final savedPath = path('incoming.fountain');
-      expect(await core.saveAs(savedPath), isA<SaveOutcome_Saved>());
+      expect(await core.commitProject(), isA<SaveOutcome_Saved>());
+      final savedPath = core.path!;
       expect(core.path, savedPath);
       expect(core.dirty, isFalse);
       expect(await source.readAsString(), xml);
+      expect(
+        File(
+          '${File(savedPath).parent.path}/imports/source.fdx',
+        ).readAsBytesSync(),
+        source.readAsBytesSync(),
+      );
       final reopened = RustDocumentCore.parse(
         await File(savedPath).readAsString(),
       );
@@ -659,11 +668,17 @@ void main() {
       expect(titleValues, contains('Interchange Trial'));
       expect(titleValues, contains('Agent Fixture'));
       expect(titleValues, contains('nobody@example.invalid'));
-      final savedPath = path('fade-in-import.fountain');
-      expect(await core.saveAs(savedPath), isA<SaveOutcome_Saved>());
+      expect(await core.commitProject(), isA<SaveOutcome_Saved>());
+      final savedPath = core.path!;
       expect(core.path, savedPath);
       expect(core.dirty, isFalse);
       expect(await fixture.readAsBytes(), original);
+      expect(
+        File(
+          '${File(savedPath).parent.path}/imports/source.fdx',
+        ).readAsBytesSync(),
+        original,
+      );
       final reopened = RustDocumentCore.parse(
         await File(savedPath).readAsString(),
       );
@@ -701,7 +716,7 @@ void main() {
       expect((result as FdxImportFailed).message, isNotEmpty);
       expect(core.source(), source);
       expect(core.dirty, isTrue);
-      expect(core.path, path('fdx-failure-current.fountain'));
+      expect(core.path, managed.path('fdx-failure-current.fountain'));
       expect(core.journalState, journal);
       expect(await broken.readAsString(), malformed);
     },
@@ -746,7 +761,7 @@ void main() {
         SaveFailure.scriptIsOpen,
       );
       expect(await File(core.path!).readAsString(), _script);
-      expect(core.path, path('fdx-copy-current.fountain'));
+      expect(core.path, managed.path('fdx-copy-current.fountain'));
       expect(core.dirty, isTrue);
       expect(core.source(), source);
       expect(core.journalState, journal);
@@ -855,7 +870,7 @@ void main() {
   testWidgets('native preview and PDF export follow the heading preference', (
     tester,
   ) async {
-    final source = File(path('presentation.fountain'));
+    final source = File(managed.path('presentation.fountain'));
     const text = 'INT. LIBRARY - DAY\n\nHe reads *quietly*.\n';
     await source.writeAsString(text);
     final handle = await files.libraryOpen(path: source.path);
@@ -977,7 +992,7 @@ void main() {
   ) async {
     // Long enough for a second page, and with no digit of its own: any `1.` or
     // `2.` that comes back out of the PDF is a page number.
-    final source = File(path('numbering.fountain'));
+    final source = File(managed.path('numbering.fountain'));
     const line = 'George crosses the room again.';
     final text = '${List.filled(40, line).join('\n\n')}\n';
     await source.writeAsString(text);
@@ -1084,7 +1099,8 @@ void main() {
           'BRICK\n'
           '(interrupting)\n'
           '~Right words overlap the other speaker.\n';
-      final source = File(path('dual.fountain'))..writeAsStringSync(text);
+      final source = File(managed.path('dual.fountain'))
+        ..writeAsStringSync(text);
       final core = (await Core.instance.openDocument(source.path))!;
       addTearDown(core.close);
       final controller = EditorController(core);
@@ -1236,7 +1252,7 @@ void main() {
           '${List.generate(150, (line) => 'Action line $line with 🎬.').join('\r\n')}'
           '\r\n\r\n[[An aside that prints nothing.]]\r\n\r\n'
           'The last paragraph.\r\n';
-      final file = File(path('opens-at-$titled.fountain'))
+      final file = File(managed.path('opens-at-$titled.fountain'))
         ..writeAsStringSync(text);
       final bytes = file.readAsBytesSync();
       final core = (await Core.instance.openDocument(file.path))!;

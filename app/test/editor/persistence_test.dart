@@ -41,7 +41,7 @@ void main() {
       (SaveFailure.permissionDenied, 'No permission'),
       (SaveFailure.noSuchDirectory, 'not there'),
     ]) {
-      testWidgets('$failure says "$expected" and offers Save as', (
+      testWidgets('$failure says "$expected" and offers Export a copy', (
         tester,
       ) async {
         SaveFailureChoice? choice;
@@ -74,10 +74,10 @@ void main() {
         expect(find.textContaining('/scripts/heat.fountain'), findsWidgets);
 
         // Every failure offers the escape hatch.
-        expect(find.text('Save as…'), findsOneWidget);
-        await tester.tap(find.text('Save as…'));
+        expect(find.text('Export a copy…'), findsOneWidget);
+        await tester.tap(find.text('Export a copy…'));
         await tester.pumpAndSettle();
-        expect(choice, SaveFailureChoice.saveAs);
+        expect(choice, SaveFailureChoice.exportCopy);
       });
     }
 
@@ -180,7 +180,7 @@ void main() {
 
       // The first attempt was refused by the core, and the writer is being
       // asked rather than told.
-      expect(core.saveAsCalls, [('/scripts/other.fountain', false)]);
+      expect(core.exportAttempts, [('/scripts/other.fountain', false)]);
       expect(find.text('There is already a file there'), findsOneWidget);
       expect(find.textContaining('cannot be undone'), findsOneWidget);
 
@@ -188,12 +188,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        core.saveAsCalls,
+        core.exportAttempts,
         [('/scripts/other.fountain', false), ('/scripts/other.fountain', true)],
         reason: 'replacing is the same call said again, explicitly',
       );
       expect(saved(), isA<SaveOutcome_Saved>());
-      expect(core.filePath, '/scripts/other.fountain');
+      expect(core.filePath, '/scripts/heat.fountain');
     });
 
     testWidgets('declining goes back to the chooser and writes nothing', (
@@ -214,13 +214,14 @@ void main() {
       // No `overwrite: true` was ever sent, so the occupied file was never
       // written — and the writer ended up somewhere else rather than out of
       // Save As altogether.
-      expect(core.saveAsCalls, [
+      expect(core.exportAttempts, [
         ('/scripts/other.fountain', false),
         ('/scripts/new.fountain', false),
       ]);
-      expect(core.saves.map((save) => save.$1), ['/scripts/new.fountain']);
+      expect(core.saves, isEmpty);
+      expect(core.exportAttempts.last, ('/scripts/new.fountain', false));
       expect(saved(), isA<SaveOutcome_Saved>());
-      expect(core.filePath, '/scripts/new.fountain');
+      expect(core.filePath, '/scripts/heat.fountain');
     });
 
     testWidgets('closing the chooser at the replace question saves nothing', (
@@ -352,7 +353,7 @@ void main() {
 
       expect(find.text('Keep mine'), findsOneWidget);
       expect(find.text('Take theirs'), findsOneWidget);
-      expect(find.text('Save as…'), findsOneWidget);
+      expect(find.text('Export a copy…'), findsOneWidget);
       // The one that loses work says so.
       expect(
         find.textContaining('discards your unsaved changes'),
@@ -552,6 +553,8 @@ void main() {
     // journal at exactly that name, which is where the offer's records went.
     group('the session restore and an undecided offer', () {
       ScriptView script(String path) => ScriptView(
+        projectId: 'test-project',
+        archived: false,
         id: path,
         path: path,
         title: path,

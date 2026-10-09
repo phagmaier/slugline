@@ -10,9 +10,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'files.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `load_preferences`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `unprotected`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
+// These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `active_root`, `begin`, `commit_project`, `commit_saved_page_count`, `create_candidate`, `degraded`, `entry_path`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `initial_outcome`, `load_preferences`, `migrate_history`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `prepare_import`, `rebind`, `recovery_for`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `storage_failed`, `unprotected`, `update_saved_page_count`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `Restart`, `SavedPagination`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
 /// them.
@@ -49,48 +49,57 @@ Future<void> shutdown() => RustLib.instance.api.crateApiFilesShutdown();
 Future<List<ScriptView>> libraryList() =>
     RustLib.instance.api.crateApiFilesLibraryList();
 
-/// §6's `library_open`. Reads the file and hands back a document.
-///
-/// Opening a file that is already open returns the handle it is already open
-/// under. Two documents over one file would be two undo histories racing to
-/// overwrite each other.
-///
-/// The check below is an optimisation, not the guarantee: the read between it
-/// and the open is off the actor, so two concurrent opens of one path can both
-/// miss it. [`open_source`] makes the same check again where it is atomic with
-/// the insert, and that is the one that holds.
+LibraryStatus libraryStatus() =>
+    RustLib.instance.api.crateApiFilesLibraryStatus();
+
+/// Public open only accepts a validated project in the active root.
 Future<DocumentHandle?> libraryOpen({required String path}) =>
     RustLib.instance.api.crateApiFilesLibraryOpen(path: path);
 
-/// §6's `library_create`, with Phase 10's useful first-run template.
-///
-/// The file is written immediately, and the handle only comes back if it was:
-/// "create" that leaves nothing on disk is a promise the library index would
-/// then be holding a broken pointer to.
+/// Create inside the library. The argument is a display name, never a destination.
 Future<DocumentHandle?> libraryCreate({required String path}) =>
     RustLib.instance.api.crateApiFilesLibraryCreate(path: path);
 
-/// §6's `library_rename`. Moves the file and follows it.
+/// Rename display metadata only. Stable paths keep journal, history and row keys.
 Future<SaveOutcome> libraryRename({
   required String id,
   required String newPath,
 }) => RustLib.instance.api.crateApiFilesLibraryRename(id: id, newPath: newPath);
 
-/// §6's `library_duplicate`. Copies the file beside itself and adds the copy.
+/// Capture unsaved active bytes, or closed saved bytes; never copy version/reference files.
 Future<ScriptView?> libraryDuplicate({required String id}) =>
     RustLib.instance.api.crateApiFilesLibraryDuplicate(id: id);
 
-/// §6's `library_remove`. Forgets the script, and deletes the file only if asked.
-///
-/// The two are separate on purpose (§Phase 4 lists "remove-from-library" and
-/// "delete-file" as different commands). Removing from the library is
-/// reversible by opening the file again; deleting is not, which is why it is a
-/// different word in the UI and a different argument here.
+/// Compatibility name: removal is reversible archive; delete_file is ignored.
 Future<bool> libraryRemove({required String id, required bool deleteFile}) =>
     RustLib.instance.api.crateApiFilesLibraryRemove(
       id: id,
       deleteFile: deleteFile,
     );
+
+Future<bool> libraryArchive({
+  required String id,
+  required bool archived,
+  DocumentHandle? resolvedHandle,
+}) => RustLib.instance.api.crateApiFilesLibraryArchive(
+  id: id,
+  archived: archived,
+  resolvedHandle: resolvedHandle,
+);
+
+Future<bool> libraryRepair({required String id}) =>
+    RustLib.instance.api.crateApiFilesLibraryRepair(id: id);
+
+/// Rescue readable bytes from damaged/future metadata without opening a mutable session.
+Future<SaveOutcome> libraryRescue({
+  required String id,
+  required String path,
+  required bool overwrite,
+}) => RustLib.instance.api.crateApiFilesLibraryRescue(
+  id: id,
+  path: path,
+  overwrite: overwrite,
+);
 
 /// §6's `session_restore`: the scripts that were open when the application last
 /// exited, with the scroll position each was at.
@@ -415,6 +424,33 @@ Future<RecoveryOutcome> recoveryAccept({required String journalPath}) =>
 Future<bool> recoveryDiscard({required String journalPath}) =>
     RustLib.instance.api.crateApiFilesRecoveryDiscard(journalPath: journalPath);
 
+/// Capture an external Fountain once. Nothing is published until commit.
+Future<FdxImportOutcome> docPrepareImport({required String path}) =>
+    RustLib.instance.api.crateApiFilesDocPrepareImport(path: path);
+
+/// Durable publication followed by adoption, without replacing Document or history.
+Future<SaveOutcome> docCommitProject({required DocumentHandle handle}) =>
+    RustLib.instance.api.crateApiFilesDocCommitProject(handle: handle);
+
+/// Origin matches are choices, never implicit synchronization or content identity.
+Future<List<ScriptView>> libraryOriginCopies({required String path}) =>
+    RustLib.instance.api.crateApiFilesLibraryOriginCopies(path: path);
+
+Future<List<ScriptView>> libraryLegacy() =>
+    RustLib.instance.api.crateApiFilesLibraryLegacy();
+
+/// Explicit selective migration. Durable per-project markers make retries idempotent.
+Future<MigrationResult> libraryMigrate({required String id}) =>
+    RustLib.instance.api.crateApiFilesLibraryMigrate(id: id);
+
+Future<DocumentHandle?> backupOpenCopy({
+  required DocumentHandle handle,
+  required String source,
+}) => RustLib.instance.api.crateApiFilesBackupOpenCopy(
+  handle: handle,
+  source: source,
+);
+
 PreferencesView prefsGet() => RustLib.instance.api.crateApiFilesPrefsGet();
 
 Future<bool> prefsSet({required PreferencesView preferences}) =>
@@ -424,7 +460,7 @@ Future<bool> prefsSet({required PreferencesView preferences}) =>
 sealed class BackupReadOutcome with _$BackupReadOutcome {
   const BackupReadOutcome._();
 
-  const factory BackupReadOutcome.read({required String source}) =
+  const factory BackupReadOutcome.read({required String source, bool? hasBom}) =
       BackupReadOutcome_Read;
   const factory BackupReadOutcome.failed({required String message}) =
       BackupReadOutcome_Failed;
@@ -481,6 +517,58 @@ sealed class FdxImportOutcome with _$FdxImportOutcome {
       FdxImportOutcome_Failed;
 }
 
+class LibraryStatus {
+  final String path;
+  final String? error;
+  final int legacyCount;
+
+  const LibraryStatus({
+    required this.path,
+    this.error,
+    required this.legacyCount,
+  });
+
+  @override
+  int get hashCode => path.hashCode ^ error.hashCode ^ legacyCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryStatus &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          error == other.error &&
+          legacyCount == other.legacyCount;
+}
+
+class MigrationResult {
+  final String id;
+  final ScriptView? project;
+  final bool complete;
+  final String message;
+
+  const MigrationResult({
+    required this.id,
+    this.project,
+    required this.complete,
+    required this.message,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ project.hashCode ^ complete.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationResult &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          project == other.project &&
+          complete == other.complete &&
+          message == other.message;
+}
+
 /// §6's preferences, through Phase 10.
 class PreferencesView {
   final bool autosaveEnabled;
@@ -500,6 +588,7 @@ class PreferencesView {
   final int autosaveIdleMs;
   final int autosaveIntervalMs;
   final String? backupDir;
+  final String? libraryDir;
   final int backupKeepVersions;
   final int backupKeepDays;
 
@@ -521,6 +610,7 @@ class PreferencesView {
     required this.autosaveIdleMs,
     required this.autosaveIntervalMs,
     this.backupDir,
+    this.libraryDir,
     required this.backupKeepVersions,
     required this.backupKeepDays,
   });
@@ -544,6 +634,7 @@ class PreferencesView {
       autosaveIdleMs.hashCode ^
       autosaveIntervalMs.hashCode ^
       backupDir.hashCode ^
+      libraryDir.hashCode ^
       backupKeepVersions.hashCode ^
       backupKeepDays.hashCode;
 
@@ -569,6 +660,7 @@ class PreferencesView {
           autosaveIdleMs == other.autosaveIdleMs &&
           autosaveIntervalMs == other.autosaveIntervalMs &&
           backupDir == other.backupDir &&
+          libraryDir == other.libraryDir &&
           backupKeepVersions == other.backupKeepVersions &&
           backupKeepDays == other.backupKeepDays;
 }
@@ -641,7 +733,7 @@ sealed class RecoveryOutcome with _$RecoveryOutcome {
   /// Replayed and open, but not journalled: the old journal was kept, so the
   /// recovered text is still durable, and nothing typed from here is.
   ///
-  /// `message` names the reason. The correct advice is Save As somewhere the
+  /// `message` names the reason. The correct advice is Export a copy somewhere the
   /// state directory's problem does not apply, or relaunch — the offer will
   /// still be there.
   const factory RecoveryOutcome.degraded({
@@ -656,13 +748,13 @@ sealed class RecoveryOutcome with _$RecoveryOutcome {
 
 /// Why a write did not happen. One variant per message §Phase 4 asks for.
 enum SaveFailure {
-  /// The file is read-only. Offer Save As.
+  /// The file is read-only. Offer Export a copy.
   readOnly,
 
-  /// The directory will not take the file. Offer Save As.
+  /// The directory will not take the file. Offer Export a copy.
   permissionDenied,
 
-  /// The filesystem is full, or the user is over quota. Offer Save As.
+  /// The filesystem is full, or the user is over quota. Offer Export a copy.
   noSpace,
 
   /// The directory does not exist.
@@ -699,6 +791,7 @@ enum SaveFailure {
   /// emitted with it. "Keep mine" answers it by calling
   /// [`doc_accept_disk_state`], and the next save writes.
   changedOnDisk,
+  libraryDestination,
 }
 
 @freezed
@@ -746,6 +839,10 @@ class ScriptView {
   final bool missing;
   final bool open;
   final int scrollRow;
+  final String projectId;
+  final bool archived;
+  final String? problem;
+  final String? migrationStatus;
 
   const ScriptView({
     required this.id,
@@ -757,6 +854,10 @@ class ScriptView {
     required this.missing,
     required this.open,
     required this.scrollRow,
+    required this.projectId,
+    required this.archived,
+    this.problem,
+    this.migrationStatus,
   });
 
   @override
@@ -769,7 +870,11 @@ class ScriptView {
       pageCount.hashCode ^
       missing.hashCode ^
       open.hashCode ^
-      scrollRow.hashCode;
+      scrollRow.hashCode ^
+      projectId.hashCode ^
+      archived.hashCode ^
+      problem.hashCode ^
+      migrationStatus.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -784,5 +889,9 @@ class ScriptView {
           pageCount == other.pageCount &&
           missing == other.missing &&
           open == other.open &&
-          scrollRow == other.scrollRow;
+          scrollRow == other.scrollRow &&
+          projectId == other.projectId &&
+          archived == other.archived &&
+          problem == other.problem &&
+          migrationStatus == other.migrationStatus;
 }

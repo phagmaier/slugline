@@ -27,8 +27,8 @@ class QuickOpenDialog extends StatefulWidget {
     if (chosen != _Browse.choose || !context.mounted) return null;
     return FileChooser.show(
       context,
-      title: 'Open script',
-      action: 'Open',
+      title: 'Import screenplay',
+      action: 'Import',
       mustExist: true,
       directory: directory,
       screenplayFiles: true,
@@ -61,15 +61,23 @@ class _QuickOpenDialogState extends State<QuickOpenDialog> {
       final scripts = await widget.core.library();
       if (!mounted) return;
       setState(() {
-        _scripts = scripts.where((script) => !script.missing).toList()
-          ..sort((a, b) => b.modifiedMillis.compareTo(a.modifiedMillis));
+        _scripts =
+            scripts
+                .where(
+                  (script) =>
+                      !script.missing &&
+                      !script.archived &&
+                      script.problem == null,
+                )
+                .toList()
+              ..sort((a, b) => b.modifiedMillis.compareTo(a.modifiedMillis));
         _loading = false;
       });
     } catch (_) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Could not load recent scripts. Browse to open a file.';
+          _error = 'Could not load recent scripts. Import a screenplay copy.';
         });
       }
     }

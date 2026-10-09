@@ -1,7 +1,8 @@
 //! Rolling backups: recent versions, hourly snapshots and daily history.
 //!
-//! A backup is a whole copy of the script, written beside nothing, in
-//! `$XDG_STATE_HOME/slugline/backups/<script-id>/<unix-millis>.fountain`. Whole
+//! Managed versions are whole copies under the project's `versions/` directory.
+//! The old `$XDG_STATE_HOME/slugline/backups/<script-id>/` remains migration input.
+//! Snapshot names are `<unix-millis>.fountain`. Whole
 //! copies rather than diffs because a diff chain is only as good as its weakest
 //! link and this is the thing that exists for when something has gone wrong. A
 //! feature-length script is half a megabyte; ten of them is five.
@@ -85,6 +86,17 @@ pub struct Written {
 
 /// Where one script's copies live.
 pub fn directory(root: &Path, script: &Path) -> PathBuf {
+    // Managed projects own their version store. `root` remains legacy input.
+    if script
+        .file_name()
+        .is_some_and(|name| name == crate::project::SCRIPT)
+    {
+        if let Some(parent) = script.parent() {
+            if crate::project::folder_id(parent).is_some() {
+                return parent.join("versions");
+            }
+        }
+    }
     root.join(script_id(script))
 }
 

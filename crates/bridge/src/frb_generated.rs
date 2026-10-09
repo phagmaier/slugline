@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1028086234;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 888085593;
 
 // Section: executor
 
@@ -77,6 +77,45 @@ fn wire__crate__api__files__backup_copy_impl(
                     (move || async move {
                         let output_ok = Result::<_, ()>::Ok(
                             crate::api::files::backup_copy(api_handle, api_source, api_path).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__files__backup_open_copy_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "backup_open_copy",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_source = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::backup_open_copy(api_handle, api_source).await,
                         )?;
                         Ok(output_ok)
                     })()
@@ -474,6 +513,44 @@ fn wire__crate__api__doc__doc_close_impl(
                 })?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__files__doc_commit_project_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "doc_commit_project",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::doc_commit_project(api_handle).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -1243,6 +1320,44 @@ fn wire__crate__api__files__doc_path_impl(
         },
     )
 }
+fn wire__crate__api__files__doc_prepare_import_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "doc_prepare_import",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::doc_prepare_import(api_path).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__doc__doc_redo_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1927,6 +2042,52 @@ fn wire__crate__api__lifecycle__init_app_impl(
         },
     )
 }
+fn wire__crate__api__files__library_archive_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_archive",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            let api_archived = <bool>::sse_decode(&mut deserializer);
+            let api_resolved_handle =
+                <Option<crate::api::doc::DocumentHandle>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::library_archive(
+                                api_id,
+                                api_archived,
+                                api_resolved_handle,
+                            )
+                            .await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__files__library_create_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2002,6 +2163,42 @@ fn wire__crate__api__files__library_duplicate_impl(
         },
     )
 }
+fn wire__crate__api__files__library_legacy_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_legacy",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok =
+                            Result::<_, ()>::Ok(crate::api::files::library_legacy().await)?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__files__library_list_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2030,6 +2227,43 @@ fn wire__crate__api__files__library_list_impl(
                     (move || async move {
                         let output_ok =
                             Result::<_, ()>::Ok(crate::api::files::library_list().await)?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__files__library_migrate_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_migrate",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok =
+                            Result::<_, ()>::Ok(crate::api::files::library_migrate(api_id).await)?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2067,6 +2301,44 @@ fn wire__crate__api__files__library_open_impl(
                     (move || async move {
                         let output_ok =
                             Result::<_, ()>::Ok(crate::api::files::library_open(api_path).await)?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__files__library_origin_copies_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_origin_copies",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::library_origin_copies(api_path).await,
+                        )?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2150,6 +2422,113 @@ fn wire__crate__api__files__library_rename_impl(
                     .await,
                 )
             }
+        },
+    )
+}
+fn wire__crate__api__files__library_repair_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_repair",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok =
+                            Result::<_, ()>::Ok(crate::api::files::library_repair(api_id).await)?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__files__library_rescue_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_rescue",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_overwrite = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::files::library_rescue(api_id, api_path, api_overwrite)
+                                .await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__files__library_status_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "library_status",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::files::library_status())?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -2772,7 +3151,11 @@ impl SseDecode for crate::api::files::BackupReadOutcome {
         match tag_ {
             0 => {
                 let mut var_source = <String>::sse_decode(deserializer);
-                return crate::api::files::BackupReadOutcome::Read { source: var_source };
+                let mut var_hasBom = <Option<bool>>::sse_decode(deserializer);
+                return crate::api::files::BackupReadOutcome::Read {
+                    source: var_source,
+                    has_bom: var_hasBom,
+                };
             }
             1 => {
                 let mut var_message = <String>::sse_decode(deserializer);
@@ -3311,6 +3694,20 @@ impl SseDecode for crate::api::layout::LayoutLineView {
     }
 }
 
+impl SseDecode for crate::api::files::LibraryStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        let mut var_legacyCount = <u32>::sse_decode(deserializer);
+        return crate::api::files::LibraryStatus {
+            path: var_path,
+            error: var_error,
+            legacy_count: var_legacyCount,
+        };
+    }
+}
+
 impl SseDecode for Vec<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3595,6 +3992,22 @@ impl SseDecode for Vec<crate::api::doc::TitleEntryView> {
     }
 }
 
+impl SseDecode for crate::api::files::MigrationResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_project = <Option<crate::api::files::ScriptView>>::sse_decode(deserializer);
+        let mut var_complete = <bool>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        return crate::api::files::MigrationResult {
+            id: var_id,
+            project: var_project,
+            complete: var_complete,
+            message: var_message,
+        };
+    }
+}
+
 impl SseDecode for crate::api::spell::Misspelling {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3732,6 +4145,17 @@ impl SseDecode for Option<crate::api::doc::BlockKind> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::doc::BlockKind>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<bool>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -3962,6 +4386,7 @@ impl SseDecode for crate::api::files::PreferencesView {
         let mut var_autosaveIdleMs = <u64>::sse_decode(deserializer);
         let mut var_autosaveIntervalMs = <u64>::sse_decode(deserializer);
         let mut var_backupDir = <Option<String>>::sse_decode(deserializer);
+        let mut var_libraryDir = <Option<String>>::sse_decode(deserializer);
         let mut var_backupKeepVersions = <u32>::sse_decode(deserializer);
         let mut var_backupKeepDays = <u32>::sse_decode(deserializer);
         return crate::api::files::PreferencesView {
@@ -3982,6 +4407,7 @@ impl SseDecode for crate::api::files::PreferencesView {
             autosave_idle_ms: var_autosaveIdleMs,
             autosave_interval_ms: var_autosaveIntervalMs,
             backup_dir: var_backupDir,
+            library_dir: var_libraryDir,
             backup_keep_versions: var_backupKeepVersions,
             backup_keep_days: var_backupKeepDays,
         };
@@ -4071,6 +4497,7 @@ impl SseDecode for crate::api::files::SaveFailure {
             7 => crate::api::files::SaveFailure::AlreadyExists,
             8 => crate::api::files::SaveFailure::ScriptIsOpen,
             9 => crate::api::files::SaveFailure::ChangedOnDisk,
+            10 => crate::api::files::SaveFailure::LibraryDestination,
             _ => unreachable!("Invalid variant for SaveFailure: {}", inner),
         };
     }
@@ -4152,6 +4579,10 @@ impl SseDecode for crate::api::files::ScriptView {
         let mut var_missing = <bool>::sse_decode(deserializer);
         let mut var_open = <bool>::sse_decode(deserializer);
         let mut var_scrollRow = <u32>::sse_decode(deserializer);
+        let mut var_projectId = <String>::sse_decode(deserializer);
+        let mut var_archived = <bool>::sse_decode(deserializer);
+        let mut var_problem = <Option<String>>::sse_decode(deserializer);
+        let mut var_migrationStatus = <Option<String>>::sse_decode(deserializer);
         return crate::api::files::ScriptView {
             id: var_id,
             path: var_path,
@@ -4162,6 +4593,10 @@ impl SseDecode for crate::api::files::ScriptView {
             missing: var_missing,
             open: var_open,
             scroll_row: var_scrollRow,
+            project_id: var_projectId,
+            archived: var_archived,
+            problem: var_problem,
+            migration_status: var_migrationStatus,
         };
     }
 }
@@ -4292,42 +4727,53 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__files__backup_copy_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__files__backup_read_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__files__backup_restore_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__files__backups_list_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__events__core_events_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__files__doc_accept_disk_state_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__files__doc_autosave_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__files__doc_export_fdx_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__files__doc_export_fountain_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__files__doc_export_pdf_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__files__doc_external_change_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__files__doc_import_fdx_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__layout__doc_paginate_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__lifecycle__init_app_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__files__session_park_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__spell__spell_add_personal_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__spell__spell_add_project_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__spell__spell_check_block_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__spell__spell_configure_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__spell__spell_suggest_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__files__backup_open_copy_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__files__backup_read_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__files__backup_restore_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__files__backups_list_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__events__core_events_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__files__doc_accept_disk_state_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__files__doc_autosave_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__files__doc_commit_project_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__files__doc_export_fdx_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__files__doc_export_fountain_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__files__doc_export_pdf_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__files__doc_external_change_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__files__doc_import_fdx_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__layout__doc_paginate_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__files__doc_prepare_import_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__lifecycle__init_app_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__files__library_archive_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__files__library_legacy_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__files__library_migrate_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
+        65 => {
+            wire__crate__api__files__library_origin_copies_impl(port, ptr, rust_vec_len, data_len)
+        }
+        66 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__files__library_repair_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__files__library_rescue_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__files__session_park_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__spell__spell_add_personal_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__spell__spell_add_project_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__spell__spell_check_block_impl(port, ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__spell__spell_configure_impl(port, ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__spell__spell_suggest_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4340,45 +4786,46 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        7 => wire__crate__api__doc__doc_apply_impl(ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__doc__doc_block_count_impl(ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__doc__doc_blocks_impl(ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__doc__doc_character_suggestion_impl(ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__doc__doc_close_impl(ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__doc__doc_complete_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__files__doc_dirty_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__doc__doc_enter_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__doc__doc_extract_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__doc__doc_find_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__doc__doc_format_selection_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__files__doc_journal_state_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__doc__doc_line_break_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__doc__doc_navigator_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__doc__doc_new_impl(ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__doc__doc_number_scenes_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__doc__doc_omit_scene_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__doc__doc_omit_selection_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__doc__doc_parse_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__doc__doc_paste_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__files__doc_path_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__doc__doc_redo_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__doc__doc_remove_scene_numbers_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__doc__doc_replace_all_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__doc__doc_restore_omitted_impl(ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__doc__doc_set_title_entry_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__doc__doc_set_title_field_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__doc__doc_title_page_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__files__doc_watch_state_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__spell__spell_ignore_all_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__spell__spell_ignore_once_impl(ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__spell__spell_status_impl(ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__doc__doc_apply_impl(ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__doc__doc_block_count_impl(ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__doc__doc_blocks_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__doc__doc_character_suggestion_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__doc__doc_close_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__doc__doc_complete_impl(ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__files__doc_dirty_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__doc__doc_enter_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__doc__doc_extract_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__doc__doc_find_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__doc__doc_format_selection_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__files__doc_journal_state_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__doc__doc_line_break_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__doc__doc_navigator_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__doc__doc_new_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__doc__doc_number_scenes_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__doc__doc_omit_scene_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__doc__doc_omit_selection_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__doc__doc_parse_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__doc__doc_paste_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__files__doc_path_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__doc__doc_redo_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__doc__doc_remove_scene_numbers_impl(ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__doc__doc_replace_all_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__doc__doc_restore_omitted_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__doc__doc_set_title_entry_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__doc__doc_set_title_field_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__doc__doc_title_page_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__files__doc_watch_state_impl(ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__files__library_status_impl(ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__spell__spell_ignore_all_impl(ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__spell__spell_ignore_once_impl(ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__spell__spell_status_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4389,9 +4836,12 @@ fn pde_ffi_dispatcher_sync_impl(
 impl flutter_rust_bridge::IntoDart for crate::api::files::BackupReadOutcome {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
-            crate::api::files::BackupReadOutcome::Read { source } => {
-                [0.into_dart(), source.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::files::BackupReadOutcome::Read { source, has_bom } => [
+                0.into_dart(),
+                source.into_into_dart().into_dart(),
+                has_bom.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::files::BackupReadOutcome::Failed { message } => {
                 [1.into_dart(), message.into_into_dart().into_dart()].into_dart()
             }
@@ -5025,6 +5475,51 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::LayoutLineView>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::files::LibraryStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.path.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
+            self.legacy_count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::files::LibraryStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::files::LibraryStatus>
+    for crate::api::files::LibraryStatus
+{
+    fn into_into_dart(self) -> crate::api::files::LibraryStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::files::MigrationResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.project.into_into_dart().into_dart(),
+            self.complete.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::files::MigrationResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::files::MigrationResult>
+    for crate::api::files::MigrationResult
+{
+    fn into_into_dart(self) -> crate::api::files::MigrationResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::spell::Misspelling {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -5316,6 +5811,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::PreferencesView {
             self.autosave_idle_ms.into_into_dart().into_dart(),
             self.autosave_interval_ms.into_into_dart().into_dart(),
             self.backup_dir.into_into_dart().into_dart(),
+            self.library_dir.into_into_dart().into_dart(),
             self.backup_keep_versions.into_into_dart().into_dart(),
             self.backup_keep_days.into_into_dart().into_dart(),
         ]
@@ -5405,6 +5901,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::SaveFailure {
             Self::AlreadyExists => 7.into_dart(),
             Self::ScriptIsOpen => 8.into_dart(),
             Self::ChangedOnDisk => 9.into_dart(),
+            Self::LibraryDestination => 10.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -5522,6 +6019,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::files::ScriptView {
             self.missing.into_into_dart().into_dart(),
             self.open.into_into_dart().into_dart(),
             self.scroll_row.into_into_dart().into_dart(),
+            self.project_id.into_into_dart().into_dart(),
+            self.archived.into_into_dart().into_dart(),
+            self.problem.into_into_dart().into_dart(),
+            self.migration_status.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5677,9 +6178,10 @@ impl SseEncode for crate::api::files::BackupReadOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         match self {
-            crate::api::files::BackupReadOutcome::Read { source } => {
+            crate::api::files::BackupReadOutcome::Read { source, has_bom } => {
                 <i32>::sse_encode(0, serializer);
                 <String>::sse_encode(source, serializer);
+                <Option<bool>>::sse_encode(has_bom, serializer);
             }
             crate::api::files::BackupReadOutcome::Failed { message } => {
                 <i32>::sse_encode(1, serializer);
@@ -6117,6 +6619,15 @@ impl SseEncode for crate::api::layout::LayoutLineView {
     }
 }
 
+impl SseEncode for crate::api::files::LibraryStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.path, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
+        <u32>::sse_encode(self.legacy_count, serializer);
+    }
+}
+
 impl SseEncode for Vec<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6347,6 +6858,16 @@ impl SseEncode for Vec<crate::api::doc::TitleEntryView> {
     }
 }
 
+impl SseEncode for crate::api::files::MigrationResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <Option<crate::api::files::ScriptView>>::sse_encode(self.project, serializer);
+        <bool>::sse_encode(self.complete, serializer);
+        <String>::sse_encode(self.message, serializer);
+    }
+}
+
 impl SseEncode for crate::api::spell::Misspelling {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6444,6 +6965,16 @@ impl SseEncode for Option<crate::api::doc::BlockKind> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::doc::BlockKind>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <bool>::sse_encode(value, serializer);
         }
     }
 }
@@ -6631,6 +7162,7 @@ impl SseEncode for crate::api::files::PreferencesView {
         <u64>::sse_encode(self.autosave_idle_ms, serializer);
         <u64>::sse_encode(self.autosave_interval_ms, serializer);
         <Option<String>>::sse_encode(self.backup_dir, serializer);
+        <Option<String>>::sse_encode(self.library_dir, serializer);
         <u32>::sse_encode(self.backup_keep_versions, serializer);
         <u32>::sse_encode(self.backup_keep_days, serializer);
     }
@@ -6703,6 +7235,7 @@ impl SseEncode for crate::api::files::SaveFailure {
                 crate::api::files::SaveFailure::AlreadyExists => 7,
                 crate::api::files::SaveFailure::ScriptIsOpen => 8,
                 crate::api::files::SaveFailure::ChangedOnDisk => 9,
+                crate::api::files::SaveFailure::LibraryDestination => 10,
                 _ => {
                     unimplemented!("");
                 }
@@ -6785,6 +7318,10 @@ impl SseEncode for crate::api::files::ScriptView {
         <bool>::sse_encode(self.missing, serializer);
         <bool>::sse_encode(self.open, serializer);
         <u32>::sse_encode(self.scroll_row, serializer);
+        <String>::sse_encode(self.project_id, serializer);
+        <bool>::sse_encode(self.archived, serializer);
+        <Option<String>>::sse_encode(self.problem, serializer);
+        <Option<String>>::sse_encode(self.migration_status, serializer);
     }
 }
 

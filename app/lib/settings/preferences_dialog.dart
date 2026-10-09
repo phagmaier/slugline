@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:slugline/core/core.dart';
 import 'package:slugline/identity.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/reveal_folder.dart';
 import 'package:slugline/theme.dart';
 
 /// Phase 10's single settings surface.
@@ -14,20 +15,26 @@ class PreferencesDialog extends StatefulWidget {
   const PreferencesDialog({
     required this.preferences,
     required this.spelling,
+    this.libraryPath,
     super.key,
   });
 
   final PreferencesView preferences;
+  final String? libraryPath;
   final SpellStatus spelling;
 
   static Future<PreferencesView?> show(
     BuildContext context, {
     required PreferencesView preferences,
+    String? libraryPath,
     required SpellStatus spelling,
   }) => showDialog<PreferencesView>(
     context: context,
-    builder: (context) =>
-        PreferencesDialog(preferences: preferences, spelling: spelling),
+    builder: (context) => PreferencesDialog(
+      preferences: preferences,
+      libraryPath: libraryPath,
+      spelling: spelling,
+    ),
   );
 
   @override
@@ -61,8 +68,8 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
   late final TextEditingController _font = TextEditingController(
     text: widget.preferences.pdfFontPath ?? '',
   );
-  late final TextEditingController _backup = TextEditingController(
-    text: widget.preferences.backupDir ?? '',
+  late final TextEditingController _library = TextEditingController(
+    text: widget.preferences.libraryDir ?? widget.libraryPath ?? '',
   );
   late final TextEditingController _versions = TextEditingController(
     text: '${widget.preferences.backupKeepVersions}',
@@ -76,7 +83,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
     _idle.dispose();
     _interval.dispose();
     _font.dispose();
-    _backup.dispose();
+    _library.dispose();
     _versions.dispose();
     _days.dispose();
     super.dispose();
@@ -93,16 +100,16 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
     if (path != null && mounted) setState(() => _font.text = path);
   }
 
-  Future<void> _chooseBackupDirectory() async {
-    final current = _backup.text.trim();
+  Future<void> _chooseLibraryDirectory() async {
+    final current = _library.text.trim();
     final path = await FileChooser.show(
       context,
-      title: 'Choose backup location',
+      title: 'Choose library folder',
       action: 'Use this folder',
       directory: current.isEmpty ? null : current,
       selectDirectory: true,
     );
-    if (path != null && mounted) setState(() => _backup.text = path);
+    if (path != null && mounted) setState(() => _library.text = path);
   }
 
   void _save() {
@@ -110,7 +117,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
     final intervalMs = (_number(_interval.text, 30, min: 1, max: 3600) * 1000)
         .round();
     final font = _font.text.trim();
-    final backup = _backup.text.trim();
+    final backup = _library.text.trim();
     Navigator.of(context).pop(
       PreferencesView(
         autosaveEnabled: _autosave,
@@ -129,7 +136,12 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
         pageView: _pageView,
         autosaveIdleMs: idleMs,
         autosaveIntervalMs: intervalMs,
-        backupDir: backup.isEmpty ? null : backup,
+        backupDir: widget.preferences.backupDir,
+        libraryDir:
+            backup.isEmpty ||
+                backup == (widget.preferences.libraryDir ?? widget.libraryPath)
+            ? widget.preferences.libraryDir
+            : backup,
         backupKeepVersions: _integer(_versions.text, 10, min: 1, max: 100),
         backupKeepDays: _integer(_days.text, 7, min: 1, max: 3650),
       ),
@@ -421,19 +433,28 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                       ),
                     ),
                   const Divider(height: 32),
-                  _heading(context, 'Backups'),
+                  _heading(context, 'Library and previous versions'),
                   TextField(
-                    key: const ValueKey('backup location preference'),
-                    controller: _backup,
+                    key: const ValueKey('library location preference'),
+                    controller: _library,
                     decoration: InputDecoration(
-                      labelText: 'Backup location',
-                      hintText: 'Default $applicationName state directory',
+                      labelText: 'Library folder',
+                      hintText:
+                          'Documents/Slugline (created on first New or Import)',
                       suffixIcon: IconButton(
-                        tooltip: 'Choose backup folder',
-                        onPressed: _chooseBackupDirectory,
+                        tooltip: 'Choose library folder',
+                        onPressed: _chooseLibraryDirectory,
                         icon: const Icon(Icons.folder_open),
                       ),
                     ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => revealFolder(context, _library.text),
+                    icon: const Icon(Icons.folder_outlined),
+                    label: const Text('Reveal library folder'),
+                  ),
+                  const Text(
+                    'Choosing another folder switches libraries and leaves existing projects in place. Previous versions live inside each project.',
                   ),
                   const SizedBox(height: 12),
                   Row(

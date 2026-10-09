@@ -6,20 +6,14 @@ import 'package:flutter/services.dart';
 
 import 'package:slugline/core/core.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/reveal_folder.dart';
+import 'package:slugline/library/save_dialogs.dart';
+import 'package:slugline/library/name_dialog.dart';
+import 'package:slugline/src/rust/api/files.dart' as files;
 import 'package:slugline/library/quick_open_dialog.dart';
 import 'package:slugline/theme.dart';
 
-/// §Phase 4's library: create, open, rename, duplicate, remove, delete, and the
-/// recent list.
-///
-/// The list is a **cache** and behaves like one. A script that is not in it can
-/// still be opened, by path; a script in it whose file has gone is shown as
-/// missing rather than dropped, because a drive that is not mounted this morning
-/// is not a script the writer threw away.
-///
-/// Remove and Delete are two commands, and the difference is the whole reason
-/// the index is only a cache: removing forgets a row, deleting destroys a file.
-/// They are not next to each other in the menu, and only one of them asks twice.
+/// Directory-backed scripts, including explicit import, archive and migration.
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
     required this.core,
@@ -53,6 +47,7 @@ class _LibraryPageState extends State<LibraryPage> {
   final Map<String, GlobalKey> _rowKeys = {};
   int _highlighted = 0;
   bool _choosing = false;
+  bool _archived = false;
   _LibrarySort _sort = _LibrarySort.recent;
 
   @override
@@ -87,15 +82,14 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _newScript() async {
-    await _choose(
-      () => FileChooser.show(
-        context,
-        title: 'New script',
-        action: 'Create',
-        suggestedName: 'untitled.fountain',
-      ),
-      accept: widget.onCreate,
-    );
+    if (_choosing || widget.onCreate == null) return;
+    _choosing = true;
+    try {
+      await widget.onCreate!('Untitled');
+      if (mounted) await _refresh();
+    } finally {
+      _choosing = false;
+    }
   }
 
   Future<void> _openScript() async {
@@ -151,23 +145,17 @@ class _LibraryPageState extends State<LibraryPage> {
     final visible = _visible(_scripts ?? const []);
     if (visible.isEmpty) return;
     final script = visible[_highlighted.clamp(0, visible.length - 1)];
-    if (!script.missing) unawaited(_choose(() async => script.path));
+    if (!script.missing && script.problem == null && !script.archived) {
+      unawaited(_choose(() async => script.path));
+    }
   }
 
   Future<void> _rename(ScriptView script) async {
-    final path = await FileChooser.show(
-      context,
-      title: 'Rename script',
-      action: 'Rename',
-      directory: _parent(script.path),
-      suggestedName: _basename(script.path),
-    );
-    if (path == null || !mounted) return;
-    final outcome = await widget.core.rename(script.id, path);
+    final chosen = await renameProjectDialog(context, script.title);
+    if (chosen == null || !mounted) return;
+    final outcome = await widget.core.rename(script.id, chosen);
     if (!mounted) return;
-    if (outcome case SaveOutcome_Failed(:final message)) {
-      _say(message);
-    }
+    if (outcome case SaveOutcome_Failed(:final message)) _say(message);
     await _refresh();
   }
 
@@ -180,39 +168,157 @@ class _LibraryPageState extends State<LibraryPage> {
     await _refresh();
   }
 
-  Future<void> _remove(ScriptView script, {required bool deleteFile}) async {
-    if (deleteFile) {
-      // The only irreversible thing on this page. It says the file name, it says
-      // the word "permanently", and its confirming button is destructive-red.
-      final confirmed =
-          await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              icon: const Icon(Icons.delete_forever_outlined),
-              title: Text('Delete ${_basename(script.path)}?'),
-              content: Text(
-                'This permanently deletes ${script.path}. '
-                'Backups of it are kept, but the file itself is gone.',
+  Future<void> _archive(ScriptView script) async {
+    final core = widget.core;
+    final success = core is ManagedLibraryCore
+        ? await (core as ManagedLibraryCore).archive(
+            script.id,
+            !script.archived,
+          )
+        : await core.forget(script.id, deleteFile: false);
+    if (!mounted) return;
+    if (!success) {
+      _say('Could not update archive metadata. The script remains unchanged.');
+    }
+    await _refresh();
+  }
+
+  Future<void> _repair(ScriptView script) async {
+    final core = widget.core;
+    if (core is! ManagedLibraryCore) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Repair project metadata?'),
+        content: const Text(
+          'The damaged sidecar is preserved beside the repaired file. Screenplay bytes stay unchanged.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Repair'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    if (!await (core as ManagedLibraryCore).repair(script.id) && mounted) {
+      _say('This project needs manual repair or a newer Slugline version.');
+    }
+    if (mounted) await _refresh();
+  }
+
+  Future<void> _rescue(ScriptView script) async {
+    final path = await FileChooser.show(
+      context,
+      title: 'Export saved screenplay text',
+      action: 'Export',
+      suggestedName: '${script.title}.fountain',
+    );
+    if (path == null || !mounted) return;
+    var outcome = await files.libraryRescue(
+      id: script.id,
+      path: path,
+      overwrite: false,
+    );
+    if (outcome is SaveOutcome_Failed &&
+        outcome.failure == SaveFailure.alreadyExists &&
+        mounted) {
+      if (await confirmReplace(context, path)) {
+        outcome = await files.libraryRescue(
+          id: script.id,
+          path: path,
+          overwrite: true,
+        );
+      }
+    }
+    if (outcome case SaveOutcome_Failed(:final message)) {
+      if (mounted) _say(message);
+    }
+  }
+
+  Future<void> _migrate() async {
+    final core = widget.core;
+    if (_choosing || core is! ManagedLibraryCore) return;
+    final entries = await (core as ManagedLibraryCore).legacyScripts();
+    if (!mounted) return;
+    final selected = <String>{};
+    final statuses = <String, String>{};
+    var busy = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          return PopScope(
+            canPop: !busy,
+            child: AlertDialog(
+              title: const Text('Bring existing scripts into the library'),
+              content: SizedBox(
+                width: 580,
+                height: 320,
+                child: Column(
+                  children: [
+                    const Text(
+                      'Copies are created in the library. Original files and old version folders remain unchanged. Resolve pending recovery first.',
+                    ),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          for (final entry in entries)
+                            CheckboxListTile(
+                              title: Text(entry.title),
+                              subtitle: Text(statuses[entry.id] ?? entry.path),
+                              value: selected.contains(entry.id),
+                              onChanged: busy
+                                  ? null
+                                  : (value) {
+                                      update(() {
+                                        if (value == true) {
+                                          selected.add(entry.id);
+                                        } else {
+                                          selected.remove(entry.id);
+                                        }
+                                      });
+                                    },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
+                  onPressed: busy ? null : () => Navigator.pop(context),
+                  child: const Text('Decide later'),
                 ),
                 FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: context.colours.danger,
-                  ),
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Delete'),
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (selected.isEmpty) return;
+                          update(() => busy = true);
+                          for (final id in selected.toList()) {
+                            final result = await (core as ManagedLibraryCore)
+                                .migrate(id);
+                            if (!context.mounted) break;
+                            update(() => statuses[id] = result.message);
+                          }
+                          if (context.mounted) update(() => busy = false);
+                        },
+                  child: Text(busy ? 'Importing…' : 'Import selected'),
                 ),
               ],
             ),
-          ) ??
-          false;
-      if (!confirmed || !mounted) return;
-    }
-    await widget.core.forget(script.id, deleteFile: deleteFile);
+          );
+        },
+      ),
+    );
     if (mounted) await _refresh();
   }
 
@@ -279,6 +385,26 @@ class _LibraryPageState extends State<LibraryPage> {
       child: Scaffold(
         appBar: AppBar(
           actions: [
+            if (widget.core case final ManagedLibraryCore managed) ...[
+              IconButton(
+                tooltip: 'Reveal library folder',
+                onPressed: () =>
+                    revealFolder(context, managed.libraryStatus().path),
+                icon: const Icon(Icons.folder_outlined),
+              ),
+              if (managed.libraryStatus().legacyCount > 0)
+                TextButton(
+                  onPressed: _migrate,
+                  child: const Text('Bring existing scripts…'),
+                ),
+            ],
+            TextButton(
+              onPressed: () => setState(() {
+                _archived = !_archived;
+                _highlighted = 0;
+              }),
+              child: Text(_archived ? 'Active scripts' : 'Archived'),
+            ),
             IconButton(
               tooltip: 'Keyboard shortcuts (F1)',
               onPressed: widget.onShowShortcuts,
@@ -530,6 +656,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// be dropping them by another name.
   List<ScriptView> _visible(List<ScriptView> scripts) {
     final query = _search.text.trim().toLowerCase();
+    scripts = scripts.where((script) => script.archived == _archived).toList();
     final visible = query.isEmpty
         ? List<ScriptView>.of(scripts)
         : scripts
@@ -571,7 +698,11 @@ class _LibraryPageState extends State<LibraryPage> {
       color: selected ? colours.accentSubtle : Colors.transparent,
       child: InkWell(
         key: ValueKey('library-row-${script.id}'),
-        onTap: script.missing || _choosing
+        onTap:
+            script.missing ||
+                script.problem != null ||
+                script.archived ||
+                _choosing
             ? null
             : () => unawaited(_choose(() async => script.path)),
         hoverColor: colours.surfaceRaised,
@@ -605,6 +736,23 @@ class _LibraryPageState extends State<LibraryPage> {
                     const SizedBox(height: 5),
                     Row(
                       children: [
+                        if (script.migrationStatus != null)
+                          Flexible(
+                            child: Text(
+                              script.migrationStatus!,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (script.problem != null)
+                          Flexible(
+                            child: Text(
+                              script.problem!,
+                              style: metadataStyle?.copyWith(
+                                color: colours.danger,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         if (script.missing) ...[
                           Text(
                             'Missing',
@@ -648,8 +796,10 @@ class _LibraryPageState extends State<LibraryPage> {
                 onSelected: (action) => switch (action) {
                   _Action.rename => _rename(script),
                   _Action.duplicate => _duplicate(script),
-                  _Action.remove => _remove(script, deleteFile: false),
-                  _Action.delete => _remove(script, deleteFile: true),
+                  _Action.archive => _archive(script),
+                  _Action.reveal => revealFolder(context, _parent(script.path)),
+                  _Action.repair => _repair(script),
+                  _Action.rescue => _rescue(script),
                 },
                 itemBuilder: (context) => [
                   PopupMenuItem(
@@ -663,18 +813,27 @@ class _LibraryPageState extends State<LibraryPage> {
                     child: const Text('Duplicate'),
                   ),
                   const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: _Action.remove,
-                    child: Text('Remove from library'),
-                  ),
                   PopupMenuItem(
-                    value: _Action.delete,
-                    enabled: !script.missing,
+                    value: _Action.archive,
+                    enabled: script.problem == null,
                     child: Text(
-                      'Delete file…',
-                      style: TextStyle(color: colours.danger),
+                      script.archived ? 'Restore archived' : 'Archive',
                     ),
                   ),
+                  const PopupMenuItem(
+                    value: _Action.reveal,
+                    child: Text('Reveal project folder'),
+                  ),
+                  if (script.problem != null) ...[
+                    const PopupMenuItem(
+                      value: _Action.repair,
+                      child: Text('Repair metadata…'),
+                    ),
+                    const PopupMenuItem(
+                      value: _Action.rescue,
+                      child: Text('Export saved text…'),
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -703,7 +862,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 }
 
-enum _Action { rename, duplicate, remove, delete }
+enum _Action { rename, duplicate, archive, reveal, repair, rescue }
 
 String _parent(String path) {
   final slash = path.lastIndexOf('/');

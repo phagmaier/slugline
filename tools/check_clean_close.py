@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from managed_fixture import create_project
 import shutil
 import signal
 import subprocess
@@ -161,7 +162,9 @@ def session(binary, work, name, script, expected, before_close, record, restored
     prefs = work / "config/slugline"
     prefs.mkdir(exist_ok=True)
     # Only the explicit Save below may write the script.
-    (prefs / "prefs.json").write_text(json.dumps({"autosave_enabled": False}))
+    (prefs / "prefs.json").write_text(json.dumps({
+        "autosave_enabled": False, "library_dir": str(work / "data/slugline/library"),
+    }))
     with (work / f"{name}.log").open("w+") as log:
         started = time.monotonic()
         process = subprocess.Popen(
@@ -266,8 +269,7 @@ def run(args, report):
         report["runs"].append(record)
         with tempfile.TemporaryDirectory(prefix="slugline-close-") as tmp:
             work = Path(tmp)
-            script = work / "close.fountain"
-            script.write_bytes(SOURCE)
+            script = create_project(work, "close", SOURCE)
             closes = [
                 session(binary, work, "save-close", script, saved, close_document, record),
                 session(binary, work, "reopen", script, resaved, open_dialog, record),

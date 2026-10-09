@@ -11,7 +11,7 @@
 //!    The actor is never blocked on a disk.
 //! 2. **A failed write is a value, not a panic.** [`SaveOutcome`] carries the
 //!    reason and the path, because §Phase 4 wants read-only, full-disk and
-//!    permission-denied each handled with a distinct message and a Save As
+//!    permission-denied each handled with a distinct message and a copy export
 //!    escape hatch — and the UI can only offer that if it is told which one
 //!    happened.
 //!
@@ -33,7 +33,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use flutter_rust_bridge::frb;
 
@@ -51,7 +51,11 @@ use crate::actor::actor;
 use crate::api::doc::DocumentHandle;
 use crate::api::events::{emit, CoreEvent};
 use crate::api::{layout, spell};
-use crate::state::{AppState, Session, Storage};
+use crate::state::{AppState, ProjectCandidate, ProjectContext, Session, Storage};
+use slugline_storage::project::{self, Metadata, Origin, Project};
+
+static PROJECT_OPERATIONS: Mutex<()> = Mutex::new(());
+static MIGRATIONS: Mutex<()> = Mutex::new(());
 
 const AUTOSAVE_BACKUP_INTERVAL_MILLIS: u64 = 10 * 60 * 1_000;
 
@@ -62,11 +66,11 @@ const AUTOSAVE_BACKUP_INTERVAL_MILLIS: u64 = 10 * 60 * 1_000;
 /// Why a write did not happen. One variant per message §Phase 4 asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveFailure {
-    /// The file is read-only. Offer Save As.
+    /// The file is read-only. Offer Export a copy.
     ReadOnly,
-    /// The directory will not take the file. Offer Save As.
+    /// The directory will not take the file. Offer Export a copy.
     PermissionDenied,
-    /// The filesystem is full, or the user is over quota. Offer Save As.
+    /// The filesystem is full, or the user is over quota. Offer Export a copy.
     NoSpace,
     /// The directory does not exist.
     NoSuchDirectory,
@@ -96,6 +100,7 @@ pub enum SaveFailure {
     /// emitted with it. "Keep mine" answers it by calling
     /// [`doc_accept_disk_state`], and the next save writes.
     ChangedOnDisk,
+    LibraryDestination,
 }
 
 /// What a save did.
@@ -165,6 +170,10 @@ pub struct ScriptView {
     pub missing: bool,
     pub open: bool,
     pub scroll_row: u32,
+    pub project_id: String,
+    pub archived: bool,
+    pub problem: Option<String>,
+    pub migration_status: Option<String>,
 }
 
 /// One rolling backup (§Phase 4's "Restore previous version" list).
@@ -178,8 +187,13 @@ pub struct BackupView {
 /// Reading a previous version never opens or changes a document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackupReadOutcome {
-    Read { source: String },
-    Failed { message: String },
+    Read {
+        source: String,
+        has_bom: Option<bool>,
+    },
+    Failed {
+        message: String,
+    },
 }
 
 /// A crashed session, as an offer to the user.
@@ -219,7 +233,7 @@ pub enum RecoveryOutcome {
     /// Replayed and open, but not journalled: the old journal was kept, so the
     /// recovered text is still durable, and nothing typed from here is.
     ///
-    /// `message` names the reason. The correct advice is Save As somewhere the
+    /// `message` names the reason. The correct advice is Export a copy somewhere the
     /// state directory's problem does not apply, or relaunch — the offer will
     /// still be there.
     Degraded {
@@ -250,6 +264,7 @@ pub struct PreferencesView {
     pub autosave_idle_ms: u64,
     pub autosave_interval_ms: u64,
     pub backup_dir: Option<String>,
+    pub library_dir: Option<String>,
     pub backup_keep_versions: u32,
     pub backup_keep_days: u32,
 }
@@ -278,8 +293,24 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
     };
 
     let mut prefs = load_preferences(&paths);
+    // Retain compatibility input before a v2 cache can replace v1. Never rewrite originals.
+    let legacy_path = paths.legacy_library_index();
+    if Library::retain_legacy(&paths.library_index(), &legacy_path).is_err() {
+        return false;
+    }
+    let legacy = Library::legacy(&legacy_path);
+    let selected_root = prefs
+        .library_dir
+        .clone()
+        .unwrap_or_else(|| paths.default_library().to_path_buf());
+    let library_root = selected_root.canonicalize().unwrap_or(selected_root);
     let mut library = Library::load(&paths.library_index());
-    library.refresh();
+    let library_error = if !library_root.exists() && prefs.library_dir.is_none() {
+        library = Library::default();
+        None
+    } else {
+        library.rebuild(&library_root).err().map(|e| e.to_string())
+    };
     // Discovery, dictionary parsing and personal-dictionary I/O all happen on
     // this async worker before the actor sees the resulting immutable state.
     let spelling = spell::initialise(&paths, &prefs);
@@ -307,6 +338,9 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
             paths,
             prefs,
             library,
+            library_root,
+            library_error,
+            legacy,
             watcher,
             own_writes,
             page_count_jobs: Default::default(),
@@ -356,57 +390,119 @@ pub async fn shutdown() {
 
 /// §6's `library_list`.
 pub async fn library_list() -> Vec<ScriptView> {
-    actor().run(|state| {
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let Some((root, mut library)) = actor().run(|state| {
+        state
+            .storage()
+            .map(|s| (s.library_root.clone(), s.library.clone()))
+    }) else {
+        return Vec::new();
+    };
+    let error = if !root.exists() && library.entries().is_empty() {
+        let configured = actor().run(|state| {
+            state
+                .storage()
+                .is_some_and(|s| s.prefs.library_dir.is_some())
+        });
+        configured.then(|| format!("Library unavailable: {}", root.display()))
+    } else {
+        library.rebuild(&root).err().map(|e| e.to_string())
+    };
+    actor().run(move |state| {
         let Some(storage) = state.storage_mut() else {
             return Vec::new();
         };
-        storage.library.refresh();
+        if storage.library_root != root {
+            return Vec::new();
+        }
+        library.merge_cached_state(&storage.library);
+        storage.library_error = error;
+        storage.library = library;
         storage.library.entries().iter().map(script_view).collect()
     })
 }
 
-/// §6's `library_open`. Reads the file and hands back a document.
-///
-/// Opening a file that is already open returns the handle it is already open
-/// under. Two documents over one file would be two undo histories racing to
-/// overwrite each other.
-///
-/// The check below is an optimisation, not the guarantee: the read between it
-/// and the open is off the actor, so two concurrent opens of one path can both
-/// miss it. [`open_source`] makes the same check again where it is atomic with
-/// the insert, and that is the one that holds.
+#[derive(Debug, Clone)]
+pub struct LibraryStatus {
+    pub path: String,
+    pub error: Option<String>,
+    pub legacy_count: u32,
+}
+
+#[frb(sync)]
+pub fn library_status() -> LibraryStatus {
+    actor().run(|state| {
+        state
+            .storage()
+            .map(|s| LibraryStatus {
+                path: s.library_root.to_string_lossy().into_owned(),
+                error: s.library_error.clone(),
+                legacy_count: s.legacy.len() as u32,
+            })
+            .unwrap_or(LibraryStatus {
+                path: String::new(),
+                error: Some("Storage unavailable".into()),
+                legacy_count: 0,
+            })
+    })
+}
+
+fn active_root(create_default: bool) -> Result<PathBuf, atomic::SaveError> {
+    let Some((root, lazy)) = actor().run(|state| {
+        state
+            .storage()
+            .map(|s| (s.library_root.clone(), s.prefs.library_dir.is_none()))
+    }) else {
+        return Err(atomic::SaveError::Io {
+            path: PathBuf::new(),
+            message: "Storage unavailable".into(),
+        });
+    };
+    project::root(&root, create_default && lazy)
+}
+
+/// Public open only accepts a validated project in the active root.
 pub async fn library_open(path: String) -> Option<DocumentHandle> {
-    let path = PathBuf::from(path);
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let root = active_root(false).ok()?;
+    let project = project::validate_save(&root, Path::new(&path)).ok()?;
+    let path = project.script();
     if let Some(existing) = actor().run({
         let path = path.clone();
         move |state| state.handle_for(&path)
     }) {
         return Some(DocumentHandle { id: existing });
     }
-
-    // The read happens here, off the actor thread: a 120-page script is half a
-    // megabyte and a cold file is a disk seek.
+    // Never bypass an undecided recovery, including aliases.
+    if recovery_for(&path) {
+        return None;
+    }
     let source = std::fs::read_to_string(&path).ok()?;
-    let settings = actor().run(|state| {
-        state.storage().map(|storage| {
-            (
-                storage
-                    .prefs
-                    .backup_dir
-                    .clone()
-                    .unwrap_or_else(|| storage.paths.backup_dir()),
-                storage.prefs.retention(),
-            )
-        })
-    });
-    // Preserve the on-disk starting text before publishing an editable session.
-    // No age gate on open, and cache failure must never prevent opening a file.
-    let backup = settings.and_then(|(root, retention)| {
-        backup::write_if_changed(&root, &path, &source, retention, 0)
-            .ok()
-            .flatten()
+    let retention = actor().run(|state| state.storage().map(|s| s.prefs.retention()))?;
+    let backup = backup::write_if_changed(&root, &path, &source, retention, 0)
+        .ok()
+        .flatten();
+    actor().run({
+        let project = project.clone();
+        move |state| {
+            if let Some(s) = state.storage_mut() {
+                s.library.cache_project(&project);
+            }
+        }
     });
     let handle = open_source(path, source, false);
+    actor().run(move |state| {
+        if let Some(s) = state.session_mut(handle.id) {
+            s.project = Some(ProjectContext {
+                root,
+                id: project.metadata.id,
+            });
+        }
+    });
     if let Some(written) = backup {
         emit(CoreEvent::BackupWritten {
             handle: handle.id,
@@ -416,19 +512,56 @@ pub async fn library_open(path: String) -> Option<DocumentHandle> {
     Some(handle)
 }
 
-/// §6's `library_create`, with Phase 10's useful first-run template.
-///
-/// The file is written immediately, and the handle only comes back if it was:
-/// "create" that leaves nothing on disk is a promise the library index would
-/// then be holding a broken pointer to.
+fn recovery_for(path: &Path) -> bool {
+    let directory = actor().run(|state| state.storage().map(|s| s.paths.journal_dir()));
+    directory.is_some_and(|dir| {
+        journal::pending(&dir).iter().any(|p| {
+            // A live owner is equally authoritative. Path IDs are canonical here.
+            p.file_stem()
+                .is_some_and(|name| name == journal::script_id(path).as_str())
+                || journal::RecoveryGuard::try_open(p)
+                    .ok()
+                    .and_then(|g| g.read().ok())
+                    .is_some_and(|r| same_file(&r.header.script, path))
+        })
+    })
+}
+
+/// Create inside the library. The argument is a display name, never a destination.
 pub async fn library_create(path: String) -> Option<DocumentHandle> {
-    let path = PathBuf::from(path);
-    if path.exists() {
-        return None;
+    let name = if path.trim().is_empty() {
+        "Untitled".to_owned()
+    } else {
+        path
+    };
+    let metadata = Metadata::new(name.clone()).ok()?;
+    let source = starter_source(Path::new(&name));
+    let candidate = create_candidate(
+        model::Document::parse(&source),
+        ProjectCandidate {
+            metadata,
+            bytes: Some(source.into_bytes()),
+            fdx: None,
+            predecessor: None,
+            published: None,
+        },
+    );
+    match doc_commit_project(candidate).await {
+        SaveOutcome::Saved { .. } => Some(candidate),
+        outcome => {
+            let message = match outcome {
+                SaveOutcome::Failed { message, .. } => message,
+                _ => "Project creation did not finish".into(),
+            };
+            actor().run(move |state| {
+                if let Some(s) = state.storage_mut() {
+                    s.library_error = Some(message);
+                }
+            });
+            crate::api::doc::doc_close(candidate);
+            None
+        }
     }
-    let source = starter_source(&path);
-    atomic::save_atomically(&path, &source).ok()?;
-    Some(open_source(path, source, true))
 }
 
 fn starter_source(path: &Path) -> String {
@@ -440,99 +573,246 @@ fn starter_source(path: &Path) -> String {
     format!("Title: {title}\nCredit: Written by\nAuthor:\n\nINT. LOCATION - DAY\n\n")
 }
 
-/// §6's `library_rename`. Moves the file and follows it.
+/// Rename display metadata only. Stable paths keep journal, history and row keys.
 pub async fn library_rename(id: String, new_path: String) -> SaveOutcome {
-    let new_path = PathBuf::from(new_path);
-    let Some(old_path) = actor().run({
-        let id = id.clone();
-        move |state| {
-            state
-                .storage()
-                .and_then(|storage| storage.library.get(&id))
-                .map(|entry| entry.path.clone())
-        }
-    }) else {
-        return failed(SaveFailure::NoSuchDocument, &new_path, "no such script");
-    };
-
-    if new_path.exists() {
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let Some(path) = entry_path(&id) else {
         return failed(
-            SaveFailure::Io,
-            &new_path,
-            &format!("{} already exists", new_path.display()),
+            SaveFailure::NoSuchDocument,
+            Path::new(""),
+            "No such project",
         );
+    };
+    let root = match active_root(false) {
+        Ok(r) => r,
+        Err(e) => return storage_failed(e),
+    };
+    let project = match project::resolve(&root, &path) {
+        Ok(p) => p,
+        Err(e) => return storage_failed(e),
+    };
+    if new_path.trim().is_empty() {
+        return failed(SaveFailure::Io, &path, "The display name cannot be empty");
     }
-    if let Err(error) = std::fs::rename(&old_path, &new_path) {
-        return failed(SaveFailure::Io, &new_path, &error.to_string());
+    let mut metadata = project.metadata.clone();
+    metadata.name = new_path;
+    if let Err(e) = project::update(&project, &metadata) {
+        return storage_failed(e);
     }
-
-    let renamed_to = new_path.clone();
+    let project = project::read(&project.directory).unwrap_or(project);
     actor().run(move |state| {
-        let new_path = renamed_to;
-        let new_id = state
-            .storage_mut()
-            .and_then(|storage| storage.library.renamed(&id, &new_path));
-        // Any document open on the old path follows it, journal and all: the
-        // journal is keyed by the path, so it has to be reopened under the new
-        // one or a crash would offer to recover onto a file that moved.
-        if let (Some(new_id), Some(handle)) = (new_id, state.handle_for(&old_path)) {
-            rebind(state, handle, new_path.clone(), new_id);
+        if let Some(s) = state.storage_mut() {
+            s.library.cache_project(&project);
         }
         save_library(state);
     });
     SaveOutcome::Saved {
-        path: new_path.to_string_lossy().into_owned(),
+        path: path.to_string_lossy().into_owned(),
         bytes: 0,
         backup: None,
     }
 }
 
-/// §6's `library_duplicate`. Copies the file beside itself and adds the copy.
+fn entry_path(id: &str) -> Option<PathBuf> {
+    let id = id.to_owned();
+    actor().run(move |state| state.storage()?.library.get(&id).map(|e| e.path.clone()))
+}
+
+/// Capture unsaved active bytes, or closed saved bytes; never copy version/reference files.
 pub async fn library_duplicate(id: String) -> Option<ScriptView> {
-    let source_path = actor().run({
-        let id = id.clone();
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let path = entry_path(&id)?;
+    let root = active_root(false).ok()?;
+    let parent = project::scan(&root).ok()?.into_iter().find(|p| {
+        p.script() == path
+            && p.metadata.version == project::FORMAT
+            && p.problem
+                .as_deref()
+                .is_none_or(|problem| problem.starts_with("duplicate project ID"))
+    })?;
+    let active = actor().run({
+        let path = path.clone();
         move |state| {
             state
-                .storage()
-                .and_then(|storage| storage.library.get(&id))
-                .map(|entry| entry.path.clone())
+                .handle_for(&path)
+                .and_then(|h| state.session(h))
+                .map(|s| s.document().serialise().into_bytes())
         }
-    })?;
-
-    let contents = std::fs::read_to_string(&source_path).ok()?;
-    let copy = unused_path(&source_path)?;
-    atomic::save_atomically(&copy, &contents).ok()?;
-
+    });
+    let bytes = active.or_else(|| std::fs::read(&path).ok())?;
+    let mut metadata = Metadata::new(format!("{} copy", parent.metadata.name)).ok()?;
+    metadata.pinned_entities = parent.metadata.pinned_entities;
+    let project = project::create(&root, metadata, &bytes, None).ok()?;
+    let retention = actor().run(|state| state.storage().map(|s| s.prefs.retention()))?;
+    let _ = backup::write_if_changed(
+        &root,
+        &project.script(),
+        std::str::from_utf8(&bytes).ok()?,
+        retention,
+        0,
+    );
     actor().run(move |state| {
-        let storage = state.storage_mut()?;
-        let new_id = storage.library.add(&copy);
-        let view = storage.library.get(&new_id).map(script_view);
+        let s = state.storage_mut()?;
+        let id = s.library.cache_project(&project);
+        let view = s.library.get(&id).map(script_view);
         save_library(state);
         view
     })
 }
 
-/// §6's `library_remove`. Forgets the script, and deletes the file only if asked.
-///
-/// The two are separate on purpose (§Phase 4 lists "remove-from-library" and
-/// "delete-file" as different commands). Removing from the library is
-/// reversible by opening the file again; deleting is not, which is why it is a
-/// different word in the UI and a different argument here.
+/// Compatibility name: removal is reversible archive; delete_file is ignored.
 pub async fn library_remove(id: String, delete_file: bool) -> bool {
-    let path = actor().run({
-        let id = id.clone();
+    let _ = delete_file;
+    library_archive(id, true, None).await
+}
+
+pub async fn library_archive(
+    id: String,
+    archived: bool,
+    resolved_handle: Option<DocumentHandle>,
+) -> bool {
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let Some(path) = entry_path(&id) else {
+        return false;
+    };
+    // Resolve an active editor first; this core API cannot discard its session.
+    if actor().run({
+        let path = path.clone();
         move |state| {
-            let storage = state.storage_mut()?;
-            let entry = storage.library.remove(&id)?;
-            save_library(state);
-            Some(entry.path)
+            state
+                .handle_for(&path)
+                .is_some_and(|h| resolved_handle.map(|d| d.id) != Some(h))
         }
-    });
-    let Some(path) = path else { return false };
-    if delete_file {
-        return std::fs::remove_file(&path).is_ok();
+    }) {
+        return false;
     }
+    let Ok(root) = active_root(false) else {
+        return false;
+    };
+    let Ok(project) = project::resolve(&root, &path) else {
+        return false;
+    };
+    let mut metadata = project.metadata.clone();
+    metadata.archived = archived;
+    if project::update(&project, &metadata).is_err() {
+        return false;
+    }
+    let project = project::read(&project.directory).unwrap_or(project);
+    actor().run(move |state| {
+        if let Some(s) = state.storage_mut() {
+            s.library.cache_project(&project);
+        }
+        save_library(state);
+    });
     true
+}
+
+pub async fn library_repair(id: String) -> bool {
+    let Some(path) = entry_path(&id) else {
+        return false;
+    };
+    let Ok(root) = active_root(false) else {
+        return false;
+    };
+    let Ok(projects) = project::scan(&root) else {
+        return false;
+    };
+    let Some(project) = projects.iter().find(|p| p.script() == path) else {
+        return false;
+    };
+    if project
+        .problem
+        .as_deref()
+        .is_none_or(|p| !p.starts_with("metadata needs repair"))
+    {
+        return false;
+    }
+    project::repair(project).is_ok()
+}
+
+/// Rescue readable bytes from damaged/future metadata without opening a mutable session.
+pub async fn library_rescue(id: String, path: String, overwrite: bool) -> SaveOutcome {
+    let Some(source) = entry_path(&id) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            Path::new(&path),
+            "No such project",
+        );
+    };
+    let path = PathBuf::from(path);
+    if project::protected_destination(&path) {
+        return failed(
+            SaveFailure::LibraryDestination,
+            &path,
+            "Choose a destination outside managed projects",
+        );
+    }
+    if actor().run({
+        let path = path.clone();
+        move |state| {
+            state.handles().iter().any(|h| {
+                state
+                    .session(*h)
+                    .and_then(Session::path)
+                    .is_some_and(|p| same_file(p, &path))
+            })
+        }
+    }) {
+        return failed(
+            SaveFailure::ScriptIsOpen,
+            &path,
+            "Destination is an open script",
+        );
+    }
+    if path.exists() && !overwrite {
+        return failed(
+            SaveFailure::AlreadyExists,
+            &path,
+            "Destination already exists",
+        );
+    }
+    let root = match active_root(false) {
+        Ok(root) => root,
+        Err(e) => return storage_failed(e),
+    };
+    if source.parent().and_then(Path::parent) != Some(root.as_path())
+        || source.parent().is_none_or(|p| {
+            std::fs::symlink_metadata(p).map_or(true, |m| !m.is_dir() || m.file_type().is_symlink())
+        })
+        || std::fs::symlink_metadata(&source).is_ok_and(|m| m.file_type().is_symlink())
+    {
+        return failed(
+            SaveFailure::LibraryDestination,
+            &source,
+            "Child symlinks cannot be read as project contents",
+        );
+    }
+    let bytes = match std::fs::read(&source) {
+        Ok(b) => b,
+        Err(e) => return failed(SaveFailure::Io, &source, &e.to_string()),
+    };
+    if let Err(e) = atomic::save_atomically(&path, &bytes) {
+        return storage_failed(e);
+    }
+    SaveOutcome::Saved {
+        path: path.to_string_lossy().into_owned(),
+        bytes: bytes.len() as u32,
+        backup: None,
+    }
+}
+
+fn storage_failed(error: atomic::SaveError) -> SaveOutcome {
+    SaveOutcome::Failed {
+        failure: failure_of(&error),
+        path: error.path().to_string_lossy().into_owned(),
+        message: error.to_string(),
+    }
 }
 
 /// §6's `session_restore`: the scripts that were open when the application last
@@ -651,57 +931,19 @@ pub async fn doc_save(handle: DocumentHandle) -> SaveOutcome {
 /// atomic with it. That is the same race any file chooser has; what matters is
 /// that the ordinary case cannot overwrite without having been asked.
 pub async fn doc_save_as(handle: DocumentHandle, path: String, overwrite: bool) -> SaveOutcome {
-    let path = PathBuf::from(path);
-    if path.as_os_str().is_empty() {
-        return failed(SaveFailure::NoPath, &path, "no file was chosen");
-    }
-
-    // One trip to the actor, and it arms nothing: where this session lives, and
-    // whether any *other* session lives at the destination.
-    let Some((current, open_elsewhere)) = actor().run({
-        let handle = handle.id;
-        let path = path.clone();
-        move |state| {
-            let current = state.session(handle)?.path().map(Path::to_path_buf);
-            let open_elsewhere = state
-                .handles()
-                .into_iter()
-                .filter(|open| *open != handle)
-                .filter_map(|open| state.session(open))
-                .filter_map(Session::path)
-                .any(|open| same_file(open, &path));
-            Some((current, open_elsewhere))
-        }
-    }) else {
-        return failed(
-            SaveFailure::NoSuchDocument,
-            &path,
-            "no document with that handle",
-        );
-    };
-
-    if open_elsewhere {
-        return failed(
-            SaveFailure::ScriptIsOpen,
-            &path,
-            &format!(
-                "{} is open here; save that script rather than writing this one over it",
-                path.display()
-            ),
-        );
-    }
-    let onto_itself = current
+    let _ = overwrite;
+    let current = doc_path(handle);
+    if current
         .as_deref()
-        .is_some_and(|current| same_file(current, &path));
-    if !overwrite && !onto_itself && path.exists() {
-        return failed(
-            SaveFailure::AlreadyExists,
-            &path,
-            &format!("{} is already there", path.display()),
-        );
+        .is_some_and(|p| same_file(Path::new(p), Path::new(&path)))
+    {
+        return doc_save(handle).await;
     }
-
-    write_document(handle, Some(path), true).await
+    failed(
+        SaveFailure::LibraryDestination,
+        Path::new(&path),
+        "Scripts stay in the library. Use Export a copy.",
+    )
 }
 
 /// §6's `doc_export_fountain`: write a copy of the script somewhere else, and
@@ -783,6 +1025,9 @@ pub async fn doc_export_fountain(
     // replaces whatever is there and answers `Ok`. A race between this and the
     // rename is possible and is the same race a file chooser has; what matters
     // is that the ordinary case cannot overwrite without having been asked.
+    if project::protected_destination(&path) {
+        return failed(SaveFailure::LibraryDestination, &path, "Export cannot replace managed project contents; choose a destination outside a project.");
+    }
     if !overwrite && path.exists() {
         return failed(
             SaveFailure::AlreadyExists,
@@ -811,6 +1056,11 @@ pub async fn doc_export_fountain(
 /// Parsing precedes session creation. The caller may close an unadopted
 /// candidate after reviewing warnings without disturbing its current editor.
 pub async fn doc_import_fdx(path: String) -> FdxImportOutcome {
+    if recovery_for(Path::new(&path)) {
+        return FdxImportOutcome::Failed {
+            message: "Resolve pending recovery before import".into(),
+        };
+    }
     let source = match std::fs::read(&path) {
         Ok(source) => source,
         Err(error) => {
@@ -827,6 +1077,28 @@ pub async fn doc_import_fdx(path: String) -> FdxImportOutcome {
             };
         }
     };
+    let mut metadata = match Metadata::new(
+        Path::new(&path)
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            return FdxImportOutcome::Failed {
+                message: e.to_string(),
+            }
+        }
+    };
+    metadata.origin = Some(Origin {
+        path: PathBuf::from(&path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(&path)),
+        kind: "fdx".into(),
+        legacy_id: None,
+        history_complete: true,
+    });
     actor().run(move |state| {
         let document = match model::Document::from_script(imported.script) {
             Ok(document) => document,
@@ -856,6 +1128,15 @@ pub async fn doc_import_fdx(path: String) -> FdxImportOutcome {
             ..model::Patch::default()
         };
         let handle = state.open(document);
+        if let Some(session) = state.session_mut(handle) {
+            session.candidate = Some(ProjectCandidate {
+                metadata,
+                bytes: None,
+                fdx: Some(source),
+                predecessor: None,
+                published: None,
+            });
+        }
         restart_journal(state, handle, "", Restart::Fresh);
         if let Some(session) = state.session_mut(handle) {
             crate::api::doc::record_patch(session, initial);
@@ -922,6 +1203,9 @@ pub async fn doc_export_fdx(
             ),
             Vec::new(),
         );
+    }
+    if project::protected_destination(&path) {
+        return finish(failed(SaveFailure::LibraryDestination, &path, "Export cannot replace managed project contents; choose a destination outside a project."), Vec::new());
     }
     if !overwrite && path.exists() {
         return finish(
@@ -1013,7 +1297,17 @@ pub async fn doc_export_pdf(
                 title: title_page
                     .get(&model::TitleField::Title)
                     .map(str::to_owned)
-                    .unwrap_or_else(|| script_name(session.path())),
+                    .unwrap_or_else(|| {
+                        state
+                            .storage()
+                            .and_then(|s| {
+                                session
+                                    .path()
+                                    .and_then(|p| s.library.get(&journal::script_id(p)))
+                            })
+                            .map(|e| e.title.clone())
+                            .unwrap_or_else(|| script_name(session.path()))
+                    }),
                 author: title_page
                     .get(&model::TitleField::Author)
                     .or_else(|| title_page.get(&model::TitleField::Authors))
@@ -1050,6 +1344,9 @@ pub async fn doc_export_pdf(
                 path.display()
             ),
         );
+    }
+    if project::protected_destination(&path) {
+        return failed(SaveFailure::LibraryDestination, &path, "Export cannot replace managed project contents; choose a destination outside a project.");
     }
     if !overwrite && path.exists() {
         return failed(
@@ -1245,6 +1542,7 @@ async fn write_document(
                 own_writes,
                 snapshot: slugline_layout::ScriptSnapshot::from_document(session.document()),
                 generation,
+                project: session.project.clone(),
                 disk: session.disk_state(),
             })
         }
@@ -1268,6 +1566,20 @@ async fn write_document(
             message: "this script has never been saved".to_owned(),
         };
     };
+    let active_library = actor().run(|state| state.storage().map(|s| s.library_root.clone()));
+    let validated = plan
+        .project
+        .as_ref()
+        .filter(|context| active_library.as_ref() == Some(&context.root))
+        .and_then(|context| {
+            project::validate_save(&context.root, &path)
+                .ok()
+                .filter(|p| p.metadata.id == context.id)
+        });
+    if validated.is_none() {
+        abandon_save(handle.id);
+        return failed(SaveFailure::LibraryDestination, &path, "Library/project unavailable, archived or invalid. Retain unsaved edits and Export a copy.");
+    }
     // Explicit saves always write and snapshot, even if autosave already made
     // the document clean. Only redundant autosaves are coalesced.
     if !plan.dirty && save_as.is_none() && !explicit_save {
@@ -1519,6 +1831,7 @@ struct Plan {
     /// What the session last knew the file to hold, read here so the comparison
     /// against the disk happens off the actor with the save claim held.
     disk: Option<DiskState>,
+    project: Option<ProjectContext>,
 }
 
 struct SavedPagination {
@@ -1939,7 +2252,10 @@ pub async fn backups_list(handle: DocumentHandle) -> Vec<BackupView> {
 /// Reads the literal Fountain snapshot off the actor, including its title page.
 pub async fn backup_read(backup_path: String) -> BackupReadOutcome {
     match std::fs::read_to_string(&backup_path) {
-        Ok(source) => BackupReadOutcome::Read { source },
+        Ok(source) => BackupReadOutcome::Read {
+            has_bom: Some(source.starts_with('\u{feff}')),
+            source,
+        },
         Err(error) => BackupReadOutcome::Failed {
             message: format!("could not read {backup_path}: {error}"),
         },
@@ -1980,6 +2296,13 @@ pub async fn backup_copy(handle: DocumentHandle, source: String, path: String) -
             "that script is open; choose a new file for the copy",
         );
     }
+    if project::protected_destination(&path) {
+        return failed(
+            SaveFailure::LibraryDestination,
+            &path,
+            "Choose a copy destination outside managed projects",
+        );
+    }
     if path.exists() {
         return failed(
             SaveFailure::AlreadyExists,
@@ -2009,6 +2332,37 @@ pub async fn backup_copy(handle: DocumentHandle, source: String, path: String) -
 /// saves before it restores, which means the restore is itself undoable by
 /// restoring the copy it just made.
 pub async fn backup_restore(handle: DocumentHandle, backup_path: String) -> SaveOutcome {
+    let Some((context, path)) = actor().run(move |state| {
+        let s = state.session(handle.id)?;
+        Some((s.project.clone()?, s.path()?.to_path_buf()))
+    }) else {
+        return failed(
+            SaveFailure::LibraryDestination,
+            Path::new(&backup_path),
+            "Restore requires a managed project",
+        );
+    };
+    let Ok(project) = project::validate_save(&context.root, &path) else {
+        return failed(
+            SaveFailure::LibraryDestination,
+            &path,
+            "Managed project unavailable",
+        );
+    };
+    let Ok(backup_resolved) = Path::new(&backup_path).canonicalize() else {
+        return failed(
+            SaveFailure::Io,
+            Path::new(&backup_path),
+            "Previous version is unavailable",
+        );
+    };
+    if backup_resolved.parent() != Some(project.versions().as_path()) {
+        return failed(
+            SaveFailure::LibraryDestination,
+            &backup_resolved,
+            "Choose a previous version belonging to this project",
+        );
+    }
     let Ok(contents) = std::fs::read_to_string(&backup_path) else {
         return failed(
             SaveFailure::Io,
@@ -2274,6 +2628,68 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
     }
     let applied = &recovery.patches[..applied];
 
+    let root = active_root(false).ok();
+    let managed = root
+        .as_ref()
+        .and_then(|root| project::resolve(root, &recovery.header.script).ok());
+    if managed.as_ref().is_some_and(|p| p.metadata.archived) {
+        return RecoveryOutcome::Failed {
+            message:
+                "Restore the archived project before accepting recovery; the journal is retained."
+                    .into(),
+        };
+    }
+    if managed.is_none()
+        && root.as_ref().is_some_and(|r| {
+            recovery.header.script.parent().and_then(Path::parent) == Some(r.as_path())
+        })
+    {
+        return RecoveryOutcome::Failed { message: "Repair the managed project metadata or library availability before accepting recovery; the journal is retained.".into() };
+    }
+    if managed.is_none() {
+        // Legacy/untitled recovery is an isolated candidate. Cancellation never consumes predecessor.
+        let mut metadata = match Metadata::new(script_name(Some(&recovery.header.script))) {
+            Ok(m) => m,
+            Err(e) => {
+                return RecoveryOutcome::Failed {
+                    message: e.to_string(),
+                }
+            }
+        };
+        if !untitled {
+            let legacy = actor().run({
+                let script = recovery.header.script.clone();
+                move |state| {
+                    state
+                        .storage()
+                        .and_then(|s| s.legacy.iter().find(|e| same_file(&e.path, &script)))
+                        .cloned()
+                }
+            });
+            metadata.origin = Some(Origin {
+                path: recovery.header.script.clone(),
+                kind: "recovery migration".into(),
+                legacy_id: legacy.as_ref().map(|e| e.id.clone()),
+                history_complete: false,
+            });
+            if let Some(entry) = legacy {
+                metadata.name = entry.title;
+                metadata.pinned_entities = entry.pinned_entities;
+            }
+        }
+        let handle = create_candidate(
+            document,
+            ProjectCandidate {
+                metadata,
+                bytes: None,
+                fdx: None,
+                predecessor: Some(path),
+                published: None,
+            },
+        );
+        return RecoveryOutcome::Recovered { handle };
+    }
+    let managed = managed.unwrap();
     let script = recovery.header.script.clone();
     // `journal::verify` has just answered that the file still holds `source`, so
     // that is what this session knows about it — and a save of the recovered
@@ -2288,6 +2704,10 @@ pub async fn recovery_accept(journal_path: String) -> RecoveryOutcome {
                 if let Some(session) = state.session_mut(handle) {
                     session.set_file(script.clone(), id.clone());
                     session.set_disk_state(disk);
+                    session.project = Some(ProjectContext {
+                        root: root.clone().unwrap(),
+                        id: managed.metadata.id.clone(),
+                    });
                 }
                 if let Some(storage) = state.storage_mut() {
                     storage.library.add(&script);
@@ -2358,6 +2778,741 @@ pub async fn recovery_discard(journal_path: String) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+/// Capture an external Fountain once. Nothing is published until commit.
+pub async fn doc_prepare_import(path: String) -> FdxImportOutcome {
+    prepare_import(path)
+}
+
+fn prepare_import(path: String) -> FdxImportOutcome {
+    let source_path = match Path::new(&path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return FdxImportOutcome::Failed {
+                message: format!("Could not read {path}: {e}"),
+            }
+        }
+    };
+    if active_root(false)
+        .ok()
+        .is_some_and(|r| source_path.parent().and_then(Path::parent) == Some(r.as_path()))
+    {
+        return FdxImportOutcome::Failed {
+            message: "Open or repair this active-library project; import is for external files"
+                .into(),
+        };
+    }
+    if recovery_for(&source_path) {
+        return FdxImportOutcome::Failed {
+            message: "Resolve this script's pending recovery before importing its saved file"
+                .into(),
+        };
+    }
+    let bytes = match std::fs::read(&source_path) {
+        Ok(b) => b,
+        Err(e) => {
+            return FdxImportOutcome::Failed {
+                message: e.to_string(),
+            }
+        }
+    };
+    let source = match std::str::from_utf8(&bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            return FdxImportOutcome::Failed {
+                message: "Unsupported Fountain encoding; use UTF-8".into(),
+            }
+        }
+    };
+    let document = model::Document::parse(source);
+    let mut metadata = match Metadata::new(
+        source_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            return FdxImportOutcome::Failed {
+                message: e.to_string(),
+            }
+        }
+    };
+    metadata.origin = Some(Origin {
+        path: source_path,
+        kind: "fountain".into(),
+        legacy_id: None,
+        history_complete: true,
+    });
+    FdxImportOutcome::Imported {
+        handle: create_candidate(
+            document,
+            ProjectCandidate {
+                metadata,
+                bytes: Some(bytes),
+                fdx: None,
+                predecessor: None,
+                published: None,
+            },
+        ),
+        warnings: Vec::new(),
+    }
+}
+
+fn initial_outcome(document: &model::Document) -> model::Patch {
+    let mut blocks = document.blocks().iter().enumerate().map(|(i, b)| {
+        (
+            i as u32,
+            model::BlockSnapshot {
+                id: b.id(),
+                kind: b.kind(),
+                text: b.text().to_owned(),
+                forced: b.forced(),
+                dual: b.dual(),
+            },
+        )
+    });
+    model::Patch {
+        changed: blocks.next().map(|b| b.1).into_iter().collect(),
+        inserted: blocks.collect(),
+        title_page: Some(document.title_page().clone()),
+        ..model::Patch::default()
+    }
+}
+
+fn create_candidate(document: model::Document, candidate: ProjectCandidate) -> DocumentHandle {
+    actor().run(move |state| {
+        let document = if document.blocks().is_empty() {
+            model::Document::blank()
+        } else {
+            document
+        };
+        let initial = initial_outcome(&document);
+        let handle = state.open(document);
+        restart_journal(state, handle, "", Restart::Fresh);
+        if let Some(s) = state.session_mut(handle) {
+            s.candidate = Some(candidate);
+            crate::api::doc::record_patch(s, initial);
+        }
+        DocumentHandle { id: handle }
+    })
+}
+
+/// Durable publication followed by adoption, without replacing Document or history.
+pub async fn doc_commit_project(handle: DocumentHandle) -> SaveOutcome {
+    commit_project(handle)
+}
+
+fn commit_project(handle: DocumentHandle) -> SaveOutcome {
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let Some(lock) = actor().run(move |state| state.session(handle.id).map(Session::save_lock))
+    else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            Path::new(""),
+            "Candidate is no longer open",
+        );
+    };
+    let _claim = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some((mut candidate, text, revision, ids)) = actor().run(move |state| {
+        let session = state.session_mut(handle.id)?;
+        let candidate = session.candidate.clone()?;
+        let text = if session.document_generation() == 0 {
+            candidate
+                .bytes
+                .clone()
+                .and_then(|b| String::from_utf8(b).ok())
+                .unwrap_or_else(|| session.document().serialise())
+        } else {
+            session.document().serialise()
+        };
+        let ids = session
+            .document()
+            .blocks()
+            .iter()
+            .map(|b| b.id())
+            .collect::<Vec<_>>();
+        let revision = session.begin_save();
+        Some((candidate, text, revision, ids))
+    }) else {
+        return failed(
+            SaveFailure::NoSuchDocument,
+            Path::new(""),
+            "Not an import/new-project candidate",
+        );
+    };
+    let root = match active_root(true) {
+        Ok(r) => r,
+        Err(e) => {
+            abandon_save(handle.id);
+            return storage_failed(e);
+        }
+    };
+    // Record that a formerly lazy root now exists. A disappearance cannot silently recreate it.
+    let Some((mut prefs, prefs_path)) = actor().run(|state| {
+        state
+            .storage()
+            .map(|s| (s.prefs.clone(), s.paths.preferences()))
+    }) else {
+        abandon_save(handle.id);
+        return failed(SaveFailure::Io, &root, "Storage unavailable");
+    };
+    prefs.library_dir = Some(root.clone());
+    if let Err(e) = prefs.save(&prefs_path) {
+        abandon_save(handle.id);
+        return storage_failed(e);
+    }
+    actor().run({
+        let root = root.clone();
+        move |state| {
+            if let Some(s) = state.storage_mut() {
+                s.prefs = prefs;
+                s.library_root = root;
+                s.library_error = None;
+            }
+        }
+    });
+    let predecessor_guard = match candidate
+        .predecessor
+        .as_ref()
+        .map(|p| journal::RecoveryGuard::try_open(p))
+        .transpose()
+    {
+        Ok(g) => g,
+        Err(e) => {
+            abandon_save(handle.id);
+            return failed(
+                SaveFailure::Io,
+                &root,
+                &format!("Legacy recovery remains owned/unresolved: {e}"),
+            );
+        }
+    };
+    // The candidate journal and predecessor identify an interrupted publication across restarts.
+    let creation_journal =
+        actor().run(move |state| state.session(handle.id).and_then(Session::journal_path));
+    if let Some(path) = creation_journal {
+        candidate.metadata.unknown.insert(
+            "creation_journal".into(),
+            path.to_string_lossy().into_owned().into(),
+        );
+    }
+    if let Some(path) = &candidate.predecessor {
+        candidate.metadata.unknown.insert(
+            "recovery_predecessor".into(),
+            path.to_string_lossy().into_owned().into(),
+        );
+    }
+    if candidate.published.is_none() {
+        if let Ok(projects) = project::scan(&root) {
+            let recovered = projects.into_iter().find(|p| {
+                candidate.predecessor.as_ref().is_some_and(|path| {
+                    ["recovery_predecessor", "creation_journal"]
+                        .iter()
+                        .any(|key| {
+                            p.metadata
+                                .unknown
+                                .get(*key)
+                                .and_then(|v| v.as_str())
+                                .is_some_and(|v| Path::new(v) == path)
+                        })
+                })
+            });
+            if let Some(project) = recovered {
+                candidate.published = Some(project.script());
+                candidate.metadata = project.metadata;
+            }
+        }
+    }
+    let project = if let Some(path) = candidate.published.as_ref() {
+        match project::resolve(&root, path) {
+            Ok(p) if p.metadata.id == candidate.metadata.id => {
+                if std::fs::read(p.script()).ok().as_deref() != Some(text.as_bytes()) {
+                    abandon_save(handle.id);
+                    return failed(SaveFailure::ChangedOnDisk, path, "An interrupted publication already exists with different text. Resolve its recovery or export this candidate; no second project was created.");
+                }
+                p
+            }
+            _ => {
+                abandon_save(handle.id);
+                return failed(
+                    SaveFailure::Io,
+                    path,
+                    "Previously published project is unavailable; retain candidate and retry",
+                );
+            }
+        }
+    } else {
+        match project::create(
+            &root,
+            candidate.metadata.clone(),
+            text.as_bytes(),
+            candidate.fdx.as_deref(),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                // Publication followed by failed directory sync is durable enough to reconcile, never erase.
+                if e.to_string().contains("project published at") {
+                    let path = e.path().join(project::SCRIPT);
+                    actor().run(move |state| {
+                        if let Some(c) = state
+                            .session_mut(handle.id)
+                            .and_then(|s| s.candidate.as_mut())
+                        {
+                            c.published = Some(path);
+                        }
+                    });
+                }
+                abandon_save(handle.id);
+                return storage_failed(e);
+            }
+        }
+    };
+    let path = project.script();
+    actor().run({
+        let path = path.clone();
+        move |state| {
+            if let Some(c) = state
+                .session_mut(handle.id)
+                .and_then(|s| s.candidate.as_mut())
+            {
+                c.published = Some(path);
+            }
+        }
+    });
+    let disk = DiskState::recorded(&path, &text);
+    let directory = actor().run(|state| state.storage().unwrap().paths.journal_dir());
+    let id = journal::script_id(&path);
+    // The old candidate journal stays locked and intact until successor installation.
+    let mut successor = match Journal::create(&directory, &id, &path, &text) {
+        Ok(j) => Some(j),
+        Err(_) => {
+            // Retry only a verified empty checkpoint. Recorded outcomes require recovery,
+            // and a live successor remains protected by its flock.
+            let pending = directory.join(format!("{id}.log"));
+            journal::RecoveryGuard::try_open(&pending)
+                .ok()
+                .and_then(|guard| {
+                    let recovery = guard.read().ok()?;
+                    if recovery.header.script != path
+                        || !recovery.patches.is_empty()
+                        || journal::verify(&recovery.header).ok().as_deref() != Some(text.as_str())
+                    {
+                        return None;
+                    }
+                    guard.rebuild(&directory, &id, &path, &text, &[]).ok()
+                })
+        }
+    };
+    let adopted = actor().run({
+        let path = path.clone();
+        let project = project.clone();
+        let root = root.clone();
+        let text = text.clone();
+        move |state| {
+            let Some(s) = state.session_mut(handle.id) else {
+                return false;
+            };
+            let unsaved = s.finish_save();
+            if let Some(j) = successor.as_mut() {
+                if j.checkpoint_with_identities(&path, &text, &ids)
+                    .and_then(|()| {
+                        for patch in &unsaved {
+                            j.append(patch)?;
+                        }
+                        Ok(())
+                    })
+                    .is_err()
+                {
+                    successor = None;
+                }
+            }
+            // Legacy migration requires a protected successor before retiring predecessor.
+            if (candidate.predecessor.is_some() || directory.join(format!("{id}.log")).exists())
+                && successor.is_none()
+            {
+                return false;
+            }
+            let old = s.take_journal();
+            if let Some(journal) = successor {
+                s.set_journal(Some(journal));
+                if let Some(old) = old {
+                    let _ = old.discard();
+                }
+            } else {
+                // New stored project remains usable; keep old journal evidence and sticky warning.
+                s.set_journal_unavailable();
+                emit(CoreEvent::JournalBroken { handle: handle.id });
+            }
+            s.document_mut().mark_saved_at(revision);
+            s.set_file(path.clone(), id.clone());
+            s.set_disk_state(Some(disk));
+            s.project = Some(ProjectContext {
+                root,
+                id: project.metadata.id.clone(),
+            });
+            s.candidate = None;
+            if let Some(storage) = state.storage_mut() {
+                storage.library.cache_project(&project);
+                storage.library.opened(&id);
+                if let Some(legacy_id) = project
+                    .metadata
+                    .origin
+                    .as_ref()
+                    .and_then(|o| o.legacy_id.as_ref())
+                {
+                    if let Some(entry) = storage.legacy.iter().find(|e| &e.id == legacy_id) {
+                        storage.library.set_scroll(&id, entry.scroll_row);
+                    }
+                }
+            }
+            hydrate_pins(state, handle.id, &id);
+            watch(state, handle.id, &path);
+            save_library(state);
+            true
+        }
+    });
+    if !adopted {
+        return failed(SaveFailure::Io, &path, "Project published, but recovery protection/adoption failed. The previous journal is retained; retry this candidate.");
+    }
+    if let Some(guard) = predecessor_guard {
+        if let Err(e) = guard.discard() {
+            return failed(
+                SaveFailure::Io,
+                &path,
+                &format!("Managed successor is ready; legacy recovery journal retained: {e}"),
+            );
+        }
+    }
+    let mut completed = project.metadata.clone();
+    if let Some(origin) = completed.origin.as_mut().filter(|o| o.legacy_id.is_some()) {
+        let legacy_root = actor().run(|state| {
+            let s = state.storage().unwrap();
+            s.prefs
+                .backup_dir
+                .clone()
+                .unwrap_or_else(|| s.paths.backup_dir())
+        });
+        origin.history_complete = migrate_history(&project, &legacy_root, &origin.path).is_ok();
+    }
+    completed.unknown.remove("creation_journal");
+    completed.unknown.remove("recovery_predecessor");
+    if project::update(&project, &completed).is_ok() {
+        if let Ok(project) = project::read(&project.directory) {
+            actor().run(move |state| {
+                if let Some(s) = state.storage_mut() {
+                    s.library.cache_project(&project);
+                }
+            });
+        }
+    }
+    let retention = actor().run(|state| state.storage().unwrap().prefs.retention());
+    let _ = backup::write_if_changed(&root, &path, &text, retention, 0);
+    SaveOutcome::Saved {
+        path: path.to_string_lossy().into_owned(),
+        bytes: text.len() as u32,
+        backup: None,
+    }
+}
+
+/// Origin matches are choices, never implicit synchronization or content identity.
+pub async fn library_origin_copies(path: String) -> Vec<ScriptView> {
+    let source = PathBuf::from(path);
+    let Ok(root) = active_root(false) else {
+        return Vec::new();
+    };
+    let Ok(projects) = project::scan(&root) else {
+        return Vec::new();
+    };
+    let paths: Vec<_> = projects
+        .into_iter()
+        .filter(|p| {
+            p.metadata
+                .origin
+                .as_ref()
+                .is_some_and(|o| same_file(&o.path, &source))
+        })
+        .map(|p| p.script())
+        .collect();
+    library_list()
+        .await
+        .into_iter()
+        .filter(|entry| paths.contains(&PathBuf::from(&entry.path)))
+        .collect()
+}
+
+pub async fn library_legacy() -> Vec<ScriptView> {
+    actor().run(|state| {
+        state
+            .storage()
+            .map(|s| s.legacy.iter().map(script_view).collect())
+            .unwrap_or_default()
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct MigrationResult {
+    pub id: String,
+    pub project: Option<ScriptView>,
+    pub complete: bool,
+    pub message: String,
+}
+
+/// Explicit selective migration. Durable per-project markers make retries idempotent.
+pub async fn library_migrate(id: String) -> MigrationResult {
+    let _migration = MIGRATIONS.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some(entry) = actor().run({
+        let id = id.clone();
+        move |state| state.storage()?.legacy.iter().find(|e| e.id == id).cloned()
+    }) else {
+        return MigrationResult {
+            id,
+            project: None,
+            complete: false,
+            message: "No such legacy entry".into(),
+        };
+    };
+    if recovery_for(&entry.path) {
+        return MigrationResult {
+            id,
+            project: None,
+            complete: false,
+            message: "Resolve pending recovery before migration".into(),
+        };
+    }
+    let existing = active_root(false)
+        .ok()
+        .and_then(|r| project::scan(&r).ok())
+        .and_then(|ps| {
+            ps.into_iter().find(|p| {
+                p.metadata
+                    .origin
+                    .as_ref()
+                    .is_some_and(|o| o.legacy_id.as_deref() == Some(&id))
+            })
+        });
+    let project = if let Some(p) = existing {
+        p
+    } else {
+        let FdxImportOutcome::Imported { handle, .. } =
+            prepare_import(entry.path.to_string_lossy().into_owned())
+        else {
+            return MigrationResult {
+                id,
+                project: None,
+                complete: false,
+                message: "Source missing, unreadable, unsupported, or recovery unresolved".into(),
+            };
+        };
+        actor().run({
+            let entry = entry.clone();
+            move |state| {
+                if let Some(c) = state
+                    .session_mut(handle.id)
+                    .and_then(|s| s.candidate.as_mut())
+                {
+                    c.metadata.name = entry.title;
+                    c.metadata.pinned_entities = entry.pinned_entities;
+                    if let Some(o) = c.metadata.origin.as_mut() {
+                        o.kind = "migration".into();
+                        o.legacy_id = Some(entry.id);
+                        o.history_complete = false;
+                    }
+                }
+            }
+        });
+        let result = commit_project(handle);
+        crate::api::doc::doc_close(handle);
+        let SaveOutcome::Saved { path, .. } = result else {
+            return MigrationResult {
+                id,
+                project: None,
+                complete: false,
+                message: format!("Migration incomplete: {result:?}"),
+            };
+        };
+        match project::read(Path::new(&path).parent().unwrap()) {
+            Ok(p) => p,
+            Err(e) => {
+                return MigrationResult {
+                    id,
+                    project: None,
+                    complete: false,
+                    message: e.to_string(),
+                }
+            }
+        }
+    };
+    let (legacy_root, paths) = actor().run(|state| {
+        let s = state.storage().unwrap();
+        (
+            s.prefs
+                .backup_dir
+                .clone()
+                .unwrap_or_else(|| s.paths.backup_dir()),
+            s.paths.clone(),
+        )
+    });
+    // Never run retention against the legacy store. Copy exact recognized files exclusively.
+    let complete = migrate_history(&project, &legacy_root, &entry.path);
+    let message = match complete {
+        Ok(()) => "Imported current script and previous versions".into(),
+        Err(e) => format!("Current script imported; previous versions need retry: {e}"),
+    };
+    let complete = message == "Imported current script and previous versions";
+    let mut metadata = project.metadata.clone();
+    if let Some(o) = metadata.origin.as_mut() {
+        o.history_complete = complete;
+    }
+    let metadata_saved = project::update(&project, &metadata).is_ok();
+    let view = actor().run({
+        let project = Project {
+            metadata,
+            ..project
+        };
+        move |state| {
+            let s = state.storage_mut()?;
+            let new_id = s.library.cache_project(&project);
+            s.library.set_scroll(&new_id, entry.scroll_row);
+            let view = s.library.get(&new_id).map(script_view);
+            let _ = s.library.save(&paths.library_index());
+            view
+        }
+    });
+    MigrationResult {
+        id,
+        project: view,
+        complete: complete && metadata_saved,
+        message: if metadata_saved {
+            message
+        } else {
+            "Current script imported; migration metadata write failed, retry safely".into()
+        },
+    }
+}
+
+fn migrate_history(
+    project: &Project,
+    legacy_root: &Path,
+    source: &Path,
+) -> Result<(), atomic::SaveError> {
+    // Validate each child before writes; symlinked reference/version trees are never followed.
+    let versions = project.versions();
+    for child in [&versions] {
+        if std::fs::symlink_metadata(child)
+            .map_or(true, |m| !m.is_dir() || m.file_type().is_symlink())
+        {
+            return Err(atomic::SaveError::Io {
+                path: child.clone(),
+                message: "version store is unavailable or a child symlink".into(),
+            });
+        }
+    }
+    let directory = legacy_root.join(journal::script_id(source));
+    if !directory.exists() {
+        return Ok(());
+    }
+    if std::fs::symlink_metadata(&directory)
+        .map_or(true, |m| !m.is_dir() || m.file_type().is_symlink())
+    {
+        return Err(atomic::SaveError::Io {
+            path: directory,
+            message: "legacy version store is not an ordinary directory".into(),
+        });
+    }
+    let entries = std::fs::read_dir(&directory).map_err(|e| atomic::SaveError::Io {
+        path: directory.clone(),
+        message: e.to_string(),
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|e| atomic::SaveError::Io {
+            path: directory.clone(),
+            message: e.to_string(),
+        })?;
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "fountain")
+            || path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .is_none_or(|s| s.parse::<u64>().is_err())
+        {
+            continue;
+        }
+        if std::fs::symlink_metadata(&path)
+            .map_or(true, |m| !m.is_file() || m.file_type().is_symlink())
+        {
+            return Err(atomic::SaveError::Io {
+                path,
+                message: "legacy version is not an ordinary file".into(),
+            });
+        }
+        let bytes = std::fs::read(&path).map_err(|e| atomic::SaveError::Io {
+            path: path.clone(),
+            message: e.to_string(),
+        })?;
+        let mut target = versions.join(path.file_name().unwrap());
+        if target.exists() {
+            if std::fs::read(&target).ok().as_deref() == Some(bytes.as_slice()) {
+                continue;
+            }
+            // A deterministic alternate timestamp lets retry reconcile exact bytes without overwrite.
+            let mut stamp = path
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap();
+            loop {
+                stamp = stamp.checked_add(1).ok_or_else(|| atomic::SaveError::Io {
+                    path: versions.clone(),
+                    message: "version timestamp collision cannot be resolved".into(),
+                })?;
+                target = versions.join(format!("{stamp}.fountain"));
+                if !target.exists()
+                    || std::fs::read(&target).ok().as_deref() == Some(bytes.as_slice())
+                {
+                    break;
+                }
+            }
+            if target.exists() {
+                continue;
+            }
+        }
+        // Atomic no-clobber publication; no overwrite when another process races migration.
+        atomic::save_new_atomically(&target, &bytes)?;
+    }
+    Ok(())
+}
+
+pub async fn backup_open_copy(handle: DocumentHandle, source: String) -> Option<DocumentHandle> {
+    let exists = actor().run(move |state| state.session(handle.id).is_some());
+    if !exists {
+        return None;
+    }
+    let candidate = create_candidate(
+        model::Document::parse(&source),
+        ProjectCandidate {
+            metadata: Metadata::new("Previous version copy".into()).ok()?,
+            bytes: Some(source.into_bytes()),
+            fdx: None,
+            predecessor: None,
+            published: None,
+        },
+    );
+    if matches!(
+        doc_commit_project(candidate).await,
+        SaveOutcome::Saved { .. }
+    ) {
+        Some(candidate)
+    } else {
+        crate::api::doc::doc_close(candidate);
+        None
+    }
+}
+
 // Preferences
 // ---------------------------------------------------------------------------
 
@@ -2372,36 +3527,81 @@ pub fn prefs_get() -> PreferencesView {
 }
 
 pub async fn prefs_set(preferences: PreferencesView) -> bool {
-    actor().run(move |state| {
-        let Some(storage) = state.storage_mut() else {
+    let _operation = PROJECT_OPERATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let Some((old, paths, current_root, cache)) = actor().run(|state| {
+        state.storage().map(|s| {
+            (
+                s.prefs.clone(),
+                s.paths.clone(),
+                s.library_root.clone(),
+                s.library.clone(),
+            )
+        })
+    }) else {
+        return false;
+    };
+    let next = prefs::Preferences {
+        autosave_enabled: preferences.autosave_enabled,
+        autocomplete_enabled: preferences.autocomplete_enabled,
+        navigator_visible: preferences.navigator_visible,
+        // Dictionary loading stays on `spell_configure`; this general
+        // surface preserves the values owned by that worker-backed call.
+        spell_enabled: old.spell_enabled,
+        spell_language: old.spell_language.clone(),
+        appearance: preferences.appearance,
+        editor_text_size: preferences.editor_text_size,
+        default_paper: preferences.default_paper,
+        scene_numbers: preferences.scene_numbers,
+        bold_scene_headings: preferences.bold_scene_headings,
+        number_first_page: preferences.number_first_page,
+        pdf_font_path: preferences.pdf_font_path.map(PathBuf::from),
+        distraction_free: preferences.distraction_free,
+        page_view: preferences.page_view,
+        autosave_idle_ms: preferences.autosave_idle_ms,
+        autosave_interval_ms: preferences.autosave_interval_ms,
+        backup_dir: preferences.backup_dir.map(PathBuf::from),
+        library_dir: preferences.library_dir.map(PathBuf::from),
+        backup_keep_versions: preferences.backup_keep_versions,
+        backup_keep_days: preferences.backup_keep_days,
+    }
+    .sanitised();
+    let desired = next
+        .library_dir
+        .clone()
+        .unwrap_or_else(|| paths.default_library().to_path_buf());
+    let changing = desired.canonicalize().unwrap_or_else(|_| desired.clone()) != current_root;
+    let mut library = cache;
+    let root = if changing {
+        let Ok(root) = project::root(&desired, true) else {
             return false;
         };
-        storage.prefs = prefs::Preferences {
-            autosave_enabled: preferences.autosave_enabled,
-            autocomplete_enabled: preferences.autocomplete_enabled,
-            navigator_visible: preferences.navigator_visible,
-            // Dictionary loading stays on `spell_configure`; this general
-            // surface preserves the values owned by that worker-backed call.
-            spell_enabled: storage.prefs.spell_enabled,
-            spell_language: storage.prefs.spell_language.clone(),
-            appearance: preferences.appearance,
-            editor_text_size: preferences.editor_text_size,
-            default_paper: preferences.default_paper,
-            scene_numbers: preferences.scene_numbers,
-            bold_scene_headings: preferences.bold_scene_headings,
-            number_first_page: preferences.number_first_page,
-            pdf_font_path: preferences.pdf_font_path.map(PathBuf::from),
-            distraction_free: preferences.distraction_free,
-            page_view: preferences.page_view,
-            autosave_idle_ms: preferences.autosave_idle_ms,
-            autosave_interval_ms: preferences.autosave_interval_ms,
-            backup_dir: preferences.backup_dir.map(PathBuf::from),
-            backup_keep_versions: preferences.backup_keep_versions,
-            backup_keep_days: preferences.backup_keep_days,
+        if library.rebuild(&root).is_err() {
+            return false;
         }
-        .sanitised();
-        let path = storage.paths.preferences();
-        storage.prefs.save(&path).is_ok()
+        root
+    } else {
+        current_root
+    };
+    let mut next = next;
+    if changing || old.library_dir.is_some() {
+        next.library_dir = Some(root.clone());
+    }
+    if next.save(&paths.preferences()).is_err() {
+        return false;
+    }
+    actor().run(move |state| {
+        let Some(s) = state.storage_mut() else {
+            return false;
+        };
+        s.prefs = next;
+        if changing {
+            s.library_root = root;
+            s.library = library;
+            s.library_error = None;
+        }
+        true
     })
 }
 
@@ -2494,7 +3694,7 @@ fn rebind(state: &mut AppState, handle: u64, path: PathBuf, id: String) {
     watch(state, handle, &path);
 }
 
-fn hydrate_pins(state: &mut AppState, handle: u64, id: &str) {
+pub(super) fn hydrate_pins(state: &mut AppState, handle: u64, id: &str) {
     let pins = state
         .storage()
         .and_then(|storage| storage.library.get(id))
@@ -2650,6 +3850,10 @@ fn script_view(entry: &ScriptEntry) -> ScriptView {
         missing: entry.missing,
         open: entry.open,
         scroll_row: entry.scroll_row,
+        project_id: entry.project_id.clone(),
+        archived: entry.archived,
+        problem: entry.problem.clone(),
+        migration_status: entry.migration_status.clone(),
     }
 }
 
@@ -2678,6 +3882,10 @@ fn prefs_view(preferences: &CorePreferences) -> PreferencesView {
             .backup_dir
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
+        library_dir: preferences
+            .library_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
         backup_keep_versions: preferences.backup_keep_versions,
         backup_keep_days: preferences.backup_keep_days,
     }
@@ -2711,31 +3919,16 @@ fn same_file(one: &Path, other: &Path) -> bool {
     if one == other {
         return true;
     }
+    use std::os::unix::fs::MetadataExt;
+    if let (Ok(a), Ok(b)) = (std::fs::metadata(one), std::fs::metadata(other)) {
+        if a.dev() == b.dev() && a.ino() == b.ino() {
+            return true;
+        }
+    }
     match (one.canonicalize(), other.canonicalize()) {
         (Ok(one), Ok(other)) => one == other,
         _ => false,
     }
-}
-
-/// `heat.fountain` → `heat copy.fountain`, then `heat copy 2.fountain`.
-fn unused_path(path: &Path) -> Option<PathBuf> {
-    let parent = path.parent()?;
-    let stem = path.file_stem()?.to_string_lossy().into_owned();
-    let extension = path
-        .extension()
-        .map(|extension| format!(".{}", extension.to_string_lossy()))
-        .unwrap_or_default();
-    for attempt in 0..100 {
-        let name = match attempt {
-            0 => format!("{stem} copy{extension}"),
-            n => format!("{stem} copy {}{extension}", n + 1),
-        };
-        let candidate = parent.join(name);
-        if !candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -2751,6 +3944,7 @@ fn unused_path(path: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slugline_storage::library::PinnedEntity;
 
     use std::fs;
     use std::future::Future;
@@ -2768,6 +3962,445 @@ mod tests {
     };
 
     const SCRIPT: &str = "The house is quiet.\n";
+    #[test]
+    fn managed_initialization_resolves_root_alias_before_open_and_save() {
+        let it = Fixture::open("init-root-alias");
+        doc_close(it.handle);
+        let paths = Paths::under(&it.root);
+        let alias = it.root.join("linked-library");
+        std::os::unix::fs::symlink(paths.default_library(), &alias).unwrap();
+        let preferences = CorePreferences {
+            library_dir: Some(alias.clone()),
+            ..CorePreferences::default()
+        };
+        preferences.save(&paths.preferences()).unwrap();
+        assert!(block_on(init(
+            paths.config_dir().to_string_lossy().into_owned(),
+            paths.data_dir().to_string_lossy().into_owned(),
+            paths.state_dir().to_string_lossy().into_owned(),
+        )));
+        assert_eq!(
+            library_status().path,
+            paths
+                .default_library()
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+        );
+        let project_name = it.script.parent().unwrap().file_name().unwrap();
+        let alias_script = alias.join(project_name).join("script.fountain");
+        let handle = block_on(library_open(alias_script.to_string_lossy().into_owned())).unwrap();
+        let block = doc_blocks(handle, 0, 1)[0].id;
+        doc_apply(
+            handle,
+            EditCommand::ReplaceText {
+                block,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: "Alias. ".into(),
+            },
+            None,
+        );
+        assert!(matches!(
+            block_on(doc_save(handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(
+            fs::read_to_string(&it.script).unwrap(),
+            "Alias. The house is quiet.\n"
+        );
+        doc_close(handle);
+    }
+    #[test]
+    fn managed_root_switch_is_durable_and_unavailable_roots_never_recreate() {
+        let it = Fixture::open("root-switch");
+        it.types("Kept. ");
+        let text = it.in_memory();
+        let old_root = Paths::under(&it.root).default_library().to_path_buf();
+        let old_bytes = it.on_disk();
+        let next = it.root.join("another-library");
+        let mut prefs = prefs_get();
+        prefs.library_dir = Some(next.to_string_lossy().into_owned());
+        assert!(block_on(prefs_set(prefs)));
+        assert_eq!(library_status().path, next.to_string_lossy());
+        assert!(block_on(library_list()).is_empty());
+        let result = block_on(doc_save(it.handle));
+        assert!(matches!(
+            result,
+            SaveOutcome::Failed {
+                failure: SaveFailure::LibraryDestination,
+                ..
+            }
+        ));
+        assert_eq!(it.on_disk(), old_bytes);
+        assert_eq!(it.in_memory(), text);
+        assert!(it.dirty());
+        fs::remove_dir(&next).unwrap();
+        assert!(block_on(library_create("No fallback".into())).is_none());
+        assert!(!next.exists());
+        let rescue = it.root.join("rescue.fountain");
+        assert!(matches!(
+            block_on(doc_export_fountain(
+                it.handle,
+                rescue.to_string_lossy().into_owned(),
+                false
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(fs::read_to_string(rescue).unwrap(), text);
+        let mut prefs = prefs_get();
+        prefs.library_dir = Some(old_root.to_string_lossy().into_owned());
+        assert!(block_on(prefs_set(prefs)));
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), text);
+    }
+    #[test]
+    fn managed_future_metadata_can_be_rescued_and_migration_history_failure_is_partial() {
+        let it = Fixture::open("damage-rescue");
+        doc_close(it.handle);
+        let root = Paths::under(&it.root).default_library().to_path_buf();
+        let project = project::resolve(&root, &it.script).unwrap();
+        let meta_path = project.directory.join("project.json");
+        let original = fs::read_to_string(&meta_path).unwrap();
+        fs::write(
+            &meta_path,
+            original.replace("\"version\": 1", "\"version\": 99"),
+        )
+        .unwrap();
+        let entry = block_on(library_list())
+            .into_iter()
+            .find(|e| Path::new(&e.path) == it.script)
+            .unwrap();
+        assert!(entry.problem.is_some());
+        assert!(!block_on(library_repair(entry.id.clone())));
+        let target = it.root.join("rescued.fountain");
+        assert!(matches!(
+            block_on(library_rescue(
+                entry.id,
+                target.to_string_lossy().into_owned(),
+                false
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(fs::read_to_string(&target).unwrap(), SCRIPT);
+        fs::write(&meta_path, original).unwrap();
+        let source = it.root.join("old.fountain");
+        fs::write(&source, SCRIPT).unwrap();
+        let mut legacy = Library::default();
+        let id = legacy.add(&source);
+        let entry = legacy.get(&id).unwrap().clone();
+        actor().run(move |state| state.storage_mut().unwrap().legacy.push(entry));
+        let legacy_versions = Paths::under(&it.root).backup_dir().join(&id);
+        fs::create_dir_all(&legacy_versions).unwrap();
+        fs::write(legacy_versions.join("2.fountain"), b"second\n").unwrap();
+        std::os::unix::fs::symlink(&source, legacy_versions.join("1.fountain")).unwrap();
+        let partial = block_on(library_migrate(id.clone()));
+        assert!(!partial.complete);
+        let imported = partial.project.unwrap();
+        assert!(imported.migration_status.is_some());
+        assert_eq!(fs::read_to_string(&imported.path).unwrap(), SCRIPT);
+        fs::remove_file(legacy_versions.join("1.fountain")).unwrap();
+        fs::write(legacy_versions.join("1.fountain"), b"first\n").unwrap();
+        let retry = block_on(library_migrate(id));
+        assert!(retry.complete, "{}", retry.message);
+        assert_eq!(retry.project.unwrap().project_id, imported.project_id);
+        assert_eq!(fs::read_to_string(source).unwrap(), SCRIPT);
+    }
+
+    #[test]
+    fn managed_read_only_import_is_exact_isolated_and_reopens_with_versions() {
+        let it = Fixture::open("import-isolation");
+        let source = it.root.join("read-only.fountain");
+        let raw = "\u{feff}Title: My Case\r\nX-Unknown: untouched  \r\n\r\nInt. Library - Day\r\n\r\nAuthored words.  \r\n\r\n/* unknown */\r\n";
+        fs::write(&source, raw).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+        assert!(block_on(library_open(source.to_string_lossy().into_owned())).is_none());
+        let FdxImportOutcome::Imported { handle, .. } =
+            prepare_import(source.to_string_lossy().into_owned())
+        else {
+            panic!("UTF8 candidate")
+        };
+        assert!(doc_path(handle).is_none());
+        let SaveOutcome::Saved { path, .. } = commit_project(handle) else {
+            panic!("publication")
+        };
+        assert_eq!(fs::read(&path).unwrap(), raw.as_bytes());
+        let block = doc_blocks(handle, 0, u32::MAX)
+            .iter()
+            .find(|b| b.kind == crate::api::doc::BlockKind::Action)
+            .unwrap()
+            .id;
+        doc_apply(
+            handle,
+            EditCommand::ReplaceText {
+                block,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: "Changed. ".into(),
+            },
+            None,
+        );
+        let expected = doc_source(handle);
+        assert!(matches!(
+            block_on(doc_autosave(handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(fs::read(&source).unwrap(), raw.as_bytes());
+        assert!(Path::new(&path).parent().unwrap().join("versions").is_dir());
+        let versions = block_on(backups_list(handle));
+        assert!(versions
+            .iter()
+            .any(|v| fs::read(&v.path).unwrap() == raw.as_bytes()));
+        doc_close(handle);
+        let reopened = block_on(library_open(path)).unwrap();
+        assert_eq!(doc_source(reopened), expected);
+        doc_close(reopened);
+        assert_eq!(fs::read(&source).unwrap(), raw.as_bytes());
+    }
+
+    #[test]
+    fn managed_metadata_survives_cache_loss_rename_active_duplicate_and_archive() {
+        let it = Fixture::open("portable-metadata");
+        let id = journal::script_id(&it.script);
+        actor().run({
+            let id = id.clone();
+            move |state| state.storage_mut().unwrap().library.set_scroll(&id, 42)
+        });
+        let root = Paths::under(&it.root).default_library().to_path_buf();
+        let original = project::resolve(&root, &it.script).unwrap();
+        let mut meta = original.metadata.clone();
+        meta.pinned_entities.push(PinnedEntity {
+            kind: "character".into(),
+            value: "ALICE".into(),
+        });
+        project::update(&original, &meta).unwrap();
+        let before_journal = fs::read(it.journal_path()).unwrap();
+        it.types("Unsaved. ");
+        let undo = doc_undo(it.handle).unwrap();
+        doc_redo(it.handle).unwrap();
+        assert!(!undo.changed.is_empty());
+        let expected = it.in_memory();
+        let journal = fs::read(it.journal_path()).unwrap();
+        assert!(matches!(
+            block_on(library_rename(id.clone(), "Renamed / 🌍".into())),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(fs::read(it.journal_path()).unwrap(), journal);
+        assert_eq!(it.on_disk(), SCRIPT);
+        let duplicated = block_on(library_duplicate(id.clone())).unwrap();
+        let duplicate = project::resolve(&root, Path::new(&duplicated.path)).unwrap();
+        assert_ne!(duplicate.metadata.id, original.metadata.id);
+        assert_eq!(fs::read_to_string(duplicate.script()).unwrap(), expected);
+        assert_eq!(duplicate.metadata.pinned_entities, meta.pinned_entities);
+        assert!(it.dirty());
+        assert_eq!(it.in_memory(), expected);
+        assert_ne!(before_journal, journal);
+        assert!(
+            !block_on(library_archive(id.clone(), true, None)),
+            "open editor must resolve close first"
+        );
+        assert!(block_on(library_archive(id.clone(), true, Some(it.handle))));
+        doc_close(it.handle);
+        fs::remove_file(Paths::under(&it.root).library_index()).unwrap();
+        install_storage(&it.root);
+        let entries = block_on(library_list());
+        let row = entries.iter().find(|e| e.id == id).unwrap();
+        assert!(row.archived);
+        assert_eq!(row.title, "Renamed / 🌍");
+        let reread = project::read(it.script.parent().unwrap()).unwrap();
+        assert_eq!(reread.metadata.pinned_entities, meta.pinned_entities);
+        assert_eq!(reread.metadata.id, original.metadata.id);
+        assert!(block_on(library_open(it.script.to_string_lossy().into_owned())).is_none());
+        assert!(block_on(library_archive(id, false, None)));
+        let h = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        doc_close(h);
+    }
+
+    #[test]
+    fn managed_closed_contents_and_alias_exports_are_protected_but_origin_is_confirmable() {
+        use std::os::unix::fs::symlink;
+        let it = Fixture::open("export-guards");
+        let other = it.beside("closed");
+        let target = other.script.clone();
+        drop(other);
+        let alias = it.root.join("alias.fountain");
+        symlink(&target, &alias).unwrap();
+        let hard = it.root.join("hard.fountain");
+        fs::hard_link(&target, &hard).unwrap();
+        for path in [
+            target.clone(),
+            alias,
+            hard,
+            target.parent().unwrap().join("project.json"),
+            target.parent().unwrap().join("versions/new.fountain"),
+        ] {
+            let result = block_on(doc_export_fountain(
+                it.handle,
+                path.to_string_lossy().into_owned(),
+                true,
+            ));
+            assert_eq!(failure_of_outcome(&result), SaveFailure::LibraryDestination);
+        }
+        assert_eq!(fs::read_to_string(target).unwrap(), SCRIPT);
+        let origin = it.root.join("origin.fountain");
+        fs::write(&origin, "Original\n").unwrap();
+        assert_eq!(
+            failure_of_outcome(&block_on(doc_export_fountain(
+                it.handle,
+                origin.to_string_lossy().into_owned(),
+                false
+            ))),
+            SaveFailure::AlreadyExists
+        );
+        it.types("Copy. ");
+        let text = it.in_memory();
+        assert!(matches!(
+            block_on(doc_export_fountain(
+                it.handle,
+                origin.to_string_lossy().into_owned(),
+                true
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(fs::read_to_string(origin).unwrap(), text);
+        assert!(it.dirty());
+        assert_eq!(it.on_disk(), SCRIPT);
+    }
+
+    #[test]
+    fn managed_selective_migration_is_exact_resumable_and_preserves_legacy_evidence() {
+        let it = Fixture::open("migration");
+        let paths = Paths::under(&it.root);
+        let source = it.root.join("legacy.fountain");
+        let raw = "\u{feff}Title: Legacy\r\n\r\nText.  \r\n";
+        fs::write(&source, raw).unwrap();
+        let mut legacy_library = Library::default();
+        let legacy_key = legacy_library.add(&source);
+        let mut legacy = legacy_library.get(&legacy_key).unwrap().clone();
+        legacy.title = "Legacy label".into();
+        legacy.scroll_row = 29;
+        legacy.pinned_entities = vec![PinnedEntity {
+            kind: "character".into(),
+            value: "LEGACY".into(),
+        }];
+        let id = legacy.id.clone();
+        actor().run(move |state| state.storage_mut().unwrap().legacy.push(legacy));
+        let history = paths.backup_dir().join(&id);
+        fs::create_dir_all(&history).unwrap();
+        fs::write(history.join("1.fountain"), b"\xef\xbb\xbfOld.  \r\n").unwrap();
+        fs::write(history.join("unknown.txt"), b"retained").unwrap();
+        let first = block_on(library_migrate(id.clone()));
+        assert!(first.complete, "{}", first.message);
+        let imported = first.project.unwrap();
+        assert_eq!(fs::read(&imported.path).unwrap(), raw.as_bytes());
+        assert_eq!(imported.scroll_row, 29);
+        assert_eq!(imported.title, "Legacy label");
+        let project = project::read(Path::new(&imported.path).parent().unwrap()).unwrap();
+        assert_eq!(project.metadata.pinned_entities[0].value, "LEGACY");
+        assert_eq!(
+            fs::read(project.versions().join("1.fountain")).unwrap(),
+            b"\xef\xbb\xbfOld.  \r\n"
+        );
+        let retry = block_on(library_migrate(id.clone()));
+        assert!(retry.complete);
+        assert_eq!(retry.project.unwrap().project_id, imported.project_id);
+        assert_eq!(fs::read(&source).unwrap(), raw.as_bytes());
+        assert!(history.join("unknown.txt").exists());
+        let bad = project.versions().join("2.fountain");
+        fs::write(&bad, b"current collision").unwrap();
+        fs::write(history.join("2.fountain"), b"different legacy").unwrap();
+        assert!(block_on(library_migrate(id.clone())).complete);
+        assert_eq!(fs::read(bad).unwrap(), b"current collision");
+        assert_eq!(
+            fs::read(project.versions().join("3.fountain")).unwrap(),
+            b"different legacy"
+        );
+        assert!(block_on(library_migrate(id)).complete);
+    }
+
+    #[test]
+    fn managed_legacy_recovery_cancel_live_owner_failure_and_retry_preserve_text() {
+        let it = Fixture::open("legacy-recovery-migration");
+        let external = it.root.join("legacy.fountain");
+        fs::write(&external, SCRIPT).unwrap();
+        let old = open_source(external.clone(), SCRIPT.into(), false);
+        let block = doc_blocks(old, 0, 1)[0].id;
+        doc_apply(
+            old,
+            EditCommand::ReplaceText {
+                block,
+                start_utf16: 0,
+                end_utf16: 0,
+                with: "Recovered. ".into(),
+            },
+            None,
+        );
+        let expected = doc_source(old);
+        let predecessor =
+            actor().run(move |state| state.session(old.id).unwrap().journal_path().unwrap());
+        assert!(matches!(
+            block_on(recovery_accept(predecessor.to_string_lossy().into_owned())),
+            RecoveryOutcome::Failed { .. }
+        ));
+        actor().run(move |state| {
+            state.session_mut(old.id).unwrap().set_journal(None);
+            state.close(old.id);
+        });
+        let old_bytes = fs::read(&predecessor).unwrap();
+        let RecoveryOutcome::Recovered { handle: cancel } =
+            block_on(recovery_accept(predecessor.to_string_lossy().into_owned()))
+        else {
+            panic!("candidate")
+        };
+        assert!(doc_path(cancel).is_none());
+        doc_close(cancel);
+        assert_eq!(fs::read(&predecessor).unwrap(), old_bytes);
+        let RecoveryOutcome::Recovered { handle } =
+            block_on(recovery_accept(predecessor.to_string_lossy().into_owned()))
+        else {
+            panic!("candidate")
+        };
+        assert_eq!(doc_source(handle), expected);
+        let root = Paths::under(&it.root).default_library().to_path_buf();
+        let candidate =
+            actor().run(move |state| state.session(handle.id).unwrap().candidate.clone().unwrap());
+        let mut metadata = candidate.metadata.clone();
+        metadata.unknown.insert(
+            "recovery_predecessor".into(),
+            predecessor.to_string_lossy().into_owned().into(),
+        );
+        let published = project::create(&root, metadata, expected.as_bytes(), None).unwrap();
+        // A live successor must refuse migration; candidate and predecessor remain recoverable.
+        let directory = Paths::under(&it.root).journal_dir();
+        let key = journal::script_id(&published.script());
+        let live = Journal::create(&directory, &key, &published.script(), &expected).unwrap();
+        assert!(matches!(commit_project(handle), SaveOutcome::Failed { .. }));
+        assert_eq!(fs::read(&predecessor).unwrap(), old_bytes);
+        assert_eq!(fs::read_to_string(&external).unwrap(), SCRIPT);
+        drop(live); // Abandoned empty checkpoint is safe to reacquire, never a live journal.
+        assert!(matches!(commit_project(handle), SaveOutcome::Saved { .. }));
+        assert!(!predecessor.exists());
+        assert_eq!(
+            doc_path(handle).as_deref(),
+            Some(published.script().to_str().unwrap())
+        );
+        assert_eq!(
+            project::scan(&root).unwrap().len(),
+            2,
+            "retry did not create a duplicate"
+        );
+        doc_close(handle);
+        let reopened = block_on(library_open(
+            published.script().to_string_lossy().into_owned(),
+        ))
+        .unwrap();
+        assert_eq!(doc_source(reopened), expected);
+        doc_close(reopened);
+        assert_eq!(fs::read_to_string(external).unwrap(), SCRIPT);
+    }
 
     #[test]
     fn line_break_save_and_recovery_replay_keep_the_exact_outcome() {
@@ -3342,13 +4975,10 @@ mod tests {
         fn open_source(label: &str, source: &str) -> Fixture {
             let storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
             let root = temp_root(label);
-            let script = root.join(format!("{label}.fountain"));
-            fs::write(&script, source).expect("the script is written");
-
             install_storage(&root);
-
+            let script = seed_project(&root, label, source);
             let handle = block_on(library_open(script.to_string_lossy().into_owned()))
-                .expect("the script opens");
+                .expect("the managed script opens");
             Fixture {
                 _storage: storage,
                 root,
@@ -3357,14 +4987,10 @@ mod tests {
             }
         }
 
-        /// A second script under the same state directory. A second `Fixture`
-        /// would deadlock on [`STORAGE`] and install a second set of
-        /// directories over the first.
         fn beside(&self, label: &str) -> Sibling {
-            let script = self.root.join(format!("{label}.fountain"));
-            fs::write(&script, SCRIPT).expect("the script is written");
+            let script = seed_project(&self.root, label, SCRIPT);
             let handle = block_on(library_open(script.to_string_lossy().into_owned()))
-                .expect("the script opens");
+                .expect("the managed script opens");
             Sibling { script, handle }
         }
 
@@ -3458,8 +5084,7 @@ mod tests {
             doc_journal_state(self.handle).0
         }
 
-        /// The file this session's journal says it is the journal *for*. What a
-        /// Save As moves and an export must not (F9).
+        /// The file this session's journal covers. Exports leave it unchanged.
         fn journal_describes(&self) -> Option<PathBuf> {
             journal::read(&self.journal_path())
                 .ok()
@@ -3556,6 +5181,19 @@ mod tests {
     ///
     /// The caller holds [`STORAGE`]: this replaces the storage every other test
     /// is using.
+    fn seed_project(root: &Path, label: &str, source: &str) -> PathBuf {
+        let paths = Paths::under(root);
+        let library = project::root(paths.default_library(), true).unwrap();
+        project::create(
+            &library,
+            Metadata::new(label.into()).unwrap(),
+            source.as_bytes(),
+            None,
+        )
+        .unwrap()
+        .script()
+    }
+
     fn install_storage(root: &Path) -> Paths {
         let paths = Paths::under(root);
         let library = Library::load(&paths.library_index());
@@ -3563,6 +5201,9 @@ mod tests {
             paths: paths.clone(),
             prefs: CorePreferences::default(),
             library,
+            library_root: paths.default_library().to_path_buf(),
+            library_error: None,
+            legacy: Vec::new(),
             // No inotify: the watcher's own filtering is proved against real
             // events in `storage::watch`, and a watch descriptor per test would
             // be a slow way to find that out again. What these tests watch
@@ -3956,13 +5597,13 @@ mod tests {
     }
 
     #[test]
-    fn save_as_takes_the_session_and_its_row_to_the_new_file() {
+    fn export_copy_keeps_the_session_and_its_row_on_the_managed_file() {
         let it = Fixture::open("session-save-as");
         doc_set_scroll(it.handle, 40);
         let renamed = it.root.join("renamed.fountain");
 
         assert!(matches!(
-            block_on(doc_save_as(
+            block_on(doc_export_fountain(
                 it.handle,
                 renamed.to_string_lossy().into_owned(),
                 false
@@ -3972,8 +5613,8 @@ mod tests {
         quit(it.handle);
 
         let session = session_on_disk(&it.root);
-        assert_eq!(session.len(), 1, "the old file is not open any more");
-        assert_eq!(session[0].path, renamed);
+        assert_eq!(session.len(), 1, "only the managed file stays open");
+        assert_eq!(session[0].path, it.script);
         assert_eq!(session[0].scroll_row, 40);
     }
 
@@ -4193,7 +5834,7 @@ mod tests {
     fn opening_a_script_whose_journal_cannot_be_created_says_it_is_not_being_recorded() {
         let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
         let root = temp_root("journal-unwritable-open");
-        let script = root.join("heat.fountain");
+        let script = seed_project(&root, "heat", SCRIPT);
         fs::write(&script, SCRIPT).expect("the script is written");
         let paths = install_storage(&root);
         let journals = paths.journal_dir();
@@ -4267,9 +5908,13 @@ mod tests {
             return;
         }
 
-        let handle = block_on(library_create(script.to_string_lossy().into_owned()))
-            .expect("the script is still created");
-        assert!(script.is_file(), "the file is on disk");
+        let handle =
+            block_on(library_create("The Long Road".into())).expect("the script is still created");
+        assert!(!script.exists(), "no external destination is created");
+        assert!(
+            Path::new(&doc_path(handle).unwrap()).is_file(),
+            "the managed script is on disk"
+        );
         assert_eq!(
             doc_journal_state(handle),
             (0, true),
@@ -4289,7 +5934,7 @@ mod tests {
     fn a_session_opened_after_the_journal_directory_recovers_is_protected_again() {
         let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
         let root = temp_root("journal-unwritable-recovers");
-        let script = root.join("heat.fountain");
+        let script = seed_project(&root, "heat", SCRIPT);
         fs::write(&script, SCRIPT).expect("the script is written");
         let paths = install_storage(&root);
         let journals = paths.journal_dir();
@@ -4623,7 +6268,7 @@ mod tests {
     /// is nothing there to preserve, and a refusal here would be one they could
     /// not resolve — the prompt that follows a refusal reads the file too.
     #[test]
-    fn a_deleted_file_is_written_again_rather_than_refused() {
+    fn a_missing_managed_script_is_not_recreated() {
         let it = Fixture::open("disk-deleted");
         it.types("Ours. ");
         assert!(matches!(
@@ -4635,16 +6280,18 @@ mod tests {
         it.types("More. ");
         assert!(matches!(
             block_on(doc_save(it.handle)),
-            SaveOutcome::Saved { .. }
+            SaveOutcome::Failed { .. }
         ));
-        assert_eq!(it.on_disk(), it.in_memory());
+        assert!(!it.script.exists());
+        assert!(it.dirty());
+        assert!(it.journal_path().exists());
     }
 
     /// Save As names its own destination through a chooser that has already
     /// asked about replacing what is there (ADR 0029), so it is not refused by a
     /// record about the file the session is leaving.
     #[test]
-    fn a_save_as_elsewhere_is_not_refused_by_the_old_files_conflict() {
+    fn a_export_copy_elsewhere_is_not_refused_by_the_old_files_conflict() {
         let it = Fixture::open("disk-save-as");
         it.types("Ours. ");
         assert!(matches!(
@@ -4655,7 +6302,7 @@ mod tests {
 
         let elsewhere = it.root.join("moved.fountain");
         assert!(matches!(
-            block_on(doc_save_as(
+            block_on(doc_export_fountain(
                 it.handle,
                 elsewhere.to_string_lossy().into_owned(),
                 false,
@@ -4676,7 +6323,10 @@ mod tests {
         it.types("More. ");
         assert!(matches!(
             block_on(doc_save(it.handle)),
-            SaveOutcome::Saved { .. }
+            SaveOutcome::Failed {
+                failure: SaveFailure::ChangedOnDisk,
+                ..
+            }
         ));
     }
 
@@ -4916,26 +6566,27 @@ mod tests {
         let it = Fixture::open("own-failed");
         it.types("Doomed. ");
         let read_only = fs::Permissions::from_mode(0o555);
-        fs::set_permissions(&it.root, read_only).expect("the folder is made read-only");
+        fs::set_permissions(it.script.parent().unwrap(), read_only)
+            .expect("the folder is made read-only");
 
         let outcome = block_on(doc_save(it.handle));
-        fs::set_permissions(&it.root, fs::Permissions::from_mode(0o755))
-            .expect("the folder is writable again");
+        fs::set_permissions(
+            it.script.parent().unwrap(),
+            fs::Permissions::from_mode(0o755),
+        )
+        .expect("the folder is writable again");
         assert!(matches!(outcome, SaveOutcome::Failed { .. }));
         assert!(it.would_be_reported());
         assert!(it.own_writes().is_empty());
     }
 
-    /// Save As leaves one path and takes another. The record follows the file
-    /// that was written, and the one left behind is dropped with its watch —
-    /// otherwise a script the writer went back to editing elsewhere would have
-    /// its next real change swallowed.
+    /// Exports neither register an own-write echo nor detach the source watch.
     #[test]
-    fn save_as_suppresses_the_new_path_and_forgets_the_old_one() {
+    fn export_copy_does_not_register_writes_on_either_path() {
         let it = Fixture::open("own-save-as");
         let elsewhere = it.root.join("elsewhere.fountain");
         it.types("Moving. ");
-        let outcome = block_on(doc_save_as(
+        let outcome = block_on(doc_export_fountain(
             it.handle,
             elsewhere.to_string_lossy().into_owned(),
             false,
@@ -4943,12 +6594,12 @@ mod tests {
         assert!(matches!(outcome, SaveOutcome::Saved { .. }));
 
         let own = it.own_writes();
-        assert!(own.is_echo(&elsewhere), "the file we just wrote is ours");
+        assert!(!own.is_echo(&elsewhere), "exports are not watched");
         assert!(
             !own.is_echo(&it.script),
-            "the path the session left is nobody's to suppress"
+            "the managed script has not been saved"
         );
-        assert_eq!(own.len(), 1);
+        assert_eq!(own.len(), 0);
     }
 
     /// Closing a script clears what it wrote. This is the third way a record
@@ -4972,12 +6623,10 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 7: an export is a copy, and Save As is a move
+    // Export isolation and the own-file-only compatibility Save As
     //
-    // F9: the two used to be one function. These tests are written in pairs on
-    // purpose — the same question asked of `doc_save_as` and of
-    // `doc_export_fountain` — because what makes an export correct is not what
-    // it writes but everything it leaves alone (ADR 0029).
+    // Exports preserve the binding and history (ADR 0029); the compatibility
+    // `doc_save_as` no longer moves an editable session (ADR 0068).
     // -----------------------------------------------------------------------
 
     fn exported(outcome: &SaveOutcome) -> &str {
@@ -5003,7 +6652,7 @@ mod tests {
         let before = it.in_memory();
         let journal = fs::read(it.journal_path()).unwrap();
         let backups = block_on(backups_list(it.handle));
-        let BackupReadOutcome::Read { source } = block_on(backup_read(previous.path.clone()))
+        let BackupReadOutcome::Read { source, .. } = block_on(backup_read(previous.path.clone()))
         else {
             panic!("the previous version must be readable");
         };
@@ -5053,7 +6702,11 @@ mod tests {
                     "Earlier.".to_owned(),
                     path.to_string_lossy().into_owned(),
                 ))),
-                SaveFailure::AlreadyExists,
+                if project::protected_destination(path) {
+                    SaveFailure::LibraryDestination
+                } else {
+                    SaveFailure::AlreadyExists
+                },
             );
             assert_eq!(fs::read(path).unwrap(), before);
         }
@@ -5086,37 +6739,34 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    /// Save As moves the session: the path it answers to afterwards is the new
-    /// file, and the old one is left as it was.
+    /// Export writes current unsaved text without changing the managed path.
     #[test]
-    fn save_as_changes_the_active_path() {
+    fn export_copy_preserves_the_active_path_and_dirty_state() {
         let it = Fixture::open("save-as-path");
         let elsewhere = it.root.join("moved.fountain");
         it.types("Moving. ");
         let moved = it.in_memory();
 
-        let outcome = block_on(doc_save_as(
+        let outcome = block_on(doc_export_fountain(
             it.handle,
             elsewhere.to_string_lossy().into_owned(),
             false,
         ));
 
         assert_eq!(exported(&outcome), elsewhere.to_string_lossy());
-        assert_eq!(doc_path(it.handle).as_deref(), elsewhere.to_str());
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
         assert_eq!(fs::read_to_string(&elsewhere).unwrap(), moved);
         assert_eq!(it.on_disk(), SCRIPT, "the file left behind is untouched");
-        assert!(!it.dirty(), "a Save As saved this document");
+        assert!(it.dirty(), "an export leaves unsaved library work dirty");
     }
 
-    /// …and takes the journal, the library entry and the watch with it. The
-    /// own-writes half is `save_as_suppresses_the_new_path_and_forgets_the_old_one`
-    /// above; this is the rest of the binding.
+    /// Journal, library membership and watch remain attached to the managed file.
     #[test]
-    fn save_as_rebinds_the_journal_and_the_library_entry() {
+    fn export_copy_preserves_the_journal_and_the_library_entry() {
         let it = Fixture::open("save-as-binding");
         let elsewhere = it.root.join("rebound.fountain");
         it.types("Rebinding. ");
-        block_on(doc_save_as(
+        block_on(doc_export_fountain(
             it.handle,
             elsewhere.to_string_lossy().into_owned(),
             false,
@@ -5124,15 +6774,15 @@ mod tests {
 
         assert_eq!(
             it.journal_describes().as_deref(),
-            Some(elsewhere.as_path()),
-            "the journal now covers the file the session moved to"
+            Some(it.script.as_path()),
+            "the journal still covers the managed file"
         );
-        let id = journal::script_id(&elsewhere);
+        let id = journal::script_id(&it.script);
         assert!(
             it.library_has(&id),
-            "the library learned the script's new identity"
+            "the library retains the managed script's locator"
         );
-        assert!(it.own_writes().is_echo(&elsewhere));
+        assert!(!it.own_writes().is_echo(&elsewhere));
     }
 
     /// The bytes an export writes are the document as it stands, exactly as a
@@ -5230,14 +6880,14 @@ mod tests {
     /// an occupied destination for the same reason. The file the writer picked
     /// by mistake stays byte-identical until they say Replace.
     #[test]
-    fn save_as_refuses_to_overwrite_until_it_is_told_to() {
+    fn export_copy_refuses_to_overwrite_until_it_is_told_to() {
         let it = Fixture::open("save-as-overwrite");
         it.types("New words. ");
         let occupied = it.root.join("occupied.fountain");
         const THEIRS: &str = "Somebody else's script.\n";
         fs::write(&occupied, THEIRS).expect("the file is written");
 
-        let refused = block_on(doc_save_as(
+        let refused = block_on(doc_export_fountain(
             it.handle,
             occupied.to_string_lossy().into_owned(),
             false,
@@ -5258,14 +6908,14 @@ mod tests {
         );
         assert!(!it.is_saving(), "a refused Save As arms nothing");
 
-        let confirmed = block_on(doc_save_as(
+        let confirmed = block_on(doc_export_fountain(
             it.handle,
             occupied.to_string_lossy().into_owned(),
             true,
         ));
         assert!(matches!(confirmed, SaveOutcome::Saved { .. }));
         assert_eq!(fs::read_to_string(&occupied).unwrap(), it.in_memory());
-        assert_eq!(doc_path(it.handle).as_deref(), occupied.to_str());
+        assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
     }
 
     /// Save As onto the file the session already lives in is a save, and asking
@@ -5301,7 +6951,10 @@ mod tests {
             other.script.to_string_lossy().into_owned(),
             true,
         ));
-        assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
+        assert_eq!(
+            failure_of_outcome(&refused),
+            SaveFailure::LibraryDestination
+        );
         assert_eq!(other.on_disk(), SCRIPT);
         assert_eq!(other.in_memory(), SCRIPT);
         assert_eq!(doc_path(it.handle).as_deref(), it.script.to_str());
@@ -5309,7 +6962,8 @@ mod tests {
         // And spelled through a symlinked directory, which a comparison of the
         // paths as written would let through.
         let linked = it.root.join("link");
-        std::os::unix::fs::symlink(&it.root, &linked).expect("the symlink is made");
+        std::os::unix::fs::symlink(other.script.parent().unwrap(), &linked)
+            .expect("the symlink is made");
         let sideways = linked.join(
             other
                 .script
@@ -5321,7 +6975,10 @@ mod tests {
             sideways.to_string_lossy().into_owned(),
             true,
         ));
-        assert_eq!(failure_of_outcome(&refused), SaveFailure::ScriptIsOpen);
+        assert_eq!(
+            failure_of_outcome(&refused),
+            SaveFailure::LibraryDestination
+        );
         assert_eq!(other.on_disk(), SCRIPT);
     }
 
@@ -5356,7 +7013,8 @@ mod tests {
         // The same file, spelled through a symlinked directory. A comparison of
         // the paths as written would let this one through.
         let linked = it.root.join("link");
-        std::os::unix::fs::symlink(&it.root, &linked).expect("the symlink is made");
+        std::os::unix::fs::symlink(other.script.parent().unwrap(), &linked)
+            .expect("the symlink is made");
         let sideways = linked.join(
             other
                 .script
@@ -5857,13 +7515,18 @@ mod tests {
                 root,
                 handles: Vec::new(),
             };
-            fs::write(fixture.script(), SCRIPT).expect("the script is written");
+            let script = seed_project(&fixture.root, "shared", SCRIPT);
+            fs::write(
+                fixture.root.join("managed-path"),
+                script.to_string_lossy().as_bytes(),
+            )
+            .unwrap();
             install_storage(&fixture.root);
             fixture
         }
 
         fn script(&self) -> PathBuf {
-            self.root.join("shared.fountain")
+            PathBuf::from(fs::read_to_string(self.root.join("managed-path")).unwrap())
         }
 
         fn journal(&self) -> PathBuf {
@@ -6010,7 +7673,7 @@ mod tests {
         let root = PathBuf::from(root);
         assert!(root.starts_with("/tmp"));
         install_storage(&root);
-        let script = root.join("shared.fountain");
+        let script = PathBuf::from(fs::read_to_string(root.join("managed-path")).unwrap());
         let mode = std::env::var(RECOVERY_CHILD_MODE).expect("the child's operation");
         let handle = match mode.as_str() {
             "open" => {
@@ -6129,16 +7792,11 @@ mod tests {
         assert_live_recovery_is_untouchable(&path);
         assert_eq!(fs::read(&path).unwrap(), empty);
 
-        let second = block_on(library_open(script.to_string_lossy().into_owned()))
-            .expect("a second process may still edit the script");
-        fixture.handles.push(second);
-        assert_eq!(
-            doc_journal_state(second),
-            (0, true),
-            "opening the same script reports journal-unavailable instead of stealing"
+        assert!(
+            block_on(library_open(script.to_string_lossy().into_owned())).is_none(),
+            "another live owner prevents an independent managed session"
         );
         assert_eq!(fs::read(&path).unwrap(), empty);
-        actor().run(move |state| state.close(second.id));
 
         owner.command("edit", "edited");
         assert_live_recovery_is_untouchable(&path);
@@ -6278,27 +7936,24 @@ mod tests {
             assert_eq!(fs::read_to_string(&snapshot.path).unwrap(), it.on_disk());
             assert!(paths.insert(snapshot.path), "each save has its own version");
         }
-        let destination = it.root.join("saved-as.fountain");
-        let SaveOutcome::Saved {
-            backup: Some(snapshot),
-            ..
-        } = block_on(doc_save_as(
+        let destination = it.root.join("exported.fountain");
+        let before = block_on(backups_list(it.handle));
+        let outcome = block_on(doc_export_fountain(
             it.handle,
             destination.to_string_lossy().into_owned(),
             false,
-        ))
-        else {
-            panic!("Save As must snapshot a clean document too");
-        };
-        assert_eq!(fs::read_to_string(&snapshot.path).unwrap(), it.in_memory());
-        assert_eq!(fs::read_to_string(&destination).unwrap(), it.in_memory());
+        ));
+        assert!(matches!(outcome, SaveOutcome::Saved { backup: None, .. }));
+        assert_eq!(fs::read_to_string(destination).unwrap(), it.in_memory());
+        assert_eq!(block_on(backups_list(it.handle)), before);
     }
 
     #[test]
     fn backup_cache_failure_does_not_fail_open_autosave_or_explicit_save() {
         let mut it = Fixture::open("broken-backups");
         // A regular file where the backup root should be fails even under root.
-        let blocked = it.root.join("blocked-backup-root");
+        let blocked = it.script.parent().unwrap().join("versions");
+        fs::rename(&blocked, it.root.join("retained-versions")).unwrap();
         fs::write(&blocked, "not a directory").unwrap();
         let setting = blocked.clone();
         actor().run(move |state| state.storage_mut().unwrap().prefs.backup_dir = Some(setting));
@@ -6405,15 +8060,11 @@ mod tests {
             recovered.replay(patch).unwrap();
         }
         assert_eq!(recovered.serialise(), candidate.in_memory());
-        let saved = it.root.join("imported.fountain");
         assert!(matches!(
-            block_on(doc_save_as(
-                handle,
-                saved.to_string_lossy().into_owned(),
-                false
-            )),
+            block_on(doc_commit_project(handle)),
             SaveOutcome::Saved { .. }
         ));
+        let saved = PathBuf::from(doc_path(handle).unwrap());
         assert!(!doc_dirty(handle));
         assert_eq!(fs::read(&input).unwrap(), original);
         let reopened = block_on(library_open(saved.to_string_lossy().into_owned())).unwrap();
@@ -6640,7 +8291,7 @@ mod tests {
         let block = doc_blocks(handle, 0, u32::MAX).into_iter().next().unwrap();
         assert_eq!(block.kind, crate::api::doc::BlockKind::Action);
         assert!(block.text.is_empty());
-        let journal_path = actor().run(move |state| {
+        let mut journal_path = actor().run(move |state| {
             state
                 .session_mut(handle.id)
                 .unwrap()
@@ -6664,15 +8315,14 @@ mod tests {
         assert_eq!(recovered.serialise(), candidate.in_memory());
         assert!(doc_undo(handle).is_none());
 
-        let saved = it.root.join("empty-import.fountain");
         assert!(matches!(
-            block_on(doc_save_as(
-                handle,
-                saved.to_string_lossy().into_owned(),
-                false
-            )),
+            block_on(doc_commit_project(handle)),
             SaveOutcome::Saved { .. }
         ));
+        let saved = PathBuf::from(doc_path(handle).unwrap());
+        journal_path = Paths::under(&it.root)
+            .journal_dir()
+            .join(format!("{}.log", journal::script_id(&saved)));
         let persisted = fs::read_to_string(&saved).unwrap();
         let checkpoint = journal::read(&journal_path).unwrap();
         assert_eq!(journal::verify(&checkpoint.header).unwrap(), persisted);

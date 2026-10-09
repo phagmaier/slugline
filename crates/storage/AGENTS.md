@@ -6,7 +6,7 @@ is a P0 bug" is cashed out.
 
 Key files: `src/journal.rs`, `src/atomic.rs`, `src/backup.rs`,
 `src/watch.rs` (`DiskState`), `src/library.rs`, `src/prefs.rs`,
-`src/paths.rs`.
+`src/paths.rs`, `src/project.rs`.
 
 Invariants:
 
@@ -28,9 +28,11 @@ Invariants:
   `JournalBroken`; never fail the open over it.
 - The watcher only asks early; the save path protects the file by comparing
   against `DiskState` immediately before replacing it (ADR 0038).
-- Save As moves the session; an export copies text and moves nothing
-  (ADR 0029). Backups and the library index are caches: deleting them costs
-  only convenience (ADR 0043).
+- Managed projects own text, ID, labels, archive state, entity pins and versions.
+  The central index is a convenience cache; legacy index/history remain migration
+  input. Project publication is staged and no-clobber; a missing configured root
+  is never recreated. Exports move nothing and protect all project contents
+  (ADR 0068). Retention behavior stays governed by ADR 0043.
 - `storage` uses `libc::flock`, not `File::try_lock`, because the workspace
   floor is Rust 1.85 (ADR 0042).
 
@@ -41,6 +43,6 @@ test is only the real thing with a small filesystem in `SLUGLINE_FULL_DISK_DIR`
 (CI mounts a 4 MB tmpfs); otherwise it proves error classification alone. It is
 not a mandatory test for unrelated storage edits.
 
-Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043, 0063, 0064. Full rules
+Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043, 0063, 0064, 0068. Full rules
 in `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes
 only when their invariants or pointers change.

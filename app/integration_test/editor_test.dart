@@ -30,8 +30,18 @@ import 'package:slugline/editor/page_geometry.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  late Directory root;
   setUpAll(() async {
-    await Core.init();
+    root = Directory.systemTemp.createTempSync('slugline-native-editor-');
+    await Core.init(
+      configDir: '${root.path}/config',
+      dataDir: '${root.path}/data',
+      stateDir: '${root.path}/state',
+    );
+  });
+  tearDownAll(() async {
+    await Core.instance.shutdown();
+    root.deleteSync(recursive: true);
   });
 
   Future<EditorController> open(WidgetTester tester, DocumentCore core) async {

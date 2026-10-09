@@ -49,8 +49,8 @@ runner maps the window on Flutter's first frame; `xdotool search --onlyvisible
 --pid` observes that event. Timing starts immediately before spawning the process
 and includes fork/exec, a query and up to 5 ms between queries. It does not prove
 an editable caret: script adoption runs after the first frame. A fresh
-no-argument launch shows the library, so startup passes a zero-byte Fountain
-file and separately confirms that the requested file was opened and journalled.
+no-argument launch shows the library, so startup passes a zero-byte managed Fountain
+fixture and separately confirms that the requested file was opened and journalled.
 The editor's caret is static; “blinking cursor” was historical wording. Fresh
 processes and XDG directories do not evict the OS file cache. The best of five
 retains the 500 ms limit while rejecting sustained delays rather than the worst

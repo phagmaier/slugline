@@ -12,6 +12,8 @@ import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
+import 'package:slugline/library/name_dialog.dart';
+import 'package:slugline/library/reveal_folder.dart';
 import 'package:slugline/library/file_chooser.dart';
 import 'package:slugline/library/fdx_warnings_dialog.dart';
 import 'package:slugline/library/quick_open_dialog.dart';
@@ -104,6 +106,7 @@ class _SluglineAppState extends State<SluglineApp> {
   /// Set once a quit has been agreed to. The core is about to drop every
   /// document it holds, so from here nothing is opened and nothing is adopted.
   bool _exiting = false;
+  String _displayName = 'Untitled';
 
   /// Documents the core has been asked for and has not yet handed back.
   int _opensActive = 0;
@@ -212,7 +215,7 @@ class _SluglineAppState extends State<SluglineApp> {
               case null:
                 return;
               case files.RecoveryOutcome_Recovered(:final handle):
-                await _adopt(RustDocumentCore.of(handle));
+                await _adoptRecovery(RustDocumentCore.of(handle));
                 // One at a time: the editor holds one script. The rest of the
                 // offers stay on disk and are offered again next launch, which
                 // is better than silently dropping them.
@@ -224,7 +227,7 @@ class _SluglineAppState extends State<SluglineApp> {
                 // The text is here and the old journal is still on disk, but
                 // nothing typed from now on is being recorded. That is not a
                 // thing to discover later.
-                await _adopt(RustDocumentCore.of(handle));
+                await _adoptRecovery(RustDocumentCore.of(handle));
                 if (context.mounted) {
                   await showRecoveryNotJournalled(context, message);
                 }
@@ -250,7 +253,7 @@ class _SluglineAppState extends State<SluglineApp> {
     // recovery that has already put a script on screen above.
     final named = widget.initialPath;
     if (named != null) {
-      await _openPath(named);
+      await _openScriptPath(named);
       return;
     }
 
@@ -263,12 +266,58 @@ class _SluglineAppState extends State<SluglineApp> {
     await _openPath(restored.path, initialScrollRow: restored.scrollRow);
   }
 
+  Future<void> _adoptRecovery(DocumentCore document) async {
+    if (document.path == null) {
+      final context = _navigator.currentContext;
+      if (context == null || !context.mounted) {
+        document.close();
+        return;
+      }
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Bring recovered script into the library'),
+          content: const Text(
+            'Keep the recovered text in a new library project. The original file stays untouched; cancellation retains its recovery record.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Keep in library'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted || _exiting) {
+        document.close();
+        return;
+      }
+      final outcome = await _opening(() => document.commitProject());
+      if (outcome is! SaveOutcome_Saved) {
+        _say(
+          outcome is SaveOutcome_Failed
+              ? outcome.message
+              : 'Recovery migration could not finish.',
+        );
+        document.close();
+        return;
+      }
+    }
+    await _adopt(document);
+  }
+
   // --- opening and closing ---------------------------------------------------
 
   Future<void> _openPath(String path, {int? initialScrollRow}) async {
     final core = await _opening(() => widget.core.openDocument(path));
     if (core == null) {
-      _say('The script could not be opened or created.');
+      _say(
+        'The managed script could not be opened. Check the library folder and pending recovery.',
+      );
       return;
     }
     if (!mounted) {
@@ -279,11 +328,52 @@ class _SluglineAppState extends State<SluglineApp> {
   }
 
   Future<void> _openScriptPath(String path) async {
-    if (path.toLowerCase().endsWith('.fdx')) {
-      await _importFdx(path);
-    } else {
-      await _switchPath(path);
+    if (_importActive || _exiting) return;
+    String canonical;
+    try {
+      canonical = await widget.core.resolvePath(path);
+    } catch (failure) {
+      _say('The screenplay is unavailable: $failure');
+      return;
     }
+    final script = await widget.core.managedEntry(canonical);
+    if (script != null) {
+      if (script.problem != null) {
+        _say(script.problem!);
+        return;
+      }
+      if (script.archived) {
+        final context = _navigator.currentContext;
+        if (context == null || !context.mounted) return;
+        final restore = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Restore ${script.title}?'),
+            content: const Text(
+              'This script is archived. Restore it before editing.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Restore'),
+              ),
+            ],
+          ),
+        );
+        if (restore != true ||
+            !mounted ||
+            !await widget.core.archive(script.id, false)) {
+          return;
+        }
+      }
+      await _switchPath(canonical);
+      return;
+    }
+    await _importExternal(canonical);
   }
 
   Future<void> _switchPath(String? path) async {
@@ -295,7 +385,9 @@ class _SluglineAppState extends State<SluglineApp> {
     // until the destination has loaded successfully.
     final next = await _opening(() => widget.core.openDocument(path));
     if (next == null) {
-      _say('The script could not be opened or created.');
+      _say(
+        'The managed script could not be opened. Check the library folder and pending recovery.',
+      );
       return;
     }
     if (!mounted) {
@@ -306,17 +398,85 @@ class _SluglineAppState extends State<SluglineApp> {
   }
 
   Future<void> _newScript() async {
+    if (_importActive || _exiting) return;
+    final editor = _editorKey.currentState;
+    if (editor != null && !await editor.confirmClose()) return;
+    if (!mounted || _exiting) return;
+    final next = await _opening(() => widget.core.createDocument());
+    if (next == null) {
+      _say(
+        widget.core.libraryStatus().error ??
+            'Could not create a project in the library.',
+      );
+      return;
+    }
+    await _adopt(next);
+  }
+
+  Future<void> _openVersionCopy(String source) async {
+    final current = _open?.core;
+    if (current == null || _exiting) return;
+    final editor = _editorKey.currentState;
+    if (editor != null && !await editor.confirmClose()) return;
+    if (!mounted || _exiting || _open?.core != current) return;
+    final next = await _opening(() => current.openBackupCopy(source));
+    if (next == null) {
+      _say('Could not create the previous version copy.');
+      return;
+    }
+    await _adopt(next);
+  }
+
+  Future<void> _renameCurrent() async {
+    final current = _open?.core;
     final context = _navigator.currentContext;
-    if (context == null) return;
-    await _switchPath(
-      await FileChooser.show(
-        context,
-        title: 'New script',
-        action: 'Create',
-        suggestedName: 'untitled.fountain',
-        directory: _scriptDirectory,
-      ),
+    if (current?.path == null || context == null || !context.mounted) return;
+    final entry = await widget.core.managedEntry(current!.path!);
+    if (entry == null || !context.mounted) return;
+    final name = await renameProjectDialog(context, entry.title);
+    if (name == null || !mounted || _exiting) return;
+    final outcome = await widget.core.rename(entry.id, name);
+    if (outcome case SaveOutcome_Failed(:final message)) {
+      _say(message);
+      return;
+    }
+    if (mounted) setState(() => _displayName = name);
+  }
+
+  Future<void> _duplicateCurrent() async {
+    final current = _open?.core;
+    if (current?.path == null || _exiting) return;
+    final entry = await widget.core.managedEntry(current!.path!);
+    if (entry == null) return;
+    final copy = await widget.core.duplicate(entry.id);
+    _say(
+      copy == null
+          ? 'Could not duplicate this script.'
+          : 'Created ${copy.title} in the library.',
     );
+  }
+
+  Future<void> _archiveCurrent() async {
+    final current = _open?.core;
+    if (current?.path == null || _exiting) return;
+    final entry = await widget.core.managedEntry(current!.path!);
+    if (entry == null) return;
+    final editor = _editorKey.currentState;
+    if (editor != null && !await editor.confirmClose()) return;
+    if (!mounted || _exiting || _open?.core != current) return;
+    if (!await widget.core.archiveResolved(entry.id, current)) {
+      _say('Archive metadata could not be saved.');
+      return;
+    }
+    await _closeScript();
+  }
+
+  Future<void> _revealCurrent() async {
+    final path = _open?.core.path;
+    final context = _navigator.currentContext;
+    if (path != null && context != null) {
+      await revealFolder(context, File(path).parent.path);
+    }
   }
 
   Future<void> _quickOpen() async {
@@ -350,19 +510,60 @@ class _SluglineAppState extends State<SluglineApp> {
     await _openScriptPath(path);
   }
 
-  Future<void> _importFdx(String path) async {
+  Future<void> _importExternal(String path) async {
     if (_importActive) return;
     final context = _navigator.currentContext;
     if (context == null || !context.mounted) return;
     _importActive = true;
     DocumentCore? candidate;
     try {
-      final result = await _opening(() => widget.core.importFdx(path));
+      final copies = await widget.core.originCopies(path);
+      if (!mounted || !context.mounted) return;
+      final existing = copies.isEmpty ? null : copies.first;
+      final choice = await showDialog<int>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Import a library copy'),
+          content: Text(
+            existing == null
+                ? 'Slugline edits a library copy and leaves the selected source untouched.'
+                : 'This source already has a library copy: ${existing.title}. Importing another copy creates an independent script.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 0),
+              child: const Text('Cancel'),
+            ),
+            if (existing != null)
+              TextButton(
+                onPressed: () => Navigator.pop(context, 1),
+                child: const Text('Open existing copy'),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 2),
+              child: Text(
+                existing == null ? 'Import copy' : 'Import another copy',
+              ),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || _exiting || choice == null || choice == 0) return;
+      if (choice == 1 && existing != null) {
+        _importActive = false;
+        await _openScriptPath(existing.path);
+        return;
+      }
+      final result = await _opening(
+        () => path.toLowerCase().endsWith('.fdx')
+            ? widget.core.importFdx(path)
+            : widget.core.importFountain(path),
+      );
       switch (result) {
         case null:
           return;
         case FdxImportFailed(:final message):
-          _say('Could not import FDX: $message');
+          _say('Could not import screenplay: $message');
           return;
         case FdxImported(:final document, :final warnings):
           candidate = document;
@@ -375,6 +576,16 @@ class _SluglineAppState extends State<SluglineApp> {
           final editor = _editorKey.currentState;
           if (editor != null && !await editor.confirmClose()) return;
           if (!mounted) return;
+          if (_exiting) return;
+          final outcome = await _opening(() => document.commitProject());
+          if (outcome is! SaveOutcome_Saved) {
+            _say(
+              outcome is SaveOutcome_Failed
+                  ? outcome.message
+                  : 'Project could not be committed.',
+            );
+            return;
+          }
           await _adopt(document);
           candidate = null;
           // The candidate's JournalBroken can precede adoption. Its sticky
@@ -382,7 +593,7 @@ class _SluglineAppState extends State<SluglineApp> {
           if (document.journalState.$2) _deferredJournalFailure = true;
       }
     } catch (failure) {
-      _say('Could not import FDX: $failure');
+      _say('Could not import screenplay: $failure');
     } finally {
       candidate?.close();
       _importActive = false;
@@ -413,13 +624,15 @@ class _SluglineAppState extends State<SluglineApp> {
     }
     var scrollRow = initialScrollRow ?? 0;
     final path = core.path;
-    if (initialScrollRow == null && path != null) {
+    var displayName = 'Untitled';
+    if (path != null) {
       // Opening and recovering keep the library's parked row. Use it for every
       // way an existing script arrives, not only startup's session restore.
       // Untitled/imported scripts and paths absent from the cache start at zero.
       for (final script in await widget.core.library()) {
         if (script.path == path) {
-          scrollRow = script.scrollRow;
+          if (initialScrollRow == null) scrollRow = script.scrollRow;
+          displayName = script.title;
           break;
         }
       }
@@ -428,7 +641,9 @@ class _SluglineAppState extends State<SluglineApp> {
       core.close();
       return;
     }
+    if (_open?.core.eventHandle == core.eventHandle) return;
     _open?.dispose();
+    _displayName = displayName;
     final preferences = _preferences;
     final controller = EditorController(core);
     final status = SaveStatus(core: core);
@@ -478,10 +693,17 @@ class _SluglineAppState extends State<SluglineApp> {
     final chosen = await PreferencesDialog.show(
       context,
       preferences: _preferences,
+      libraryPath: widget.core.libraryStatus().path,
       spelling: widget.core.spellStatus(),
     );
     if (chosen == null || !context.mounted) return;
 
+    final switchingLibrary = chosen.libraryDir != _preferences.libraryDir;
+    final editor = _editorKey.currentState;
+    if (switchingLibrary && editor != null && !await editor.confirmClose()) {
+      return;
+    }
+    if (!mounted || _exiting) return;
     final oldFocusMode = _preferences.distractionFree;
     if (!await widget.core.setPreferences(chosen)) {
       _say(
@@ -494,6 +716,10 @@ class _SluglineAppState extends State<SluglineApp> {
       language: chosen.spellLanguage,
     );
     final saved = widget.core.preferences();
+    if (switchingLibrary) {
+      _open?.dispose();
+      _open = null;
+    }
     _open?.autosave.reconfigure(
       enabled: saved.autosaveEnabled,
       idle: Duration(milliseconds: saved.autosaveIdleMs),
@@ -552,8 +778,7 @@ class _SluglineAppState extends State<SluglineApp> {
     unawaited(widget.core.parkSession());
   }
 
-  /// The script's name is read from its path when this builds, and Save As
-  /// moves the path without anything else here changing.
+  /// Save status updates without changing the project display name or path.
   void _scriptSaved() {
     if (mounted) setState(() {});
   }
@@ -622,7 +847,7 @@ class _SluglineAppState extends State<SluglineApp> {
           ? LibraryPage(
               core: widget.core,
               onOpen: _openScriptPath,
-              onCreate: _switchPath,
+              onCreate: (_) => _newScript(),
               onImport: _importScript,
               onOpenPreferences: _openPreferences,
               onShowShortcuts: _showShortcuts,
@@ -647,9 +872,14 @@ class _SluglineAppState extends State<SluglineApp> {
               onClosed: _closeScript,
               onNewScript: _newScript,
               onOpenScript: _quickOpen,
+              onVersionCopy: _openVersionCopy,
+              onRenameScript: _renameCurrent,
+              onDuplicateScript: _duplicateCurrent,
+              onArchiveScript: _archiveCurrent,
+              onRevealProject: _revealCurrent,
               onImport: _importScript,
               onSaved: _scriptSaved,
-              title: _titleOf(open.core),
+              title: _displayName,
             ),
     );
   }
@@ -743,16 +973,10 @@ files.PreferencesView _copyPreferences(
   autosaveIdleMs: value.autosaveIdleMs,
   autosaveIntervalMs: value.autosaveIntervalMs,
   backupDir: value.backupDir,
+  libraryDir: value.libraryDir,
   backupKeepVersions: value.backupKeepVersions,
   backupKeepDays: value.backupKeepDays,
 );
-
-String _titleOf(DocumentCore core) {
-  final path = core.path;
-  if (path == null) return 'Untitled';
-  final slash = path.lastIndexOf('/');
-  return slash < 0 ? path : path.substring(slash + 1);
-}
 
 /// One script and everything attached to it, so that closing one cannot leave a
 /// timer or a listener behind pointing at a document that is gone.

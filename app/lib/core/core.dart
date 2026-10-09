@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:slugline/identity.dart';
 import 'package:slugline/core/document_core.dart';
@@ -91,7 +92,15 @@ abstract interface class LibraryCore {
 /// to look when an offset is wrong or an event goes missing. Per §2.1, Flutter
 /// asks the core for screenplay semantics rather than deriving them: this class
 /// forwards, it does not interpret.
-class Core implements LibraryCore {
+abstract interface class ManagedLibraryCore {
+  files.LibraryStatus libraryStatus();
+  Future<bool> archive(String id, bool archived);
+  Future<bool> repair(String id);
+  Future<List<files.ScriptView>> legacyScripts();
+  Future<files.MigrationResult> migrate(String id);
+}
+
+class Core implements LibraryCore, ManagedLibraryCore {
   Core._(this.events);
 
   /// Rust → Dart notifications (§2.3). Subscribed once, at startup; broadcast
@@ -166,20 +175,63 @@ class Core implements LibraryCore {
   // --- library ---------------------------------------------------------------
 
   @override
-  Future<List<files.ScriptView>> library() => files.libraryList();
+  Future<List<files.ScriptView>> library() async {
+    final scripts = await files.libraryList();
+    final status = files.libraryStatus();
+    if (status.error != null) throw CoreUnavailable(status.error!);
+    return scripts;
+  }
+
+  @override
+  files.LibraryStatus libraryStatus() => files.libraryStatus();
+  @override
+  Future<bool> archive(String id, bool archived) =>
+      files.libraryArchive(id: id, archived: archived, resolvedHandle: null);
+  Future<bool> archiveResolved(String id, DocumentCore document) =>
+      files.libraryArchive(
+        id: id,
+        archived: true,
+        resolvedHandle: DocumentHandle(id: document.eventHandle),
+      );
+
+  @override
+  Future<bool> repair(String id) => files.libraryRepair(id: id);
+  @override
+  Future<List<files.ScriptView>> legacyScripts() => files.libraryLegacy();
+  @override
+  Future<files.MigrationResult> migrate(String id) =>
+      files.libraryMigrate(id: id);
+
+  Future<DocumentCore?> createDocument([String name = 'Untitled']) async {
+    final handle = await files.libraryCreate(path: name);
+    return handle == null ? null : RustDocumentCore.of(handle);
+  }
+
+  Future<files.ScriptView?> managedEntry(String canonicalPath) async {
+    for (final entry in await files.libraryList()) {
+      if (entry.path == canonicalPath) return entry;
+    }
+    return null;
+  }
+
+  Future<String> resolvePath(String path) => File(path).resolveSymbolicLinks();
+
+  Future<List<files.ScriptView>> originCopies(String path) =>
+      files.libraryOriginCopies(path: path);
 
   /// Open a library path, creating it if it does not exist. The caller keeps
   /// its current session until this succeeds.
   Future<DocumentCore?> openDocument(String path) async {
-    final handle =
-        await files.libraryOpen(path: path) ??
-        await files.libraryCreate(path: path);
+    final handle = await files.libraryOpen(path: path);
     return handle == null ? null : RustDocumentCore.of(handle);
   }
 
   /// Decode in Rust without binding the FDX source to a native session.
-  Future<FdxImportResult> importFdx(String path) async {
-    final outcome = await files.docImportFdx(path: path);
+  Future<FdxImportResult> importFountain(String path) async =>
+      _importResult(await files.docPrepareImport(path: path));
+  Future<FdxImportResult> importFdx(String path) async =>
+      _importResult(await files.docImportFdx(path: path));
+  FdxImportResult _importResult(files.FdxImportOutcome outcome) {
     return switch (outcome) {
       files.FdxImportOutcome_Imported(:final handle, :final warnings) =>
         FdxImported(document: RustDocumentCore.of(handle), warnings: warnings),

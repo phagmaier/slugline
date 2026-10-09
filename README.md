@@ -84,8 +84,8 @@ always will.
   or export an editable FDX copy for collaborators. Conversion warnings are
   shown before proceeding; production revision and page-layout fidelity is not
   promised.
-- **Script library** — browse every `.fountain` file you've worked on, with
-  page counts, last-opened dates, and quick search.
+- **Managed script library** — portable project folders with display names, pins,
+  previous versions, archive/restore, page counts, and quick search.
 - **Crash recovery** — if the editor quits unexpectedly, your unsent work is
   waiting for you the next time you open that script.
 - **External-change detection** — if something else writes your file while it's
@@ -184,7 +184,9 @@ slugline --version
 slugline --help
 ```
 
-Choose **Import…** in the library, select a `.fountain` file and start typing.
+Choose **New** to create a script in the library, or **Import…** to copy an
+existing `.fountain` or `.fdx` screenplay into it. The copy is stored before
+typing begins; the original stays unchanged.
 Here is enough Fountain to write an entire screenplay:
 
 ```fountain
@@ -206,17 +208,25 @@ Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Open Preview and export with
 <kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export; the preview opens on the
 page your caret is on. Everything else is in the command palette.
 
-**Import…** in the library or command palette accepts Fountain (`.fountain`)
-and Final Draft (`.fdx`) together; the picker also offers individual format
-filters. Fountain opens the original file for editing. FDX conversion warnings
-are shown before replacing the current editor. The original FDX stays
-untouched; the imported script is unsaved and **Save** asks for a `.fountain`
-destination. `Ctrl+O` still quick-opens recent scripts, with **Browse…** accepting
-both formats too.
-Choose **Export FDX copy…** in Preview to share screenplay content. If the
-script changes after warning approval, the new conversion needs fresh approval.
-FDX interchange is not an exact round trip for production revisions, locked
-pages, custom fonts or margins.
+**Import…** and quick-open's **Browse…** accept Fountain (`.fountain`) and
+Final Draft (`.fdx`). Confirm the library copy, review any conversion warnings,
+and resolve the current draft before adoption. New and Save need no destination
+picker. `Ctrl+Shift+S` exports a Fountain copy while retaining the current script,
+its unsaved changes and history. Existing destinations require replacement approval;
+managed project contents are protected even when closed.
+
+The library defaults to **Documents/Slugline** (or **home/Slugline**). Each script
+has its own folder containing `script.fountain`, `project.json` and `versions/`;
+FDX imports retain `imports/source.fdx`. Rename changes the display name, while
+Duplicate includes active unsaved text and creates an independent project.
+Archive keeps all files; restore from the Archived view. Reveal opens the folder
+in the system file manager. Preferences selects another library without moving
+old files. A missing configured library reports an error instead of recreating it.
+
+Existing installations offer **Bring existing scripts into the library** with
+selectable entries. This copies originals, pins, reading positions and recognized
+old versions. Resolve pending recovery first. Failed history copies show partial
+status and can be retried; old files and recovery evidence are retained.
 
 New or edited blocks save with `.`, `@`, `>` and `!` only where Fountain needs
 them to preserve their meaning. Existing unedited source stays byte-exact.

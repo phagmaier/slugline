@@ -37,6 +37,8 @@ ScriptView _script({
   int pageCount = 12,
   bool missing = false,
 }) => ScriptView(
+  projectId: 'test-project',
+  archived: false,
   id: id,
   path: path,
   title: title,
@@ -63,6 +65,7 @@ Future<List<String>> _pump(
       home: LibraryPage(
         core: _FakeLibraryCore(scripts),
         onOpen: (path) async => opened.add(path),
+        onCreate: (name) async => opened.add(name),
         onImport: () async {},
       ),
     ),
@@ -111,7 +114,7 @@ void main() {
     await tester.pumpAndSettle();
     choice.complete('/scripts/first.fountain');
     await tester.pumpAndSettle();
-    expect(opened, ['/scripts/first.fountain']);
+    expect(opened, ['Untitled']);
   });
 
   testWidgets('keyboard selection scrolls through a long library', (

@@ -38,6 +38,10 @@ List<EditorCommand> editorCommands({
   VoidCallback? goToPage,
   VoidCallback? save,
   VoidCallback? saveAs,
+  VoidCallback? renameScript,
+  duplicateScript,
+  archiveScript,
+  revealProject,
   VoidCallback? showBackups,
   VoidCallback? editTitlePage,
   VoidCallback? previewAndExport,
@@ -90,10 +94,18 @@ List<EditorCommand> editorCommands({
     if (saveAs case final run?)
       EditorCommand(
         group: 'File',
-        label: 'Save as…',
+        label: 'Export a copy…',
         shortcut: 'Ctrl+Shift+S',
         run: run,
       ),
+    if (renameScript case final run?)
+      EditorCommand(group: 'File', label: 'Rename script…', run: run),
+    if (duplicateScript case final run?)
+      EditorCommand(group: 'File', label: 'Duplicate script', run: run),
+    if (archiveScript case final run?)
+      EditorCommand(group: 'File', label: 'Archive script', run: run),
+    if (revealProject case final run?)
+      EditorCommand(group: 'File', label: 'Reveal project folder', run: run),
     if (showBackups case final run?)
       EditorCommand(group: 'File', label: 'Previous versions…', run: run),
     // Phase 7. "Export" is not among the labels on purpose: the export lives

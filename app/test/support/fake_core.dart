@@ -850,6 +850,17 @@ class FakeCore implements DocumentCore {
   /// Kept beside [exports] on purpose: the two look alike from here and are not
   /// the same operation, and a test that means one must be able to say which
   /// one it saw (ADR 0029).
+  String? commitPath;
+  @override
+  Future<SaveOutcome> commitProject() async {
+    filePath = commitPath;
+    return save();
+  }
+
+  DocumentCore? backupCopyResult;
+  @override
+  Future<DocumentCore?> openBackupCopy(String source) async => backupCopyResult;
+
   final List<(String, bool)> saveAsCalls = [];
 
   @override
@@ -885,6 +896,7 @@ class FakeCore implements DocumentCore {
 
   /// Every export the editor asked for, in order, as `(path, overwrite)`.
   final List<(String, bool)> exports = [];
+  final List<(String, bool)> exportAttempts = [];
 
   /// The destinations an export or a Save As must refuse: what `AlreadyExists`
   /// and `ScriptIsOpen` are for in the real core, without a filesystem to have
@@ -897,6 +909,7 @@ class FakeCore implements DocumentCore {
     String path, {
     bool overwrite = false,
   }) async {
+    exportAttempts.add((path, overwrite));
     if (openScripts.contains(path)) {
       return SaveOutcome.failed(
         failure: SaveFailure.scriptIsOpen,
@@ -914,8 +927,8 @@ class FakeCore implements DocumentCore {
     // Deliberately touches nothing else: an export leaves the path, the dirty
     // flag and the journal count exactly as they were, and a double that
     // cleared them would let a caller confuse it with [saveAs] (ADR 0029).
-    exports.add((path, overwrite));
     existingFiles.add(path);
+    exports.add((path, overwrite));
     return SaveOutcome.saved(path: path, bytes: source().length, backup: null);
   }
 
