@@ -34,6 +34,10 @@ this file and the others to it.
 - The release process now has automated cold-start, idle wakeup and memory
   regression checks under Xvfb. The separate real-desktop memory budget remains
   a manual verification gate.
+- A startup watchdog failure now retains bounded live X11, thread, mapping and
+  session diagnostics, plus a post-deadline native-stack attempt, in the existing
+  runtime-budget report before cleanup. Successful measurements and application
+  behavior are unchanged; this captures evidence, not a fix for the hosted timeout.
 
 ### Changed
 

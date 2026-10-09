@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -143,6 +144,51 @@ def wait_open(process, state, script):
     raise BudgetFailure(f"requested script was not opened and journalled: {script}")
 
 
+def capture_startup_failure(process, env, start, deadline, record):
+    diagnostics = record["startup_diagnostics"] = {
+        "launch_before_spawn_monotonic_ns": start,
+        "startup_deadline_monotonic_ns": int(deadline * 1_000_000_000),
+        "capture_started_monotonic_ns": time.monotonic_ns(),
+        "collector_timeout_seconds": 10,
+        "environment": {name: env.get(name) for name in (
+            "DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "GDK_BACKEND",
+            "DBUS_SESSION_BUS_ADDRESS", "SESSION_MANAGER", "XDG_SESSION_TYPE",
+            "XDG_SESSION_ID", "XDG_CURRENT_DESKTOP", "DESKTOP_SESSION",
+            "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+            "XDG_CACHE_HOME", "XDG_RUNTIME_DIR", "LIBGL_ALWAYS_SOFTWARE",
+            "LP_NUM_THREADS", "GDK_SCALE", "GDK_DPI_SCALE", "LD_LIBRARY_PATH",
+            "LD_PRELOAD", "LIBGL_DRIVERS_PATH", "MESA_LOADER_DRIVER_OVERRIDE",
+            "GALLIUM_DRIVER", "EGL_PLATFORM", "DRI_PRIME", "DEBUGINFOD_URLS",
+        )},
+    }
+    command = [sys.executable, str(ROOT / "tools/startup_diagnostics.py"), str(process.pid)]
+    probe_env = env.copy()
+    probe_env.pop("LD_PRELOAD", None)  # Do not inject application observers into probes.
+    try:
+        collector = subprocess.Popen(
+            command, env=probe_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = collector.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            # Also reap any diagnostic descendants, never the application.
+            os.killpg(collector.pid, signal.SIGKILL)
+            stdout, stderr = collector.communicate()
+            diagnostics["collector_error"] = "collector exceeded 10s"
+        diagnostics["collector_returncode"] = collector.returncode
+        diagnostics["collector_stderr"] = stderr[:131072].decode(errors="replace")
+        if collector.returncode == 0:
+            diagnostics["live_state"] = json.loads(stdout)
+        else:
+            diagnostics["collector_stdout"] = stdout[:131072].decode(errors="replace")
+    except Exception as error:
+        # Evidence failure must never replace the already-failed startup deadline.
+        diagnostics["collector_error"] = f"{type(error).__name__}: {error}"
+    finally:
+        diagnostics["capture_finished_monotonic_ns"] = time.monotonic_ns()
+
+
 @contextmanager
 def launch(source, desktop, record):
     with tempfile.TemporaryDirectory(prefix="slugline-budgets-") as tmp:
@@ -181,6 +227,7 @@ def launch(source, desktop, record):
                         break
                     time.sleep(0.005)
                 else:
+                    capture_startup_failure(process, env, start, deadline, record)
                     raise BudgetFailure("startup: no first-frame window within 10s")
                 record["startup_ms"] = round(
                     (time.monotonic_ns() - start) / 1_000_000, 3
@@ -194,13 +241,27 @@ def launch(source, desktop, record):
                     raise BudgetFailure("opening or idle changed the disposable script bytes")
             finally:
                 # Disposable sessions only. SIGTERM cleanup is not a clean-exit test.
+                cleanup = None
+                if "startup_diagnostics" in record:
+                    cleanup = record["startup_diagnostics"]["cleanup"] = {
+                        "started_monotonic_ns": time.monotonic_ns(), "signals": [],
+                    }
                 if process.poll() is None:
                     process.terminate()
+                    if cleanup is not None:
+                        cleanup["signals"].append("SIGTERM")
                     try:
                         process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
                         process.kill()
+                        if cleanup is not None:
+                            cleanup["signals"].append("SIGKILL")
                         process.wait(timeout=5)
+                if cleanup is not None:
+                    cleanup.update(
+                        returncode=process.returncode,
+                        finished_monotonic_ns=time.monotonic_ns(),
+                    )
                 log.seek(0)
                 record["process_log"] = log.read()
 

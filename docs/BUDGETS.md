@@ -82,6 +82,27 @@ reduce variation across headless machines. CI and release preflight run this
 profile; `--desktop` preserves the graphics and scale environment and asserts
 250 MiB. Both use the same harness and retain raw process logs with `--output`.
 
+If the ten-second startup watchdog fails, the launch record's
+`startup_diagnostics` captures live state before SIGTERM/SIGKILL cleanup:
+monotonic pre-spawn/deadline/capture timestamps, display/session environment,
+process/thread states and wait channels, loaded mappings, and the X window tree
+with map state and `_NET_WM_PID`. The failure-only worker
+`tools/startup_diagnostics.py` uses the existing X11 runtime, not a GL probe.
+Its X query is limited to two seconds, GDB's all-thread backtrace attempt to five,
+and the collector as a whole to ten; retained command output and mappings are
+capped at 128 KiB, threads/windows at 256, tree depth at 16, with truncation
+reported. GDB disables debugger auto-load and debuginfod. Missing tools, denied
+attachment, process exit, command errors and diagnostic timeouts are retained
+without replacing the original startup failure or skipping cleanup. Cleanup's
+signals, exit code and timing are also retained in the existing JSON artifact.
+No collector runs on successful startup or the idle measurement path.
+
+A missing PID-visible window does not by itself prove no frame was rendered:
+a first-frame checkpoint can still be unmapped, and a viewable window can lack
+PID metadata. These diagnostics are failure evidence, not a startup fix; local
+synthetic capture checks cannot diagnose the old hosted timeout. A new failing
+hosted first launch with this JSON is required before choosing a causal fix.
+
 Do not change a threshold without its test and a stated reason. Each process
 budget is checked with an injected production regression (first-frame sleep,
 fast periodic wakeup, resident allocation), then the injection reverted.
