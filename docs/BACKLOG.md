@@ -103,7 +103,7 @@ This is the only place boxes are ticked.
 
 - [x] [X1](#x1) Dual dialogue
 - [x] [X2](#x2) Final Draft (FDX) import and export
-- [ ] [X3](#x3) Scene numbering commands
+- [x] [X3](#x3) Scene numbering commands
 - [ ] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
 - [ ] [X5](#x5) Outline in the navigator
 - [ ] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers) — *unblocks F7*
@@ -2323,7 +2323,34 @@ remain non-numbering operations. ADR 0056 records suffix/whitespace policy and
 the reason numbering is an editor operation rather than an output fallback.
 
 **Effort.** S–M.
-**Result:** _open_
+**Result:** 2026-10-09 — implementation `765e61c`
+(`X3 — Number and remove scene suffixes in one Rust transaction`), with this
+separate completion record. ADR 0056 chooses explicit Script palette commands,
+not automatic output numbering: Number scenes assigns 1..N to every heading,
+replacing custom production identifiers; Remove scene numbers recognizes only
+Fountain suffixes and removes at most one ASCII separator. Extra/trailing
+whitespace and non-heading hashes remain intact. Rust groups the edits,
+preserves identities/kinds/flags/title and maps both exact selection endpoints
+for one Undo/Redo step. The bridge journals one outcome without reinference.
+No-op operations leave revision, dirty state, history and journal unchanged;
+Save/export and the existing gutter preference never invent numbers.
+
+Verified 709 Rust tests in 39 suites, 732 widgets and 89 native tests in seven
+suites; fmt/clippy/analyze, layering/version/docs/reference, generated bindings,
+Rust 1.85, release and offline startup passed. Two mock-echo widget tests were
+removed rather than counted as semantics proof. Native palette coverage checks
+the actual combined journal record, reverse-selection restoration, save/reopen
+and PDF gutters on/off. Deliberate skipped-forced-heading and lost-selection
+faults fail behavioral regressions; both were restored and all five document
+regressions pass. No goldens were regenerated.
+
+Actual release Number/Remove commands, explicit Save, one-step Undo/Redo and
+reopen preserved the title, action `#88#`, dual cue, literal `##`, and expected
+numbered/unnumbered source; ordinary closes exited zero. The unchanged harness
+also passed 15 stressed closes, 390.380 ms best startup, 274.65 MiB Xvfb RSS and
+a zero-tick/zero-switch idle interval. Evidence: `target/x3-smoke/`. No budget
+threshold changed. Desktop IME/Orca/HiDPI, physical print calibration and
+real-GPU 250 MiB RSS remain manual; no unrelated item was fixed.
 
 <a id="x4"></a>
 ### X4 — Emphasis that wraps by printed width and is styled in the editor
