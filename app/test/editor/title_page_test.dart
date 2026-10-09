@@ -30,7 +30,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The dialog as the editor shows it: a route that Done closes.
+  Future<void> openModal(WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => TitlePageDialog.show(context, core),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> close(WidgetTester tester) async {
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+  }
+
   Finder box(String key) => find.byKey(Key('title-field-$key'));
+
+  String shown(WidgetTester tester, String key) =>
+      tester.widget<TextField>(box(key)).controller!.text;
 
   testWidgets('every field §Phase 7 names has a box', (tester) async {
     await open(tester);
@@ -126,30 +152,83 @@ void main() {
   testWidgets('closing the dialog commits the box the caret is still in', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => TitlePageDialog.show(context, core),
-              child: const Text('open'),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    await openModal(tester);
 
     // Typed, and then the window closed without leaving the box — the ordinary
     // way to finish typing in one, and it must not be the way to lose it.
     await tester.enterText(box('Title'), 'Untitled Two');
-    await tester.tap(find.text('Done'));
-    await tester.pumpAndSettle();
+    await close(tester);
 
     expect(
       core.titlePage().map((entry) => (entry.key, entry.value)),
       contains(('Title', 'Untitled Two')),
     );
+    expect(core.titleEdits, [('Title', 'Untitled Two')]);
+  });
+
+  // A native Fountain title page may repeat a key, leave one empty or carry
+  // several lines in one. Looking at it is not editing it.
+  const native = [
+    TitleEntryView(key: 'Title', value: 'Big Fish\nPart Two'),
+    TitleEntryView(key: 'Author', value: 'John August'),
+    TitleEntryView(key: 'Author', value: 'Daniel Wallace'),
+    TitleEntryView(key: 'Notes', value: ''),
+    TitleEntryView(key: 'Revision Colour', value: 'Blue'),
+    TitleEntryView(key: 'Revision Colour', value: 'Pink'),
+  ];
+
+  testWidgets('opening and closing without typing writes nothing', (
+    tester,
+  ) async {
+    core.title.addAll(native);
+    await openModal(tester);
+
+    // Through the boxes and out again, the way a writer reads a form.
+    await tester.tap(box('Title'));
+    await tester.pump();
+    await tester.tap(box('Author'));
+    await tester.pump();
+    await close(tester);
+
+    expect(core.titleEdits, isEmpty);
+    expect(core.titlePage(), native);
+    expect(core.dirty, isFalse);
+    expect(core.journalState, (0, false));
+  });
+
+  testWidgets('a repeated key is shown and edited at its first entry', (
+    tester,
+  ) async {
+    core.title.addAll(native);
+    await openModal(tester);
+
+    // The entry `setTitleField` reaches, so the one a box has to show.
+    expect(shown(tester, 'Author'), 'John August');
+    expect(shown(tester, 'Revision Colour'), 'Blue');
+
+    await tester.enterText(box('Author'), 'J. August');
+    await close(tester);
+
+    expect(core.titleEdits, [('Author', 'J. August')]);
+    expect(core.titlePage(), [
+      native[0],
+      const TitleEntryView(key: 'Author', value: 'J. August'),
+      ...native.skip(2),
+    ]);
+  });
+
+  testWidgets('a field is written once, however many ways it is left', (
+    tester,
+  ) async {
+    core.title.addAll(native);
+    await openModal(tester);
+
+    await tester.enterText(box('Draft date'), '26 July 2026');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.tap(box('Contact'));
+    await tester.pump();
+    await close(tester);
+
+    expect(core.titleEdits, [('Draft date', '26 July 2026')]);
   });
 }

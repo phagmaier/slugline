@@ -429,8 +429,8 @@ fn finish(
 /// separately, then prove that native save/reopen retains the same identities.
 fn normalize(script: &mut Script, warnings: &mut Vec<String>) -> Result<(), Error> {
     // The native title form edits one value per key. Repeated FDX paragraphs
-    // must not become duplicate native keys: opening that form would show the
-    // last value but write it into the first, losing unseen title words.
+    // must not become duplicate native keys: that form shows and writes only
+    // the first, leaving the later title words where no box reaches them.
     let entries = &mut script.title_page.entries;
     let mut first = HashMap::with_capacity(entries.len());
     let mut duplicates = Vec::new();

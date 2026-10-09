@@ -12,6 +12,11 @@ import 'package:slugline/core/document_core.dart';
 /// through [DocumentCore.setTitleField] as it loses focus, which is one undo
 /// step per field and the same path a crash journal records (ADR 0033).
 ///
+/// ## Looking is not editing
+///
+/// Only a box whose text has changed is committed. A title page opened and
+/// closed is the title page it was: no edit, no undo step, nothing unsaved.
+///
 /// ## Why the keys are strings
 ///
 /// §Phase 7 names six fields and "free-form additional text". The format allows
@@ -59,21 +64,28 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, FocusNode> _focus = {};
 
+  /// What the core holds under each key: as read on opening, then as this form
+  /// last wrote it. A key with no entry holds nothing.
+  final Map<String, String> _held = {};
+
   /// Keys the file has that the form above does not name.
   List<String> _extra = const [];
 
   @override
   void initState() {
     super.initState();
-    final entries = {
-      for (final entry in widget.core.titlePage()) entry.key: entry.value,
-    };
+    // A file may repeat a key. The first entry is the one `setTitleField` reads
+    // and writes, so it is the one a box shows; the later ones stay in the file
+    // as they are, and are not this form's to merge.
+    for (final entry in widget.core.titlePage()) {
+      _held.putIfAbsent(entry.key, () => entry.value);
+    }
     _extra = [
-      for (final key in entries.keys)
+      for (final key in _held.keys)
         if (!_fields.any((field) => field.$1 == key)) key,
     ];
     for (final key in [for (final field in _fields) field.$1, ..._extra]) {
-      _controllers[key] = TextEditingController(text: entries[key] ?? '');
+      _controllers[key] = TextEditingController(text: _held[key] ?? '');
       _focus[key] = FocusNode()
         ..addListener(() {
           if (!_focus[key]!.hasFocus) _commit(key);
@@ -98,12 +110,18 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
     super.dispose();
   }
 
-  /// Writes one field through the core. A value equal to what is already there
-  /// is not an edit, and the core is what decides that — see
-  /// `doc_set_title_field`.
+  /// Writes one field through the core, if its box has changed.
+  ///
+  /// A box nobody typed in is never sent. What it shows is not always what a
+  /// write of it would leave — a key the file wrote with nothing after it reads
+  /// as empty, and sending empty removes the line.
   void _commit(String key) {
-    final outcome = widget.core.setTitleField(key, _controllers[key]!.text);
-    if (outcome is EditOutcome_Applied) widget.onCommitted?.call();
+    final text = _controllers[key]!.text;
+    if (text == (_held[key] ?? '')) return;
+    final outcome = widget.core.setTitleField(key, text);
+    if (outcome is! EditOutcome_Applied) return;
+    _held[key] = text;
+    widget.onCommitted?.call();
   }
 
   @override

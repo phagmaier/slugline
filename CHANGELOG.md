@@ -78,6 +78,10 @@ this file and the others to it.
 
 ### Fixed
 
+- Opening and closing the title page form no longer rewrites a title page that
+  repeats a key or leaves one empty. Only a field that was actually edited is
+  written; looking adds nothing to Undo, the unsaved state or the recovery
+  record.
 - Omitted text remains recoverable after Save followed by Restore/Undo/Redo,
   including partial scene headings. Restoration also refuses changed seam
   whitespace instead of silently putting that whitespace back.

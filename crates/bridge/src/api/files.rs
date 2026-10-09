@@ -5289,6 +5289,96 @@ mod tests {
         assert!(!it.recovers_to().contains("Draft date"));
     }
 
+    /// A native title page that repeats a key, in bytes no canonical save would
+    /// write: a BOM, CRLF, a tab-indented value and doubled spaces (S4).
+    const REPEATED_TITLE: &str = "\u{feff}Title:\r\n\t_**BIG FISH**_\r\n\tPart Two\r\nAuthor:  John August\r\nAuthor: Daniel Wallace\r\nRevision Colour: Blue\r\n\r\nThe house  is quiet.\r\n";
+
+    /// The title form reads one value per key — the first, which is the entry
+    /// `doc_set_title_field` reaches. A field sent what it already holds is not
+    /// an edit (ADR 0033): no journal record, nothing to undo, nothing unsaved,
+    /// and the bytes the file had on the next save.
+    #[test]
+    fn a_title_field_set_to_what_it_holds_records_nothing() {
+        use crate::api::doc::{doc_set_title_field, doc_title_page};
+        let it = Fixture::open_source("title-unchanged", REPEATED_TITLE);
+        let page = doc_title_page(it.handle);
+        assert_eq!(
+            page.iter()
+                .map(|entry| (entry.key.as_str(), entry.value.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("Title", "_**BIG FISH**_\nPart Two"),
+                ("Author", "John August"),
+                ("Author", "Daniel Wallace"),
+                ("Revision Colour", "Blue"),
+            ],
+            "a repeated key is read as two entries, not merged into one"
+        );
+
+        let mut sent: Vec<&str> = Vec::new();
+        for entry in &page {
+            if sent.contains(&entry.key.as_str()) {
+                continue;
+            }
+            sent.push(&entry.key);
+            doc_set_title_field(it.handle, entry.key.clone(), entry.value.clone());
+        }
+        // And a field the file does not have, left empty.
+        doc_set_title_field(it.handle, "Draft date".to_owned(), String::new());
+
+        assert_eq!(
+            it.journalled(),
+            0,
+            "nothing happened, so nothing is recorded"
+        );
+        assert!(!it.dirty());
+        assert!(doc_undo(it.handle).is_none(), "there is nothing to undo");
+        assert_eq!(doc_title_page(it.handle), page);
+        assert_eq!(it.in_memory(), REPEATED_TITLE);
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), REPEATED_TITLE);
+    }
+
+    /// Typing in that box changes the entry it showed and no other: the later
+    /// entry under the same key is neither merged nor dropped, the body keeps
+    /// the bytes the file had, and Undo is the file again.
+    #[test]
+    fn editing_a_repeated_title_key_changes_only_its_first_entry() {
+        use crate::api::doc::{doc_close, doc_set_title_field, doc_title_page};
+        let mut it = Fixture::open_source("title-repeated", REPEATED_TITLE);
+        let mut expected = doc_title_page(it.handle);
+        doc_set_title_field(it.handle, "Author".to_owned(), "J. August".to_owned());
+
+        assert_eq!(expected[1].value, "John August");
+        expected[1].value = "J. August".to_owned();
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.journalled(), 1);
+        assert_eq!(it.recovers_to(), it.in_memory());
+
+        doc_undo(it.handle).unwrap();
+        assert_eq!(it.in_memory(), REPEATED_TITLE);
+        doc_redo(it.handle).unwrap();
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.recovers_to(), it.in_memory());
+
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        let saved = it.on_disk();
+        assert!(
+            saved.ends_with("\r\n\r\nThe house  is quiet.\r\n"),
+            "the body is the bytes the file had"
+        );
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.in_memory(), saved);
+    }
+
     // -----------------------------------------------------------------------
     // Exporting a PDF (§Phase 7)
     // -----------------------------------------------------------------------

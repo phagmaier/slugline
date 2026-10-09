@@ -539,10 +539,17 @@ pub fn doc_set_title_field(handle: DocumentHandle, key: String, value: String) -
         // Structural, like every other edit that is not typing into a block:
         // it neither joins the run of typing before it nor leaves one open.
         let document = session.interrupt();
+        let revision = document.revision();
         let result = document.apply(model::EditCommand::SetTitlePage {
             field: model::TitleField::from_key(&key),
             value,
         });
+        // A field that already held this recorded no step, so the page it left
+        // alone is not an outcome either: journalled whole, it would be a
+        // record of an edit that did not happen.
+        if document.revision() == revision {
+            return outcome(session, result);
+        }
         // The one edit that ends in `outcome_with_title_page`: a title page is
         // not a block, so the patch a block-shaped journal entry would record
         // is empty, and an empty patch is a lost draft date (ADR 0033).

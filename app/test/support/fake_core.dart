@@ -218,7 +218,7 @@ class FakeCore implements DocumentCore {
     titleEdits.add((key, value));
     final at = title.indexWhere((entry) => entry.key == key);
     // The real core answers "nothing happened" for a value that is already
-    // there, and the dialog leans on it — so this does too.
+    // there, so this does too.
     if (at < 0 ? value.isEmpty : title[at].value == value) {
       return _applied(caret: null);
     }

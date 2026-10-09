@@ -72,6 +72,7 @@ This is the only place boxes are ticked.
 - [x] [S1](#s1) A second launch deletes a running session's crash journal
 - [x] [S2](#s2) Autosave never writes a previous version
 - [x] [S3](#s3) The title-page dialog fuses multi-line fields
+- [x] [S4](#s4) Opening and closing the title-page form must not alter existing text
 
 **2. Small confirmed bugs**
 
@@ -311,6 +312,48 @@ one line as needed. The regression widget test preserves a three-line Contact
 after editing; the existing Fountain multi-line canonical round-trip test also
 passes. All seven title-page widget tests passed, including focus-loss and
 dialog-dispose commits.
+
+<a id="s4"></a>
+### S4 — Opening and closing the title-page form must not alter existing text
+
+**Problem.** Opening the title-page form and closing it without typing can
+rewrite the title page of a native Fountain file. Promoted from the two
+2026-10-09 X2 title findings under [Found along the way](#found-along-the-way).
+
+**Evidence (reproduced in a widget test and against the real core).**
+- The form kept one value per key in a map, so a repeated key showed its
+  *last* entry, while `TitlePage::get`/`set` address the *first*. It also
+  committed every box on focus loss and on dispose, typed in or not.
+- `Author:  John August` over `Author: Daniel Wallace` became two
+  `Author: Daniel Wallace` lines. An empty `Notes:` line was removed, because an
+  empty value means "remove". The script was left dirty with Undo steps.
+- Every unchanged field still appended a whole title-page record to the crash
+  journal: `doc_set_title_field` journalled the page even when the document
+  had recorded no step.
+
+**Change.** The form shows a key's first entry — the one the core reads and
+writes — and commits a box only when its text differs from what the core holds.
+`doc_set_title_field` journals the title page only when the document recorded
+a step. Repeated native keys are neither merged nor normalised.
+
+**Done when.** Opening and closing the form changes no title entry and adds no
+dirty state, Undo step or journal record, for repeated keys, multi-line values
+and custom fields alike. Editing a box changes only that entry; focus-loss and
+dispose commits and multi-line values still work; Undo/Redo and save/reopen
+keep untouched source bytes.
+
+**Effort.** S.
+**Result:** 2026-10-09 — reproduced in a widget test and against the real core: closing the untouched form
+replaced a repeated key's first value with its last, removed an empty `Notes:`
+line and journalled eight title records. The form now shows a repeated key's
+first entry and writes only boxes whose text changed, and `doc_set_title_field`
+no longer journals a field it left alone; the title-page widget tests and two
+bridge regressions (unchanged fields record nothing and save byte-identically;
+a repeated-key edit changes only its first entry through Undo/Redo, recovery
+and save/reopen) pass. Limitation: a repeated key's later entries stay in the
+file and print but are not shown in the form, and clearing its box removes them
+all, as `TitlePage::set` always has. Commit:
+`S4 — the title form writes only the boxes that were edited`.
 
 ---
 
@@ -2773,12 +2816,14 @@ S1 is fixed, two windows cover it.
   form commits on closing even without typing. [INFERENCE] That can replace
   the first value with the last. FDX imports now coalesce repeated fields
   before the form sees them; the pre-existing native-file case is not changed.
+  Promoted to [S4](#s4) on 2026-10-09.
 
 - 2026-10-09 — X2 native title inspection: opening and closing the title form
   without typing adds seven title snapshots to the journal, so recovery says
   “8 edits” including import's initial outcome. The recovered words and title
   values are unchanged. No-op title journalling is existing behavior and is
   left outside X2. Evidence: `target/x2-fdx-smoke/native-title-safety-recovery-offer.png`.
+  Fixed with [S4](#s4) on 2026-10-09.
 
 - 2026-10-08 — X1 publication: fast-forwarded and pushed `main` at `34844c7`.
   [Hosted CI run 37860589165](https://github.com/phagmaier/slugline/actions/runs/37860589165)
