@@ -101,6 +101,7 @@ This is the only place boxes are ticked.
 - [x] [B23](#b23) The find bar covers the matches under it
 - [x] [B24](#b24) A one-page script draws no sheet in page view
 - [x] [B25](#b25) `Ctrl+Home` does nothing in a restored session whose caret is at the top
+- [x] [B26](#b26) Late spell-check results pull a scrolled view back to the caret
 
 **3. Fountain and output fidelity**
 
@@ -1375,6 +1376,33 @@ and the widget suite passes. On the rebuilt app `Ctrl+Home` and `←`, pressed
 on page 7 with the caret still on line 1, both come back to it
 (`target/b24/b25/`). Commit:
 `B25 — a key at the caret shows the caret, moved or not`.
+
+<a id="b26"></a>
+### B26 — Late spell-check results pull a scrolled view back to the caret
+
+**Evidence (reproduced in widget tests).** Promoted from the 2026-10-09 B25 note
+under [Found along the way](#found-along-the-way).
+`EditorSurface._onDocumentChanged` showed the caret for every notification from
+the controller, whatever the news was. With a key pressed and the view then
+scrolled to 900 px, spell-check results for a block far below put it back at
+29 px; so did "Ignore Once" on a word on screen there, and a search that found
+nothing.
+
+**Change.** The surface shows the caret when the controller's news is about the
+caret: the selection moved, the script changed, or a search stopped on a match —
+which can be the one already selected, so the controller counts those. Typing
+shows it as well, also when the core refuses the edit. Dart only. The restore
+guard B25 worked around is removed: it stood in for this rule until the first
+key and for nothing after it.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `EditorSurfaceState._noteCaret` and
+`EditorController.matchLandings`; `_restoreInProgress` is gone.
+`scroll_restore_test.dart` holds late spell-check results, an ignored spelling
+and an empty search leaving the view alone, and a find step onto the match
+already selected and refused typing still coming back to the caret; the widget
+suite passes. Commit:
+`B26 — news that is not about the caret leaves the view where it is`.
 
 ---
 
@@ -3086,6 +3114,7 @@ not part of that item.
   pulled the view from 900 px back to the caret's row.
   `EditorSurface._onDocumentChanged` calls `_ensureCaretVisible` whatever the
   news was; the restore guard only covers the time before the first key.
+  Promoted to [B26](#b26) on 2026-10-09.
 - 2026-10-09 — B24, reproduced in a widget probe and left unchanged: in page
   view a restored scroll row is applied against the first frame's continuous
   geometry. When the sheets arrive, every row moves down by the page gaps above

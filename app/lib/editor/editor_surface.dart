@@ -141,19 +141,14 @@ class EditorSurfaceState extends State<EditorSurface>
   bool _initialScrollPending = true;
   bool _initialScrollScheduled = false;
 
-  /// After the parked position is applied, spell-check results and other
-  /// async notifications must not pull the viewport back to the caret at
-  /// row zero — the session-restored scroll position takes priority until
-  /// the user actually moves the caret or edits the document.
-  bool _restoreInProgress = true;
-
-  /// The focus position at init, so we can tell when the user has moved
-  /// the caret.
-  late final DocPosition _initialFocus;
-
-  /// The controller's edit count when it was taken on, so we can tell when
-  /// the script has been changed with the caret left where it was.
-  late int _initialRevision;
+  /// What the controller last said about the caret. It reports everything it
+  /// knows through one listener, and most of that is not about the caret:
+  /// spell-check results arriving, a search that found nothing. Only news that
+  /// moves one of these brings the caret into view — anything else leaves the
+  /// script where the writer has scrolled it, or where a session parked it.
+  late DocSelection _shownSelection;
+  late int _shownRevision;
+  late int _shownLandings;
 
   TextInputConnection? _connection;
 
@@ -217,8 +212,7 @@ class EditorSurfaceState extends State<EditorSurface>
   @override
   void initState() {
     super.initState();
-    _initialFocus = _controller.selection.focus;
-    _initialRevision = _controller.documentRevision;
+    _noteCaret();
     _displayColumns = _controller.layout.displayColumns;
     _controller.addListener(_onDocumentChanged);
     widget.pageIndicator?.addListener(_onPaginationChanged);
@@ -256,8 +250,7 @@ class EditorSurfaceState extends State<EditorSurface>
       _displayColumns = _controller.layout.displayColumns;
       _reportedRow = -1;
       _initialScrollPending = true;
-      _restoreInProgress = true;
-      _initialRevision = widget.controller.documentRevision;
+      _noteCaret();
       _scheduleInitialScroll();
     }
   }
@@ -277,17 +270,23 @@ class EditorSurfaceState extends State<EditorSurface>
     super.dispose();
   }
 
+  /// Takes the controller's caret as the one already accounted for.
+  void _noteCaret() {
+    _shownSelection = _controller.selection;
+    _shownRevision = _controller.documentRevision;
+    _shownLandings = _controller.matchLandings;
+  }
+
   void _onDocumentChanged() {
     _syncEditingState();
-    // Clear the session-restore guard once the user has moved the caret
-    // from its initial position or changed the script with it still there —
-    // spell-check results do neither, so they leave the guard intact.
-    if (_restoreInProgress &&
-        (_controller.selection.focus != _initialFocus ||
-            _controller.documentRevision != _initialRevision)) {
-      _restoreInProgress = false;
+    // A selection that moved, a script that changed under it, or a search
+    // that stopped on a match — which can be the one already selected.
+    if (_controller.selection != _shownSelection ||
+        _controller.documentRevision != _shownRevision ||
+        _controller.matchLandings != _shownLandings) {
+      _noteCaret();
+      _ensureCaretVisible();
     }
-    _ensureCaretVisible();
     if (_displayColumns != _controller.layout.displayColumns) {
       _displayColumns = _controller.layout.displayColumns;
       _refreshSemantics(geometryChanged: true);
@@ -522,6 +521,9 @@ class EditorSurfaceState extends State<EditorSurface>
       // value. Synchronize that result once; accepted text needs no echo.
       _syncEditingState();
     }
+    // Typing is the writer at the caret, also when the core refuses it and
+    // the controller has nothing about the caret to report.
+    revealCaret();
   }
 
   /// The common prefix and suffix of two strings, as `(start, oldEnd, inserted)`.
@@ -547,7 +549,9 @@ class EditorSurfaceState extends State<EditorSurface>
 
   @override
   void performAction(TextInputAction action) {
-    if (action == TextInputAction.newline) _controller.splitBlock();
+    if (action != TextInputAction.newline) return;
+    _controller.splitBlock();
+    revealCaret();
   }
 
   @override
@@ -961,7 +965,6 @@ class EditorSurfaceState extends State<EditorSurface>
   /// Reveals the caret after an explicit page jump, even if it stayed at the
   /// initial position of a session whose viewport was restored elsewhere.
   void revealPageTarget({required bool documentStart}) {
-    _restoreInProgress = false;
     if (documentStart && _scroll.hasClients) {
       _scroll.jumpTo(0);
     } else {
@@ -977,10 +980,7 @@ class EditorSurfaceState extends State<EditorSurface>
   /// does a jump to the scene the caret is in. In a session whose view was
   /// restored somewhere else they are the first things done, and anywhere else
   /// they would leave a view that has been scrolled away where it is.
-  void revealCaret() {
-    _restoreInProgress = false;
-    _ensureCaretVisible();
-  }
+  void revealCaret() => _ensureCaretVisible();
 
   /// Brings the selection out from under [EditorSurface.obscuredTop] when
   /// that has just come down over it: Find opening on a match is the case.
@@ -1000,9 +1000,7 @@ class EditorSurfaceState extends State<EditorSurface>
   /// Keeps the caret on screen with a few rows of air around it, and below
   /// whatever [EditorSurface.obscuredTop] says is covering the top.
   void _ensureCaretVisible() {
-    if (_initialScrollPending || _restoreInProgress || !_scroll.hasClients) {
-      return;
-    }
+    if (_initialScrollPending || !_scroll.hasClients) return;
     final margin = 3 * _lineHeight;
     final caretTop = _geometry.yOfRow(_controller.caretRow);
     final caretBottom = caretTop + _lineHeight;

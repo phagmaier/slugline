@@ -1099,8 +1099,14 @@ class EditorController extends ChangeNotifier {
   List<FindMatch> _matches = const [];
   int _matchIndex = 0;
   int _searchRevision = 0;
+  int _matchLandings = 0;
 
   FindQuery get query => _query;
+
+  /// How many times a search has stopped on a match. A step can land on the
+  /// selection already in force — the only match there is, or the one a toggle
+  /// left standing — and then nothing else says that the caret was asked for.
+  int get matchLandings => _matchLandings;
 
   /// Every match of the current query, in document order. Edits invalidate the
   /// cached revision; only a Find consumer pays for the next scan.
@@ -1229,6 +1235,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void _selectMatch() {
+    _matchLandings += 1;
     final match = _matches[_matchIndex];
     final selection = DocSelection(
       anchor: DocPosition(block: match.block, offsetUtf16: match.startUtf16),

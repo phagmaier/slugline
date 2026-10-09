@@ -196,6 +196,144 @@ void main() {
     });
   });
 
+  group('news that is not about the caret, with the view scrolled away', () {
+    const away = 900.0;
+
+    // An ordinary session, not a restored one: a key has been pressed, and
+    // the writer has since scrolled somewhere else to read.
+    Future<EditorController> scrolledAway(
+      WidgetTester tester, {
+      FakeCore? core,
+    }) async {
+      final controller = EditorController(core ?? _script(100));
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      await _pumpSurface(
+        tester,
+        controller,
+        initialScrollRow: 0,
+        focusNode: focusNode,
+      );
+      focusNode.requestFocus();
+      await tester.pump();
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      _position(tester).jumpTo(away);
+      await tester.pump();
+      return controller;
+    }
+
+    FakeCore checked() => _script(100)
+      ..spellStatusData = const SpellStatus(
+        enabled: true,
+        language: 'en_US',
+        languages: [
+          SpellLanguage(code: 'en_US', label: 'English (United States)'),
+        ],
+        message: 'Checking with English (United States).',
+      )
+      ..spellings[100] = [
+        const Misspelling(
+          block: 100,
+          startUtf16: 0,
+          endUtf16: 6,
+          word: 'Action',
+        ),
+      ];
+
+    testWidgets('spell-check results arriving late leave it there', (
+      tester,
+    ) async {
+      final controller = await scrolledAway(
+        tester,
+        core: checked()..spellCheckDelay = const Duration(milliseconds: 5),
+      );
+      expect(controller.misspellingsFor(100), isEmpty);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+
+      expect(controller.misspellingsFor(100), hasLength(1));
+      expect(_position(tester).pixels, away);
+    });
+
+    testWidgets('so does ignoring a spelling that is on screen there', (
+      tester,
+    ) async {
+      final controller = await scrolledAway(tester, core: checked());
+      await tester.pump(const Duration(seconds: 1));
+      _position(tester).jumpTo(away);
+      await tester.pump();
+
+      controller.ignoreMisspellingOnce(controller.misspellingsFor(100).single);
+      await tester.pump();
+
+      expect(controller.misspellingsFor(100), isEmpty);
+      expect(_position(tester).pixels, away);
+    });
+
+    testWidgets('and a search that finds nothing', (tester) async {
+      final controller = await scrolledAway(tester);
+
+      controller.search(
+        const FindQuery(
+          text: 'no such words',
+          caseSensitive: false,
+          wholeWord: false,
+          kinds: [],
+        ),
+      );
+      await tester.pump();
+
+      expect(controller.matches, isEmpty);
+      expect(_position(tester).pixels, away);
+    });
+
+    testWidgets('a search that lands on the match already selected is about '
+        'the caret, and comes back to it', (tester) async {
+      final controller = await scrolledAway(tester);
+      const query = FindQuery(
+        text: 'line 2.',
+        caseSensitive: false,
+        wholeWord: false,
+        kinds: [],
+      );
+      controller.search(query);
+      await tester.pump();
+      final atMatch = _position(tester).pixels;
+      final selection = controller.selection;
+      expect(atMatch, lessThan(away));
+
+      _position(tester).jumpTo(away);
+      await tester.pump();
+      controller.nextMatch();
+      await tester.pump();
+
+      expect(controller.selection, selection, reason: 'the only match');
+      expect(_position(tester).pixels, atMatch);
+    });
+
+    testWidgets('typing the core refuses is the writer at the caret, and '
+        'comes back to it', (tester) async {
+      final core = _script(100);
+      final controller = await scrolledAway(tester, core: core);
+      final before = controller.source;
+
+      core.refuseWith = EditRejection.notEditable;
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'xAction line 2.',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+
+      expect(controller.source, before);
+      expect(controller.lastRejection, EditRejection.notEditable);
+      expect(_position(tester).pixels, lessThan(away));
+    });
+  });
+
   testWidgets('Ctrl+End with the caret already at the end, and the view '
       'scrolled away from it, comes back to it', (tester) async {
     final controller = EditorController(_script(100));

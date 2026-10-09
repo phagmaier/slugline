@@ -92,6 +92,10 @@ this file and the others to it.
 
 ### Fixed
 
+- A script scrolled away from the caret to read stays there. Spell-check
+  results arriving, ignoring a misspelling and a search with no matches no
+  longer bring the view back to the caret; moving it, typing and stepping to a
+  match still do.
 - A caret key shows the caret even when it does not move it: `Ctrl+Home` with
   the caret already at the top of a script scrolled somewhere else, `Ctrl+End`
   at the end. The navigator and the palette's “Start of script” do the same,
