@@ -259,7 +259,6 @@ class EditorController extends ChangeNotifier {
     );
     lastRejection = null;
     _stickyColumn = null;
-    refreshSearch();
     _refreshCompletions();
     _spellRun++;
     _misspellings.clear();
@@ -1075,15 +1074,23 @@ class EditorController extends ChangeNotifier {
   );
   List<FindMatch> _matches = const [];
   int _matchIndex = 0;
+  int _searchRevision = 0;
 
   FindQuery get query => _query;
 
-  /// Every match of the current query, in document order.
-  List<FindMatch> get matches => _matches;
+  /// Every match of the current query, in document order. Edits invalidate the
+  /// cached revision; only a Find consumer pays for the next scan.
+  List<FindMatch> get matches {
+    _refreshSearch();
+    return _matches;
+  }
 
   /// Which match the caret is on, or `null` when there are none. The find bar
   /// shows this as "3 of 17".
-  int? get matchIndex => _matches.isEmpty ? null : _matchIndex;
+  int? get matchIndex {
+    _refreshSearch();
+    return _matches.isEmpty ? null : _matchIndex;
+  }
 
   /// [_matches] by block, and the list it was grouped from.
   List<FindMatch>? _grouped;
@@ -1098,6 +1105,7 @@ class EditorController extends ChangeNotifier {
   /// assigned, so that no path that replaces it can leave this stale. With
   /// the bar closed nobody asks, and an edit pays nothing for it.
   List<FindMatch> matchesIn(int block) {
+    _refreshSearch();
     if (!identical(_grouped, _matches)) {
       _grouped = _matches;
       _matchesByBlock.clear();
@@ -1163,6 +1171,7 @@ class EditorController extends ChangeNotifier {
   void search(FindQuery query) {
     _query = query;
     _matches = core.find(query);
+    _searchRevision = _documentRevision;
     if (_matches.isEmpty) {
       _matchIndex = 0;
       notifyListeners();
@@ -1174,13 +1183,12 @@ class EditorController extends ChangeNotifier {
     _selectMatch();
   }
 
-  /// Re-runs the current query. Called after an edit changes the text under it.
-  void refreshSearch() {
-    if (_query.text.isEmpty) {
-      _matches = const [];
-      return;
-    }
-    _matches = core.find(_query);
+  /// Rescan once per changed document, when Find actually needs the ranges.
+  /// With the bar closed, typing, undo/redo and reload never ask for them.
+  void _refreshSearch() {
+    if (_searchRevision == _documentRevision) return;
+    _matches = _query.text.isEmpty ? const [] : core.find(_query);
+    _searchRevision = _documentRevision;
     if (_matchIndex >= _matches.length) _matchIndex = 0;
   }
 
@@ -1189,6 +1197,7 @@ class EditorController extends ChangeNotifier {
   void previousMatch() => _step(-1);
 
   void _step(int delta) {
+    _refreshSearch();
     if (_matches.isEmpty) return;
     _matchIndex = (_matchIndex + delta) % _matches.length;
     if (_matchIndex < 0) _matchIndex += _matches.length;
@@ -1212,6 +1221,7 @@ class EditorController extends ChangeNotifier {
 
   /// Replaces the match the caret is on and moves to the next one.
   void replaceCurrent(String with_) {
+    _refreshSearch();
     if (_matches.isEmpty) return;
     final match = _matches[_matchIndex];
     _apply(
@@ -1223,8 +1233,9 @@ class EditorController extends ChangeNotifier {
       ),
     );
     if (lastRejection != null) return;
-    // `_outcome` has already re-run the query: the match list was stale the
-    // moment the text under it changed.
+    // Replacement changed the revision. Refresh before choosing the next match,
+    // even when no Find widget is mounted to read the list.
+    _refreshSearch();
     if (_matches.isEmpty) {
       _matchIndex = 0;
       notifyListeners();
@@ -1279,7 +1290,6 @@ class EditorController extends ChangeNotifier {
     if (result == null) return;
     lastRejection = null;
     _applyResult(result);
-    refreshSearch();
     _refreshCompletions();
     _stickyColumn = null;
     notifyListeners();
@@ -1301,8 +1311,6 @@ class EditorController extends ChangeNotifier {
       case EditOutcome_Applied(:final result):
         lastRejection = null;
         _applyResult(result);
-        // Every match offset is an offset into text the edit may have moved.
-        refreshSearch();
         _refreshCompletions(show: suggest);
       case EditOutcome_Rejected(:final reason):
         lastRejection = reason;

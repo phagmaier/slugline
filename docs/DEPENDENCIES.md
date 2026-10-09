@@ -13,6 +13,11 @@ and checks input focus for F9's runtime budgets, and types into that window for
 B16's clean-close check — avoids adding a production benchmark marker or a
 window-manager dependency; installed only on test hosts.
 
+`gdb` — attempts bounded all-thread native stacks only after a release startup
+deadline fails — live blocked-thread evidence cannot be reconstructed after
+cleanup; installed only on test hosts, and unavailable/denied attachment remains
+diagnostic evidence rather than a new harness prerequisite.
+
 ## Rust crates
 
 | Crate | Version | Used by | Justification |

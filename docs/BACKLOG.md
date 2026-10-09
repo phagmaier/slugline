@@ -73,6 +73,7 @@ This is the only place boxes are ticked.
 - [x] [B15](#b15) Same-burst Save can precede the final native text update
 - [x] [B16](#b16) Closing the window can end the process in SIGSEGV
 - [x] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
+- [x] [B18](#b18) A retained Find query rescans the script on every edit
 
 **3. Fountain and output fidelity**
 
@@ -1062,6 +1063,69 @@ including workspace tests with the real full-disk fixture. Fuzz, MSRV, Flutter
 all seven native suites) and packaging/network/install smoke also passed.
 `./tools/agent.sh docs` passed before implementation commit and after this
 completion record. No deviation.
+
+<a id="b18"></a>
+### B18 — A retained Find query rescans the script on every edit
+
+**Problem.** Promoted from W8's finding on 2026-10-09. Find retains its query
+after closing so Ctrl+G can continue it, but every applied edit, undo/redo and
+reload eagerly calls `core.find`. The synchronous `doc_find` scans the whole
+document on the typing path even when no Find UI consumes the result.
+
+**Evidence (reproduced).** With Find closed after searching for `house`, a
+throwaway widget smoke recorded 20 whole-document Find calls for 20 typed
+characters. Native Linux measurements on the 120-page reference, after actually
+opening and closing Find with query `the`, failed the unchanged 16 ms command
+budget: p99 58.61 ms without a journal and 67.83 ms with a journal. The existing
+benchmark did not use Find.
+
+**Change.** Cache matches against `EditorController.documentRevision`. Edits
+only change that revision; match getters, highlighting, navigation and Replace
+refresh ranges when consumed. Retain the query and the synchronous Rust API;
+do not move matching semantics into Dart, add timers, or weaken the budget.
+Extend both native keystroke benchmarks with a previously used, closed Find
+bar, keeping the same isolated editing surface for both query states.
+
+**Done when.** Closed Find performs no search during ordinary typing, yet
+Ctrl+G, Ctrl+Shift+G, Replace, reopening, undo/redo and reload consume current
+ranges. Open Find still displays current counts and tints. Both retained-query
+native benchmarks meet the existing 16 ms p99 limits.
+
+**Effort.** S.
+**Result:** 2026-10-09 — fixed in `888df30`. Matches are now cached against the
+existing document revision, not refreshed by edits. The closed-bar smoke went
+from 20 scans for 20 keystrokes to zero, then one refresh on Ctrl+G. Match
+consumers refresh once per revision; Replace refreshes both before editing and
+before selecting its successor. Queries, filters and Rust matching stay intact.
+Widget regressions cover closed-bar navigation after deletion/undo/redo, a
+new match after an empty result, and Replace after an unseen astral-prefix edit.
+An actual native UI smoke confirmed shifted UTF-16 selections, Replace without
+an intervening getter, undo/redo and a reopened “1 of 1” count; its screenshots
+were inspected and the throwaway scripts removed.
+
+The final native benchmark opens and closes the real Find bar, then uses the
+original isolated `EditorSurface` for both query states. With a retained query,
+command p99 is 3.23 ms, frame-build p99 6.70 ms, and journalled command p99
+3.89 ms; all remain below the unchanged 16 ms limits. Both journal variants
+record all 270 edits. A preliminary harness left `EditorPage` mounted only for
+the retained-query case: after the fix its command budget passed but its
+frame-build p99 failed at 18.31 ms during concurrent workspace checks. That
+measured a different surface, so the final harness preserves the original
+surface contract and ran serially. This does not claim a separate full-page
+frame budget or a real-desktop GPU measurement.
+
+Verification passed: 709 Rust tests, 735 Flutter tests, all seven native suites
+(91 tests), enforced Flutter lockfile, Rust/Dart formatting, Clippy with warnings
+denied, Flutter analysis, Linux release build, layering/version/docs and the
+reference-fixture check. No bridge API, bindings, dependency, golden or accepted
+ADR changes.
+The rebuilt release also passed all 15 ordinary-close checks, static network
+linkage checks and `--version` in an isolated network namespace.
+
+The separate release-process run passed startup and Xvfb RSS, but failed the
+zero-wakeup idle gate (best interval: zero CPU ticks, one voluntary switch).
+Evidence is in `target/b18-runtime-budgets.json`; it is recorded below rather
+than changing unrelated idle behaviour or relaxing that gate.
 
 ---
 
@@ -2509,6 +2573,14 @@ S1 is fixed, two windows cover it.
 
 ## Found along the way
 
+- 2026-10-09 — B18 verification: the rebuilt release passed startup (best
+  380.75 ms) and Xvfb RSS (best 289.08 MiB), but
+  `check_runtime_budgets.py` failed the unchanged idle gate. No interval had
+  zero voluntary switches: samples had 1, 63 and 1; CPU ticks were 0, 7 and 0.
+  The first interval also changed its thread set. Retained report:
+  `target/b18-runtime-budgets.json`. Cause not established; no retry, idle
+  workaround or threshold change made as part of the Find fix.
+
 - 2026-10-09 — X2 native smoke: Save As writes the chosen Fountain file and
   marks the imported document saved, but the app bar still says “Untitled”.
   Opening that saved file normally shows its filename. No title-refresh fix
@@ -2657,15 +2729,10 @@ not part of that item.
   (`target/w8-smoke/after-dark-find-open.png`). The surface scrolls a selected
   match into the viewport, not out from under the bar. It predates W8 and shows
   more now that every other match is tinted. Left unchanged.
-- 2026-10-07 — W8, read and not measured: every edit re-runs the last search
-  for as long as a query exists, with the bar open or closed.
-  `EditorController._outcome` calls `refreshSearch`, and `core.find` is a
-  synchronous whole-document scan across the bridge, on the keystroke path, so
-  that `Ctrl+G` never steps through stale ranges. The keystroke benchmark never
-  opens Find, so its budget does not see it. W8's per-block grouping is built
-  only when the painter asks, so it adds nothing with the bar closed. Marking
-  the list stale and rescanning on the next use would take the scan off the
-  keystroke; measure before changing it. Left unchanged.
+- 2026-10-07 — W8, read: every edit re-runs the retained Find query through a
+  synchronous whole-document scan, even with the bar closed; the original
+  keystroke benchmark never opened Find. Reproduced and resolved as
+  [B18](#b18) on 2026-10-09; no longer an open finding.
 - 2026-10-07 — W7, observed on the native Hyprland release launch: GTK/Flutter
   logged “Timed out waiting for OpenGL frame of size 1920x1080 (have 1280x720)”
   during startup. The subsequent editor and

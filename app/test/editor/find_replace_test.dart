@@ -629,6 +629,92 @@ void main() {
     expect(count(tester), '1 of 1');
   });
 
+  testWidgets('closed Find navigates fresh ranges after edit, undo and redo', (
+    tester,
+  ) async {
+    final controller = await pumpEditorPage(tester, script());
+    await openFind(tester, controller);
+    await typeFind(tester, 'house');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    Future<void> step({bool backwards = false}) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      if (backwards) {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      if (backwards) {
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(controller.selectedText(), 'house');
+      expect(find.byType(FindBar), findsNothing);
+    }
+
+    selectFromTo(controller, 1, 16, 1, 21);
+    controller.deleteSelection();
+    await step();
+    expect(controller.selection.anchor.offsetUtf16, 25);
+
+    controller.undo();
+    await step(backwards: true);
+    expect(controller.selection.anchor.offsetUtf16, 30);
+
+    controller.redo();
+    await step();
+    expect(controller.selection.anchor.offsetUtf16, 25);
+  });
+
+  testWidgets(
+    'closed Find can navigate a match created after an empty result',
+    (tester) async {
+      final controller = await pumpEditorPage(tester, script());
+      await openFind(tester, controller);
+      await typeFind(tester, 'cabin');
+      expect(count(tester), 'No matches');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      caretAt(controller, 1, _action.length);
+      controller.insertText(' cabin');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(controller.selectedText(), 'cabin');
+      expect(controller.selection.anchor.offsetUtf16, _action.length + 1);
+      expect(find.byType(FindBar), findsNothing);
+    },
+  );
+
+  test(
+    'Replace refreshes UTF-16 ranges before editing without a Find widget',
+    () {
+      final controller = EditorController(script());
+      addTearDown(controller.dispose);
+      controller.search(
+        const FindQuery(
+          text: 'house',
+          caseSensitive: true,
+          wholeWord: false,
+          kinds: [],
+        ),
+      );
+      caretAt(controller, 1, 0);
+      controller.insertText('🎬 ');
+      // No frame or match getter refreshes the list between edit and Replace.
+      controller.replaceCurrent('cabin');
+      expect(
+        controller.blocks[1].text,
+        '🎬 John leaves the cabin and the house is quiet.',
+      );
+      expect(controller.selectedText(), 'house');
+      expect(controller.selection.anchor.offsetUtf16, 33);
+    },
+  );
+
   testWidgets('replacing with nothing to replace does nothing', (tester) async {
     final core = script();
     final controller = await pumpEditorPage(tester, core);
