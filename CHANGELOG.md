@@ -42,6 +42,9 @@ this file and the others to it.
 
 ### Fixed
 
+- Hosted Rust verification refreshes Ubuntu package metadata before installing
+  Poppler, avoiding stale package-version HTTP 404 failures before tests start.
+
 - Closing the window while something was still animating — the library sliding
   back after closing a script, a dialog fading in — could end the process with
   a segmentation fault and a crash report, after the script had been saved and

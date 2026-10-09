@@ -72,6 +72,7 @@ This is the only place boxes are ticked.
 - [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [x] [B15](#b15) Same-burst Save can precede the final native text update
 - [x] [B16](#b16) Closing the window can end the process in SIGSEGV
+- [ ] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
 
 **3. Fountain and output fidelity**
 
@@ -1030,6 +1031,28 @@ bundle hashes, the drivers, the stock-runner reproducer and
 reproductions with the retained driver are `shutdown-current-01/`,
 `shutdown-prior-01/` and `shutdown-b16-installed-0{1,2}/` beside it. Three
 unrelated observations from the same runs are under Found along the way.
+
+<a id="b17"></a>
+### B17 — Hosted Rust checks stop on stale Poppler package metadata
+
+**Problem.** The hosted runner's apt index can name a package version that
+Ubuntu mirrors have replaced. Rust verification then stops before any checks.
+
+**Evidence (reproduced).** Hosted run
+[37860589165](https://github.com/phagmaier/slugline/actions/runs/37860589165),
+at `34844c7`, requests Poppler `24.02.0-1ubuntu9.9`; all attempted mirrors
+return HTTP 404 for both `libpoppler134` and `poppler-utils`. The Rust job's
+install step has no `apt-get update`. Flutter and packaging refresh first.
+
+**Change.** Refresh apt metadata immediately before installing Poppler, using
+the existing desktop-job convention. No package pin, retry, fallback or
+runtime-budget change.
+
+**Done when.** A hosted run installs Poppler and actually executes the Rust
+formatting, Clippy, workspace/full-disk tests, layering, version and docs gates.
+
+**Effort.** S.
+**Result:** _open_
 
 ---
 
@@ -2369,6 +2392,7 @@ S1 is fixed, two windows cover it.
   That job does not refresh apt metadata before installation, unlike the
   desktop-build jobs. Refreshing it with `apt-get update` is separate CI
   maintenance, not an X1 change. No workflow or thresholds were changed.
+  Promoted to [B17](#b17) for the approved CI bootstrap repair.
 
 - 2026-10-08 — X1 verification: the isolated release runtime check again fails
   idle with zero ticks but one voluntary main-thread switch in each quiet

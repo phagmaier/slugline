@@ -30,7 +30,9 @@ jobs:
       # `pdftotext`. Without poppler the test says so and stops rather than
       # passing quietly, so this is what makes it a gate rather than a note.
       - name: Install poppler-utils
-        run: sudo apt-get install --no-install-recommends -y poppler-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y poppler-utils
 
       - uses: Swatinem/rust-cache@v2
 
