@@ -106,7 +106,7 @@ This is the only place boxes are ticked.
 - [x] [X2](#x2) Final Draft (FDX) import and export
 - [x] [X3](#x3) Scene numbering commands
 - [x] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
-- [ ] [X5](#x5) Outline in the navigator
+- [x] [X5](#x5) Outline in the navigator
 - [x] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers)
 - [ ] [X7](#x7) Omit and restore (editable boneyard)
 
@@ -2543,7 +2543,12 @@ All seven native suites passed (99 tests); after-Find journalled p99 is
 reproduction in `target/retained-features/x5/`.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-09 — individually verified in `f1ca7f4`. The hierarchy,
+async title/edit/history guards and native consumers above passed. Linux release
+startup best 383.759 ms, Xvfb RSS best 270.55 MiB, ten-second zero-tick/zero-switch
+idle, all 15 ordinary closes with exact saved bytes and the no-network script
+passed. Logs and process JSON are in `target/retained-features/x5/`; after-Find
+journalled p99 is 4.26 ms. Desktop manual gates remain pending.
 
 <a id="x6"></a>
 ### X6 — Cleaner Fountain on disk
