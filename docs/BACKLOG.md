@@ -72,7 +72,7 @@ This is the only place boxes are ticked.
 - [x] [B14](#b14) Find loses Escape and Enter after pointer interaction
 - [x] [B15](#b15) Same-burst Save can precede the final native text update
 - [x] [B16](#b16) Closing the window can end the process in SIGSEGV
-- [ ] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
+- [x] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
 
 **3. Fountain and output fidelity**
 
@@ -1052,7 +1052,16 @@ runtime-budget change.
 formatting, Clippy, workspace/full-disk tests, layering, version and docs gates.
 
 **Effort.** S.
-**Result:** _open_
+**Result:** 2026-10-09 — fixed in `68370a7`. Refresh apt metadata before installing
+Poppler, matching the other hosted jobs; no dependency pin, retry, fallback or
+runtime-threshold change. Hosted
+[37862474236](https://github.com/phagmaier/slugline/actions/runs/37862474236)
+completed successfully: Poppler installation and every Rust check actually ran,
+including workspace tests with the real full-disk fixture. Fuzz, MSRV, Flutter
+(bindings, formatting, analyze, widgets, release, process/close budgets and
+all seven native suites) and packaging/network/install smoke also passed.
+`./tools/agent.sh docs` passed before implementation commit and after this
+completion record. No deviation.
 
 ---
 
