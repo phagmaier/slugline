@@ -83,7 +83,7 @@ This is the only place boxes are ticked.
 - [x] [F4](#f4) Consecutive lyric lines print double-spaced
 - [x] [F5](#f5) A `~` line under a cue prints its tilde
 - [x] [F6](#f6) Page 1 carries a page number
-- [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE` — *blocked by X6*
+- [ ] [F7](#f7) `@McCLANE` prints as `MCCLANE`
 - [x] [F8](#f8) Incremental repagination is not proven equal to a full one
 - [x] [F9](#f9) Cold start, idle CPU and RSS are budgets nothing measures
 
@@ -107,7 +107,7 @@ This is the only place boxes are ticked.
 - [x] [X3](#x3) Scene numbering commands
 - [x] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
 - [ ] [X5](#x5) Outline in the navigator
-- [ ] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers) — *unblocks F7*
+- [x] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers)
 - [ ] [X7](#x7) Omit and restore (editable boneyard)
 
 ---
@@ -1477,10 +1477,9 @@ default and with `1.` when the stored preference is on.
 capitalisation. Slugline upper-cases every character block for display
 (`layout_for`, `crates/layout/src/engine.rs:441`).
 
-**Blocked by X6.** Slugline currently puts `@` on every cue made with Tab,
-Ctrl+3 or double-Enter, and upper-cases cues for display only. Honouring `@`
-today would make any cue the writer typed in lowercase print in lowercase.
-Decide X6 first.
+**Dependency resolved:** X6 (`360af81`, ADR 0059) preserves authored case
+and emits only necessary markers. F7 can now honor deliberately mixed/lowercase
+cues without Save normalizing the actor document or persisting redundant pins.
 
 **Effort.** S once unblocked.
 **Result:** _open_
@@ -2519,7 +2518,11 @@ regression passed in a private namespace. Evidence is under
 `target/retained-features/x6/`. Desktop manual gates remain pending.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-09 — implemented and individually verified in `360af81`.
+All checks and consumer regressions above passed; logs, the initial failures,
+release runtime JSON and ordinary-close JSON are retained under
+`target/retained-features/x6/`. The after-Find journalled p99 is 4.27 ms.
+Manual desktop gates and the inherited hosted startup investigation remain open.
 
 <a id="x7"></a>
 ### X7 — Omit and restore
