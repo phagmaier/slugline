@@ -23,26 +23,13 @@ On an Omarchy (Arch) Wayland desktop, against this tree:
 
 ## 1. `ibus` + CJK input
 
-Automation proves the `TextInputClient` contract (`integration_test/ime_test.dart`:
-composition, dead keys, an astral-plane composition, a composition the caret
-leaves, a newline from the method, clipboard round trip). It cannot prove a real
-`ibus` session, which owns its own process, timing and surrounding-text queries.
+**Status:** retired at the user's request on 2026-10-09 (ADR 0069).
+Japanese/Chinese input-method composition and input-method emoji validation
+are outside the requested product scope and no longer a release gate.
 
-1. `sudo pacman -S --needed ibus ibus-anthy` (or `ibus-libpinyin`), log out/in.
-2. `ibus-daemon -drx`, add Anthy (Japanese) and Pinyin (Chinese) in
-   `ibus-setup`, set the trigger (default Super+Space).
-3. Open a script, switch to Anthy, type a word with a candidate selection
-   (e.g. `k a n j i` + Space + Enter). Expected: composing underline under the
-   reading, committed text lands at the caret, undo takes it back in one step.
-4. Repeat with Pinyin. Then: start a composition, move the caret to another
-   block mid-composition, and confirm the session ends on the old block rather
-   than writing into the new one (the `_sessionBlock` behaviour).
-5. Type an emoji through the method (Ctrl+Shift+E picker or `:name:` entry).
-   Expected: no offset drift after it — caret, selection and the next keystroke
-   all agree.
-
-Failures here outrank all other gates: ADR 0005's fallback (adopting
-`super_editor`) gets more expensive every release this gate is deferred.
+**Historical evidence:** No real IBus session was exercised. Prerequisite
+checks on 2026-10-09 found no IBus tools on PATH or Anthy/Pinyin component
+files. This gate was retired without establishing a real-IME pass.
 
 ## 2. Orca screen-reader pass
 

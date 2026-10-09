@@ -40,9 +40,6 @@ finished, and update its source note if the status or evidence changes.
 These checks need a real desktop or external application. They are final
 validation work and do not block routine development.
 
-- [ ] Run the real IBus CJK input check (Japanese or Chinese), including
-  composition, caret movement during composition, and emoji input. See
-  [manual gate 1](docs/MANUAL_GATES.md#1-ibus--cjk-input).
 - [ ] Complete the Orca screen-reader pass for editing, library navigation,
   and dialogs. See [manual gate 2](docs/MANUAL_GATES.md#2-orca-screen-reader-pass).
 - [ ] Repeat print calibration if layout metrics or the renderer changed since

@@ -25,7 +25,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0002 | Rust builds through cargokit, with the FRB version pinned exactly | `Cargo.toml`, `app/pubspec.yaml`, `app/lib/src/rust/`, `app/rust_builder/` | live |
 | 0003 | `freezed` is accepted as a Dart dependency | `app/pubspec.yaml`, `app/lib/src/rust/` | live |
 | 0004 | Layering is enforced by a script, not by cargo-deny | `tools/check_layering.py`, `Cargo.toml` | extended by 0055 — FDX codec shares syntax types |
-| 0005 | Editor implementation: a single custom editing surface | `app/lib/editor/editor_surface.dart`, `spike/` | narrowed by 0018 — Dart line breaking is permanent |
+| 0005 | Editor implementation: a single custom editing surface | `app/lib/editor/editor_surface.dart`, `spike/` | narrowed by 0018 — Dart line breaking is permanent; narrowed by 0069 — CJK input-method gate retired |
 | 0006 | The project is called Slugline | `Cargo.toml`, `app/pubspec.yaml`, `crates/storage/src/paths.rs` | live |
 | 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | refined by 0059 — canonical syntax excludes redundant pins; narrowed by 0061 — explicit safe boneyard replacement |
 | 0008 | Syntax lives in `fountain`, identity and history live in `document` | `crates/fountain/src/model.rs`, `crates/document/src/lib.rs`, `crates/document/src/document.rs`, `crates/document/src/edit.rs` | live |
@@ -89,6 +89,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0066 | Repeated title entries are shown and edited individually | `crates/fountain/src/model.rs`, `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/title_page_dialog.dart` | live |
 | 0067 | Reopening and recovery reuse the saved reading row | `app/lib/app.dart`, `app/test/file_workflow_test.dart`, `app/integration_test/persistence_test.dart` | live |
 | 0068 | Editable scripts are portable managed projects; import and migration copy sources | `crates/storage/src/project.rs`, `crates/bridge/src/api/files.rs`, `app/lib/app.dart`, `app/lib/library/` | live |
+| 0069 | CJK input-method validation is outside the release scope | `docs/MANUAL_GATES.md`, `todo.md` | live |
 
 ---
 
@@ -235,8 +236,9 @@ with the offending edge named. Standard library only.
 **Date:** 2026-07-24 · **Status:** accepted · **Phase:** 0
 **Superseded by:** ADR 0018 for the consequence below that Prototype C's line
 breaking "must be replaced by" the Rust `layout` crate's output; the Dart wrap
-implementation is permanent and stays on the keystroke path. The rest of this
-record stands.
+implementation is permanent and stays on the keystroke path. ADR 0069 retires
+the CJK input-method validation requirement in the Phase 3 exit gate. The rest
+of this record stands.
 
 > This is the decision Phase 0 exists to make. Every later phase depends on it.
 
@@ -5382,3 +5384,26 @@ history and predecessor/live-successor ownership. Widget tests cover keyboard
 creation, copy/export confirmation, cancellation, dirty close and late adoption.
 Selected Linux native persistence, bridge, export and writing checks preserve
 byte/reopen, input, recovery, history and output assertions through generated APIs.
+
+---
+
+## ADR 0069 — CJK input-method validation is outside the release scope
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Narrows:** ADR 0005's CJK input-method validation requirement.
+
+### Context
+
+The user explicitly removed Japanese/Chinese input-method support validation
+from the requested product scope.
+
+### Decision
+
+Retire manual gate 1, including real IBus CJK composition and input-method
+emoji validation, and remove its task from `todo.md`. Unverified CJK
+composition does not require adopting ADR 0005's fallback editor.
+
+### Consequences
+
+The retired gate retains its historical evidence without claiming a pass.
+Any future real-CJK support commitment requires its own validation scope.
