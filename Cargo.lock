@@ -924,6 +924,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
+name = "quick-xml"
+version = "0.38.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42a232e7487fc2ef313d96dde7948e7a3c05101870d8985e4fd8d26aedd27b89"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1144,6 +1153,7 @@ version = "1.0.2"
 dependencies = [
  "flutter_rust_bridge",
  "slugline_document",
+ "slugline_fdx",
  "slugline_fountain",
  "slugline_layout",
  "slugline_render_pdf",
@@ -1156,6 +1166,14 @@ name = "slugline_document"
 version = "1.0.2"
 dependencies = [
  "proptest",
+ "slugline_fountain",
+]
+
+[[package]]
+name = "slugline_fdx"
+version = "1.0.2"
+dependencies = [
+ "quick-xml",
  "slugline_fountain",
 ]
 

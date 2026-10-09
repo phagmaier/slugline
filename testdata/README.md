@@ -42,3 +42,24 @@ UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_dif
 Files here are inputs to tests and are compared byte-for-byte. Do not reformat
 them, and do not let an editor strip trailing whitespace — several of them exist
 precisely because of the whitespace they contain.
+
+## Independent FDX producer
+
+`fdx/fade-in-5.0.15.fdx` was exported on 2026-10-09 by the official
+[Fade In 5.0.15 Linux demo](https://www.fadeinpro.com/page.pl?content=download),
+run from an isolated `/tmp` directory/profile, without installation. Its
+screenplay/title text is self-authored for Slugline: `Interchange Trial`,
+`Agent Fixture`, the numbered import-room scene, styled Unicode Action,
+ALICE/BOB dual speeches, a transition, page break, centered ending and script
+note. It is not copied from a third-party screenplay or an AGPL fixture.
+
+The file is the producer's complete, unmodified output, including its standard
+layout/title settings. SHA-256:
+`7374c4dcf133e40bd4cf0aec0edd315d20a5cdb2860bf3da34ece4186ed7ba5a`.
+The actual producer surface and source input are retained under
+`target/x2-fdx-smoke/`. Its Fountain import did not export the input's outline
+section/synopsis to FDX; tests assert the actual FDX, not missing producer data.
+Its literal `/* omitted text */` is visible Action in FDX, not a hidden boneyard.
+The codec/native tests exercise this producer profile; Slugline self-round trips
+alone do not establish compatibility.
+

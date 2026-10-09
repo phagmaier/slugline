@@ -1472,13 +1472,16 @@ fn journal(session: &mut Session, result: &model::EditResult, title_page: bool) 
         inserted,
         title_page: title_page.then(|| document.title_page().clone()),
     };
+    record_patch(session, patch);
+}
+
+/// Records an existing outcome, including a new imported session's initial state.
+/// Initialization has no undo command, but uses the same sticky failure path.
+pub(crate) fn record_patch(session: &mut Session, patch: model::Patch) {
     if patch.is_empty() {
-        // Nothing happened — a title field set to what it already held, most
-        // often. A journal line saying so would only be a line to replay.
         return;
     }
     if session.record(patch) {
-        // Said once, not once per keystroke.
         emit(CoreEvent::JournalBroken {
             handle: session.handle(),
         });

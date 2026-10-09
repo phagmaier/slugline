@@ -24,6 +24,7 @@ class LibraryPage extends StatefulWidget {
   const LibraryPage({
     required this.core,
     required this.onOpen,
+    this.onImportFdx,
     this.onOpenPreferences,
     this.onShowShortcuts,
     super.key,
@@ -33,6 +34,7 @@ class LibraryPage extends StatefulWidget {
 
   /// Open a script at this path. The shell above turns it into an editor.
   final Future<void> Function(String path) onOpen;
+  final Future<void> Function()? onImportFdx;
   final Future<void> Function()? onOpenPreferences;
   final Future<void> Function()? onShowShortcuts;
 
@@ -95,6 +97,19 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _openScript() async {
     await _choose(() => QuickOpenDialog.show(context, widget.core));
+  }
+
+  Future<void> _importFdx() async {
+    final action = widget.onImportFdx;
+    if (_choosing || action == null) return;
+    _choosing = true;
+    try {
+      await action();
+      if (mounted) await _refresh();
+    } finally {
+      _choosing = false;
+      if (mounted) _searchFocus.requestFocus();
+    }
   }
 
   Future<void> _choose(Future<String?> Function() choose) async {
@@ -269,6 +284,12 @@ class _LibraryPageState extends State<LibraryPage> {
               icon: const Icon(Icons.settings_outlined),
             ),
             TextButton(onPressed: _openScript, child: const Text('Open')),
+            if (widget.onImportFdx != null)
+              TextButton(
+                key: const Key('import-fdx'),
+                onPressed: _importFdx,
+                child: const Text('Import FDX…'),
+              ),
             const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: _newScript,
@@ -360,6 +381,11 @@ class _LibraryPageState extends State<LibraryPage> {
                   label: const Text('New script'),
                 ),
                 TextButton(onPressed: _openScript, child: const Text('Open')),
+                if (widget.onImportFdx != null)
+                  TextButton(
+                    onPressed: _importFdx,
+                    child: const Text('Import FDX…'),
+                  ),
               ],
             ),
           ],

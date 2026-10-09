@@ -53,6 +53,24 @@ class CoreUnavailable implements Exception {
   String toString() => 'CoreUnavailable: $message';
 }
 
+/// A decoded, isolated candidate. The caller must adopt or close it.
+sealed class FdxImportResult {
+  const FdxImportResult();
+}
+
+class FdxImported extends FdxImportResult {
+  const FdxImported({required this.document, required this.warnings});
+
+  final DocumentCore document;
+  final List<String> warnings;
+}
+
+class FdxImportFailed extends FdxImportResult {
+  const FdxImportFailed({required this.message});
+
+  final String message;
+}
+
 /// The small part of the core the opening screen needs.
 ///
 /// Keeping this seam narrower than [Core] lets the library's presentation be
@@ -154,6 +172,18 @@ class Core implements LibraryCore {
         await files.libraryOpen(path: path) ??
         await files.libraryCreate(path: path);
     return handle == null ? null : RustDocumentCore.of(handle);
+  }
+
+  /// Decode in Rust without binding the FDX source to a native session.
+  Future<FdxImportResult> importFdx(String path) async {
+    final outcome = await files.docImportFdx(path: path);
+    return switch (outcome) {
+      files.FdxImportOutcome_Imported(:final handle, :final warnings) =>
+        FdxImported(document: RustDocumentCore.of(handle), warnings: warnings),
+      files.FdxImportOutcome_Failed(:final message) => FdxImportFailed(
+        message: message,
+      ),
+    };
   }
 
   Future<List<files.ScriptView>> sessionToRestore() => files.sessionRestore();

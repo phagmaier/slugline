@@ -2247,6 +2247,25 @@ decision before implementation.
 parser, which needs a line in `docs/DEPENDENCIES.md`. The original spec lists
 Final Draft import as a non-goal, so this reverses a recorded decision.
 
+**Decision (2026-10-09, ADR 0055).** Implement both directions. WriterDuet can
+already export Fountain, but Final Draft's documented export/import paths make
+FDX independently useful for migration and editable collaboration. Fountain
+remains the native save format: imports are isolated dirty candidates with
+recovery journals initialized by a full outcome against blank (ADR 0062);
+exports are immutable atomic copies. Conversion
+warnings need explicit approval, bound to the exported revision. Preserve
+authored content or refuse; do not promise production-layout/revision fidelity.
+An unmodified self-authored fixture from the actual Fade In 5.0.15 Linux demo
+supplies independent producer evidence, not just a Slugline self-round trip.
+The actual consumer exposed absent paragraph bounds: emit standard finite
+ParagraphSpec defaults, not a clone of native pagination, so recipient content
+does not render blank. Reject stale semantic metadata that contradicts visible
+paragraph kinds/alignment/page breaks. Keep approved diagnostics in the
+scrollable approval dialog, not the fixed success footer.
+Coalesce repeated imported title keys into one editable value; otherwise the
+native title form would display the last value and write it into the first.
+Resolve title emphasis per hard line, as the native preview/PDF do.
+
 **Effort.** M–L.
 **Result:** _open_
 
@@ -2391,6 +2410,25 @@ bookmarks; opening the PDF after export. Tabs are deliberately not here: once
 S1 is fixed, two windows cover it.
 
 ## Found along the way
+
+- 2026-10-09 — X2 native smoke: Save As writes the chosen Fountain file and
+  marks the imported document saved, but the app bar still says “Untitled”.
+  Opening that saved file normally shows its filename. No title-refresh fix
+  belongs to FDX interchange; the chooser subsequently suggests the correct
+  saved basename. Evidence: `target/x2-fdx-smoke/native-fdx-export-finished.png`.
+
+- 2026-10-09 — X2 source finding: an existing native Fountain title page with
+  duplicate keys is still unsafe in the title form. `title_page_dialog.dart`
+  builds a last-value map but `TitlePage::get/set` use the first value, and the
+  form commits on closing even without typing. [INFERENCE] That can replace
+  the first value with the last. FDX imports now coalesce repeated fields
+  before the form sees them; the pre-existing native-file case is not changed.
+
+- 2026-10-09 — X2 native title inspection: opening and closing the title form
+  without typing adds seven title snapshots to the journal, so recovery says
+  “8 edits” including import's initial outcome. The recovered words and title
+  values are unchanged. No-op title journalling is existing behavior and is
+  left outside X2. Evidence: `target/x2-fdx-smoke/native-title-safety-recovery-offer.png`.
 
 - 2026-10-08 — X1 publication: fast-forwarded and pushed `main` at `34844c7`.
   [Hosted CI run 37860589165](https://github.com/phagmaier/slugline/actions/runs/37860589165)

@@ -95,6 +95,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   (bool, bool) dco_decode_box_autoadd_record_bool_bool(dynamic raw);
 
   @protected
+  SaveOutcome dco_decode_box_autoadd_save_outcome(dynamic raw);
+
+  @protected
   ScriptView dco_decode_box_autoadd_script_view(dynamic raw);
 
   @protected
@@ -132,6 +135,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   EmphasisRunView dco_decode_emphasis_run_view(dynamic raw);
+
+  @protected
+  FdxExportOutcome dco_decode_fdx_export_outcome(dynamic raw);
+
+  @protected
+  FdxImportOutcome dco_decode_fdx_import_outcome(dynamic raw);
 
   @protected
   FindMatch dco_decode_find_match(dynamic raw);
@@ -424,6 +433,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SaveOutcome sse_decode_box_autoadd_save_outcome(SseDeserializer deserializer);
+
+  @protected
   ScriptView sse_decode_box_autoadd_script_view(SseDeserializer deserializer);
 
   @protected
@@ -461,6 +473,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   EmphasisRunView sse_decode_emphasis_run_view(SseDeserializer deserializer);
+
+  @protected
+  FdxExportOutcome sse_decode_fdx_export_outcome(SseDeserializer deserializer);
+
+  @protected
+  FdxImportOutcome sse_decode_fdx_import_outcome(SseDeserializer deserializer);
 
   @protected
   FindMatch sse_decode_find_match(SseDeserializer deserializer);
@@ -829,6 +847,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_save_outcome(
+    SaveOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_script_view(
     ScriptView self,
     SseSerializer serializer,
@@ -876,6 +900,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_emphasis_run_view(
     EmphasisRunView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_fdx_export_outcome(
+    FdxExportOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_fdx_import_outcome(
+    FdxImportOutcome self,
     SseSerializer serializer,
   );
 

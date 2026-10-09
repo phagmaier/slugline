@@ -24,7 +24,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0001 | The bridge speaks UTF-16, and conversion is fallible | `crates/bridge/src/offsets.rs` | live |
 | 0002 | Rust builds through cargokit, with the FRB version pinned exactly | `Cargo.toml`, `app/pubspec.yaml`, `app/lib/src/rust/`, `app/rust_builder/` | live |
 | 0003 | `freezed` is accepted as a Dart dependency | `app/pubspec.yaml`, `app/lib/src/rust/` | live |
-| 0004 | Layering is enforced by a script, not by cargo-deny | `tools/check_layering.py`, `Cargo.toml` | live |
+| 0004 | Layering is enforced by a script, not by cargo-deny | `tools/check_layering.py`, `Cargo.toml` | extended by 0055 — FDX codec shares syntax types |
 | 0005 | Editor implementation: a single custom editing surface | `app/lib/editor/editor_surface.dart`, `spike/` | narrowed by 0018 — Dart line breaking is permanent |
 | 0006 | The project is called Slugline | `Cargo.toml`, `app/pubspec.yaml`, `crates/storage/src/paths.rs` | live |
 | 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | live |
@@ -75,6 +75,8 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live |
 | 0053 | The runner stops the engine before the process exits | `app/linux/runner/my_application.cc`, `tools/check_clean_close.py`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | live |
 | 0054 | Dual dialogue is a disjoint pair with independent page continuations | `crates/layout/src/engine.rs`, `crates/layout/src/metrics.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/editor/line_layout.dart`, `app/lib/editor/metrics.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/editor_controller.dart` | live |
+| 0055 | FDX is an interchange copy, while Fountain remains the native document | `crates/fdx/`, `crates/document/src/document.rs`, `crates/bridge/src/api/files.rs`, `app/lib/core/`, `app/lib/app.dart`, `app/lib/preview/export_dialog.dart` | refined by 0062 — imported untitled recovery starts against blank |
+| 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live |
 
 ---
 
@@ -186,6 +188,7 @@ Take the dependency: `freezed_annotation` at runtime, `freezed` and
 ## ADR 0004 — Layering is enforced by a script, not by cargo-deny
 
 **Date:** 2026-07-24 · **Status:** accepted · **Phase:** 0
+**Superseded by:** ADR 0055 extends the allowed graph with `fdx -> fountain` and `bridge -> fdx`; the enforcement decision remains live.
 
 ### Context
 
@@ -4267,4 +4270,159 @@ retained separately as `runtime-budgets.json`: its startup samples overlapped
 native builds and its reference process exited 1 before interval measurements.
 Neither a headless pass nor these screenshots close the real-desktop/print
 gates in `docs/MANUAL_GATES.md`.
+
+---
+
+## ADR 0055 — FDX is an interchange copy, while Fountain remains the native document
+
+**Date:** 2026-10-09 · **Status:** accepted · **Backlog:** X2
+**Extends:** ADR 0004 with a syntax-only FDX codec and its bridge edge.
+**Superseded by:** ADR 0062 refines only the initial import journal base; the interchange and native-format decisions remain in force.
+
+### Context and evidence
+
+Slugline's backlog aims to replace a paid screenwriting service for one writer
+on Linux. Migration and delivering an editable script to collaborators are
+different needs. [WriterDuet exports Fountain as well as FDX](https://www.writerduet.com/article/261-export-a-document),
+so migration from it does not require another parser.
+[Final Draft's export formats](https://kb.finaldraft.com/hc/en-us/articles/27525594609684-How-do-I-export-a-Final-Draft-file-to-a-different-format-like-RTF-or-TXT)
+include FDX but not Fountain, while its
+[import guidance](https://kb.finaldraft.com/hc/en-us/articles/15575076862228-Can-Final-Draft-import-a-file-written-in-a-Fountain-based-screenwriting-program)
+says `.fountain` is not directly accepted and warns that third-party FDX can
+format differently. Both directions therefore have independent practical value.
+The archived specification's import non-goal is historical, not rewritten.
+
+The actual release application was run against a self-authored FDX file before
+editing. It opened the XML as one Action block with zero scenes/characters and
+offered only PDF and Fountain exports. Its editor and export-dialog screenshots
+are retained under `target/x2-fdx-smoke/`; an ordinary close exited zero.
+
+Public XML examples show typed paragraphs, multiple styled Text children,
+numbered scene headings, positional title-page paragraphs and a Paragraph
+containing DualDialogue, whose children contain the two speeches in order.
+Sources are the [MIT Lexington FDX profile](https://github.com/LaPingvino/lexington/tree/4b30b71d68d38749058da4d9d3c5b58bfca95e42/fdx)
+and [public FDX examples](https://github.com/rsdoiel/fdx/tree/main/testdata).
+The latter repository is AGPL: its text/code is not copied into Slugline.
+No producer provenance is inferred merely from a FinalDraft root tag.
+
+### Decision
+
+**Implement both import and export, not native FDX editing.** Fountain remains
+the save format. FDX is a conversion of screenplay content, not a byte-exact
+round-trip promise for revision sets, locked pages, custom fonts or margins.
+Every textual structure is either represented, retained through an explicit
+mapping with a warning, or rejected before the operation changes live content.
+Unsupported content must never disappear silently.
+
+**The codec is `fdx -> fountain`; only the bridge adds `-> fdx`.** It owns XML
+recognition/emission and reuses the existing kinds, title fields, elements and
+emphasis scanner. It owns no Document, history, disk I/O or pagination. XML
+semantics do not move into Dart or the Fountain recognition rules. The layer
+tables and manifest change together.
+
+Use `quick-xml 0.38.3` with default features disabled: its only mandatory runtime
+dependency is memchr and its declared Rust floor is below 1.85. Streaming events
+avoid a second DOM/Serde model. UTF-8 is borrowed; BOM-marked UTF-16 is decoded
+once. Unsupported encoding declarations, malformed XML and external/custom
+entity constructs return errors rather than guessed text or network reads.
+Write deterministic UTF-8 XML with correct escaping and no external resources.
+
+**Import creates an isolated, unsaved session with no source path.** Read and
+decode before visiting the actor; only the actor constructs the Document,
+directly from semantic elements, with fresh identities and empty undo history.
+Initialize the normal canonical Fountain crash-journal base. A journal failure
+is reported with the existing unprotected-session mechanism, never hidden.
+The UI presents conversion warnings before adopting the candidate; cancellation
+closes it and retains the old editor. Save asks for a Fountain destination.
+The source FDX file is never rebound, watched, overwritten or library-indexed.
+
+**Export obeys ADR 0029.** Capture one immutable semantic snapshot, encode and
+write off the actor through atomic saving. Refuse AlreadyExists until confirmed
+and ScriptIsOpen even with overwrite. An export changes no dirty flag, active
+path, history, journal, watcher, backup bookkeeping or library entry. Show
+conversion warnings before proceeding; refuse unrepresentable textual data.
+Use the existing chooser/replace confirmation, not another dialog framework.
+
+**Map content, not page layout.** Standard screenplay types remain explicit
+kinds; centered Action and Lyrics retain their meaning. Existing scene numbers
+are preserved, not newly generated. StartsNewPage creates a page-break element.
+DualDialogue becomes the source-ordered speeches with the second cue marked;
+exports group only actual ADR 0054 pairs, never manufacture an orphan's partner.
+Notes, outline and omitted content retain their text with a documented FDX
+representation or an explicit warning, never an empty replacement.
+
+Bold/italic/underline Text runs become Fountain emphasis using its existing
+escaping and pairing semantics. Adjacent identical styles coalesce; leading and
+trailing whitespace stays outside paired markers. Resolve the generated markup
+back through the shared scanner to detect an unrepresentable style boundary:
+retain the printable words and report any style normalization. Hard lines and
+literal markup characters remain literal. Title pages use standard positional
+grouping where reliable; unmatched text is preserved in Notes/Other with a
+warning. Explicit field metadata in Slugline-created FDX is an interchange aid,
+not a requirement imposed on other consumers.
+
+### Alternatives and consequences
+
+Export-only would help collaborators but leave Final Draft migration dependent
+on a lossy plain-text intermediary. Native FDX Save would require preserving
+production metadata the editor cannot represent and expose the source to
+autosave loss. Both are rejected. A universal format registry, a second
+persistence format and a sidecar cache have no necessary consumer here.
+
+Fountain's original-source tiling and unedited byte-exact round trips remain
+unchanged. Imported FDX has no Fountain provenance and does not synthesize one.
+Generated APIs are regenerated with the existing pinned bridge toolchain.
+
+### Verification contract
+
+Tests cover element/style/text conservation, dual/number metadata, Unicode,
+whitespace, malformed input, unsupported-content diagnostics, cancel/failure
+isolation, save/reopen/recovery and copy-export refusals/state preservation.
+Native UI smoke exercises import, editing, preview, export and Fountain Save.
+Writer/reader self-round trips are not independent compatibility proof.
+An isolated official Fade In demo is available for producer/consumer smoke
+without installation; genuine Final Draft acceptance remains explicitly manual
+unless a real consumer can be exercised. Final evidence belongs in X2's Result.
+
+## ADR 0062 — An imported untitled document begins with a complete recovery outcome
+
+**Date:** 2026-10-09 · **Status:** accepted · **Backlog:** X2
+**Refines:** ADR 0055's import journal initialization.
+
+### Evidence
+
+ADR 0055 proposed the canonical imported Fountain as the initial journal base.
+An untitled journal header contains a checksum, not its base text. Recovery
+has no file path from which to reload that text and starts against a blank
+document. A crash immediately after import, before typing or saving, therefore
+cannot reconstruct an imported document from that header alone.
+
+The release smoke imported an actual Fade In FDX, killed the process before
+any typing, recovered its initial title/body outcome on restart, and saved
+the recovered script as Fountain. A deliberate omission of the initial
+recorded patch removes that recovery offer. The bridge regression exercises
+the same pending-offer and acceptance path without a keystroke.
+
+### Decision
+
+Initialize an imported untitled session against the normal blank base and
+record one complete semantic outcome immediately: replace block 1, insert
+the remaining fresh identities in order, and include the complete title page.
+This is an initialization patch, not a fabricated text command or undo entry.
+Do not bind the source FDX path or serialize a second persisted import base.
+
+Use the existing journal failure/event path for this initial outcome. Failure
+does not fail import or silence the sticky unprotected-session status.
+Normal subsequent edits, checkpoints, save and clean-close behavior do not
+change. Recovery is still outcome replay, without inference (ADR 0013).
+
+### Consequences and verification
+
+An imported document is recoverable before its first edit, while Undo still
+has no import transaction. Construction and initial recording are linear in
+block count; snapshot each block directly, not with repeated identity scans.
+
+The initial-crash regression verifies the offered document's ordered content
+and title, accepted session and empty undo history. Import/edit/replay/save
+tests also verify identity continuity and source-file isolation.
 

@@ -431,6 +431,8 @@ void main() {
       expect(core.output.setups.last.paper, PaperSize.a4);
       expect(_scroll(tester).pixels, 0);
 
+      await tester.ensureVisible(find.byKey(const Key('preview-actual-size')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('preview-actual-size')));
       await tester.pumpAndSettle();
       expect(_scroll(tester).pixels, 0);

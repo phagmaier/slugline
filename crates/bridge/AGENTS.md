@@ -26,11 +26,17 @@ Invariants:
 - Keep `flutter_rust_bridge = "=2.12.0"` aligned with the Dart package and
   regenerate in the same change. Commit the generated bindings; never edit
   them by hand.
+- FDX import creates an isolated unsaved session after decoding; it never binds
+  the FDX source. Export is an immutable atomic copy, and conversion warnings
+  require approval for its exact revision (ADR 0055).
+  The imported initial body/title is the first full outcome patch against the
+  normal untitled blank journal base, not an undo command or a stored FDX path
+  (ADR 0062).
 
 Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
 `cd app && flutter_rust_bridge_codegen generate`, then
 `./tools/check_bridge_bindings.sh` (the same check CI runs).
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0062. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

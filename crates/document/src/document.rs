@@ -91,6 +91,21 @@ pub struct SerialisationSnapshot {
 }
 
 impl SerialisationSnapshot {
+    /// Borrowed screenplay semantics for interchange jobs.
+    pub fn title_page(&self) -> &TitlePage {
+        &self.title_page
+    }
+
+    pub fn elements(&self) -> impl Iterator<Item = ElementRef<'_>> {
+        self.blocks.iter().map(|block| ElementRef {
+            kind: block.kind,
+            text: &block.text,
+            forced: block.forced,
+            dual: block.dual,
+            provenance: block.provenance.clone(),
+        })
+    }
+
     pub fn serialise(&self) -> String {
         serialise_parts(
             &self.title_page,
@@ -162,6 +177,66 @@ impl Document {
             saved_revision: 0,
             next_revision: 0,
         }
+    }
+    /// Constructs an unsaved semantic import, without Fountain source provenance.
+    ///
+    /// Opaque text is retained read-only, just as parsed Opaque content is.
+    /// Ordinary editing validation remains unchanged.
+    pub fn from_script(mut script: slugline_fountain::Script) -> Result<Document, EditError> {
+        for element in &script.elements {
+            if element.kind == BlockKind::Opaque {
+                if element.dual {
+                    return Err(EditError::InvalidBlock {
+                        block: None,
+                        reason: InvalidBlockReason::DualNonCharacter,
+                    });
+                }
+                let parsed = slugline_fountain::parse(&element.text);
+                if !parsed.title_page.is_empty()
+                    || parsed.elements.len() != 1
+                    || parsed.elements[0].kind != BlockKind::Opaque
+                {
+                    return Err(EditError::InvalidBlock {
+                        block: None,
+                        reason: InvalidBlockReason::Opaque,
+                    });
+                }
+            } else {
+                validate_block_state(None, element.kind, &element.text, element.dual)?;
+            }
+        }
+        script.title_page.provenance = None;
+        let mut document = Document {
+            title_page: script.title_page,
+            blocks: Vec::with_capacity(script.elements.len().max(1)),
+            line_ending: script.line_ending,
+            revision: 1,
+            next_revision: 1,
+            ..Document::default()
+        };
+        for element in script.elements {
+            document.next_id += 1;
+            document.blocks.push(Block {
+                id: BlockId(document.next_id),
+                kind: element.kind,
+                text: element.text,
+                forced: element.forced,
+                dual: element.dual,
+                provenance: None,
+            });
+        }
+        if document.blocks.is_empty() {
+            document.next_id = 1;
+            document.blocks.push(Block {
+                id: BlockId(1),
+                kind: BlockKind::Action,
+                text: String::new(),
+                forced: true,
+                dual: false,
+                provenance: None,
+            });
+        }
+        Ok(document)
     }
 
     /// Writes the document back to Fountain. Untouched blocks are emitted from
@@ -1648,6 +1723,185 @@ mod tests {
     use slugline_fountain::TitleField;
 
     const SCRIPT: &str = "INT. HOUSE - DAY\n\nJohn enters.\n\nJOHN\n(quietly)\nHello.\n";
+
+    #[test]
+    fn semantic_import_is_fresh_dirty_and_has_no_fountain_provenance() {
+        let source = "\u{feff}Title: Imported\r\n\r\nINT. ROOM - DAY\r\n\r\nWords.\r\n";
+        let mut imported = Document::from_script(slugline_fountain::parse(source)).unwrap();
+        assert!(imported.is_dirty());
+        assert!(imported.revision() > 0);
+        assert!(!imported.can_undo());
+        assert!(!imported.can_redo());
+        assert!(imported.original_source.is_none());
+        assert!(!imported.bom);
+        assert!(imported.title_page.provenance.is_none());
+        assert!(imported
+            .blocks
+            .iter()
+            .all(|block| block.provenance.is_none()));
+        assert_eq!(
+            imported.blocks.iter().map(|b| b.id.0).collect::<Vec<_>>(),
+            [1, 2]
+        );
+        let snapshot = imported.serialisation_snapshot();
+        assert_eq!(
+            snapshot.title_page().get(&TitleField::Title),
+            Some("Imported")
+        );
+        assert_eq!(
+            snapshot.elements().map(|e| e.text).collect::<Vec<_>>(),
+            ["INT. ROOM - DAY", "Words."]
+        );
+        imported
+            .apply(EditCommand::ReplaceText {
+                block: imported.blocks[1].id,
+                range: 0..6,
+                with: "Edited.".into(),
+            })
+            .unwrap();
+        imported.commit();
+        imported.undo().unwrap();
+        assert!(imported.is_dirty());
+        assert_eq!(imported.blocks[1].text, "Words.");
+    }
+
+    #[test]
+    fn semantic_import_retains_title_only_and_read_only_opaque_content() {
+        let title_only =
+            Document::from_script(slugline_fountain::parse("Title: Alone\n\n")).unwrap();
+        assert_eq!(title_only.blocks.len(), 1);
+        assert_eq!(title_only.blocks[0].kind, BlockKind::Action);
+        assert!(title_only.blocks[0].text.is_empty());
+        assert_eq!(title_only.title_page.get(&TitleField::Title), Some("Alone"));
+        let mut opaque =
+            Document::from_script(slugline_fountain::parse("/* retained omission */\n")).unwrap();
+        let id = opaque.blocks[0].id;
+        assert_eq!(opaque.blocks[0].kind, BlockKind::Opaque);
+        assert_eq!(
+            opaque.apply(EditCommand::ReplaceText {
+                block: id,
+                range: 0..0,
+                with: "x".into()
+            }),
+            Err(EditError::NotEditable(id))
+        );
+        assert!(opaque.serialise().contains("retained omission"));
+    }
+
+    #[test]
+    fn semantic_import_refuses_invalid_states_without_weakening_insert_validation() {
+        let invalid = [
+            (BlockKind::PageBreak, "words", false),
+            (BlockKind::Action, "words", true),
+            (BlockKind::Section { level: 0 }, "words", false),
+            (BlockKind::Character, "literal^", false),
+            (BlockKind::SceneHeading, "first\nsecond", false),
+            (BlockKind::Opaque, "not an opaque Fountain span", false),
+        ];
+        for (kind, text, dual) in invalid {
+            let script = slugline_fountain::Script {
+                elements: vec![slugline_fountain::Element {
+                    kind,
+                    text: text.into(),
+                    dual,
+                    forced: true,
+                    provenance: None,
+                }],
+                ..Default::default()
+            };
+            assert!(Document::from_script(script).is_err());
+        }
+        let mut document = Document::blank();
+        assert!(document
+            .apply(EditCommand::InsertBlocks {
+                after: None,
+                blocks: vec![NewBlock::new(BlockKind::Opaque, "verbatim")],
+            })
+            .is_err());
+    }
+
+    #[test]
+    fn normalized_semantic_import_save_and_recovery_keep_later_block_identity() {
+        let script = slugline_fountain::Script {
+            elements: vec![
+                slugline_fountain::Element {
+                    kind: BlockKind::Character,
+                    text: "A".into(),
+                    forced: true,
+                    dual: false,
+                    provenance: None,
+                },
+                slugline_fountain::Element {
+                    kind: BlockKind::Dialogue,
+                    text: "first\nsecond".into(),
+                    forced: true,
+                    dual: false,
+                    provenance: None,
+                },
+                slugline_fountain::Element {
+                    kind: BlockKind::Action,
+                    text: "Later editable block".into(),
+                    forced: true,
+                    dual: false,
+                    provenance: None,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut imported = Document::from_script(script).unwrap();
+        let source = imported.serialise();
+        let mut recovered = Document::parse(&source);
+        assert_eq!(
+            imported
+                .blocks
+                .iter()
+                .map(|b| (b.id, b.kind, &b.text))
+                .collect::<Vec<_>>(),
+            recovered
+                .blocks
+                .iter()
+                .map(|b| (b.id, b.kind, &b.text))
+                .collect::<Vec<_>>()
+        );
+        let later = imported.blocks[2].id;
+        imported
+            .apply(EditCommand::ReplaceText {
+                block: later,
+                range: 0..5,
+                with: "Edited".into(),
+            })
+            .unwrap();
+        recovered
+            .replay(&Patch {
+                changed: vec![imported.snapshot(later).unwrap()],
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(recovered.blocks[2].text, "Edited editable block");
+        assert_eq!(recovered.serialise(), imported.serialise());
+        let reopened = Document::parse(&imported.serialise());
+        assert_eq!(reopened.blocks[1].text, "first\nsecond");
+        assert_eq!(reopened.blocks[2].id, later);
+        let mut blank = Document::from_script(slugline_fountain::Script::default()).unwrap();
+        let mut reopened = Document::parse(&blank.serialise());
+        let caret_block = blank.blocks[0].id;
+        blank
+            .apply(EditCommand::ReplaceText {
+                block: caret_block,
+                range: 0..0,
+                with: "First words".into(),
+            })
+            .unwrap();
+        reopened
+            .replay(&Patch {
+                changed: vec![blank.snapshot(caret_block).unwrap()],
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(reopened.blocks[0].id, caret_block);
+        assert_eq!(reopened.blocks[0].text, "First words");
+        assert_eq!(reopened.serialise(), blank.serialise());
+    }
 
     fn doc() -> Document {
         Document::parse(SCRIPT)

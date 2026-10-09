@@ -209,8 +209,8 @@ classification says so.
 | `F1` | Keyboard shortcut reference |
 | `F11` | Distraction-free full screen |
 
-New, Open, Back to the library, Save, Save as and Preview are also in the
-command palette, along with "Previous versions…" and "Title page…".
+New, Open, Import FDX, Back to the library, Save, Save as and Preview are also in
+the command palette, along with "Previous versions…" and "Title page…".
 Preferences, Spell checking, Keyboard shortcuts, navigator visibility,
 distraction-free mode, page/continuous view and text-size changes are there too.
 View entries name the action available now: "Hide navigator", "Leave
@@ -228,10 +228,10 @@ closes either chooser without changing the draft. `Ctrl+N` asks where to create
 the new script. Choosing the current script in quick-open keeps its session and
 undo history.
 
-New, Browse, Save As, Rename and Export use GTK's local file dialog, with system
-bookmarks, search, keyboard navigation and folder creation. File dialogs start
-beside the current script when one is open; otherwise they remember the last
-accepted folder during this launch, falling back to home. Fountain/PDF/font
+New, Browse, Import FDX, Save As, Rename and Export use GTK's local file dialog,
+with system bookmarks, search, keyboard navigation and folder creation.
+File dialogs start beside the current script when one is open; otherwise they remember the last
+accepted folder during this launch, falling back to home. Fountain/FDX/PDF/font
 filters have an All files choice. Extensionless save names gain the selected
 format's extension. GTK does not ask about replacement: Save As and Export
 still ask once in Slugline after the core refuses an occupied destination.
@@ -245,13 +245,24 @@ dialog as the back arrow. Input and autosave are held during that action, and
 the current session stays open until the destination has loaded successfully.
 These keys also work in distraction-free mode.
 
-`Ctrl+P` opens the pages as they will print, and both exports are inside it:
-§Phase 7 wants a writer to have looked at the pages before they send them
-anywhere. **An export is not a Save As.** Both write a file somewhere else, and
-only Save As makes the writer's session follow it there — after an export the
+**Import FDX…** is also a library button. It decodes an isolated candidate
+before asking to close the current script. Cancelling the chooser, conversion
+warnings or unsaved-changes prompt keeps the current editor untouched; decode
+failure is reported without closing it. An accepted import is a new, unsaved
+Fountain script with no binding to its source FDX. Save asks for a Fountain
+destination, and the source is never watched, autosaved or library-indexed.
+
+`Ctrl+P` opens the pages as they will print, with PDF, Fountain copy and FDX copy
+exports inside it. **An export is not a Save As.** Each writes a file somewhere
+else. Only Save As makes the writer's session follow it there — after an export the
 script is still the script it was, with its own path, its own journal and its own
 unsaved changes (ADR 0029). The core refuses a destination that is already there
 until it is asked twice, and refuses a script this application has open outright.
+FDX copies convert screenplay content, not exact production revisions, locked
+pages, fonts or margins. Review conversion warnings before a copy is written.
+Approval applies only to that document revision: changed content requires a new
+warning prompt. Cancelling approval writes nothing, and a write failure is shown
+even when conversion warnings were accepted.
 
 The preview opens on the page the caret is on, from the key, the palette and the
 toolbar alike. The page is looked up in the pagination the preview is about to

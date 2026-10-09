@@ -304,6 +304,654 @@ as String,
 }
 
 /// @nodoc
+mixin _$FdxExportOutcome {
+
+ List<String> get warnings;
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$FdxExportOutcomeCopyWith<FdxExportOutcome> get copyWith => _$FdxExportOutcomeCopyWithImpl<FdxExportOutcome>(this as FdxExportOutcome, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FdxExportOutcome&&const DeepCollectionEquality().equals(other.warnings, warnings));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(warnings));
+
+@override
+String toString() {
+  return 'FdxExportOutcome(warnings: $warnings)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $FdxExportOutcomeCopyWith<$Res>  {
+  factory $FdxExportOutcomeCopyWith(FdxExportOutcome value, $Res Function(FdxExportOutcome) _then) = _$FdxExportOutcomeCopyWithImpl;
+@useResult
+$Res call({
+ List<String> warnings
+});
+
+
+
+
+}
+/// @nodoc
+class _$FdxExportOutcomeCopyWithImpl<$Res>
+    implements $FdxExportOutcomeCopyWith<$Res> {
+  _$FdxExportOutcomeCopyWithImpl(this._self, this._then);
+
+  final FdxExportOutcome _self;
+  final $Res Function(FdxExportOutcome) _then;
+
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? warnings = null,}) {
+  return _then(_self.copyWith(
+warnings: null == warnings ? _self.warnings : warnings // ignore: cast_nullable_to_non_nullable
+as List<String>,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [FdxExportOutcome].
+extension FdxExportOutcomePatterns on FdxExportOutcome {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FdxExportOutcome_NeedsConfirmation value)?  needsConfirmation,TResult Function( FdxExportOutcome_Finished value)?  finished,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case FdxExportOutcome_NeedsConfirmation() when needsConfirmation != null:
+return needsConfirmation(_that);case FdxExportOutcome_Finished() when finished != null:
+return finished(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FdxExportOutcome_NeedsConfirmation value)  needsConfirmation,required TResult Function( FdxExportOutcome_Finished value)  finished,}){
+final _that = this;
+switch (_that) {
+case FdxExportOutcome_NeedsConfirmation():
+return needsConfirmation(_that);case FdxExportOutcome_Finished():
+return finished(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FdxExportOutcome_NeedsConfirmation value)?  needsConfirmation,TResult? Function( FdxExportOutcome_Finished value)?  finished,}){
+final _that = this;
+switch (_that) {
+case FdxExportOutcome_NeedsConfirmation() when needsConfirmation != null:
+return needsConfirmation(_that);case FdxExportOutcome_Finished() when finished != null:
+return finished(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<String> warnings,  int revision)?  needsConfirmation,TResult Function( SaveOutcome outcome,  List<String> warnings)?  finished,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case FdxExportOutcome_NeedsConfirmation() when needsConfirmation != null:
+return needsConfirmation(_that.warnings,_that.revision);case FdxExportOutcome_Finished() when finished != null:
+return finished(_that.outcome,_that.warnings);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<String> warnings,  int revision)  needsConfirmation,required TResult Function( SaveOutcome outcome,  List<String> warnings)  finished,}) {final _that = this;
+switch (_that) {
+case FdxExportOutcome_NeedsConfirmation():
+return needsConfirmation(_that.warnings,_that.revision);case FdxExportOutcome_Finished():
+return finished(_that.outcome,_that.warnings);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<String> warnings,  int revision)?  needsConfirmation,TResult? Function( SaveOutcome outcome,  List<String> warnings)?  finished,}) {final _that = this;
+switch (_that) {
+case FdxExportOutcome_NeedsConfirmation() when needsConfirmation != null:
+return needsConfirmation(_that.warnings,_that.revision);case FdxExportOutcome_Finished() when finished != null:
+return finished(_that.outcome,_that.warnings);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class FdxExportOutcome_NeedsConfirmation extends FdxExportOutcome {
+  const FdxExportOutcome_NeedsConfirmation({required final  List<String> warnings, required this.revision}): _warnings = warnings,super._();
+  
+
+ final  List<String> _warnings;
+@override List<String> get warnings {
+  if (_warnings is EqualUnmodifiableListView) return _warnings;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_warnings);
+}
+
+ final  int revision;
+
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$FdxExportOutcome_NeedsConfirmationCopyWith<FdxExportOutcome_NeedsConfirmation> get copyWith => _$FdxExportOutcome_NeedsConfirmationCopyWithImpl<FdxExportOutcome_NeedsConfirmation>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FdxExportOutcome_NeedsConfirmation&&const DeepCollectionEquality().equals(other._warnings, _warnings)&&(identical(other.revision, revision) || other.revision == revision));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_warnings),revision);
+
+@override
+String toString() {
+  return 'FdxExportOutcome.needsConfirmation(warnings: $warnings, revision: $revision)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $FdxExportOutcome_NeedsConfirmationCopyWith<$Res> implements $FdxExportOutcomeCopyWith<$Res> {
+  factory $FdxExportOutcome_NeedsConfirmationCopyWith(FdxExportOutcome_NeedsConfirmation value, $Res Function(FdxExportOutcome_NeedsConfirmation) _then) = _$FdxExportOutcome_NeedsConfirmationCopyWithImpl;
+@override @useResult
+$Res call({
+ List<String> warnings, int revision
+});
+
+
+
+
+}
+/// @nodoc
+class _$FdxExportOutcome_NeedsConfirmationCopyWithImpl<$Res>
+    implements $FdxExportOutcome_NeedsConfirmationCopyWith<$Res> {
+  _$FdxExportOutcome_NeedsConfirmationCopyWithImpl(this._self, this._then);
+
+  final FdxExportOutcome_NeedsConfirmation _self;
+  final $Res Function(FdxExportOutcome_NeedsConfirmation) _then;
+
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? warnings = null,Object? revision = null,}) {
+  return _then(FdxExportOutcome_NeedsConfirmation(
+warnings: null == warnings ? _self._warnings : warnings // ignore: cast_nullable_to_non_nullable
+as List<String>,revision: null == revision ? _self.revision : revision // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class FdxExportOutcome_Finished extends FdxExportOutcome {
+  const FdxExportOutcome_Finished({required this.outcome, required final  List<String> warnings}): _warnings = warnings,super._();
+  
+
+ final  SaveOutcome outcome;
+ final  List<String> _warnings;
+@override List<String> get warnings {
+  if (_warnings is EqualUnmodifiableListView) return _warnings;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_warnings);
+}
+
+
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$FdxExportOutcome_FinishedCopyWith<FdxExportOutcome_Finished> get copyWith => _$FdxExportOutcome_FinishedCopyWithImpl<FdxExportOutcome_Finished>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FdxExportOutcome_Finished&&(identical(other.outcome, outcome) || other.outcome == outcome)&&const DeepCollectionEquality().equals(other._warnings, _warnings));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,outcome,const DeepCollectionEquality().hash(_warnings));
+
+@override
+String toString() {
+  return 'FdxExportOutcome.finished(outcome: $outcome, warnings: $warnings)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $FdxExportOutcome_FinishedCopyWith<$Res> implements $FdxExportOutcomeCopyWith<$Res> {
+  factory $FdxExportOutcome_FinishedCopyWith(FdxExportOutcome_Finished value, $Res Function(FdxExportOutcome_Finished) _then) = _$FdxExportOutcome_FinishedCopyWithImpl;
+@override @useResult
+$Res call({
+ SaveOutcome outcome, List<String> warnings
+});
+
+
+$SaveOutcomeCopyWith<$Res> get outcome;
+
+}
+/// @nodoc
+class _$FdxExportOutcome_FinishedCopyWithImpl<$Res>
+    implements $FdxExportOutcome_FinishedCopyWith<$Res> {
+  _$FdxExportOutcome_FinishedCopyWithImpl(this._self, this._then);
+
+  final FdxExportOutcome_Finished _self;
+  final $Res Function(FdxExportOutcome_Finished) _then;
+
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? outcome = null,Object? warnings = null,}) {
+  return _then(FdxExportOutcome_Finished(
+outcome: null == outcome ? _self.outcome : outcome // ignore: cast_nullable_to_non_nullable
+as SaveOutcome,warnings: null == warnings ? _self._warnings : warnings // ignore: cast_nullable_to_non_nullable
+as List<String>,
+  ));
+}
+
+/// Create a copy of FdxExportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$SaveOutcomeCopyWith<$Res> get outcome {
+  
+  return $SaveOutcomeCopyWith<$Res>(_self.outcome, (value) {
+    return _then(_self.copyWith(outcome: value));
+  });
+}
+}
+
+/// @nodoc
+mixin _$FdxImportOutcome {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FdxImportOutcome);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'FdxImportOutcome()';
+}
+
+
+}
+
+/// @nodoc
+class $FdxImportOutcomeCopyWith<$Res>  {
+$FdxImportOutcomeCopyWith(FdxImportOutcome _, $Res Function(FdxImportOutcome) __);
+}
+
+
+/// Adds pattern-matching-related methods to [FdxImportOutcome].
+extension FdxImportOutcomePatterns on FdxImportOutcome {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FdxImportOutcome_Imported value)?  imported,TResult Function( FdxImportOutcome_Failed value)?  failed,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case FdxImportOutcome_Imported() when imported != null:
+return imported(_that);case FdxImportOutcome_Failed() when failed != null:
+return failed(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FdxImportOutcome_Imported value)  imported,required TResult Function( FdxImportOutcome_Failed value)  failed,}){
+final _that = this;
+switch (_that) {
+case FdxImportOutcome_Imported():
+return imported(_that);case FdxImportOutcome_Failed():
+return failed(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FdxImportOutcome_Imported value)?  imported,TResult? Function( FdxImportOutcome_Failed value)?  failed,}){
+final _that = this;
+switch (_that) {
+case FdxImportOutcome_Imported() when imported != null:
+return imported(_that);case FdxImportOutcome_Failed() when failed != null:
+return failed(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( DocumentHandle handle,  List<String> warnings)?  imported,TResult Function( String message)?  failed,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case FdxImportOutcome_Imported() when imported != null:
+return imported(_that.handle,_that.warnings);case FdxImportOutcome_Failed() when failed != null:
+return failed(_that.message);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( DocumentHandle handle,  List<String> warnings)  imported,required TResult Function( String message)  failed,}) {final _that = this;
+switch (_that) {
+case FdxImportOutcome_Imported():
+return imported(_that.handle,_that.warnings);case FdxImportOutcome_Failed():
+return failed(_that.message);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( DocumentHandle handle,  List<String> warnings)?  imported,TResult? Function( String message)?  failed,}) {final _that = this;
+switch (_that) {
+case FdxImportOutcome_Imported() when imported != null:
+return imported(_that.handle,_that.warnings);case FdxImportOutcome_Failed() when failed != null:
+return failed(_that.message);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class FdxImportOutcome_Imported extends FdxImportOutcome {
+  const FdxImportOutcome_Imported({required this.handle, required final  List<String> warnings}): _warnings = warnings,super._();
+  
+
+ final  DocumentHandle handle;
+ final  List<String> _warnings;
+ List<String> get warnings {
+  if (_warnings is EqualUnmodifiableListView) return _warnings;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_warnings);
+}
+
+
+/// Create a copy of FdxImportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$FdxImportOutcome_ImportedCopyWith<FdxImportOutcome_Imported> get copyWith => _$FdxImportOutcome_ImportedCopyWithImpl<FdxImportOutcome_Imported>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FdxImportOutcome_Imported&&(identical(other.handle, handle) || other.handle == handle)&&const DeepCollectionEquality().equals(other._warnings, _warnings));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,handle,const DeepCollectionEquality().hash(_warnings));
+
+@override
+String toString() {
+  return 'FdxImportOutcome.imported(handle: $handle, warnings: $warnings)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $FdxImportOutcome_ImportedCopyWith<$Res> implements $FdxImportOutcomeCopyWith<$Res> {
+  factory $FdxImportOutcome_ImportedCopyWith(FdxImportOutcome_Imported value, $Res Function(FdxImportOutcome_Imported) _then) = _$FdxImportOutcome_ImportedCopyWithImpl;
+@useResult
+$Res call({
+ DocumentHandle handle, List<String> warnings
+});
+
+
+
+
+}
+/// @nodoc
+class _$FdxImportOutcome_ImportedCopyWithImpl<$Res>
+    implements $FdxImportOutcome_ImportedCopyWith<$Res> {
+  _$FdxImportOutcome_ImportedCopyWithImpl(this._self, this._then);
+
+  final FdxImportOutcome_Imported _self;
+  final $Res Function(FdxImportOutcome_Imported) _then;
+
+/// Create a copy of FdxImportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? handle = null,Object? warnings = null,}) {
+  return _then(FdxImportOutcome_Imported(
+handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as DocumentHandle,warnings: null == warnings ? _self._warnings : warnings // ignore: cast_nullable_to_non_nullable
+as List<String>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class FdxImportOutcome_Failed extends FdxImportOutcome {
+  const FdxImportOutcome_Failed({required this.message}): super._();
+  
+
+ final  String message;
+
+/// Create a copy of FdxImportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$FdxImportOutcome_FailedCopyWith<FdxImportOutcome_Failed> get copyWith => _$FdxImportOutcome_FailedCopyWithImpl<FdxImportOutcome_Failed>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FdxImportOutcome_Failed&&(identical(other.message, message) || other.message == message));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,message);
+
+@override
+String toString() {
+  return 'FdxImportOutcome.failed(message: $message)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $FdxImportOutcome_FailedCopyWith<$Res> implements $FdxImportOutcomeCopyWith<$Res> {
+  factory $FdxImportOutcome_FailedCopyWith(FdxImportOutcome_Failed value, $Res Function(FdxImportOutcome_Failed) _then) = _$FdxImportOutcome_FailedCopyWithImpl;
+@useResult
+$Res call({
+ String message
+});
+
+
+
+
+}
+/// @nodoc
+class _$FdxImportOutcome_FailedCopyWithImpl<$Res>
+    implements $FdxImportOutcome_FailedCopyWith<$Res> {
+  _$FdxImportOutcome_FailedCopyWithImpl(this._self, this._then);
+
+  final FdxImportOutcome_Failed _self;
+  final $Res Function(FdxImportOutcome_Failed) _then;
+
+/// Create a copy of FdxImportOutcome
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? message = null,}) {
+  return _then(FdxImportOutcome_Failed(
+message: null == message ? _self.message : message // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$RecoveryOutcome {
 
 

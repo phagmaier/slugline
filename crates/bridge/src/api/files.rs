@@ -38,6 +38,7 @@ use std::sync::{Arc, PoisonError};
 use flutter_rust_bridge::frb;
 
 use slugline_document as model;
+use slugline_fdx as fdx;
 use slugline_layout::PageConfig;
 use slugline_render_pdf as render_pdf;
 use slugline_storage::backup::{self, Retention};
@@ -118,6 +119,31 @@ pub enum SaveOutcome {
         path: String,
         /// Human-readable, and specific: it names the file and the reason.
         message: String,
+    },
+}
+
+/// FDX conversion opens an isolated unsaved session, never the source file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FdxImportOutcome {
+    Imported {
+        handle: DocumentHandle,
+        warnings: Vec<String>,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+/// Warnings require approval for the exact snapshot that will be exported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FdxExportOutcome {
+    NeedsConfirmation {
+        warnings: Vec<String>,
+        revision: u64,
+    },
+    Finished {
+        outcome: SaveOutcome,
+        warnings: Vec<String>,
     },
 }
 
@@ -763,6 +789,167 @@ pub async fn doc_export_fountain(
         bytes: text.len().min(u32::MAX as usize) as u32,
         backup: None,
     }
+}
+
+/// Import FDX as a new dirty Fountain document with its own crash journal.
+///
+/// Parsing precedes session creation. The caller may close an unadopted
+/// candidate after reviewing warnings without disturbing its current editor.
+pub async fn doc_import_fdx(path: String) -> FdxImportOutcome {
+    let source = match std::fs::read(&path) {
+        Ok(source) => source,
+        Err(error) => {
+            return FdxImportOutcome::Failed {
+                message: format!("could not read {path}: {error}"),
+            };
+        }
+    };
+    let imported = match fdx::read(&source) {
+        Ok(imported) => imported,
+        Err(error) => {
+            return FdxImportOutcome::Failed {
+                message: format!("could not import {path}: {error}"),
+            };
+        }
+    };
+    actor().run(move |state| {
+        let document = match model::Document::from_script(imported.script) {
+            Ok(document) => document,
+            Err(error) => {
+                return FdxImportOutcome::Failed {
+                    message: format!("could not import {path}: {error}"),
+                };
+            }
+        };
+        let mut snapshots = document.blocks().iter().enumerate().map(|(index, block)| {
+            (
+                index.min(u32::MAX as usize) as u32,
+                model::BlockSnapshot {
+                    id: block.id(),
+                    kind: block.kind(),
+                    text: block.text().to_owned(),
+                    forced: block.forced(),
+                    dual: block.dual(),
+                },
+            )
+        });
+        let first = snapshots.next().expect("an imported document has a body").1;
+        let initial = model::Patch {
+            changed: vec![first],
+            inserted: snapshots.collect(),
+            title_page: Some(document.title_page().clone()),
+            ..model::Patch::default()
+        };
+        let handle = state.open(document);
+        restart_journal(state, handle, "", Restart::Fresh);
+        if let Some(session) = state.session_mut(handle) {
+            crate::api::doc::record_patch(session, initial);
+        }
+        FdxImportOutcome::Imported {
+            handle: DocumentHandle { id: handle },
+            warnings: imported.warnings,
+        }
+    })
+}
+
+/// Export an immutable FDX copy without rebinding or saving the native script.
+///
+/// A warning approval belongs to one revision. If the document changes while a
+/// conversion dialog is open, the new snapshot must be approved independently.
+pub async fn doc_export_fdx(
+    handle: DocumentHandle,
+    path: String,
+    overwrite: bool,
+    confirmed_revision: Option<u64>,
+) -> FdxExportOutcome {
+    let path = PathBuf::from(path);
+    let finish = |outcome, warnings| FdxExportOutcome::Finished { outcome, warnings };
+    if path.as_os_str().is_empty() {
+        return finish(
+            failed(SaveFailure::NoPath, &path, "no file was chosen"),
+            Vec::new(),
+        );
+    }
+    let Some((snapshot, revision, open_scripts)) = actor().run({
+        let handle = handle.id;
+        move |state| {
+            let document = state.session(handle)?.document();
+            let snapshot = document.serialisation_snapshot();
+            let revision = document.revision();
+            let open_scripts = state
+                .handles()
+                .into_iter()
+                .filter_map(|open| state.session(open))
+                .filter_map(Session::path)
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>();
+            Some((snapshot, revision, open_scripts))
+        }
+    }) else {
+        return finish(
+            failed(
+                SaveFailure::NoSuchDocument,
+                &path,
+                "no document with that handle",
+            ),
+            Vec::new(),
+        );
+    };
+    if open_scripts.iter().any(|open| same_file(open, &path)) {
+        return finish(
+            failed(
+                SaveFailure::ScriptIsOpen,
+                &path,
+                &format!(
+                    "{} is open here; save that script rather than exporting over it",
+                    path.display()
+                ),
+            ),
+            Vec::new(),
+        );
+    }
+    if !overwrite && path.exists() {
+        return finish(
+            failed(
+                SaveFailure::AlreadyExists,
+                &path,
+                &format!("{} is already there", path.display()),
+            ),
+            Vec::new(),
+        );
+    }
+    let exported = match fdx::write(snapshot.title_page(), snapshot.elements()) {
+        Ok(exported) => exported,
+        Err(error) => {
+            return finish(
+                failed(
+                    SaveFailure::Io,
+                    &path,
+                    &format!("could not export FDX: {error}"),
+                ),
+                Vec::new(),
+            );
+        }
+    };
+    if !exported.warnings.is_empty() && confirmed_revision != Some(revision) {
+        return FdxExportOutcome::NeedsConfirmation {
+            warnings: exported.warnings,
+            revision,
+        };
+    }
+    let outcome = match atomic::save_atomically(&path, &exported.xml) {
+        Ok(()) => SaveOutcome::Saved {
+            path: path.to_string_lossy().into_owned(),
+            bytes: exported.xml.len().min(u32::MAX as usize) as u32,
+            backup: None,
+        },
+        Err(error) => SaveOutcome::Failed {
+            failure: failure_of(&error),
+            path: path.to_string_lossy().into_owned(),
+            message: error.to_string(),
+        },
+    };
+    finish(outcome, exported.warnings)
 }
 
 /// §6's `export_pdf`. Paginates the document and writes a PDF (§Phase 7).
@@ -5383,5 +5570,305 @@ mod tests {
             assert!(it.journal_agrees_with_the_file());
         }
         assert_eq!(fs::read_to_string(&blocked).unwrap(), "not a directory");
+    }
+
+    #[test]
+    fn fdx_import_is_unsaved_isolated_and_recoverable_before_fountain_save() {
+        let it = Fixture::open("fdx-import");
+        let input = it.root.join("producer.fdx");
+        let original = include_bytes!("../../../../testdata/fdx/fade-in-5.0.15.fdx");
+        fs::write(&input, original).unwrap();
+        let old_source = it.in_memory();
+        let old_journal = it.journalled();
+        let FdxImportOutcome::Imported { handle, .. } =
+            block_on(doc_import_fdx(input.to_string_lossy().into_owned()))
+        else {
+            panic!("the independent producer's supported screenplay must import");
+        };
+        let candidate = Sibling {
+            script: input.clone(),
+            handle,
+        };
+        assert_eq!(it.in_memory(), old_source);
+        assert_eq!(it.journalled(), old_journal);
+        assert_eq!(it.on_disk(), SCRIPT);
+        assert_eq!(doc_path(handle), None);
+        assert!(doc_dirty(handle));
+        assert!(doc_undo(handle).is_none(), "import is not an undoable edit");
+        assert!(matches!(
+            block_on(doc_save(handle)),
+            SaveOutcome::Failed {
+                failure: SaveFailure::NoPath,
+                ..
+            }
+        ));
+        let journal_path = actor().run(move |state| {
+            state
+                .session_mut(handle.id)
+                .and_then(Session::journal_mut)
+                .map(|journal| journal.path().to_path_buf())
+                .unwrap()
+        });
+        let blocks = doc_blocks(handle, 0, u32::MAX);
+        assert_eq!(
+            blocks[0].text, "INT. IMPORT ROOM - DAY #12A#",
+            "an existing production number survives import"
+        );
+        let dialogue = blocks
+            .iter()
+            .find(|block| block.kind == crate::api::doc::BlockKind::Dialogue)
+            .unwrap();
+        assert_eq!(
+            slugline_fountain::emphasis::scan_row(&dialogue.text)
+                .into_iter()
+                .map(|run| run.text)
+                .collect::<String>(),
+            "I say hello."
+        );
+        let initial_recovery = journal::read(&journal_path).unwrap();
+        let mut recovered = model::Document::blank();
+        for patch in &initial_recovery.patches {
+            recovered.replay(patch).unwrap();
+        }
+        assert_eq!(
+            recovered.serialise(),
+            candidate.in_memory(),
+            "the initial import is recoverable before the first keystroke"
+        );
+        assert!(matches!(
+            doc_apply(
+                handle,
+                EditCommand::ReplaceText {
+                    block: dialogue.id,
+                    start_utf16: 0,
+                    end_utf16: 0,
+                    with: "Again ".to_owned(),
+                },
+                None,
+            ),
+            EditOutcome::Applied { .. }
+        ));
+        let recovery = journal::read(&journal_path).unwrap();
+        assert!(recovery.header.script.as_os_str().is_empty());
+        let mut recovered = model::Document::blank();
+        for patch in &recovery.patches {
+            recovered.replay(patch).unwrap();
+        }
+        assert_eq!(recovered.serialise(), candidate.in_memory());
+        let saved = it.root.join("imported.fountain");
+        assert!(matches!(
+            block_on(doc_save_as(
+                handle,
+                saved.to_string_lossy().into_owned(),
+                false
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        assert!(!doc_dirty(handle));
+        assert_eq!(fs::read(&input).unwrap(), original);
+        let reopened = block_on(library_open(saved.to_string_lossy().into_owned())).unwrap();
+        let reopened = Sibling {
+            script: saved,
+            handle: reopened,
+        };
+        assert_eq!(reopened.in_memory(), candidate.in_memory());
+        assert_eq!(it.in_memory(), old_source);
+    }
+
+    #[test]
+    fn failed_fdx_import_does_not_replace_or_dirty_the_current_session() {
+        let it = Fixture::open("fdx-import-refusal");
+        let input = it.root.join("malformed.fdx");
+        let malformed = b"<FinalDraft><Content><Paragraph><Text>unfinished";
+        fs::write(&input, malformed).unwrap();
+        let before = (it.in_memory(), it.journalled(), doc_path(it.handle));
+        assert!(matches!(
+            block_on(doc_import_fdx(input.to_string_lossy().into_owned())),
+            FdxImportOutcome::Failed { .. }
+        ));
+        assert_eq!(
+            (it.in_memory(), it.journalled(), doc_path(it.handle)),
+            before
+        );
+        assert!(!it.dirty());
+        assert_eq!(it.on_disk(), SCRIPT);
+        assert_eq!(fs::read(&input).unwrap(), malformed);
+    }
+
+    #[test]
+    fn fdx_export_preserves_native_state_and_refuses_unapproved_destinations() {
+        let it = Fixture::open("fdx-export-copy");
+        it.types("Changed ");
+        let before = (
+            it.in_memory(),
+            doc_path(it.handle),
+            it.journalled(),
+            it.journal_describes(),
+        );
+        let copy = it.root.join("copy.fdx");
+        assert!(matches!(
+            block_on(doc_export_fdx(
+                it.handle,
+                copy.to_string_lossy().into_owned(),
+                false,
+                None,
+            )),
+            FdxExportOutcome::Finished {
+                outcome: SaveOutcome::Saved { .. },
+                ..
+            }
+        ));
+        let imported = fdx::read(&fs::read(&copy).unwrap()).unwrap();
+        assert_eq!(
+            imported.script.elements[0].text,
+            "Changed The house is quiet."
+        );
+        assert_eq!(
+            (
+                it.in_memory(),
+                doc_path(it.handle),
+                it.journalled(),
+                it.journal_describes(),
+            ),
+            before
+        );
+        assert!(it.dirty(), "export is not a save");
+        assert_eq!(it.on_disk(), SCRIPT);
+        assert!(!it.library_has(&journal::script_id(&copy)));
+        let existing = fs::read(&copy).unwrap();
+        assert!(matches!(
+            block_on(doc_export_fdx(
+                it.handle,
+                copy.to_string_lossy().into_owned(),
+                false,
+                None,
+            )),
+            FdxExportOutcome::Finished {
+                outcome: SaveOutcome::Failed {
+                    failure: SaveFailure::AlreadyExists,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(fs::read(&copy).unwrap(), existing);
+        assert!(matches!(
+            block_on(doc_export_fdx(
+                it.handle,
+                it.script.to_string_lossy().into_owned(),
+                true,
+                None,
+            )),
+            FdxExportOutcome::Finished {
+                outcome: SaveOutcome::Failed {
+                    failure: SaveFailure::ScriptIsOpen,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(it.on_disk(), SCRIPT);
+        doc_undo(it.handle).unwrap();
+        assert_eq!(it.in_memory(), SCRIPT);
+        assert!(!it.dirty(), "export did not disturb the saved revision");
+    }
+
+    #[test]
+    fn fdx_conversion_warning_approval_cannot_authorize_a_later_revision() {
+        let it = Fixture::open_source(
+            "fdx-warning-revision",
+            "# Part\n\n= A scene card\n\nINT. ROOM - DAY\n\nQuiet.\n",
+        );
+        let copy = it.root.join("revealed-outline.fdx");
+        let FdxExportOutcome::NeedsConfirmation { revision, .. } = block_on(doc_export_fdx(
+            it.handle,
+            copy.to_string_lossy().into_owned(),
+            false,
+            None,
+        )) else {
+            panic!("revealing nonprinting content requires explicit approval");
+        };
+        assert!(!copy.exists());
+        it.types("Changed ");
+        let FdxExportOutcome::NeedsConfirmation {
+            revision: current, ..
+        } = block_on(doc_export_fdx(
+            it.handle,
+            copy.to_string_lossy().into_owned(),
+            false,
+            Some(revision),
+        ))
+        else {
+            panic!("the old snapshot's approval must not authorize the new one");
+        };
+        assert_ne!(current, revision);
+        assert!(!copy.exists());
+        assert!(matches!(
+            block_on(doc_export_fdx(
+                it.handle,
+                copy.to_string_lossy().into_owned(),
+                false,
+                Some(current),
+            )),
+            FdxExportOutcome::Finished {
+                outcome: SaveOutcome::Saved { .. },
+                ..
+            }
+        ));
+        let imported = fdx::read(&fs::read(&copy).unwrap()).unwrap();
+        assert_eq!(imported.script.elements[0].text, "Changed Part");
+        assert_eq!(
+            imported.script.elements[0].kind,
+            slugline_fountain::BlockKind::Section { level: 1 }
+        );
+        assert!(it.dirty());
+        assert_eq!(it.journalled(), 1);
+    }
+
+    #[test]
+    fn initial_fdx_import_is_offered_and_accepted_after_a_crash_without_typing() {
+        let it = Fixture::open("fdx-initial-recovery");
+        let input = it.root.join("initial.fdx");
+        fs::write(
+            &input,
+            include_bytes!("../../../../testdata/fdx/fade-in-5.0.15.fdx"),
+        )
+        .unwrap();
+        let FdxImportOutcome::Imported { handle, .. } =
+            block_on(doc_import_fdx(input.to_string_lossy().into_owned()))
+        else {
+            panic!("the supported producer imports");
+        };
+        let candidate = Sibling {
+            script: input.clone(),
+            handle,
+        };
+        let expected = candidate.in_memory();
+        // Release the process-owned file without discarding it, as a crash does.
+        let journal_path = actor().run(move |state| {
+            let session = state.session_mut(handle.id).unwrap();
+            let path = session.journal_mut().unwrap().path().to_path_buf();
+            session.set_journal(None);
+            path
+        });
+        let offer = block_on(recovery_pending())
+            .into_iter()
+            .find(|offer| Path::new(&offer.journal) == journal_path)
+            .expect("an initial imported state is not an empty journal");
+        assert!(offer.script.is_empty());
+        assert!(offer.blocked.is_none());
+        let RecoveryOutcome::Recovered { handle } = block_on(recovery_accept(offer.journal)) else {
+            panic!("the initial full outcome replays onto the untitled blank base");
+        };
+        let recovered = Sibling {
+            script: input,
+            handle,
+        };
+        assert_eq!(recovered.in_memory(), expected);
+        assert_eq!(doc_path(handle), None);
+        assert!(doc_dirty(handle));
+        assert!(doc_undo(handle).is_none());
+        assert_eq!(it.in_memory(), SCRIPT);
+        assert_eq!(candidate.on_disk(), recovered.on_disk());
     }
 }

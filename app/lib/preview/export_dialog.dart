@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/fdx_warnings_dialog.dart';
 import 'package:slugline/library/save_dialogs.dart' show confirmReplace;
 import 'package:slugline/preview/preview_view.dart';
 import 'package:slugline/theme.dart';
@@ -14,17 +15,15 @@ import 'package:slugline/theme.dart';
 ///
 /// §Phase 7 asks for a "preview-before-export flow in the export dialog", and
 /// this is it in one window: the pages on the left as they will print, the page
-/// setup and the two exports on the right. Changing the paper repaginates —
+/// setup and copy exports on the right. Changing the paper repaginates —
 /// through Rust, which is the only thing that paginates — and the preview and
 /// the PDF are therefore looking at the same answer by construction.
 ///
-/// ## The two exports are not the same operation
+/// ## Exports are not Save As
 ///
-/// "Export PDF" writes pages. "Export Fountain copy" writes the script's own
-/// text somewhere else. Neither is Save As: an export copies and the session
-/// stays where it is, and only Save As rebinds a writer's session to a new file
-/// (ADR 0029). That is why this dialog calls [DocumentCore.exportFountain] and
-/// [ScreenplayOutput.exportPdf] and never `saveAs`.
+/// PDF writes pages; Fountain writes native text; FDX converts screenplay
+/// content for interchange, not production-layout fidelity. Each writes a copy
+/// and leaves the session where it is (ADR 0029, ADR 0055).
 ///
 /// ## The refusals
 ///
@@ -106,7 +105,7 @@ class ExportDialog extends StatefulWidget {
     action: 'Export',
     directory: directory,
     suggestedName: suggestedName,
-    extension: suggestedName.endsWith('.pdf') ? 'pdf' : 'fountain',
+    extension: suggestedName.split('.').last,
   );
 
   @override
@@ -134,6 +133,7 @@ class _ExportDialogState extends State<ExportDialog> {
   /// an export that did not happen is not something to scroll past.
   String? _report;
   bool _reportIsFailure = false;
+  bool _exportingFdx = false;
 
   PageSetup get _setup => PageSetup(
     paper: _paper,
@@ -196,6 +196,67 @@ class _ExportDialogState extends State<ExportDialog> {
       (overwrite) => widget.core.exportFountain(path, overwrite: overwrite),
     );
     _record(outcome, 'copy');
+  }
+
+  Future<void> _exportFdx() async {
+    if (_exportingFdx) return;
+    setState(() => _exportingFdx = true);
+    try {
+      final path = await _ask('Export FDX copy', 'fdx');
+      if (path == null || !mounted) return;
+      var overwrite = false;
+      int? confirmedRevision;
+      while (mounted) {
+        final result = await widget.core.exportFdx(
+          path,
+          overwrite: overwrite,
+          confirmedRevision: confirmedRevision,
+        );
+        if (!mounted) return;
+        switch (result) {
+          case FdxExportOutcome_NeedsConfirmation(
+            :final warnings,
+            :final revision,
+          ):
+            if (!await confirmFdxWarnings(
+              context,
+              warnings,
+              importing: false,
+            )) {
+              if (mounted) {
+                setState(() {
+                  _report = 'FDX export cancelled. No copy was written.';
+                  _reportIsFailure = false;
+                });
+              }
+              return;
+            }
+            // A later snapshot may require another prompt; only the exact
+            // revision the writer just saw is approved by this retry.
+            confirmedRevision = revision;
+          case FdxExportOutcome_Finished(:final outcome):
+            if (outcome is SaveOutcome_Failed &&
+                outcome.failure == SaveFailure.alreadyExists &&
+                !overwrite) {
+              if (await confirmReplace(context, outcome.path)) {
+                overwrite = true;
+                continue;
+              }
+            }
+            _record(outcome, 'FDX copy');
+            return;
+        }
+      }
+    } catch (failure) {
+      if (mounted) {
+        setState(() {
+          _report = 'Could not export FDX: $failure';
+          _reportIsFailure = true;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _exportingFdx = false);
+    }
   }
 
   Future<String?> _ask(String title, String extension) {
@@ -358,7 +419,7 @@ class _ExportDialogState extends State<ExportDialog> {
     );
   }
 
-  /// The page setup scrolls; the two exports and what they said do not.
+  /// The page setup scrolls; the exports and what they said do not.
   ///
   /// A writer should never have to scroll to find out whether their PDF was
   /// written, and an export that was refused is not something to go looking for.
@@ -386,6 +447,13 @@ class _ExportDialogState extends State<ExportDialog> {
                 onPressed: _exportFountain,
                 icon: const Icon(Icons.description_outlined),
                 label: const Text('Export Fountain copy…'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const Key('export-fdx'),
+                onPressed: _exportingFdx ? null : _exportFdx,
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('Export FDX copy…'),
               ),
               const SizedBox(height: 8),
               Text(

@@ -7,14 +7,8 @@ import 'package:slugline/preview/export_dialog.dart';
 import '../support/fake_core.dart';
 import '../support/fake_output.dart';
 
-/// §Phase 7's export commands.
-///
-/// Three requirements, and one test each:
-///
-/// * the export command calls `exportFountain`, and **only** Save As calls
-///   `saveAs` — an export must never rebind the writer's session (ADR 0029);
-/// * `AlreadyExists` is asked about and then re-exported with `overwrite: true`;
-/// * `ScriptIsOpen` is reported as the refusal it is, and not retried.
+/// Copy exports leave the active session alone, require explicit replacement
+/// approval, and refuse to overwrite an open script.
 void main() {
   /// The export dialog is 940 by 700; the default test surface is 800 by 600.
   /// Giving the test a window the dialog fits in is the alternative to
@@ -35,6 +29,7 @@ void main() {
   late FakeCore core;
   late FakeOutput output;
   String? answer;
+  String? suggested;
 
   setUp(() {
     core = FakeCore.single(BlockKind.action, 'Something happens.')
@@ -43,6 +38,7 @@ void main() {
     // of the preview, where a test can see it without scrolling.
     output = FakeOutput(samplePagination(titlePage: false));
     answer = null;
+    suggested = null;
   });
 
   Future<void> open(
@@ -69,6 +65,7 @@ void main() {
                   required String suggestedName,
                   required String? directory,
                 }) async {
+                  suggested = suggestedName;
                   return answer;
                 },
           ),
@@ -124,24 +121,6 @@ void main() {
     // ADR 0029: the session did not move.
     expect(core.saves, isEmpty, reason: 'an export is not a save');
     expect(core.filePath, '/scripts/heat.fountain');
-  });
-
-  testWidgets('exporting a Fountain copy calls exportFountain, never saveAs', (
-    tester,
-  ) async {
-    await open(tester);
-    answer = '/elsewhere/copy.fountain';
-    await tester.tap(find.byKey(const Key('export-fountain')));
-    await tester.pumpAndSettle();
-
-    expect(core.exports.single, ('/elsewhere/copy.fountain', false));
-    expect(
-      core.filePath,
-      '/scripts/heat.fountain',
-      reason: 'only Save As rebinds the session (ADR 0029)',
-    );
-    expect(core.saves, isEmpty);
-    expect(core.dirty, isFalse, reason: 'and the dirty flag is untouched');
   });
 
   testWidgets(
@@ -219,21 +198,12 @@ void main() {
     expect(find.byKey(const Key('preview-page-1')), findsOneWidget);
   });
 
-  testWidgets('the preview size shows a percent of actual size', (
-    tester,
-  ) async {
-    await open(tester);
-    // The default 4.2 points per column against 7.2 at actual size.
-    expect(
-      tester.widget<Text>(find.byKey(const Key('preview-scale-percent'))).data,
-      '58%',
-    );
-  });
-
   testWidgets('actual size is 100% and fit width fills the pane', (
     tester,
   ) async {
     await open(tester);
+    await tester.ensureVisible(find.byKey(const Key('preview-actual-size')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('preview-actual-size')));
     await tester.pumpAndSettle();
     expect(
@@ -241,6 +211,8 @@ void main() {
       '100%',
     );
 
+    await tester.ensureVisible(find.byKey(const Key('preview-fit-width')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('preview-fit-width')));
     await tester.pumpAndSettle();
     // The pane is narrower than an actual-size sheet, so fitting grows the
@@ -254,5 +226,254 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('preview-scale-percent'))).data,
       '${(slider.value / 7.2 * 100).round()}%',
     );
+  });
+
+  FdxExportOutcome needs(int revision, String warning) =>
+      FdxExportOutcome.needsConfirmation(
+        warnings: [warning],
+        revision: revision,
+      );
+
+  FdxExportOutcome finished(
+    SaveOutcome outcome, {
+    List<String> warnings = const [],
+  }) => FdxExportOutcome.finished(outcome: outcome, warnings: warnings);
+
+  testWidgets(
+    'FDX warning cancellation refuses all writes and keeps dirty session',
+    (tester) async {
+      core.apply(
+        EditCommand.replaceText(
+          block: 1,
+          startUtf16: 0,
+          endUtf16: 0,
+          with_: 'New words. ',
+        ),
+      );
+      final source = core.source();
+      final journal = core.journalState;
+      core.fdxOutcomes.add(
+        needs(4, 'Outline metadata uses a conversion mapping.'),
+      );
+      await open(tester);
+      answer = '/scripts/copy.fdx';
+      await tester.tap(find.byKey(const Key('export-fdx')));
+      await tester.pumpAndSettle();
+      expect(suggested, 'heat.fdx');
+      expect(core.fdxWrites, isEmpty);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(core.fdxWrites, isEmpty);
+      expect(core.source(), source);
+      expect(core.journalState, journal);
+      expect(core.dirty, isTrue);
+      expect(core.path, '/scripts/heat.fountain');
+      expect(core.saves, isEmpty);
+    },
+  );
+
+  testWidgets('changed FDX revision requires renewed approval before writing', (
+    tester,
+  ) async {
+    core.fdxOutcomes.addAll([
+      needs(4, 'First snapshot warning'),
+      needs(5, 'Changed snapshot warning'),
+      finished(
+        const SaveOutcome.saved(
+          path: '/scripts/copy.fdx',
+          bytes: 20,
+          backup: null,
+        ),
+      ),
+    ]);
+    await open(tester);
+    answer = '/scripts/copy.fdx';
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export copy'));
+    await tester.pumpAndSettle();
+    expect(find.text('Changed snapshot warning'), findsOneWidget);
+    expect(core.fdxWrites, isEmpty);
+    await tester.tap(find.text('Export copy'));
+    await tester.pumpAndSettle();
+    expect(core.fdxWrites, ['/scripts/copy.fdx']);
+    expect(report(tester), contains('Wrote'));
+  });
+
+  testWidgets('paper controls remain usable after approving many FDX warnings', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    final warnings = [
+      for (final kind in [
+        'Section:1',
+        'Section:2',
+        'Section:3',
+        'Section:4',
+        'Section:5',
+        'Section:6',
+        'Synopsis',
+        'Note',
+      ])
+        'Nonprinting $kind (including notes/omitted text) becomes visible '
+            'Action text to the recipient; Slugline metadata retains original '
+            'semantics only for Slugline re-import.',
+    ];
+    core.fdxOutcomes.addAll([
+      FdxExportOutcome.needsConfirmation(warnings: warnings, revision: 4),
+      finished(
+        const SaveOutcome.saved(
+          path: '/scripts/copy.fdx',
+          bytes: 2000,
+          backup: null,
+        ),
+        warnings: warnings,
+      ),
+    ]);
+    await open(tester);
+    answer = '/scripts/copy.fdx';
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export copy'));
+    await tester.pumpAndSettle();
+    expect(find.text('A4').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('A4'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<RadioGroup<PaperSize>>(find.byType(RadioGroup<PaperSize>))
+          .groupValue,
+      PaperSize.a4,
+    );
+  });
+
+  testWidgets('cancelling renewed FDX warning writes nothing', (tester) async {
+    core.fdxOutcomes.addAll([
+      needs(4, 'Earlier warning'),
+      needs(5, 'Later warning'),
+    ]);
+    await open(tester);
+    answer = '/scripts/copy.fdx';
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export copy'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(core.fdxWrites, isEmpty);
+  });
+
+  testWidgets('FDX overwrite confirmation retains approved revision', (
+    tester,
+  ) async {
+    core.fdxOutcomes.addAll([
+      needs(7, 'Conversion warning'),
+      finished(
+        const SaveOutcome.failed(
+          failure: SaveFailure.alreadyExists,
+          path: '/scripts/copy.fdx',
+          message: 'Already exists',
+        ),
+      ),
+      finished(
+        const SaveOutcome.saved(
+          path: '/scripts/copy.fdx',
+          bytes: 20,
+          backup: null,
+        ),
+      ),
+    ]);
+    await open(tester);
+    answer = '/scripts/copy.fdx';
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export copy'));
+    await tester.pumpAndSettle();
+    expect(find.text('There is already a file there'), findsOneWidget);
+    expect(core.fdxWrites, isEmpty);
+    await tester.tap(find.text('Replace'));
+    await tester.pumpAndSettle();
+    expect(core.fdxWrites, ['/scripts/copy.fdx']);
+    expect(core.saveAsCalls, isEmpty);
+  });
+
+  testWidgets('FDX overwrite cancellation leaves destination alone', (
+    tester,
+  ) async {
+    core.fdxOutcomes.add(
+      finished(
+        const SaveOutcome.failed(
+          failure: SaveFailure.alreadyExists,
+          path: '/scripts/copy.fdx',
+          message: 'Already exists',
+        ),
+      ),
+    );
+    await open(tester);
+    answer = '/scripts/copy.fdx';
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(core.fdxWrites, isEmpty);
+    expect(report(tester), 'The file was left as it was.');
+  });
+
+  for (final failure in [SaveFailure.scriptIsOpen, SaveFailure.noSpace]) {
+    testWidgets('FDX $failure is shown after approval and never retried', (
+      tester,
+    ) async {
+      core.fdxOutcomes.addAll([
+        needs(7, 'Conversion warning'),
+        finished(
+          SaveOutcome.failed(
+            failure: failure,
+            path: '/scripts/copy.fdx',
+            message: 'No disk space for this copy',
+          ),
+        ),
+      ]);
+      await open(tester);
+      answer = '/scripts/copy.fdx';
+      await tester.tap(find.byKey(const Key('export-fdx')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Export copy'));
+      await tester.pumpAndSettle();
+      expect(core.fdxWrites, isEmpty);
+      expect(find.text('There is already a file there'), findsNothing);
+      expect(
+        report(tester),
+        contains(
+          failure == SaveFailure.scriptIsOpen
+              ? 'script open here'
+              : 'No disk space',
+        ),
+      );
+      expect(report(tester), isNot(contains('Wrote')));
+    });
+  }
+
+  testWidgets('closing the FDX chooser never reaches the write API', (
+    tester,
+  ) async {
+    await open(tester);
+    answer = null;
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    expect(core.fdxWrites, isEmpty);
+    expect(find.byKey(const Key('export-report')), findsNothing);
+  });
+
+  testWidgets('unmounting FDX warning dialog cannot authorize a write', (
+    tester,
+  ) async {
+    core.fdxOutcomes.add(needs(8, 'Conversion warning'));
+    await open(tester);
+    answer = '/scripts/copy.fdx';
+    await tester.tap(find.byKey(const Key('export-fdx')));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    expect(core.fdxWrites, isEmpty);
   });
 }

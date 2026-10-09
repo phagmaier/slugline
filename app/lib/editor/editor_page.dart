@@ -66,6 +66,7 @@ class EditorPage extends StatefulWidget {
     this.onClosed,
     this.onNewScript,
     this.onOpenScript,
+    this.onImportFdx,
     this.title,
     super.key,
   });
@@ -104,6 +105,7 @@ class EditorPage extends StatefulWidget {
   final Future<void> Function()? onClosed;
   final Future<void> Function()? onNewScript;
   final Future<void> Function()? onOpenScript;
+  final Future<void> Function()? onImportFdx;
 
   final String? title;
 
@@ -752,6 +754,10 @@ class EditorPageState extends State<EditorPage> {
                     onBackups: () => unawaited(_showBackups()),
                     onSave: () => unawaited(save()),
                     onSaveAs: () => unawaited(save(forcePath: true)),
+                    onImportFdx: widget.onImportFdx == null
+                        ? null
+                        : () =>
+                              unawaited(_runScriptAction(widget.onImportFdx!)),
                     onShortcuts: widget.onShowShortcuts == null
                         ? null
                         : _showShortcuts,
@@ -846,6 +852,13 @@ class EditorPageState extends State<EditorPage> {
                                           : () => unawaited(
                                               _runScriptAction(
                                                 widget.onOpenScript!,
+                                              ),
+                                            ),
+                                      importFdx: widget.onImportFdx == null
+                                          ? null
+                                          : () => unawaited(
+                                              _runScriptAction(
+                                                widget.onImportFdx!,
                                               ),
                                             ),
                                       closeScript: widget.onClosed == null
@@ -1137,6 +1150,7 @@ class _OverflowMenu extends StatelessWidget {
     required this.onSaveAs,
     required this.onShortcuts,
     required this.onPaginationDebug,
+    required this.onImportFdx,
   });
 
   final VoidCallback onTitlePage;
@@ -1146,6 +1160,7 @@ class _OverflowMenu extends StatelessWidget {
   final VoidCallback onSaveAs;
   final Future<void> Function()? onShortcuts;
   final VoidCallback? onPaginationDebug;
+  final VoidCallback? onImportFdx;
 
   @override
   Widget build(BuildContext context) {
@@ -1161,6 +1176,8 @@ class _OverflowMenu extends StatelessWidget {
         _entry(context, 'Save', 'Ctrl+S', onSave),
         _entry(context, 'Save as…', 'Ctrl+Shift+S', onSaveAs),
         _entry(context, 'Previous versions…', '', onBackups),
+        if (onImportFdx case final action?)
+          _entry(context, 'Import FDX…', '', action),
         const PopupMenuDivider(),
         _entry(context, 'Title page…', '', onTitlePage),
         _entry(

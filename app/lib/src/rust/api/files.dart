@@ -12,7 +12,7 @@ part 'files.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `abandon_save`, `abandoned`, `begin`, `commit_saved_page_count`, `degraded`, `failed`, `failure_of`, `finished`, `hydrate_pins`, `load_preferences`, `open_source`, `paginate_for_export`, `preference_page_config`, `prefs_view`, `rebind`, `restart_journal`, `same_file`, `save_library`, `script_name`, `script_view`, `starter_source`, `unprotected`, `unused_path`, `update_saved_page_count`, `watch`, `write_document`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ExternalChangePlan`, `OwnWrite`, `Plan`, `Restart`, `SavedPagination`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `init`. Tells the core where its directories are and reads what is in
 /// them.
@@ -195,6 +195,29 @@ Future<SaveOutcome> docExportFountain({
   handle: handle,
   path: path,
   overwrite: overwrite,
+);
+
+/// Import FDX as a new dirty Fountain document with its own crash journal.
+///
+/// Parsing precedes session creation. The caller may close an unadopted
+/// candidate after reviewing warnings without disturbing its current editor.
+Future<FdxImportOutcome> docImportFdx({required String path}) =>
+    RustLib.instance.api.crateApiFilesDocImportFdx(path: path);
+
+/// Export an immutable FDX copy without rebinding or saving the native script.
+///
+/// A warning approval belongs to one revision. If the document changes while a
+/// conversion dialog is open, the new snapshot must be approved independently.
+Future<FdxExportOutcome> docExportFdx({
+  required DocumentHandle handle,
+  required String path,
+  required bool overwrite,
+  int? confirmedRevision,
+}) => RustLib.instance.api.crateApiFilesDocExportFdx(
+  handle: handle,
+  path: path,
+  overwrite: overwrite,
+  confirmedRevision: confirmedRevision,
 );
 
 /// §6's `export_pdf`. Paginates the document and writes a PDF (§Phase 7).
@@ -417,6 +440,32 @@ class BackupView {
           path == other.path &&
           writtenMillis == other.writtenMillis &&
           bytes == other.bytes;
+}
+
+@freezed
+sealed class FdxExportOutcome with _$FdxExportOutcome {
+  const FdxExportOutcome._();
+
+  const factory FdxExportOutcome.needsConfirmation({
+    required List<String> warnings,
+    required int revision,
+  }) = FdxExportOutcome_NeedsConfirmation;
+  const factory FdxExportOutcome.finished({
+    required SaveOutcome outcome,
+    required List<String> warnings,
+  }) = FdxExportOutcome_Finished;
+}
+
+@freezed
+sealed class FdxImportOutcome with _$FdxImportOutcome {
+  const FdxImportOutcome._();
+
+  const factory FdxImportOutcome.imported({
+    required DocumentHandle handle,
+    required List<String> warnings,
+  }) = FdxImportOutcome_Imported;
+  const factory FdxImportOutcome.failed({required String message}) =
+      FdxImportOutcome_Failed;
 }
 
 /// §6's preferences, through Phase 10.

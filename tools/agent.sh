@@ -3,7 +3,7 @@
 # kind run the same commands with the same flags.
 #
 #   ./tools/agent.sh doctor              # environment pre-flight
-#   ./tools/agent.sh quick <crate>       # one Rust crate: fountain|document|layout|render_pdf|storage|spell|bridge
+#   ./tools/agent.sh quick <crate>       # one Rust crate: fountain|fdx|document|layout|render_pdf|storage|spell|bridge
 #   ./tools/agent.sh docs                # layering + version + docs + reference checks (fast, no build)
 #   ./tools/agent.sh lint                # cargo fmt check + clippy (slower, whole workspace)
 #   ./tools/agent.sh backlog-next        # first unticked, non-blocked BACKLOG item
@@ -29,10 +29,10 @@ case "$cmd" in
   quick)
     crate=${2:-}
     case "$crate" in
-      fountain|document|layout|render_pdf|storage|spell|bridge) ;;
+      fountain|fdx|document|layout|render_pdf|storage|spell|bridge) ;;
       *)
         echo "usage: tools/agent.sh quick <crate>" >&2
-        echo "crates: fountain document layout render_pdf storage spell bridge" >&2
+        echo "crates: fountain fdx document layout render_pdf storage spell bridge" >&2
         exit 2
         ;;
     esac

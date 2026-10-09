@@ -15,6 +15,7 @@ together with `Cargo.toml` when adding a crate or an edge.
 | Crate | Owns | May depend on |
 | --- | --- | --- |
 | [fountain](../crates/fountain/) | Syntax: `BlockKind`, `TitlePage`, `Element`, parse, serialise, `infer_kind` | Nothing (ADR 0008) |
+| [fdx](../crates/fdx/) | FDX XML conversion over existing screenplay types; explicit conversion diagnostics | `fountain` (ADR 0055) |
 | [document](../crates/document/) | Identity and history: `BlockId`, `Block`, `Document`, `EditCommand`, undo, find/replace, Enter/Tab tables | `fountain` (ADR 0008, ADR 0011) |
 | [layout](../crates/layout/) | Pagination engine; incremental repagination by checkpoint | `document`, `fountain` (ADR 0022, ADR 0049) |
 | [render_pdf](../crates/render_pdf/) | PDF bytes: subsetter, sfnt writer, object writer, SHA-256 | `layout`, `fountain` (ADR 0032) |
@@ -40,6 +41,12 @@ together with `Cargo.toml` when adding a crate or an edge.
 - **Export:** an export copies text elsewhere and moves nothing; Save As
   rebinds the session. Both refuse `AlreadyExists` and `ScriptIsOpen`
   (ADR 0029).
+- **FDX import:** decode and validate the native semantic boundaries on a worker,
+  then construct an isolated dirty document on the actor. Its full initial
+  outcome is journalled against the normal untitled blank base, without an undo
+  entry. Warn before adoption; cancellation leaves the old
+  editor and FDX source untouched. FDX export is an immutable copy with
+  revision-bound conversion approval, never a native save (ADR 0055).
 
 ## Working here
 

@@ -67,6 +67,10 @@ always will.
   both supported.
 - **Fountain export** — a clean, canonical copy of your script. Great for sharing
   or checking into version control.
+- **FDX interchange** — import screenplay content into a new Fountain script,
+  or export an editable FDX copy for collaborators. Conversion warnings are
+  shown before proceeding; production revision and page-layout fidelity is not
+  promised.
 - **Script library** — browse every `.fountain` file you've worked on, with
   page counts, last-opened dates, and quick search.
 - **Crash recovery** — if the editor quits unexpectedly, your unsent work is
@@ -188,6 +192,15 @@ CUT TO BLACK
 Save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Open Preview and export with
 <kbd>Ctrl</kbd>+<kbd>P</kbd>, then choose PDF export; the preview opens on the
 page your caret is on. Everything else is in the command palette.
+
+To bring in an `.fdx` screenplay, choose **Import FDX…** in the library or
+command palette. Review any conversion warnings before replacing the current
+editor. The original FDX stays untouched; the imported script is unsaved and
+**Save** asks for a `.fountain` destination. Ordinary **Open** remains Fountain.
+Choose **Export FDX copy…** in Preview to share screenplay content. If the
+script changes after warning approval, the new conversion needs fresh approval.
+FDX interchange is not an exact round trip for production revisions, locked
+pages, custom fonts or margins.
 
 Use the palette for Preferences, Spell checking, Keyboard shortcuts, showing or
 hiding the navigator, distraction-free mode, page/continuous view and text size.

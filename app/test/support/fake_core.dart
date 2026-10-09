@@ -35,6 +35,9 @@ class FakeCore implements DocumentCore {
   ]);
 
   final List<BlockView> _blocks;
+
+  @override
+  int eventHandle = 0;
   late int _nextId;
 
   /// Every command the editor sent, in order.
@@ -791,6 +794,27 @@ class FakeCore implements DocumentCore {
     exports.add((path, overwrite));
     existingFiles.add(path);
     return SaveOutcome.saved(path: path, bytes: source().length, backup: null);
+  }
+
+  /// Scripted bridge responses only; this double does not interpret XML or
+  /// decide which document content needs conversion warnings.
+  final List<FdxExportOutcome> fdxOutcomes = [];
+  final List<String> fdxWrites = [];
+
+  @override
+  Future<FdxExportOutcome> exportFdx(
+    String path, {
+    bool overwrite = false,
+    int? confirmedRevision,
+  }) async {
+    if (fdxOutcomes.isEmpty) {
+      throw StateError('The test must supply an FDX bridge response.');
+    }
+    final result = fdxOutcomes.removeAt(0);
+    if (result case FdxExportOutcome_Finished(outcome: SaveOutcome_Saved())) {
+      fdxWrites.add(path);
+    }
+    return result;
   }
 
   Future<SaveOutcome> _write(String? path, {required bool autosave}) async {

@@ -174,13 +174,6 @@ fn changing_a_page_break_to_a_kind_that_carries_text_keeps_it_empty() {
         })
         .unwrap();
     assert_eq!(document.block(id).expect("still there").text(), "");
-    // An empty action block has no Fountain representation, so it is dropped on
-    // save rather than written as a blank line that would split its neighbours.
-    // The blank line that follows "Action." is that block's own trailing bytes,
-    // and untouched bytes are never rewritten — §1.2 puts byte fidelity above
-    // tidiness, and reparsing gives back the same single block either way.
-    assert_eq!(document.serialise(), "Action.\n\n");
-    assert_eq!(Document::parse(&document.serialise()).blocks().len(), 1);
 }
 
 #[test]

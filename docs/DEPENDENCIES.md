@@ -18,6 +18,7 @@ window-manager dependency; installed only on test hosts.
 | Crate | Version | Used by | Justification |
 | --- | --- | --- | --- |
 | `flutter_rust_bridge` | 2.12.0 | `bridge` | The FFI boundary itself (§2.2). Pinned with `=` because the Rust crate and the Dart package must agree exactly, or the generated glue is silently wrong. |
+| `quick-xml` | 0.38.3 | `fdx` | Streaming XML events with no DTD/network resolution or default features; avoids an XML DOM/framework and adds only memchr at runtime (ADR 0055). |
 | `proptest` (dev) | 1.11.0 | `fountain`, `document` | Phase 1's round-trip properties are the §13 testing strategy's own answer for "invariants a fixture cannot cover". It found the Opaque-block edit and the parenthetical-dialogue cases; both are now ADR 0007 text. Test-only, so it is absent from the shipped binary. |
 | `criterion` (dev) | 0.5.1 | `fountain`, `layout` | Named in §13 for the §1.3 budgets. Taken with `default-features = false`, which drops `plotters` and its tree: we need the number, not the SVG. Test-only. |
 | `libfuzzer-sys` (dev) | 0.4 | `fuzz/` | Phase 1 requires a `cargo-fuzz` target for the parser. Lives in `fuzz/`, which is a separate workspace on a nightly toolchain, so it is not in any build that CI or a user runs. |
@@ -38,6 +39,8 @@ external dependency (ADR 0044).
 Workspace edge `bridge -> fountain` — name the existing emphasis-run type while
 transporting the PDF's shared interpretation to the preview, without a document
 re-export or a Dart scanner; no external dependency (ADR 0045).
+
+Workspace edges `fdx -> fountain` and `bridge -> fdx` — convert interchange copies using the existing screenplay model and emphasis scanner without document/history ownership or a second native format (ADR 0055).
 
 ## Vendored assets
 

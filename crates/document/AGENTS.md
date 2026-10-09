@@ -22,9 +22,15 @@ Invariants:
   block either side, and joins the keystroke's transaction. Never
   re-classify forced, empty, marker-written or dual blocks (ADR 0011).
 - This crate has no clock; coalescing is closed by the caller's `commit()`.
+- Semantic interchange imports use `Document::from_script`: fresh identities,
+  dirty revision, no source/provenance and no history. Snapshot accessors borrow
+  title and elements; Opaque imports remain read-only (ADR 0055).
+- A semantic import with no body still has an editable forced empty Action.
+  Its explicit `!` representation survives Save/reopen, so later edits and
+  recovery patches retain block identity instead of acting on a missing caret.
 
 Verify: `cargo test -p slugline_document`.
 
-Governing ADRs: 0008, 0010, 0011. Full rules in `AGENTS.md`; the layer map
+Governing ADRs: 0008, 0010, 0011, 0055. Full rules in `AGENTS.md`; the layer map
 in `docs/ARCHITECTURE.md`. When an ADR changes this crate, update this file
 in the same change.

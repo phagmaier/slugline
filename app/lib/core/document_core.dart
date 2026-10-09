@@ -9,6 +9,9 @@ export 'package:slugline/src/rust/api/files.dart'
         BackupReadOutcome,
         BackupReadOutcome_Read,
         BackupReadOutcome_Failed,
+        FdxExportOutcome,
+        FdxExportOutcome_Finished,
+        FdxExportOutcome_NeedsConfirmation,
         SaveFailure,
         SaveOutcome,
         SaveOutcome_Failed,
@@ -117,6 +120,9 @@ abstract interface class ScreenplayOutput {
 /// surgery and nothing else; every rule about what a screenplay *is* stays in
 /// Rust, where it is tested.
 abstract class DocumentCore {
+  /// Identity used only to route asynchronous core notifications.
+  int get eventHandle;
+
   int get blockCount;
 
   /// Blocks `from..to`, clamped to what exists.
@@ -268,6 +274,14 @@ abstract class DocumentCore {
     bool overwrite = false,
   });
 
+  /// Write an interchange copy only after warnings for this exact revision
+  /// have been approved. A changed snapshot requires fresh confirmation.
+  Future<files.FdxExportOutcome> exportFdx(
+    String path, {
+    bool overwrite = false,
+    int? confirmedRevision,
+  });
+
   /// The same as [save] but quieter: changed backup snapshots are throttled to
   /// ten minutes, and nothing to write is [files.SaveOutcome_Unchanged].
   Future<files.SaveOutcome> autosave();
@@ -329,6 +343,8 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
       RustDocumentCore._(handle);
 
   final rust.DocumentHandle _handle;
+  @override
+  int get eventHandle => _handle.id;
 
   @override
   Future<layout.PaginationOutcome> paginate(layout.PageSetup setup) =>
@@ -504,6 +520,18 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
     handle: _handle,
     path: path,
     overwrite: overwrite,
+  );
+
+  @override
+  Future<files.FdxExportOutcome> exportFdx(
+    String path, {
+    bool overwrite = false,
+    int? confirmedRevision,
+  }) => files.docExportFdx(
+    handle: _handle,
+    path: path,
+    overwrite: overwrite,
+    confirmedRevision: confirmedRevision,
   );
 
   @override

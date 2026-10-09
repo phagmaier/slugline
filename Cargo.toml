@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/fountain",
+    "crates/fdx",
     "crates/document",
     "crates/layout",
     "crates/render_pdf",
@@ -30,6 +31,8 @@ publish = false
 # Every entry here needs a one-line justification in docs/DEPENDENCIES.md.
 [workspace.dependencies]
 slugline_fountain = { path = "crates/fountain" }
+slugline_fdx = { path = "crates/fdx" }
+quick-xml = { version = "=0.38.3", default-features = false }
 slugline_document = { path = "crates/document" }
 slugline_layout = { path = "crates/layout" }
 slugline_render_pdf = { path = "crates/render_pdf" }

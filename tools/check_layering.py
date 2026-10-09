@@ -2,6 +2,7 @@
 """Enforce the crate layering rule of spec §2.5.
 
     fountain    depends on nothing in the workspace
+    fdx         depends only on fountain
     document    depends only on fountain
     layout      depends only on document and fountain
     render_pdf  depends only on layout and fountain (document for tests)
@@ -30,18 +31,20 @@ PREFIX = "slugline_"
 # crate -> the workspace crates it is allowed to depend on, directly or otherwise.
 ALLOWED: dict[str, set[str]] = {
     "fountain": set(),
+    "fdx": {"fountain"},
     "document": {"fountain"},
     "layout": {"document", "fountain"},
     "render_pdf": {"layout", "document", "fountain"},
     "storage": {"document", "fountain"},
     "spell": set(),
-    "bridge": {"fountain", "document", "layout", "render_pdf", "storage", "spell"},
+    "bridge": {"fountain", "fdx", "document", "layout", "render_pdf", "storage", "spell"},
 }
 
 # The direct edges we expect. Anything else is either an upward dependency or a
 # shortcut that skips a layer, and both deserve a conversation before they land.
 EXPECTED_DIRECT: dict[str, set[str]] = {
     "fountain": set(),
+    "fdx": {"fountain"},
     "document": {"fountain"},
     # ADR 0044: printed-width alignment reads Fountain's existing emphasis rules.
     "layout": {"document", "fountain"},
@@ -52,7 +55,7 @@ EXPECTED_DIRECT: dict[str, set[str]] = {
     "spell": set(),
     # ADR 0045: preview transport names Fountain emphasis runs directly while
     # sharing their paragraph interpretation with the PDF renderer.
-    "bridge": {"fountain", "document", "layout", "storage"},
+    "bridge": {"fountain", "fdx", "document", "layout", "storage"},
 }
 
 

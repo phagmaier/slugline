@@ -13,6 +13,7 @@ import 'package:slugline/editor/save_status.dart';
 import 'package:slugline/identity.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/library/file_chooser.dart';
+import 'package:slugline/library/fdx_warnings_dialog.dart';
 import 'package:slugline/library/quick_open_dialog.dart';
 import 'package:slugline/library/recovery_dialog.dart';
 import 'package:slugline/settings/preferences_dialog.dart';
@@ -96,6 +97,8 @@ class _SluglineAppState extends State<SluglineApp> {
   late final AppLifecycleListener _lifecycle;
 
   bool _startedUp = false;
+  bool _importActive = false;
+  bool _deferredJournalFailure = false;
   late files.PreferencesView _preferences;
 
   @override
@@ -276,6 +279,64 @@ class _SluglineAppState extends State<SluglineApp> {
     );
   }
 
+  Future<void> _importFdx() async {
+    if (_importActive) return;
+    final context = _navigator.currentContext;
+    if (context == null || !context.mounted) return;
+    _importActive = true;
+    DocumentCore? candidate;
+    try {
+      final path = await FileChooser.show(
+        context,
+        title: 'Import FDX',
+        action: 'Import',
+        directory: _scriptDirectory,
+        mustExist: true,
+        extension: 'fdx',
+      );
+      if (path == null || !mounted || !context.mounted) return;
+      final result = await widget.core.importFdx(path);
+      switch (result) {
+        case FdxImportFailed(:final message):
+          _say('Could not import FDX: $message');
+          return;
+        case FdxImported(:final document, :final warnings):
+          candidate = document;
+          if (!mounted || !context.mounted) return;
+          if (warnings.isNotEmpty &&
+              !await confirmFdxWarnings(context, warnings, importing: true)) {
+            return;
+          }
+          if (!mounted) return;
+          final editor = _editorKey.currentState;
+          if (editor != null && !await editor.confirmClose()) return;
+          if (!mounted) return;
+          await _adopt(document);
+          candidate = null;
+          // The candidate's JournalBroken can precede adoption. Its sticky
+          // state, not event timing, is authoritative for the new status line.
+          if (document.journalState.$2) _deferredJournalFailure = true;
+      }
+    } catch (failure) {
+      _say('Could not import FDX: $failure');
+    } finally {
+      candidate?.close();
+      _importActive = false;
+      if (mounted && _deferredJournalFailure) {
+        _open?.status.refresh();
+        if (_open?.core.journalState.$2 == true) _sayJournalFailure();
+      }
+      _deferredJournalFailure = false;
+    }
+  }
+
+  void _sayJournalFailure() {
+    _say(
+      'The crash-recovery record for this script is unavailable. '
+      'Saving still works; save more often until you can restart.',
+    );
+  }
+
   String? get _scriptDirectory {
     final path = _open?.core.path;
     return path == null ? null : File(path).parent.path;
@@ -423,12 +484,13 @@ class _SluglineAppState extends State<SluglineApp> {
         // toast" without being a dialog that interrupts a sentence.
         _open?.status.refresh();
         _say(message);
-      case CoreEvent_JournalBroken():
-        _open?.status.refresh();
-        _say(
-          'The crash-recovery record for this script stopped working. '
-          'Saving still works; save more often until you can restart.',
-        );
+      case CoreEvent_JournalBroken(:final handle):
+        if (_importActive) {
+          _deferredJournalFailure = true;
+        } else if (_open?.core.eventHandle == handle) {
+          _open?.status.refresh();
+          _sayJournalFailure();
+        }
       case CoreEvent_ExternalWatchUnavailable():
         // Not a loss of protection — a save still refuses to replace a file it
         // does not recognise — but a loss of *warning*, and the writer is the
@@ -466,6 +528,7 @@ class _SluglineAppState extends State<SluglineApp> {
           ? LibraryPage(
               core: widget.core,
               onOpen: _openPath,
+              onImportFdx: _importFdx,
               onOpenPreferences: _openPreferences,
               onShowShortcuts: _showShortcuts,
             )
@@ -489,6 +552,7 @@ class _SluglineAppState extends State<SluglineApp> {
               onClosed: _closeScript,
               onNewScript: _newScript,
               onOpenScript: _quickOpen,
+              onImportFdx: _importFdx,
               title: _titleOf(open.core),
             ),
     );

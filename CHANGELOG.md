@@ -10,6 +10,13 @@ this file and the others to it.
 
 ### Added
 
+- Import Final Draft `.fdx` into an unsaved Fountain script, or export an editable
+  FDX copy without moving or saving the current script. Existing numbers, dual
+  dialogue, title text and bold/italic/underline are converted in Rust.
+  Conversion warnings require approval; exporting nonprinting notes, outline
+  or omitted text can make that text visible to the recipient. Cancelled/failed
+  imports preserve the current editor and never overwrite the source FDX.
+  Imported scripts are recoverable even before their first keystroke.
 - Dual dialogue prints adjacent speeches side by side in preview and PDF.
   On the second Character cue, use Ctrl+K → “Toggle dual dialogue”; the element
   bar identifies marked cues. Both speeches wrap to the printed column widths

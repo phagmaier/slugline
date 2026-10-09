@@ -61,9 +61,13 @@ class _AppCore implements Core {
   PreferencesView currentPreferences = _preferences;
   final preferenceWrites = <PreferencesView>[];
   bool failPreferences = false;
+  final importRequests = <String>[];
+  FdxImportResult importResult = const FdxImportFailed(message: 'Invalid XML');
+  Completer<void>? holdImport;
+  final eventBus = StreamController<CoreEvent>.broadcast();
 
   @override
-  Stream<CoreEvent> get events => const Stream.empty();
+  Stream<CoreEvent> get events => eventBus.stream;
   @override
   PreferencesView preferences() => currentPreferences;
   @override
@@ -96,10 +100,18 @@ class _AppCore implements Core {
     await holdOpen?.future;
     if (failOpen) return null;
     final core = FakeCore.single(BlockKind.action, 'Text from $path.')
+      ..eventHandle = opened.length + 1
       ..filePath = path;
     core.onDisk = core.source();
     opened.add(core);
     return core;
+  }
+
+  @override
+  Future<FdxImportResult> importFdx(String path) async {
+    importRequests.add(path);
+    await holdImport?.future;
+    return importResult;
   }
 
   @override
@@ -122,6 +134,7 @@ Future<_AppCore> _pump(WidgetTester tester, {bool open = true}) async {
   tester.view.physicalSize = const Size(1200, 800);
   addTearDown(tester.view.reset);
   final core = _AppCore();
+  addTearDown(core.eventBus.close);
   await tester.pumpWidget(SluglineApp(core: core));
   await tester.pumpAndSettle();
   if (open) await _key(tester, LogicalKeyboardKey.enter);
@@ -576,4 +589,241 @@ void main() {
     await tester.pumpAndSettle();
     expect(_editor(tester).controller.core.path, '/scripts/browsed.fountain');
   });
+
+  Future<FakeCore> prepareImport(_AppCore core, {bool warnings = true}) async {
+    final candidate = FakeCore.single(BlockKind.action, '')..eventHandle = 999;
+    candidate.apply(
+      EditCommand.replaceText(
+        block: 1,
+        startUtf16: 0,
+        endUtf16: 0,
+        with_: 'Imported screenplay words.',
+      ),
+    );
+    core.importResult = FdxImported(
+      document: candidate,
+      warnings: warnings ? ['Custom margins were not retained.'] : [],
+    );
+    return candidate;
+  }
+
+  Future<void> chooseImport(WidgetTester tester) async {
+    final choice = pendingFileChoice(tester);
+    await _runPalette(tester, 'Import FDX…');
+    choice.complete('/scripts/source.fdx');
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Library Import FDX chooser cancellation opens nothing', (
+    tester,
+  ) async {
+    final core = await _pump(tester, open: false);
+    final choice = pendingFileChoice(tester);
+    await tester.tap(find.byKey(const Key('import-fdx')));
+    await tester.pumpAndSettle();
+    choice.complete(null);
+    await tester.pumpAndSettle();
+    expect(core.importRequests, isEmpty);
+    expect(core.requests, isEmpty);
+    expect(find.byType(LibraryPage), findsOneWidget);
+  });
+
+  testWidgets(
+    'FDX decode failure leaves dirty editor and close prompt untouched',
+    (tester) async {
+      final core = await _pump(tester);
+      final controller = _editor(tester).controller;
+      controller.insertText('Keep these unsaved words. ');
+      final source = controller.source;
+      await chooseImport(tester);
+      expect(
+        find.textContaining('Could not import FDX: Invalid XML'),
+        findsOneWidget,
+      );
+      expect(find.text('Save changes to alpha.fountain?'), findsNothing);
+      expect(_editor(tester).controller, same(controller));
+      expect(controller.source, source);
+      expect(core.opened.single.closes, 0);
+      expect(core.opened.single.saves, isEmpty);
+    },
+  );
+
+  testWidgets('declining FDX warnings closes only the isolated candidate', (
+    tester,
+  ) async {
+    final core = await _pump(tester);
+    final candidate = await prepareImport(core);
+    final controller = _editor(tester).controller;
+    controller.insertText('Still my draft. ');
+    final source = controller.source;
+    await chooseImport(tester);
+    expect(find.text('Save changes to alpha.fountain?'), findsNothing);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(candidate.closes, 1);
+    expect(core.opened.single.closes, 0);
+    expect(core.opened.single.saves, isEmpty);
+    expect(_editor(tester).controller, same(controller));
+    expect(controller.source, source);
+  });
+
+  testWidgets(
+    'accepted FDX warnings still require consent to close the old draft',
+    (tester) async {
+      final core = await _pump(tester);
+      final candidate = await prepareImport(core);
+      final controller = _editor(tester).controller;
+      controller.insertText('My current draft. ');
+      final source = controller.source;
+      await chooseImport(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(candidate.closes, 1);
+      expect(core.opened.single.closes, 0);
+      expect(_editor(tester).controller, same(controller));
+      expect(controller.source, source);
+    },
+  );
+
+  testWidgets(
+    'adopted FDX is unsaved and Save asks for a Fountain destination',
+    (tester) async {
+      final core = await _pump(tester);
+      final candidate = await prepareImport(core, warnings: false);
+      await chooseImport(tester);
+      expect(_editor(tester).controller.core, same(candidate));
+      expect(core.opened.single.closes, 1);
+      expect(candidate.path, isNull);
+      expect(candidate.dirty, isTrue);
+      expect(_editor(tester).title, 'Untitled');
+      const channel = MethodChannel('slugline/window');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (_) async => '/scripts/imported.fountain',
+      );
+      await _key(tester, LogicalKeyboardKey.keyS, control: true);
+      expect(candidate.path, '/scripts/imported.fountain');
+      expect(candidate.dirty, isFalse);
+    },
+  );
+
+  testWidgets(
+    'candidate journal failure is not attributed to the old session',
+    (tester) async {
+      final core = await _pump(tester);
+      final candidate = await prepareImport(core);
+      candidate.journalUnavailable = true;
+      core.holdImport = Completer<void>();
+      await chooseImport(tester);
+      core.eventBus.add(const CoreEvent.journalBroken(handle: 999));
+      await tester.pump();
+      expect(
+        find.textContaining('crash-recovery record for this script'),
+        findsNothing,
+      );
+      core.holdImport!.complete();
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+      await tester.pumpAndSettle();
+      expect(
+        _editor(tester).saveStatus!.label,
+        contains('recovery record unavailable'),
+      );
+      expect(
+        find.textContaining('crash-recovery record for this script'),
+        findsOneWidget,
+      );
+      expect(core.opened.single.journalUnavailable, isFalse);
+    },
+  );
+
+  testWidgets('unmount during FDX decode closes the candidate once', (
+    tester,
+  ) async {
+    final core = await _pump(tester);
+    final candidate = await prepareImport(core, warnings: false);
+    core.holdImport = Completer<void>();
+    await chooseImport(tester);
+    await tester.pumpWidget(const SizedBox());
+    core.holdImport!.complete();
+    await tester.pumpAndSettle();
+    expect(candidate.closes, 1);
+    expect(core.opened.single.closes, 1);
+  });
+
+  testWidgets(
+    'failed close-confirmation save rejects FDX adoption and closes candidate',
+    (tester) async {
+      final core = await _pump(tester);
+      final candidate = await prepareImport(core, warnings: false);
+      final controller = _editor(tester).controller;
+      controller.insertText('Current unsaved words. ');
+      final source = controller.source;
+      core.opened.single.refuseSaveWith = SaveFailure.noSpace;
+      await chooseImport(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('The disk is full'), findsOneWidget);
+      await _key(tester, LogicalKeyboardKey.escape);
+      expect(_editor(tester).controller, same(controller));
+      expect(controller.source, source);
+      expect(core.opened.single.closes, 0);
+      expect(candidate.closes, 1);
+    },
+  );
+
+  testWidgets('editor overflow Import FDX cancellation retains session', (
+    tester,
+  ) async {
+    final core = await _pump(tester);
+    final choice = pendingFileChoice(tester);
+    await tester.tap(find.byKey(const ValueKey('editor overflow')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import FDX…'));
+    await tester.pumpAndSettle();
+    choice.complete(null);
+    await tester.pumpAndSettle();
+    expect(core.importRequests, isEmpty);
+    expect(core.opened.single.closes, 0);
+    expect(_editor(tester).controller.core, same(core.opened.single));
+  });
+
+  testWidgets(
+    'late cancelled-candidate journal event cannot mark the old editor unprotected',
+    (tester) async {
+      final core = await _pump(tester);
+      final candidate = await prepareImport(core);
+      candidate.journalUnavailable = true;
+      await chooseImport(tester);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      core.eventBus.add(CoreEvent.journalBroken(handle: candidate.eventHandle));
+      await tester.pumpAndSettle();
+      expect(candidate.closes, 1);
+      expect(
+        _editor(tester).saveStatus!.label,
+        isNot(contains('recovery record unavailable')),
+      );
+      expect(
+        find.textContaining('crash-recovery record for this script'),
+        findsNothing,
+      );
+      core.opened.single.journalUnavailable = true;
+      core.eventBus.add(
+        CoreEvent.journalBroken(handle: core.opened.single.eventHandle),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        _editor(tester).saveStatus!.label,
+        contains('recovery record unavailable'),
+      );
+      expect(
+        find.textContaining('crash-recovery record for this script'),
+        findsOneWidget,
+      );
+    },
+  );
 }

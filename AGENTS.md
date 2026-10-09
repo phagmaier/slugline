@@ -51,6 +51,8 @@ instead.
 - **`crates/document`** — identity and history: `BlockId`, `Block`, `Document`,
   `EditCommand`, undo, find/replace, Enter/Tab tables in `workflow.rs`.
   Re-exports `fountain`'s kinds (ADR 0008).
+- **`crates/fdx`** — pure FDX XML interchange over Fountain's semantic types
+  (ADR 0055). No document ownership, I/O, history or pagination.
 - **`crates/storage`** — atomic save, crash journal, backups, preferences,
   library index.
 - **`crates/bridge`** — the actor thread (`actor.rs`) and the API surface under
@@ -79,7 +81,7 @@ output. Flutter owns input, caret/selection, scrolling, and widgets; Dart must
 ask Rust for screenplay semantics rather than reimplementing them.
 
 Workspace layers enforced by `python3 tools/check_layering.py`:
-`fountain` has no workspace dependencies; `document -> fountain`;
+`fountain` has no workspace dependencies; `document -> fountain`; `fdx -> fountain`;
 `layout -> document` and `-> fountain` (printed-width alignment, ADR 0044);
 `render_pdf -> layout` and `-> fountain`;
 `storage -> document`; `spell` has none; `bridge` may depend on all.
@@ -299,7 +301,7 @@ regen` for print-only goldens). Environment pre-flight is
 One subsystem at a time:
 
 ```sh
-cargo test -p slugline_<crate>       # fountain, document, layout, render_pdf, storage, spell, bridge
+cargo test -p slugline_<crate>       # fountain, fdx, document, layout, render_pdf, storage, spell, bridge
 cd app && flutter test test/<area>/  # editor/, preview/, library/, settings/
 ```
 

@@ -1,0 +1,11 @@
+[package]
+name = "slugline_fdx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+slugline_fountain.workspace = true
+quick-xml.workspace = true

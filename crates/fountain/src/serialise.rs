@@ -134,11 +134,11 @@ pub fn serialise(out: &Output<'_>) -> String {
 
 /// Whether a block would write nothing at all.
 ///
-/// Only ever true for an edited block: the parser cannot produce an empty
-/// Action, Dialogue, Parenthetical or Opaque block, because the blank line that
-/// would hold one is a separator.
+/// Only ever true for an edited block. A blank source line is a separator;
+/// explicit empty Action (`!`) is instead representable and must keep its ID.
 fn vanishes(element: &ElementRef<'_>) -> bool {
     element.provenance.is_none()
+        && !(element.kind == BlockKind::Action && element.forced)
         && element.text.is_empty()
         && matches!(
             element.kind,

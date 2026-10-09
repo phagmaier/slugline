@@ -204,6 +204,288 @@ void main() {
     expect(await File(core.path!).readAsString(), _script);
   });
 
+  Future<DocumentCore> importFdx(String sourcePath) async {
+    final result = await Core.instance.importFdx(sourcePath);
+    switch (result) {
+      case FdxImported(:final document):
+        addTearDown(document.close);
+        return document;
+      case FdxImportFailed(:final message):
+        fail('FDX import failed: $message');
+    }
+  }
+
+  testWidgets(
+    'FDX import creates an unsaved Fountain session and never binds its source',
+    (tester) async {
+      final source = File(path('incoming.fdx'));
+      const xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<FinalDraft DocumentType="Script" Version="1">
+<Content>
+<Paragraph Type="Scene Heading"><Text>INT. LIBRARY - DAY</Text></Paragraph>
+<Paragraph Type="Action"><Text>Imported words &amp; a literal *asterisk*.</Text></Paragraph>
+<Paragraph Type="Character"><Text>ADA</Text></Paragraph>
+<Paragraph Type="Dialogue"><Text>Keep these words.</Text></Paragraph>
+</Content>
+</FinalDraft>''';
+      await source.writeAsString(xml);
+      final core = await importFdx(source.path);
+      expect(core.path, isNull);
+      expect(core.dirty, isTrue);
+      expect(core.journalState.$2, isFalse);
+      expect(core.blocks(0, core.blockCount).map((block) => block.kind), [
+        BlockKind.sceneHeading,
+        BlockKind.action,
+        BlockKind.character,
+        BlockKind.dialogue,
+      ]);
+      expect(
+        core.blocks(0, core.blockCount)[1].text,
+        contains('Imported words &'),
+      );
+      expect(core.navigator().scenes.length, 1);
+      expect(await source.readAsString(), xml);
+      expect(
+        (await Core.instance.library()).map((script) => script.path),
+        isNot(contains(source.path)),
+      );
+      expect(
+        (await core.save() as SaveOutcome_Failed).failure,
+        SaveFailure.noPath,
+      );
+      expect(
+        core.undo(),
+        isNull,
+        reason: 'import is a fresh document, not an undoable replacement',
+      );
+      final importedSource = core.source();
+      core.setTitleField('Title', 'Edited imported screenplay');
+      expect(core.undo(), isNotNull);
+      expect(core.source(), importedSource);
+      expect(
+        core.dirty,
+        isTrue,
+        reason: 'undo cannot turn an unsaved import into a saved file',
+      );
+      final savedPath = path('incoming.fountain');
+      expect(await core.saveAs(savedPath), isA<SaveOutcome_Saved>());
+      expect(core.path, savedPath);
+      expect(core.dirty, isFalse);
+      expect(await source.readAsString(), xml);
+      final reopened = RustDocumentCore.parse(
+        await File(savedPath).readAsString(),
+      );
+      addTearDown(reopened.close);
+      expect(reopened.navigator().scenes.length, 1);
+      expect(
+        reopened.blocks(0, reopened.blockCount).map((block) => block.text),
+        core.blocks(0, core.blockCount).map((block) => block.text),
+      );
+    },
+  );
+
+  testWidgets(
+    'independent Fade In 5.0.15 FDX imports as screenplay content and saves as Fountain',
+    (tester) async {
+      // Produced by the official Fade In demo, not by Slugline's writer. The
+      // fixture and producer evidence are owned by the interchange integration.
+      final fixture = File('../testdata/fdx/fade-in-5.0.15.fdx');
+      final original = await fixture.readAsBytes();
+      final core = await importFdx(fixture.absolute.path);
+      final blocks = core.blocks(0, core.blockCount);
+      expect(core.path, isNull);
+      expect(core.dirty, isTrue);
+      expect(core.navigator().scenes.length, 1);
+      expect(
+        blocks
+            .where((block) => block.kind == BlockKind.sceneHeading)
+            .single
+            .text,
+        'INT. IMPORT ROOM - DAY #12A#',
+      );
+      final characters = blocks
+          .where((block) => block.kind == BlockKind.character)
+          .toList();
+      expect(characters.map((block) => block.text), ['ALICE', 'BOB']);
+      expect(characters.first.dual, isFalse);
+      expect(characters.last.dual, isTrue);
+      expect(
+        blocks
+            .where((block) => block.kind == BlockKind.parenthetical)
+            .map((block) => block.text),
+        ['(first)', '(second)'],
+      );
+      expect(
+        blocks.any(
+          (block) =>
+              block.kind == BlockKind.centered && block.text == 'THE END',
+        ),
+        isTrue,
+      );
+      expect(blocks.any((block) => block.kind == BlockKind.pageBreak), isTrue);
+      final importedSource = core.source();
+      expect(importedSource, contains('café 😀'));
+      expect(importedSource, contains('**bold**'));
+      expect(importedSource, contains('*italic*'));
+      expect(importedSource, contains('_underline_'));
+      expect(importedSource, contains('**hello**'));
+      expect(importedSource, contains('*goodbye*'));
+      expect(importedSource, contains('writer note'));
+      expect(importedSource, contains('omitted text'));
+      final titleValues = core
+          .titlePage()
+          .map((entry) => entry.value)
+          .join('\n');
+      expect(titleValues, contains('Interchange Trial'));
+      expect(titleValues, contains('Agent Fixture'));
+      expect(titleValues, contains('nobody@example.invalid'));
+      final savedPath = path('fade-in-import.fountain');
+      expect(await core.saveAs(savedPath), isA<SaveOutcome_Saved>());
+      expect(core.path, savedPath);
+      expect(core.dirty, isFalse);
+      expect(await fixture.readAsBytes(), original);
+      final reopened = RustDocumentCore.parse(
+        await File(savedPath).readAsString(),
+      );
+      addTearDown(reopened.close);
+      expect(
+        reopened
+            .blocks(0, reopened.blockCount)
+            .map((block) => (block.kind, block.text, block.dual)),
+        blocks.map((block) => (block.kind, block.text, block.dual)),
+      );
+      expect(
+        reopened.titlePage().map((entry) => (entry.key, entry.value)),
+        core.titlePage().map((entry) => (entry.key, entry.value)),
+      );
+      expect(
+        (await Core.instance.library()).map((script) => script.path),
+        isNot(contains(fixture.absolute.path)),
+      );
+    },
+  );
+
+  testWidgets(
+    'FDX decode failure leaves the real existing document and source untouched',
+    (tester) async {
+      final (core, _) = await open('fdx-failure-current.fountain');
+      core.setTitleField('Notes', 'Unsaved title-page words');
+      final source = core.source();
+      final journal = core.journalState;
+      final broken = File(path('broken.fdx'));
+      const malformed =
+          '<FinalDraft><Content><Paragraph Type="Action"><Text>Words';
+      await broken.writeAsString(malformed);
+      final result = await Core.instance.importFdx(broken.path);
+      expect(result, isA<FdxImportFailed>());
+      expect((result as FdxImportFailed).message, isNotEmpty);
+      expect(core.source(), source);
+      expect(core.dirty, isTrue);
+      expect(core.path, path('fdx-failure-current.fountain'));
+      expect(core.journalState, journal);
+      expect(await broken.readAsString(), malformed);
+    },
+  );
+
+  testWidgets(
+    'real FDX copy export refuses occupied and open files without moving the session',
+    (tester) async {
+      final (core, _) = await open('fdx-copy-current.fountain');
+      core.setTitleField('Author', 'New author');
+      final source = core.source();
+      final journal = core.journalState;
+      final destination = File(path('occupied.fdx'));
+      await destination.writeAsString('Existing destination bytes');
+      final refused = await core.exportFdx(destination.path);
+      expect(refused, isA<FdxExportOutcome_Finished>());
+      expect(
+        ((refused as FdxExportOutcome_Finished).outcome as SaveOutcome_Failed)
+            .failure,
+        SaveFailure.alreadyExists,
+      );
+      expect(await destination.readAsString(), 'Existing destination bytes');
+      final replaced = await core.exportFdx(destination.path, overwrite: true);
+      expect(
+        (replaced as FdxExportOutcome_Finished).outcome,
+        isA<SaveOutcome_Saved>(),
+      );
+      final reimported = await importFdx(destination.path);
+      expect(
+        reimported.blocks(0, reimported.blockCount).map((block) => block.text),
+        core.blocks(0, core.blockCount).map((block) => block.text),
+      );
+      expect(
+        reimported.titlePage().any((entry) => entry.value == 'New author'),
+        isTrue,
+      );
+      final openRefusal = await core.exportFdx(core.path!, overwrite: true);
+      expect(
+        ((openRefusal as FdxExportOutcome_Finished).outcome
+                as SaveOutcome_Failed)
+            .failure,
+        SaveFailure.scriptIsOpen,
+      );
+      expect(await File(core.path!).readAsString(), _script);
+      expect(core.path, path('fdx-copy-current.fountain'));
+      expect(core.dirty, isTrue);
+      expect(core.source(), source);
+      expect(core.journalState, journal);
+    },
+  );
+
+  testWidgets(
+    'real FDX warning gate writes only an explicitly approved current revision',
+    (tester) async {
+      final core = RustDocumentCore.parse(
+        '# Retained outline heading\n\nINT. ROOM - DAY\n\nVisible screenplay words.\n',
+      );
+      addTearDown(core.close);
+      final destination = File(path('warning-gate.fdx'));
+      final source = core.source();
+      final journal = core.journalState;
+      final first = await core.exportFdx(destination.path);
+      expect(first, isA<FdxExportOutcome_NeedsConfirmation>());
+      final approval = first as FdxExportOutcome_NeedsConfirmation;
+      expect(approval.warnings, isNotEmpty);
+      expect(destination.existsSync(), isFalse);
+      expect(core.source(), source);
+      expect(core.journalState, journal);
+      core.setTitleField('Author', 'Later revision author');
+      final changedSource = core.source();
+      final changedJournal = core.journalState;
+      final second = await core.exportFdx(
+        destination.path,
+        confirmedRevision: approval.revision,
+      );
+      expect(second, isA<FdxExportOutcome_NeedsConfirmation>());
+      final newApproval = second as FdxExportOutcome_NeedsConfirmation;
+      expect(newApproval.revision, isNot(approval.revision));
+      expect(destination.existsSync(), isFalse);
+      final wrote = await core.exportFdx(
+        destination.path,
+        confirmedRevision: newApproval.revision,
+      );
+      expect(
+        (wrote as FdxExportOutcome_Finished).outcome,
+        isA<SaveOutcome_Saved>(),
+      );
+      expect(destination.existsSync(), isTrue);
+      expect(core.path, isNull);
+      expect(core.dirty, isTrue);
+      expect(core.source(), changedSource);
+      expect(core.journalState, changedJournal);
+      final imported = await importFdx(destination.path);
+      expect(imported.source(), contains('Retained outline heading'));
+      expect(imported.source(), contains('Visible screenplay words.'));
+      expect(
+        imported.titlePage().any(
+          (entry) => entry.value == 'Later revision author',
+        ),
+        isTrue,
+      );
+    },
+  );
+
   testWidgets('the same script exports to the same bytes', (tester) async {
     // §Phase 7's determinism requirement, over the real bridge.
     //
