@@ -18,8 +18,9 @@ figures use MiB (1024 × 1024 bytes), as the existing bundle-size check does.
 | Budget | Metric | Measured by |
 | --- | --- | --- |
 | < 250 ms | Open the reference script → editable | `app/integration_test/keystroke_benchmark_test.dart` (`openBudgetMs`) |
-| < 16 ms | Keystroke → core and back, p99 | same file (`keystrokeBudgetMs`), first assertion |
-| < 16 ms | Keystroke → glyph on screen, p99 | same file, frame build time |
+| < 16 ms | Keystroke → core and back, p99, before using Find and after closing it with a retained query | same file (`keystrokeBudgetMs`), first assertion |
+| < 16 ms | Keystroke → glyph on screen, p99, same two Find states | same file, frame build time on the same isolated editing surface |
+| < 16 ms | Journalled keystroke → core and back, p99, same two Find states | same file, crash-journal benchmark |
 | < 100 ms | Parse the reference script | `crates/fountain/tests/parse_is_fast_enough.rs` |
 | < 100 ms | Serialise it back out (save) | same file, second assertion |
 | < 5 ms | Incremental repagination after one keystroke | `crates/layout/tests/pagination_is_fast_enough.rs` |

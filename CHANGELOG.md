@@ -54,6 +54,10 @@ this file and the others to it.
 
 ### Fixed
 
+- Closing Find no longer makes every later keystroke synchronously rescan the
+  script. Its query still works with Ctrl+G; matches refresh when Find displays,
+  navigates or replaces them, including after undo/redo or reload.
+
 - Hosted Rust verification refreshes Ubuntu package metadata before installing
   Poppler, avoiding stale package-version HTTP 404 failures before tests start.
 
