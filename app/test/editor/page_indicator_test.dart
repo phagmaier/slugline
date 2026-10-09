@@ -67,6 +67,7 @@ PageView _page(int number, int block, int from, int to, {bool? numbered}) =>
     );
 
 PaginationView _pagination(List<PageView> pages) => PaginationView(
+  scenes: const [],
   revision: 1,
   generation: 1,
   pageCount: pages.length,

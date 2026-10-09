@@ -103,6 +103,14 @@ void main() {
         final controller = EditorController(
           FakeCore.single(BlockKind.sceneHeading, 'INT. QUIET ROOM - DAY')
             ..navigatorData = const NavigatorView(
+              outline: [
+                NavigatorNode(
+                  block: 1,
+                  kind: BlockKind.sceneHeading,
+                  text: 'INT. QUIET ROOM - DAY',
+                  depth: 0,
+                ),
+              ],
               scenes: [
                 NavigatorScene(
                   block: 1,

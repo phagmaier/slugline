@@ -32,6 +32,7 @@ export 'package:slugline/src/rust/api/layout.dart'
         PaginationStats,
         PaginationView,
         PaperSize,
+        ScenePaginationView,
         SceneNumbers;
 
 export 'package:slugline/src/rust/api/doc.dart'
@@ -64,6 +65,7 @@ export 'package:slugline/src/rust/api/doc.dart'
         InlineStyle,
         NewBlock,
         NavigatorCharacter,
+        NavigatorNode,
         NavigatorScene,
         NavigatorView,
         TitleEntryView;
@@ -130,7 +132,7 @@ abstract class DocumentCore {
   /// Blocks `from..to`, clamped to what exists.
   List<rust.BlockView> blocks(int from, int to);
 
-  /// Scene and character data for §Phase 8's read-only navigator.
+  /// Rust's source-ordered outline, scenes and entity-index characters (ADR 0058).
   rust.NavigatorView navigator();
 
   /// The whole document as Fountain — what a save would write.

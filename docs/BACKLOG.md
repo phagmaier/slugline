@@ -2511,13 +2511,36 @@ first-paste regression passes under Xvfb; the Find revision cache is retained.
 <a id="x5"></a>
 ### X5 — Outline in the navigator
 
-**Evidence (read).** `doc_navigator` (`crates/bridge/src/api/doc.rs:354`)
+**Evidence (reproduced).** `doc_navigator` (`crates/bridge/src/api/doc.rs:354`)
 returns scenes and characters. Sections (`#`) and synopses (`=`), which
 Fountain has for outlining, are not shown, and a scene row has no page number
-or length.
+or length. On current main `a5e2c02`, a real native editor opened section and
+synopsis source but displayed neither row. The failing run is retained in
+`target/retained-features/x5/baseline-native-red.log`.
 
 **Change.** Show sections and synopses as structure above their scenes, and a
 page number and length for each scene.
+
+**Implementation contract (ADR 0058).** Rust supplies source-ordered section,
+synopsis and scene nodes with explicit parent/depth; source-only and pre-scene
+outline material remains navigable. Scene pagination travels in the existing
+async immutable snapshot, as actual start page and occupied eighth-page length,
+excluding the title page and counting shared-page bands independently. Edits and
+setup changes clear metadata to pending; stale or superseded jobs cannot supply
+it, including an already-computed job superseded by a title-page commit. Filter context, every-node jumps, scene-only reorder, character navigation
+and quick scene search retain their existing keyboard/sidebar/drawer behavior.
+
+Verification includes 749 Rust and 759 Flutter widget tests, regenerated FRB
+bindings and drift comparison, formatting/clippy/analyze, layering/version/docs
+and reference checks. Rust regressions cover source order, skipped section
+levels, hidden/pre-scene material, parentage after scene move/Undo, shared-page
+bands, wrapped headings, title exclusion and continued dual lanes. Controlled
+widget deliveries cover old-current, stale, Undo and title races. Native wide
+and narrow consumers compare displayed labels to actual Rust snapshots, then
+filter/jump, move a scene with its synopsis and Undo to exact source/identities.
+All seven native suites passed (99 tests); after-Find journalled p99 is
+4.26 ms under unchanged budgets. The Linux release builds. Failed draft compilation and test-assumption runs remain alongside the original
+reproduction in `target/retained-features/x5/`.
 
 **Effort.** M.
 **Result:** _open_

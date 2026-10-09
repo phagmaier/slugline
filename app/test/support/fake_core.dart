@@ -63,7 +63,11 @@ class FakeCore implements DocumentCore {
 
   /// Explicit navigator data for widget tests. The double does not derive this
   /// from blocks: scene parsing and entity indexing belong to Rust.
-  NavigatorView navigatorData = const NavigatorView(scenes: [], characters: []);
+  NavigatorView navigatorData = const NavigatorView(
+    scenes: [],
+    characters: [],
+    outline: [],
+  );
 
   /// Explicit semantic answers: this double applies supplied text patches, it
   /// does not recognise or generate Fountain scene-number suffixes.
@@ -1004,9 +1008,16 @@ class FakeCore implements DocumentCore {
             .indexWhere((block) => block.id == a.block)
             .compareTo(_blocks.indexWhere((block) => block.id == b.block)),
       );
+    final outline = List<NavigatorNode>.of(navigatorData.outline)
+      ..sort(
+        (a, b) => _blocks
+            .indexWhere((block) => block.id == a.block)
+            .compareTo(_blocks.indexWhere((block) => block.id == b.block)),
+      );
     navigatorData = NavigatorView(
       scenes: scenes,
       characters: navigatorData.characters,
+      outline: outline,
     );
   }
 

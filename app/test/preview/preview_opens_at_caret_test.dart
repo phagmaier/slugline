@@ -68,6 +68,7 @@ PageView _page(int number) {
 }
 
 PaginationView _pagination({bool titlePage = false}) => PaginationView(
+  scenes: const [],
   revision: 1,
   generation: 1,
   pageCount: 4,

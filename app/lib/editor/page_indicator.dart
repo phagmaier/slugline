@@ -78,6 +78,10 @@ class PageIndicator extends ChangeNotifier {
   int? _total;
   int? _words;
 
+  Map<int, ScenePaginationView> _scenePagination = const {};
+
+  /// Empty while pagination is pending; never expose stale scene metadata.
+  Map<int, ScenePaginationView> get scenePagination => _scenePagination;
   int? get current => _current;
   int? get total => _total;
 
@@ -176,6 +180,7 @@ class PageIndicator extends ChangeNotifier {
   void updateSetup(PageSetup setup) {
     if (this.setup == setup) return;
     this.setup = setup;
+    invalidate();
     unawaited(refresh());
   }
 
@@ -189,6 +194,16 @@ class PageIndicator extends ChangeNotifier {
     final revision = controller.documentRevision;
     if (_knownDocumentRevision == revision) return;
     _knownDocumentRevision = revision;
+    invalidate();
+  }
+
+  /// Invalidates supplemental metadata after a core edit outside the controller,
+  /// such as a title-page field commit. Also supersedes in-flight snapshots.
+  void invalidate() {
+    if (_disposed) return;
+    _request++;
+    _scenePagination = const {};
+    notifyListeners();
     // The rows the current starts were resolved against have moved. Re-resolve
     // against the new layout at once — the page numbers are the previous
     // snapshot's until the refresh below lands, but their rules stay attached
@@ -202,7 +217,10 @@ class PageIndicator extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     final request = ++_request;
+    final revision = controller.documentRevision;
     late final PaginationOutcome outcome;
     try {
       outcome = await output.paginate(setup);
@@ -211,13 +229,26 @@ class PageIndicator extends ChangeNotifier {
       // own failures; a failed background refresh must not disrupt typing.
       return;
     }
-    if (_disposed || request != _request) return;
+    if (_disposed ||
+        request != _request ||
+        revision != controller.documentRevision) {
+      return;
+    }
     switch (outcome) {
-      case PaginationOutcome_Current(:final pagination) ||
-          PaginationOutcome_Stale(:final pagination):
+      case PaginationOutcome_Current(:final pagination):
+        // Controller revisions are local edit epochs, not Rust undo revisions.
+        // Rust's Current validates generation; the guards above validate that
+        // no local edit or newer request intervened before delivery.
+        _scenePagination = Map.unmodifiable({
+          for (final scene in pagination.scenes) scene.block: scene,
+        });
+        _adopt(pagination);
+      case PaginationOutcome_Stale(:final pagination):
+        _scenePagination = const {};
         _adopt(pagination);
       case PaginationOutcome_NoSuchDocument():
         _pageAtLine.clear();
+        _scenePagination = const {};
         _pageAtBlock.clear();
         _firstLineOfPage.clear();
         _unnumberedPages.clear();

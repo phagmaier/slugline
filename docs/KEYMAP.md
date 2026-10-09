@@ -397,8 +397,8 @@ in continuous view or page view. Until a snapshot is available, no jump is made.
 The title page is not part of the script's page numbering.
 
 In windows narrower than 900 logical pixels, the navigator opens temporarily
-over the editor and closes when you choose a scene or character. Wider windows
-keep the saved docked-sidebar preference.
+over the editor and closes when you choose any outline row or character.
+Wider windows keep the saved docked-sidebar preference.
 
 `Ctrl+J` also returns from Characters to Scenes and focuses the scene filter
 after a navigator tab click. Type the scene query, then press `Enter` to jump;
@@ -410,6 +410,22 @@ Inside the navigator, typing filters the current Scenes or Characters list,
 one from the keyboard places the caret at its heading; clicking a character
 jumps to its next cue. `Ctrl+J` uses the quick-open shape Phase 8 calls
 "`Ctrl+P`-style"; the literal `Ctrl+P` remains Preview and export from Phase 7.
+
+Scenes includes the source-ordered outline: nested `#` sections, `=` synopses,
+and scene headings. Every row jumps to its own source block. Searching keeps
+matching rows and their parent sections; a matching section or synopsis also
+shows its descendants. Quick scene search initially highlights the first
+matching scene, not a contextual section. Arrow keys can reach every outline
+row, including pre-scene synopses and sections with no scenes. Only scenes
+have drag handles or move commands; clear the filter to reorder.
+
+Scene metadata is `p. N · E/8 p`: the actual starting screenplay page and
+occupied length rounded up to eighth-pages. On each printed page, the scene
+contributes the band from its first occupied row to its last, including internal
+spacing and continuation furniture but not surrounding blanks. Bands are summed
+before rounding; scenes sharing a page each contribute their own band. Title
+pages never count. `p. … · length …` means current Rust pagination is pending,
+not an estimate.
 
 ### Escape
 

@@ -3067,6 +3067,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<NavigatorNode> dco_decode_list_navigator_node(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_navigator_node).toList();
+  }
+
+  @protected
   List<NavigatorScene> dco_decode_list_navigator_scene(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_navigator_scene).toList();
@@ -3094,6 +3100,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<RecoveryOffer> dco_decode_list_recovery_offer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_recovery_offer).toList();
+  }
+
+  @protected
+  List<ScenePaginationView> dco_decode_list_scene_pagination_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_scene_pagination_view)
+        .toList();
   }
 
   @protected
@@ -3142,6 +3156,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NavigatorNode dco_decode_navigator_node(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return NavigatorNode(
+      block: dco_decode_CastedPrimitive_u_64(arr[0]),
+      kind: dco_decode_block_kind(arr[1]),
+      text: dco_decode_String(arr[2]),
+      parent: dco_decode_opt_CastedPrimitive_u_64(arr[3]),
+      depth: dco_decode_u_32(arr[4]),
+    );
+  }
+
+  @protected
   NavigatorScene dco_decode_navigator_scene(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -3160,11 +3189,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   NavigatorView dco_decode_navigator_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return NavigatorView(
       scenes: dco_decode_list_navigator_scene(arr[0]),
       characters: dco_decode_list_navigator_character(arr[1]),
+      outline: dco_decode_list_navigator_node(arr[2]),
     );
   }
 
@@ -3322,8 +3352,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PaginationView dco_decode_pagination_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return PaginationView(
       revision: dco_decode_CastedPrimitive_u_64(arr[0]),
       generation: dco_decode_CastedPrimitive_u_64(arr[1]),
@@ -3331,6 +3361,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       titlePage: dco_decode_opt_box_autoadd_page_view(arr[3]),
       pages: dco_decode_list_page_view(arr[4]),
       stats: dco_decode_pagination_stats(arr[5]),
+      scenes: dco_decode_list_scene_pagination_view(arr[6]),
     );
   }
 
@@ -3458,6 +3489,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SceneNumbers dco_decode_scene_numbers(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return SceneNumbers.values[raw as int];
+  }
+
+  @protected
+  ScenePaginationView dco_decode_scene_pagination_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ScenePaginationView(
+      block: dco_decode_CastedPrimitive_u_64(arr[0]),
+      page: dco_decode_u_32(arr[1]),
+      lengthEighths: dco_decode_CastedPrimitive_u_64(arr[2]),
+    );
   }
 
   @protected
@@ -4312,6 +4356,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<NavigatorNode> sse_decode_list_navigator_node(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NavigatorNode>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_navigator_node(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<NavigatorScene> sse_decode_list_navigator_scene(
     SseDeserializer deserializer,
   ) {
@@ -4366,6 +4424,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <RecoveryOffer>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_recovery_offer(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ScenePaginationView> sse_decode_list_scene_pagination_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ScenePaginationView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_scene_pagination_view(deserializer));
     }
     return ans_;
   }
@@ -4441,6 +4513,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NavigatorNode sse_decode_navigator_node(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_kind = sse_decode_block_kind(deserializer);
+    var var_text = sse_decode_String(deserializer);
+    var var_parent = sse_decode_opt_CastedPrimitive_u_64(deserializer);
+    var var_depth = sse_decode_u_32(deserializer);
+    return NavigatorNode(
+      block: var_block,
+      kind: var_kind,
+      text: var_text,
+      parent: var_parent,
+      depth: var_depth,
+    );
+  }
+
+  @protected
   NavigatorScene sse_decode_navigator_scene(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
@@ -4462,7 +4551,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_scenes = sse_decode_list_navigator_scene(deserializer);
     var var_characters = sse_decode_list_navigator_character(deserializer);
-    return NavigatorView(scenes: var_scenes, characters: var_characters);
+    var var_outline = sse_decode_list_navigator_node(deserializer);
+    return NavigatorView(
+      scenes: var_scenes,
+      characters: var_characters,
+      outline: var_outline,
+    );
   }
 
   @protected
@@ -4710,6 +4804,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_titlePage = sse_decode_opt_box_autoadd_page_view(deserializer);
     var var_pages = sse_decode_list_page_view(deserializer);
     var var_stats = sse_decode_pagination_stats(deserializer);
+    var var_scenes = sse_decode_list_scene_pagination_view(deserializer);
     return PaginationView(
       revision: var_revision,
       generation: var_generation,
@@ -4717,6 +4812,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       titlePage: var_titlePage,
       pages: var_pages,
       stats: var_stats,
+      scenes: var_scenes,
     );
   }
 
@@ -4874,6 +4970,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return SceneNumbers.values[inner];
+  }
+
+  @protected
+  ScenePaginationView sse_decode_scene_pagination_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_block = sse_decode_CastedPrimitive_u_64(deserializer);
+    var var_page = sse_decode_u_32(deserializer);
+    var var_lengthEighths = sse_decode_CastedPrimitive_u_64(deserializer);
+    return ScenePaginationView(
+      block: var_block,
+      page: var_page,
+      lengthEighths: var_lengthEighths,
+    );
   }
 
   @protected
@@ -5689,6 +5800,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_navigator_node(
+    List<NavigatorNode> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_navigator_node(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_navigator_scene(
     List<NavigatorScene> self,
     SseSerializer serializer,
@@ -5743,6 +5866,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_recovery_offer(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_scene_pagination_view(
+    List<ScenePaginationView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_scene_pagination_view(item, serializer);
     }
   }
 
@@ -5803,6 +5938,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_navigator_node(NavigatorNode self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.block, serializer);
+    sse_encode_block_kind(self.kind, serializer);
+    sse_encode_String(self.text, serializer);
+    sse_encode_opt_CastedPrimitive_u_64(self.parent, serializer);
+    sse_encode_u_32(self.depth, serializer);
+  }
+
+  @protected
   void sse_encode_navigator_scene(
     NavigatorScene self,
     SseSerializer serializer,
@@ -5820,6 +5965,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_navigator_scene(self.scenes, serializer);
     sse_encode_list_navigator_character(self.characters, serializer);
+    sse_encode_list_navigator_node(self.outline, serializer);
   }
 
   @protected
@@ -6044,6 +6190,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_page_view(self.titlePage, serializer);
     sse_encode_list_page_view(self.pages, serializer);
     sse_encode_pagination_stats(self.stats, serializer);
+    sse_encode_list_scene_pagination_view(self.scenes, serializer);
   }
 
   @protected
@@ -6167,6 +6314,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_scene_numbers(SceneNumbers self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_scene_pagination_view(
+    ScenePaginationView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_CastedPrimitive_u_64(self.block, serializer);
+    sse_encode_u_32(self.page, serializer);
+    sse_encode_CastedPrimitive_u_64(self.lengthEighths, serializer);
   }
 
   @protected

@@ -47,6 +47,7 @@ PageView _page(int number, int sourceLine) => PageView(
 );
 
 PaginationView _pagination() => PaginationView(
+  scenes: const [],
   revision: 1,
   generation: 1,
   pageCount: 3,
@@ -344,6 +345,7 @@ void main() {
     final before = controller.selection;
     await _key(tester, LogicalKeyboardKey.keyL, control: true);
     core.output.pagination = PaginationView(
+      scenes: const [],
       revision: 2,
       generation: 2,
       pageCount: 1,
@@ -369,6 +371,7 @@ void main() {
     final controller = await _open(tester, core: core);
     // The last snapshot can name a block absent from the current document.
     core.output.pagination = PaginationView(
+      scenes: const [],
       revision: 1,
       generation: 1,
       pageCount: 2,
@@ -429,6 +432,7 @@ void main() {
       controller.jumpToBlock(20);
       controller.insertText(List.filled(40, '😀 word ').join());
       core.output.pagination = PaginationView(
+        scenes: const [],
         revision: 2,
         generation: 2,
         pageCount: 2,

@@ -42,6 +42,20 @@ FakeCore _script() {
     _block(8, BlockKind.dialogue, 'Again.'),
   ]);
   core.navigatorData = const NavigatorView(
+    outline: [
+      NavigatorNode(
+        block: 1,
+        kind: BlockKind.sceneHeading,
+        text: 'INT. HOUSE - DAY #1#',
+        depth: 0,
+      ),
+      NavigatorNode(
+        block: 5,
+        kind: BlockKind.sceneHeading,
+        text: 'EXT. STREET - NIGHT #12A#',
+        depth: 0,
+      ),
+    ],
     scenes: [
       NavigatorScene(
         block: 1,

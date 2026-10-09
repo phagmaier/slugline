@@ -10,7 +10,7 @@ part 'doc.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `adopt`, `block_source_runs`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `formatting_is_sound`, `formatting_plan`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `scene_numbers`, `selection_view`, `source_style_at`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FormattingEdit`, `FormattingPlan`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// A new, empty script.
 ///
@@ -740,6 +740,44 @@ class NavigatorCharacter {
           blocks == other.blocks;
 }
 
+/// A source-ordered outline row. Parent and depth are decided in Rust.
+class NavigatorNode {
+  final int block;
+
+  /// Only Section, Synopsis and SceneHeading occur here.
+  final BlockKind kind;
+  final String text;
+  final int? parent;
+  final int depth;
+
+  const NavigatorNode({
+    required this.block,
+    required this.kind,
+    required this.text,
+    this.parent,
+    required this.depth,
+  });
+
+  @override
+  int get hashCode =>
+      block.hashCode ^
+      kind.hashCode ^
+      text.hashCode ^
+      parent.hashCode ^
+      depth.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NavigatorNode &&
+          runtimeType == other.runtimeType &&
+          block == other.block &&
+          kind == other.kind &&
+          text == other.text &&
+          parent == other.parent &&
+          depth == other.depth;
+}
+
 /// One scene in §Phase 8's navigator.
 class NavigatorScene {
   final int block;
@@ -780,11 +818,16 @@ class NavigatorScene {
 class NavigatorView {
   final List<NavigatorScene> scenes;
   final List<NavigatorCharacter> characters;
+  final List<NavigatorNode> outline;
 
-  const NavigatorView({required this.scenes, required this.characters});
+  const NavigatorView({
+    required this.scenes,
+    required this.characters,
+    required this.outline,
+  });
 
   @override
-  int get hashCode => scenes.hashCode ^ characters.hashCode;
+  int get hashCode => scenes.hashCode ^ characters.hashCode ^ outline.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -792,7 +835,8 @@ class NavigatorView {
       other is NavigatorView &&
           runtimeType == other.runtimeType &&
           scenes == other.scenes &&
-          characters == other.characters;
+          characters == other.characters &&
+          outline == other.outline;
 }
 
 /// A block to be inserted, before the document has given it an identity.

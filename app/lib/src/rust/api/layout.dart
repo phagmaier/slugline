@@ -9,9 +9,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'layout.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `changed_block`, `clamp_u32`, `fingerprint`, `fingerprints`, `line_view`, `page_config`, `page_view`, `paginate_snapshot`, `paginate`, `pagination_view`
+// These functions are ignored because they are not marked as `pub`: `changed_block`, `clamp_u32`, `fingerprint`, `fingerprints`, `line_view`, `page_config`, `page_view`, `paginate_snapshot`, `paginate`, `pagination_view`, `scene_pagination`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Job`, `Planned`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// §6's `paginate`. Lays the document out on the page grid.
 ///
@@ -291,6 +291,7 @@ class PaginationView {
   final PageView? titlePage;
   final List<PageView> pages;
   final PaginationStats stats;
+  final List<ScenePaginationView> scenes;
 
   const PaginationView({
     required this.revision,
@@ -299,6 +300,7 @@ class PaginationView {
     this.titlePage,
     required this.pages,
     required this.stats,
+    required this.scenes,
   });
 
   @override
@@ -308,7 +310,8 @@ class PaginationView {
       pageCount.hashCode ^
       titlePage.hashCode ^
       pages.hashCode ^
-      stats.hashCode;
+      stats.hashCode ^
+      scenes.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -320,7 +323,8 @@ class PaginationView {
           pageCount == other.pageCount &&
           titlePage == other.titlePage &&
           pages == other.pages &&
-          stats == other.stats;
+          stats == other.stats &&
+          scenes == other.scenes;
 }
 
 /// The paper a pagination is measured against (§5.2).
@@ -328,3 +332,30 @@ enum PaperSize { usLetter, a4 }
 
 /// Which scene-number gutters the result should carry (§5.3).
 enum SceneNumbers { off, left, right, both }
+
+/// Scene length in occupied eighth-pages, rounded up once per scene.
+/// Each page contributes its first-to-last occupied scene row (including
+/// internal spacing and continuation furniture, excluding external blanks).
+class ScenePaginationView {
+  final int block;
+  final int page;
+  final int lengthEighths;
+
+  const ScenePaginationView({
+    required this.block,
+    required this.page,
+    required this.lengthEighths,
+  });
+
+  @override
+  int get hashCode => block.hashCode ^ page.hashCode ^ lengthEighths.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScenePaginationView &&
+          runtimeType == other.runtimeType &&
+          block == other.block &&
+          page == other.page &&
+          lengthEighths == other.lengthEighths;
+}

@@ -22,10 +22,12 @@ class NavigatorSidebar extends StatefulWidget {
     required this.onSceneReordered,
     required this.onCharacterSelected,
     required this.onCollapse,
+    this.scenePagination = const {},
     super.key,
   });
 
   final NavigatorView data;
+  final Map<int, ScenePaginationView> scenePagination;
   final int? currentSceneBlock;
   final ValueChanged<int> onSceneSelected;
   final SceneReorderCallback onSceneReordered;
@@ -73,6 +75,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
       baseOffset: 0,
       extentOffset: _filter.text.length,
     );
+    setState(() => _selected = _initialSceneSelection());
   }
 
   List<NavigatorScene> get _scenes {
@@ -97,8 +100,55 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
         .toList();
   }
 
+  List<NavigatorNode> get _nodes {
+    final nodes = widget.data.outline;
+    final query = _filter.text.trim().toLowerCase();
+    if (query.isEmpty) return nodes;
+    final scenes = _scenes.map((scene) => scene.block).toSet();
+    final byId = {for (final node in nodes) node.block: node};
+    final visible = <int>{};
+    final structureMatches = <int>{};
+    for (final node in nodes) {
+      if (scenes.contains(node.block) ||
+          (node.kind != BlockKind.sceneHeading &&
+              node.text.toLowerCase().contains(query))) {
+        visible.add(node.block);
+        if (node.kind != BlockKind.sceneHeading) {
+          structureMatches.add(node.block);
+        }
+      }
+    }
+    for (final node in nodes) {
+      var parent = node.parent;
+      while (parent != null) {
+        if (structureMatches.contains(parent)) visible.add(node.block);
+        parent = byId[parent]?.parent;
+      }
+    }
+    for (final block in visible.toList()) {
+      var parent = byId[block]?.parent;
+      while (parent != null) {
+        visible.add(parent);
+        parent = byId[parent]?.parent;
+      }
+    }
+    return nodes.where((node) => visible.contains(node.block)).toList();
+  }
+
+  int _initialSceneSelection() {
+    final nodes = _nodes;
+    final matches = _scenes.map((scene) => scene.block).toSet();
+    final scene = nodes.indexWhere((node) => matches.contains(node.block));
+    if (scene >= 0) return scene;
+    final query = _filter.text.trim().toLowerCase();
+    final structure = nodes.indexWhere(
+      (node) => node.text.toLowerCase().contains(query),
+    );
+    return structure < 0 ? 0 : structure;
+  }
+
   int get _itemCount => switch (_section) {
-    _NavigatorSection.scenes => _scenes.length,
+    _NavigatorSection.scenes => _nodes.length,
     _NavigatorSection.characters => _characters.length,
   };
 
@@ -112,7 +162,11 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
   }
 
   void _filterChanged(String _) {
-    setState(() => _selected = 0);
+    setState(() {
+      _selected = _section == _NavigatorSection.scenes
+          ? _initialSceneSelection()
+          : 0;
+    });
     _scrollToSelection();
   }
 
@@ -161,8 +215,8 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
 
   void scrollToSceneBlock(int blockId) {
     if (_section != _NavigatorSection.scenes || !_scroll.hasClients) return;
-    final scenes = _scenes;
-    final index = scenes.indexWhere((s) => s.block == blockId);
+    final nodes = _nodes;
+    final index = nodes.indexWhere((node) => node.block == blockId);
     if (index < 0) return;
 
     final extent = _rowExtent;
@@ -185,7 +239,7 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     if (_itemCount == 0) return;
     switch (_section) {
       case _NavigatorSection.scenes:
-        widget.onSceneSelected(_scenes[_selected].block);
+        widget.onSceneSelected(_nodes[_selected].block);
       case _NavigatorSection.characters:
         widget.onCharacterSelected(_characters[_selected]);
     }
@@ -199,7 +253,23 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     final before = newIndex + 1 < scenes.length
         ? scenes[newIndex + 1].block
         : null;
-    setState(() => _selected = newIndex);
+    setState(
+      () => _selected = _nodes.indexWhere((node) => node.block == moved.block),
+    );
+    widget.onSceneReordered(moved.block, before);
+  }
+
+  void _reorderOutline(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final nodes = List<NavigatorNode>.of(widget.data.outline);
+    final moved = nodes.removeAt(oldIndex);
+    if (moved.kind != BlockKind.sceneHeading) return;
+    nodes.insert(newIndex, moved);
+    final before = nodes
+        .skip(newIndex + 1)
+        .where((node) => node.kind == BlockKind.sceneHeading)
+        .firstOrNull
+        ?.block;
     widget.onSceneReordered(moved.block, before);
   }
 
@@ -248,7 +318,11 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
     if (!mounted || action == null) return;
     switch (action) {
       case _SceneMenuAction.jump:
-        setState(() => _selected = index);
+        setState(
+          () => _selected = _nodes.indexWhere(
+            (node) => node.block == scene.block,
+          ),
+        );
         widget.onSceneSelected(scene.block);
       case _SceneMenuAction.copyHeading:
         await Clipboard.setData(ClipboardData(text: _headingOf(scene)));
@@ -408,8 +482,8 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
         scrollController: _scroll,
         buildDefaultDragHandles: false,
         itemExtent: _rowExtent,
-        itemCount: widget.data.scenes.length,
-        onReorderItem: _reorderScenes,
+        itemCount: widget.data.outline.length,
+        onReorderItem: _reorderOutline,
         proxyDecorator: (child, _, animation) => AnimatedBuilder(
           animation: animation,
           builder: (context, child) => Material(
@@ -420,10 +494,10 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
           child: child,
         ),
         itemBuilder: (context, index) {
-          final scene = widget.data.scenes[index];
+          final node = widget.data.outline[index];
           return KeyedSubtree(
-            key: ValueKey('reorder scene ${scene.block}'),
-            child: _sceneRow(theme, scene, index, reorderable: true),
+            key: ValueKey('reorder scene ${node.block}'),
+            child: _outlineRow(theme, node, index, reorderable: true),
           );
         },
       );
@@ -433,9 +507,9 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
       itemExtent: _rowExtent,
       itemCount: _itemCount,
       itemBuilder: (context, index) => switch (_section) {
-        _NavigatorSection.scenes => _sceneRow(
+        _NavigatorSection.scenes => _outlineRow(
           theme,
-          _scenes[index],
+          _nodes[index],
           index,
           reorderable: false,
         ),
@@ -445,6 +519,55 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
           index,
         ),
       },
+    );
+  }
+
+  Widget _outlineRow(
+    ThemeData theme,
+    NavigatorNode node,
+    int index, {
+    required bool reorderable,
+  }) {
+    final scene = widget.data.scenes
+        .where((scene) => scene.block == node.block)
+        .firstOrNull;
+    if (scene != null) {
+      return Padding(
+        padding: EdgeInsets.only(left: node.depth.clamp(0, 6) * 12.0),
+        child: _sceneRow(theme, scene, index, reorderable: reorderable),
+      );
+    }
+    final section = node.kind == BlockKind.section;
+    return Semantics(
+      key: ValueKey('outline semantics ${node.block}'),
+      header: section,
+      label: '${section ? "Section" : "Synopsis"}, level ${node.depth + 1}',
+      child: ListTile(
+        key: ValueKey('navigator outline ${node.block}'),
+        dense: true,
+        minTileHeight: _rowExtent,
+        contentPadding: EdgeInsets.only(
+          left: 12 + node.depth.clamp(0, 6) * 12.0,
+          right: 10,
+        ),
+        selected: index == _selected,
+        leading: Icon(section ? Icons.folder_outlined : Icons.notes, size: 16),
+        title: Text(
+          node.text.isEmpty
+              ? (section ? 'Untitled section' : 'Empty synopsis')
+              : node.text,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: section ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        onTap: () {
+          setState(() => _selected = index);
+          widget.onSceneSelected(node.block);
+        },
+      ),
     );
   }
 
@@ -463,6 +586,10 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
       scene.prefix,
       scene.timeOfDay,
     ].whereType<String>().where((part) => part.isNotEmpty).join(' · ');
+    final pagination = widget.scenePagination[scene.block];
+    final pageLabel = pagination == null
+        ? 'p. … · length …'
+        : 'p. ${pagination.page} · ${pagination.lengthEighths}/8 p';
     final colours = context.colours;
     final background = current
         ? colours.surfaceOverlay
@@ -507,7 +634,11 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
         behavior: HitTestBehavior.translucent,
         onSecondaryTapDown: (details) {
           setState(() => _selected = index);
-          _showSceneMenu(scene, index, details.globalPosition);
+          _showSceneMenu(
+            scene,
+            widget.data.scenes.indexWhere((item) => item.block == scene.block),
+            details.globalPosition,
+          );
         },
         child: Material(
           key: ValueKey('navigator scene background ${scene.block}'),
@@ -543,7 +674,8 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
                   key: ValueKey('scene number column ${scene.block}'),
                   width: 30,
                   child: Text(
-                    scene.sceneNumber ?? '${index + 1}',
+                    scene.sceneNumber ??
+                        '${widget.data.scenes.indexWhere((item) => item.block == scene.block) + 1}',
                     textAlign: TextAlign.right,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -570,25 +702,42 @@ class NavigatorSidebarState extends State<NavigatorSidebar> {
                 ),
               ],
             ),
-            subtitle: subtitle.isEmpty
-                ? null
-                : Row(
-                    children: [
-                      const SizedBox(width: 48),
-                      Expanded(
-                        child: Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: colours.textTertiary,
-                            fontSize: 11,
-                            height: 1.15,
-                          ),
-                        ),
-                      ),
-                    ],
+            subtitle: Row(
+              children: [
+                const SizedBox(width: 48),
+                Expanded(
+                  child: Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colours.textTertiary,
+                      fontSize: 11,
+                      height: 1.15,
+                    ),
                   ),
+                ),
+                Flexible(
+                  flex: 2,
+                  child: Tooltip(
+                    message: pagination == null
+                        ? 'Awaiting current Rust pagination'
+                        : '$pageLabel: occupied length rounded up to eighth-pages',
+                    child: Text(
+                      pageLabel,
+                      key: ValueKey('scene pagination ${scene.block}'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colours.textTertiary,
+                        fontSize: 10,
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             trailing: IgnorePointer(
               ignoring: !showDragHandle,
               child: ExcludeSemantics(

@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -121,6 +122,151 @@ void main() {
     if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     if (control) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
+  }
+
+  for (final width in [1100.0, 800.0]) {
+    testWidgets(
+      'native X5 hierarchy, current lengths, jumps and reorder at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final controller = await open(
+          tester,
+          'Title: Outline cover\n\n= Opening\n\n# Act One\n\n= Act summary\n\n'
+          '### Sequence\n\nINT. HOUSE - DAY\n\nAction.\n\n= House summary\n\n'
+          'EXT. STREET - NIGHT\n\nMore action.\n',
+        );
+        final core = controller.core;
+        final source = controller.source;
+        final view = core.navigator();
+        expect(view.outline.map((node) => node.text), [
+          'Opening',
+          'Act One',
+          'Act summary',
+          'Sequence',
+          'INT. HOUSE - DAY',
+          'House summary',
+          'EXT. STREET - NIGHT',
+        ]);
+        expect(view.outline.map((node) => node.depth), [0, 0, 1, 1, 2, 3, 2]);
+        final first = view.scenes.first.block;
+        final second = view.scenes.last.block;
+        final synopsis = view.outline.firstWhere(
+          (node) => node.text == 'House summary',
+        );
+        const setup = PageSetup(
+          paper: PaperSize.usLetter,
+          sceneNumbers: SceneNumbers.off,
+          boldSceneHeadings: false,
+          numberFirstPage: false,
+          debugLinesPerPage: null,
+        );
+        final pagination = switch (await (core as ScreenplayOutput).paginate(
+          setup,
+        )) {
+          PaginationOutcome_Current(:final pagination) => pagination,
+          final other => throw TestFailure('$other'),
+        };
+        expect(pagination.titlePage, isNotNull);
+        Future<void> showNavigator() async {
+          if (width < 900) {
+            await press(tester, LogicalKeyboardKey.keyJ, control: true);
+            await tester.pumpAndSettle();
+          }
+        }
+
+        await showNavigator();
+        for (final scene in pagination.scenes) {
+          final label = 'p. ${scene.page} · ${scene.lengthEighths}/8 p';
+          final deadline = tester.binding.clock.fromNowBy(
+            const Duration(seconds: 10),
+          );
+          while (find.text(label).evaluate().isEmpty) {
+            if (tester.binding.clock.now().isAfter(deadline)) {
+              throw TestFailure('Missing current label $label');
+            }
+            await tester.pump();
+          }
+          final text = tester.widget<Text>(
+            find.byKey(ValueKey('scene pagination ${scene.block}')),
+          );
+          expect(text.data, label);
+        }
+        expect(find.text('Act One'), findsOneWidget);
+        expect(find.text('House summary'), findsOneWidget);
+        await tester.enterText(
+          find.byKey(const ValueKey('navigator filter')),
+          'house summary',
+        );
+        await tester.pump();
+        expect(find.text('Act One'), findsOneWidget);
+        expect(find.text('HOUSE'), findsOneWidget);
+        expect(find.text('STREET'), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(
+          controller.selection.focus,
+          DocPosition(block: synopsis.block, offsetUtf16: 0),
+        );
+        expect(controller.source, source);
+        await showNavigator();
+        if (width >= 900) {
+          await tester.tap(find.byTooltip('Clear filter'));
+          await tester.pumpAndSettle();
+        } else {
+          expect(
+            tester
+                .widget<TextField>(
+                  find.byKey(const ValueKey('navigator filter')),
+                )
+                .controller!
+                .text,
+            isEmpty,
+            reason: 'reopening the dismissed drawer creates a fresh filter',
+          );
+        }
+        await tester.tapAt(
+          tester.getCenter(find.byKey(ValueKey('navigator scene $second'))),
+          buttons: kSecondaryMouseButton,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Move scene up'));
+        await tester.pumpAndSettle();
+        expect(core.navigator().scenes.map((scene) => scene.block), [
+          second,
+          first,
+        ]);
+        expect(
+          core
+              .navigator()
+              .outline
+              .firstWhere((node) => node.block == synopsis.block)
+              .parent,
+          first,
+        );
+        controller.undo();
+        await tester.pumpAndSettle();
+        expect(controller.source, source);
+        expect(
+          core.navigator().outline.map(
+            (node) =>
+                (node.block, node.kind, node.text, node.parent, node.depth),
+          ),
+          view.outline.map(
+            (node) =>
+                (node.block, node.kind, node.text, node.parent, node.depth),
+          ),
+        );
+        expect(
+          core.navigator().scenes.map((scene) => scene.block),
+          view.scenes.map((scene) => scene.block),
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 
   testWidgets(

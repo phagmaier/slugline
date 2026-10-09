@@ -124,11 +124,23 @@ pub struct NavigatorCharacter {
     pub blocks: Vec<u64>,
 }
 
+/// A source-ordered outline row. Parent and depth are decided in Rust.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigatorNode {
+    pub block: u64,
+    /// Only Section, Synopsis and SceneHeading occur here.
+    pub kind: BlockKind,
+    pub text: String,
+    pub parent: Option<u64>,
+    pub depth: u32,
+}
+
 /// The read-only semantic snapshot behind §Phase 8's navigator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NavigatorView {
     pub scenes: Vec<NavigatorScene>,
     pub characters: Vec<NavigatorCharacter>,
+    pub outline: Vec<NavigatorNode>,
 }
 
 /// A caret position, in document coordinates (§3.3).
@@ -379,24 +391,11 @@ pub fn doc_navigator(handle: DocumentHandle) -> NavigatorView {
             return NavigatorView {
                 scenes: Vec::new(),
                 characters: Vec::new(),
+                outline: Vec::new(),
             };
         };
         let document = session.document();
-        let scenes = document
-            .blocks()
-            .iter()
-            .filter(|block| block.kind() == model::BlockKind::SceneHeading)
-            .map(|block| {
-                let parts = model::scene_heading_parts(block.text());
-                NavigatorScene {
-                    block: block.id().0,
-                    scene_number: parts.scene_number,
-                    prefix: parts.prefix,
-                    location: parts.location,
-                    time_of_day: parts.time_of_day,
-                }
-            })
-            .collect();
+        let mut scenes = Vec::new();
         let characters = session
             .entities()
             .characters(document)
@@ -407,7 +406,61 @@ pub fn doc_navigator(handle: DocumentHandle) -> NavigatorView {
                 blocks: character.blocks.into_iter().map(|block| block.0).collect(),
             })
             .collect();
-        NavigatorView { scenes, characters }
+        let mut outline = Vec::new();
+        let mut sections: Vec<(u8, u64)> = Vec::new();
+        let mut attachment: Option<(u64, u32)> = None;
+        for block in document.blocks() {
+            let (kind, parent, depth) = match block.kind() {
+                model::BlockKind::Section { level } => {
+                    while sections
+                        .last()
+                        .is_some_and(|(previous, _)| *previous >= level)
+                    {
+                        sections.pop();
+                    }
+                    let parent = sections.last().map(|(_, id)| *id);
+                    let depth = sections.len() as u32;
+                    sections.push((level, block.id().0));
+                    attachment = Some((block.id().0, depth));
+                    (BlockKind::Section, parent, depth)
+                }
+                model::BlockKind::SceneHeading => {
+                    let parts = model::scene_heading_parts(block.text());
+                    scenes.push(NavigatorScene {
+                        block: block.id().0,
+                        scene_number: parts.scene_number,
+                        prefix: parts.prefix,
+                        location: parts.location,
+                        time_of_day: parts.time_of_day,
+                    });
+                    let depth = sections.len() as u32;
+                    attachment = Some((block.id().0, depth));
+                    (
+                        BlockKind::SceneHeading,
+                        sections.last().map(|(_, id)| *id),
+                        depth,
+                    )
+                }
+                model::BlockKind::Synopsis => (
+                    BlockKind::Synopsis,
+                    attachment.map(|(id, _)| id),
+                    attachment.map_or(0, |(_, depth)| depth + 1),
+                ),
+                _ => continue,
+            };
+            outline.push(NavigatorNode {
+                block: block.id().0,
+                kind,
+                text: block.text().to_owned(),
+                parent,
+                depth,
+            });
+        }
+        NavigatorView {
+            scenes,
+            characters,
+            outline,
+        }
     })
 }
 
@@ -2182,12 +2235,89 @@ mod tests {
     }
 
     #[test]
+    fn outline_is_source_ordered_with_nested_sections_and_synopsis_attachments() {
+        let doc = Doc::parse(
+            "= Opening material\n\n# Act One\n\n= Act summary\n\n\
+             ### Sequence\n\nINT. ROOM - DAY\n\nAction.\n\n= Scene summary\n\n\
+             ## Next sequence\n\n= Next summary\n\nEXT. ROAD - NIGHT\n\n# Act Two\n",
+        );
+        let view = doc_navigator(doc.handle());
+        let nodes = &view.outline;
+        assert_eq!(
+            nodes
+                .iter()
+                .map(|node| (node.text.as_str(), node.depth))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Opening material", 0),
+                ("Act One", 0),
+                ("Act summary", 1),
+                ("Sequence", 1),
+                ("INT. ROOM - DAY", 2),
+                ("Scene summary", 3),
+                ("Next sequence", 1),
+                ("Next summary", 2),
+                ("EXT. ROAD - NIGHT", 2),
+                ("Act Two", 0),
+            ],
+        );
+        assert_eq!(nodes[0].parent, None);
+        assert_eq!(nodes[2].parent, Some(nodes[1].block));
+        assert_eq!(nodes[3].parent, Some(nodes[1].block));
+        assert_eq!(nodes[4].parent, Some(nodes[3].block));
+        assert_eq!(nodes[5].parent, Some(nodes[4].block));
+        assert_eq!(nodes[6].parent, Some(nodes[1].block));
+        assert_eq!(nodes[7].parent, Some(nodes[6].block));
+        assert_eq!(nodes[9].parent, None);
+        let blocks = doc.blocks();
+        assert!(nodes
+            .iter()
+            .all(|node| blocks.iter().any(|block| block.id == node.block)));
+    }
+
+    #[test]
+    fn outline_survives_hidden_only_and_empty_documents_and_scene_reordering() {
+        let hidden = Doc::parse("# Plan\n\n= Summary\n\n/* INT. HIDDEN - DAY */\n");
+        let view = doc_navigator(hidden.handle());
+        assert!(view.scenes.is_empty());
+        assert_eq!(view.outline.len(), 2);
+        assert!(doc_navigator(Doc::parse("").handle()).outline.is_empty());
+
+        let doc = Doc::parse("# Act\n\nINT. ONE - DAY\n\n= One summary\n\nEXT. TWO - DAY\n");
+        let before = doc_navigator(doc.handle());
+        let first = before.scenes[0].block;
+        let second = before.scenes[1].block;
+        doc.apply(EditCommand::MoveScene {
+            scene: first,
+            before: None,
+        });
+        let moved = doc_navigator(doc.handle());
+        assert_eq!(
+            moved
+                .scenes
+                .iter()
+                .map(|scene| scene.block)
+                .collect::<Vec<_>>(),
+            [second, first]
+        );
+        let summary = moved
+            .outline
+            .iter()
+            .find(|node| node.kind == BlockKind::Synopsis)
+            .unwrap();
+        assert_eq!(summary.parent, Some(first));
+        doc_undo(doc.handle()).unwrap();
+        assert_eq!(doc_navigator(doc.handle()), before);
+    }
+
+    #[test]
     fn navigator_on_a_stale_handle_is_empty() {
         assert_eq!(
             doc_navigator(DocumentHandle { id: u64::MAX }),
             NavigatorView {
                 scenes: Vec::new(),
                 characters: Vec::new(),
+                outline: Vec::new(),
             }
         );
     }

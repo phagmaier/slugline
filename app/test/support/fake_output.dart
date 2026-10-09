@@ -165,6 +165,7 @@ PaginationView samplePagination({
   );
 
   return PaginationView(
+    scenes: const [],
     revision: 7,
     generation: 7,
     pageCount: pages,

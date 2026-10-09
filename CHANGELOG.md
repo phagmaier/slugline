@@ -27,6 +27,10 @@ this file and the others to it.
   dense markup can be scrolled horizontally without changing printed wraps.
   Ctrl+B, Ctrl+I and Ctrl+U wrap a selection in one undo step without losing
   whitespace, Unicode or selection direction.
+- The navigator shows nested Fountain sections and synopses in source order.
+  Every row jumps to its source block; scene rows show the real output start
+  page and occupied length in eighth-pages. Pagination metadata is pending,
+  rather than estimated, between edits and the next current Rust snapshot.
 - Dual dialogue prints adjacent speeches side by side in preview and PDF.
   On the second Character cue, use Ctrl+K → “Toggle dual dialogue”; the element
   bar identifies marked cues. Both speeches wrap to the printed column widths

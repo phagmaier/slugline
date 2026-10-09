@@ -49,6 +49,10 @@ Invariants:
   with `cargo test` (ADR 0011).
 - Scene-number palette commands consume Rust text/selection patches; the fake
   applies explicit test-supplied patches without parsing suffixes (ADR 0056).
+- Navigator structure and scene page/length are Rust data (ADR 0058). Reuse
+  `PageIndicator`'s async pagination; invalidate scene metadata immediately on
+  edits/setup changes, and reject stale or superseded requests. The controller's
+  local edit epoch is not Rust's undo revision.
 - The tree is formatter-clean including generated bindings: run `dart
   format` on the Dart you touch. The lockfile belongs to Flutter 3.44.8;
   restore it unless bumping deliberately.
@@ -68,6 +72,6 @@ area), `flutter build linux --release`. Real-window suites run under Xvfb
 via `./tools/test_linux_integration.sh`. After touching the runner or
 upgrading Flutter, also `xvfb-run -a python3 ../tools/check_clean_close.py`.
 
-Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0059, 0060. Full rules in
+Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this surface, update this file in the same change.

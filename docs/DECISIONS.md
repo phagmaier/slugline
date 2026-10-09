@@ -40,7 +40,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0017 | A default completion does not take Enter from the editor | `app/lib/editor/editor_controller.dart`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/editor_surface.dart` | refined by 0051 — Shift+Enter always edits |
 | 0018 | The editor is fluid, and its line breaking stays in Dart, pinned to Rust by a test | `app/lib/editor/line_layout.dart`, `crates/layout/src/line_break.rs`, `crates/layout/tests/line_break_differential.rs`, `docs/LINE_BREAKING.md` | partly superseded by 0040 — page indication; refined by 0057 — printed-width projection |
 | 0019 | Emphasis markup is displayed literally in the editor through 1.0 | `app/lib/editor/metrics.dart`, `crates/render_pdf/src/pdf.rs`, `app/lib/editor/line_layout.dart` | superseded by 0044/0045/0057 — shared printed-width emphasis and editable styling |
-| 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | live |
+| 0020 | Pagination crosses the bridge as an async snapshot job, and the page count is written after a save | `crates/bridge/src/api/layout.rs`, `crates/layout/src/lib.rs`, `crates/storage/src/library.rs` | extended by 0058 — scene pagination metadata |
 | 0021 | Pinned autocomplete entities live in the library index | `crates/storage/src/library.rs`, `crates/document/src/entities.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0022 | Repagination is incremental by checkpoint, and validated rather than trusted | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental.rs` | refined by 0049 — what a checkpoint records, where a run resumes and stops |
 | 0023 | One crash recovery is offered per launch | `app/lib/app.dart`, `app/lib/library/recovery_dialog.dart`, `crates/bridge/src/api/files.rs` | live |
@@ -55,7 +55,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044/0045 — printed alignment and shared preview interpretation |
 | 0033 | A title-page edit is journalled like any other edit | `crates/document/src/recovery.rs`, `crates/storage/src/journal.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | refined by 0046 — spacing belongs to lyric runs |
-| 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041 — navigator drawer below 900 px |
+| 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041; extended by 0058 — navigator drawer below 900 px |
 | 0036 | Spell checking is an immutable Rust snapshot and a Dart overlay | `crates/spell/src/lib.rs`, `crates/bridge/src/api/spell.rs`, `app/lib/editor/spell_dialog.dart` | live |
 | 0037 | Preferences split display policy from screenplay output | `crates/storage/src/prefs.rs`, `app/lib/settings/preferences_dialog.dart`, `crates/bridge/src/api/appearance_prefs_dont_affect_pagination.rs` | partly superseded by 0052 — retained in-app chooser |
 | 0038 | The save path checks the file it is replacing; the watcher only asks early | `crates/storage/src/watch.rs`, `crates/bridge/src/api/files.rs`, `crates/bridge/src/state.rs` | live |
@@ -81,6 +81,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0057 | Inline emphasis uses printed wraps and an editable source projection | `crates/fountain/src/emphasis.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/line_layout.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `docs/LINE_BREAKING.md` | live |
 | 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | refined by 0060 — necessary authored-case syntax |
 | 0060 | Forced Character cues retain authored case on every surface | `crates/fountain/src/case.rs`, `crates/fountain/src/serialise.rs`, `crates/layout/src/engine.rs`, `app/lib/editor/metrics.dart`, `app/lib/editor/editor_surface.dart`, `crates/render_pdf/tests/text_extraction.rs`, `app/integration_test/export_test.dart`, `app/integration_test/persistence_test.dart` | live |
+| 0058 | The outline is source-ordered Rust structure and scene length is paginated occupied eighths | `crates/bridge/src/api/doc.rs`, `crates/bridge/src/api/layout.rs`, `app/lib/editor/navigator_sidebar.dart`, `app/lib/editor/page_indicator.dart` | live |
 
 ---
 
@@ -1433,6 +1434,8 @@ Dart, which is a screenplay-semantics question and therefore Rust's (§2.1).
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 6 (decided during the
 mid-project remediation) · **Implemented by:** remediation Phase 6D/6E
 
+**Superseded by:** ADR 0058 extends the async snapshot with scene pagination metadata only.
+
 ### Context
 
 `crates/layout` is complete, deterministic and golden-tested, and no code outside
@@ -2760,6 +2763,8 @@ chose, and the deltas against two others are measured and written down above.
 **Superseded by:** ADR 0041 for treating the docked navigator as the expanded
 state on narrow windows; below 900 px it is a temporary drawer that does not
 overwrite the saved preference.
+**Superseded by:** ADR 0058 for sections, synopsis attachment and actual scene
+pagination metadata; its source-ordered outline replaces the scene-only list.
 
 ### Context
 
@@ -4774,3 +4779,92 @@ native editor/preview painting, real-actor forcing-only pagination and Undo,
 native BOM/CRLF Save/reopen with Undo/Redo, and Poppler PDF extraction. The golden change is deliberate and limited to
 `02-every-element`'s authored `mcCLANE` cue and its Letter/A4 PDF hashes.
 Verification evidence belongs in the F7 backlog Result.
+
+---
+
+## ADR 0058 — The outline is source-ordered Rust structure and scene length is paginated occupied eighths
+
+**Status:** Accepted
+**Date:** 2026-10-08
+**Backlog:** X5
+**Extends:** ADR 0035's semantic navigator and ADR 0020's async pagination.
+
+### Context
+
+Sections and synopses are outline structure even though they do not print.
+Editor wrapping cannot supply output page positions or scene lengths. A second
+pagination request per navigator refresh would duplicate work, while a cached
+answer shown after an edit would claim to describe text it did not paginate.
+
+### Decision
+
+`NavigatorView.outline` is a flat, source-ordered vector of `NavigatorNode`
+values: source block id, kind, text, optional parent block id and zero-based
+depth. Only Section, Synopsis and SceneHeading occur. Rust scans the document
+alongside the existing scene snapshot; character navigation still uses the
+entity index. No edit, inference, provenance or undo behavior changes.
+
+A section belongs to the nearest preceding section with a strictly smaller
+Fountain level. Equal or lower levels close previous sections; skipped levels
+do not create synthetic nodes. Depth counts actual ancestors, not hash marks.
+A scene belongs to the current innermost section. A synopsis belongs to the
+most recent section or scene, until another section or scene is encountered.
+Ordinary text and hidden blocks do not change that attachment. A synopsis before
+either anchor is a root node. All nodes retain source order: a section summary
+appears before its scenes, while a synopsis written inside a scene follows its
+heading. Hidden-only scripts can therefore have a useful outline without any
+scenes; empty scripts have no outline. Boneyard contents do not create nodes.
+
+`PaginationView.scenes` contains `ScenePaginationView { block, page,
+length_eighths }`. This is computed off the actor from the same immutable
+paginated script as preview and page indication. Page is the actual numbered
+screenplay page of the first printed heading line. Length is **occupied
+eighth-pages**: on each page, count the inclusive row band from the scene's first
+to last Content/More/Continued row; include spacing inside that band, exclude
+external blanks, gutters, page numbers and unused page bottoms. Sum the bands,
+multiply by eight, divide by that setup's actual text-row capacity, and round
+up once per scene. Shared pages contribute separate bands to adjacent scenes.
+Long scenes sum their actual bands across pages, not an inclusive page count.
+Title pages never participate. Structure does not print and contributes no
+length. A scene lacking a printed heading has no pagination metadata.
+
+Dart reuses `PageIndicator`'s debounced async job rather than requesting layout
+from navigator refresh or typing. Its scene-metadata map is immutable. Every
+document edit immediately clears that map and invalidates the in-flight request;
+setup changes do the same. Delivery requires both the latest request token and
+the unchanged controller edit epoch, and only Rust's Current outcome supplies
+scene metadata. Stale outcomes never supply it, even when undo returns to a
+previous Rust revision. Controller revisions are local monotonically advancing
+edit epochs and must not be compared numerically with Rust undo revisions.
+Title-dialog commits use the same invalidation/debounce entry point: those edits
+reach the core directly and do not advance the controller's body edit epoch.
+The request token therefore also guards title mutations. No body reload or
+extra document-revision query is introduced.
+Unknown/pending values display ellipses, never estimated pages.
+
+The existing Scenes/Characters tabs, drawer threshold, focus return, shortcuts
+and character cue cycling remain. Outline sections are accessible headers;
+every outline row supports clicking and arrow/Enter activation. Filtering uses
+supplied parents to retain ancestor context and descendants of matching
+structure. Quick scene search initially selects the first matching scene.
+When no scene directly matches, keyboard activation selects the matching
+section or synopsis rather than an ancestor retained only as context.
+Only scenes have drag handles and move menus, and reordering is unavailable
+while filtered. Outline drop positions resolve to the next scene in the proposed
+order and call the existing atomic MoveScene command; sections are not a new
+movable unit. Moving a scene retains that command's source-range semantics,
+including intervening outline blocks, and Rust recomputes hierarchy afterward.
+The fake core only reorders supplied nodes with its block-list surgery; it
+does not compute parentage, attachments, page positions or length.
+
+### Consequences and regression coverage
+
+Bridge regressions exercise actual parsed hierarchy, pre-scene material, skipped
+levels, source-id jumps, hidden/empty documents, scene move/undo, shared-page
+length, title-page exclusion, wrapped headings, continued dual-dialogue bands
+and edited repagination. Consumer regressions exercise sidebar/drawer jumps,
+accessible hierarchy, context filtering, scene and synopsis search, reorder/undo
+and pending/current metadata. Controlled async deliveries cover old-current,
+stale, title-commit and undo-revision races without recreating pagination
+semantics in the fake. Generated bridge reconciliation and execution of checks
+belong to the integration owner.

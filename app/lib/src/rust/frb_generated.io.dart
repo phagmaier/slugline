@@ -206,6 +206,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NavigatorCharacter> dco_decode_list_navigator_character(dynamic raw);
 
   @protected
+  List<NavigatorNode> dco_decode_list_navigator_node(dynamic raw);
+
+  @protected
   List<NavigatorScene> dco_decode_list_navigator_scene(dynamic raw);
 
   @protected
@@ -221,6 +224,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RecoveryOffer> dco_decode_list_recovery_offer(dynamic raw);
 
   @protected
+  List<ScenePaginationView> dco_decode_list_scene_pagination_view(dynamic raw);
+
+  @protected
   List<ScriptView> dco_decode_list_script_view(dynamic raw);
 
   @protected
@@ -234,6 +240,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NavigatorCharacter dco_decode_navigator_character(dynamic raw);
+
+  @protected
+  NavigatorNode dco_decode_navigator_node(dynamic raw);
 
   @protected
   NavigatorScene dco_decode_navigator_scene(dynamic raw);
@@ -321,6 +330,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SceneNumbers dco_decode_scene_numbers(dynamic raw);
+
+  @protected
+  ScenePaginationView dco_decode_scene_pagination_view(dynamic raw);
 
   @protected
   ScriptView dco_decode_script_view(dynamic raw);
@@ -563,6 +575,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<NavigatorNode> sse_decode_list_navigator_node(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NavigatorScene> sse_decode_list_navigator_scene(
     SseDeserializer deserializer,
   );
@@ -578,6 +595,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RecoveryOffer> sse_decode_list_recovery_offer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ScenePaginationView> sse_decode_list_scene_pagination_view(
     SseDeserializer deserializer,
   );
 
@@ -601,6 +623,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NavigatorCharacter sse_decode_navigator_character(
     SseDeserializer deserializer,
   );
+
+  @protected
+  NavigatorNode sse_decode_navigator_node(SseDeserializer deserializer);
 
   @protected
   NavigatorScene sse_decode_navigator_scene(SseDeserializer deserializer);
@@ -704,6 +729,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SceneNumbers sse_decode_scene_numbers(SseDeserializer deserializer);
+
+  @protected
+  ScenePaginationView sse_decode_scene_pagination_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ScriptView sse_decode_script_view(SseDeserializer deserializer);
@@ -1041,6 +1071,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_navigator_node(
+    List<NavigatorNode> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_navigator_scene(
     List<NavigatorScene> self,
     SseSerializer serializer,
@@ -1061,6 +1097,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_recovery_offer(
     List<RecoveryOffer> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_scene_pagination_view(
+    List<ScenePaginationView> self,
     SseSerializer serializer,
   );
 
@@ -1090,6 +1132,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     NavigatorCharacter self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_navigator_node(NavigatorNode self, SseSerializer serializer);
 
   @protected
   void sse_encode_navigator_scene(
@@ -1222,6 +1267,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_scene_numbers(SceneNumbers self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_scene_pagination_view(
+    ScenePaginationView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_script_view(ScriptView self, SseSerializer serializer);

@@ -3301,6 +3301,18 @@ impl SseDecode for Vec<crate::api::doc::NavigatorCharacter> {
     }
 }
 
+impl SseDecode for Vec<crate::api::doc::NavigatorNode> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::doc::NavigatorNode>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::doc::NavigatorScene> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3356,6 +3368,20 @@ impl SseDecode for Vec<crate::api::files::RecoveryOffer> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::files::RecoveryOffer>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::layout::ScenePaginationView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::layout::ScenePaginationView>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -3427,6 +3453,24 @@ impl SseDecode for crate::api::doc::NavigatorCharacter {
     }
 }
 
+impl SseDecode for crate::api::doc::NavigatorNode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_block = <u64>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::doc::BlockKind>::sse_decode(deserializer);
+        let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_parent = <Option<u64>>::sse_decode(deserializer);
+        let mut var_depth = <u32>::sse_decode(deserializer);
+        return crate::api::doc::NavigatorNode {
+            block: var_block,
+            kind: var_kind,
+            text: var_text,
+            parent: var_parent,
+            depth: var_depth,
+        };
+    }
+}
+
 impl SseDecode for crate::api::doc::NavigatorScene {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3451,9 +3495,11 @@ impl SseDecode for crate::api::doc::NavigatorView {
         let mut var_scenes = <Vec<crate::api::doc::NavigatorScene>>::sse_decode(deserializer);
         let mut var_characters =
             <Vec<crate::api::doc::NavigatorCharacter>>::sse_decode(deserializer);
+        let mut var_outline = <Vec<crate::api::doc::NavigatorNode>>::sse_decode(deserializer);
         return crate::api::doc::NavigatorView {
             scenes: var_scenes,
             characters: var_characters,
+            outline: var_outline,
         };
     }
 }
@@ -3698,6 +3744,8 @@ impl SseDecode for crate::api::layout::PaginationView {
         let mut var_titlePage = <Option<crate::api::layout::PageView>>::sse_decode(deserializer);
         let mut var_pages = <Vec<crate::api::layout::PageView>>::sse_decode(deserializer);
         let mut var_stats = <crate::api::layout::PaginationStats>::sse_decode(deserializer);
+        let mut var_scenes =
+            <Vec<crate::api::layout::ScenePaginationView>>::sse_decode(deserializer);
         return crate::api::layout::PaginationView {
             revision: var_revision,
             generation: var_generation,
@@ -3705,6 +3753,7 @@ impl SseDecode for crate::api::layout::PaginationView {
             title_page: var_titlePage,
             pages: var_pages,
             stats: var_stats,
+            scenes: var_scenes,
         };
     }
 }
@@ -3901,6 +3950,20 @@ impl SseDecode for crate::api::layout::SceneNumbers {
             2 => crate::api::layout::SceneNumbers::Right,
             3 => crate::api::layout::SceneNumbers::Both,
             _ => unreachable!("Invalid variant for SceneNumbers: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::layout::ScenePaginationView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_block = <u64>::sse_decode(deserializer);
+        let mut var_page = <u32>::sse_decode(deserializer);
+        let mut var_lengthEighths = <u64>::sse_decode(deserializer);
+        return crate::api::layout::ScenePaginationView {
+            block: var_block,
+            page: var_page,
+            length_eighths: var_lengthEighths,
         };
     }
 }
@@ -4829,6 +4892,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::NavigatorCharacter>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorNode {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.block.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.text.into_into_dart().into_dart(),
+            self.parent.into_into_dart().into_dart(),
+            self.depth.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::doc::NavigatorNode
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::doc::NavigatorNode>
+    for crate::api::doc::NavigatorNode
+{
+    fn into_into_dart(self) -> crate::api::doc::NavigatorNode {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorScene {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -4858,6 +4945,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::doc::NavigatorView {
         [
             self.scenes.into_into_dart().into_dart(),
             self.characters.into_into_dart().into_dart(),
+            self.outline.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4995,6 +5083,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::layout::PaginationView {
             self.title_page.into_into_dart().into_dart(),
             self.pages.into_into_dart().into_dart(),
             self.stats.into_into_dart().into_dart(),
+            self.scenes.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5217,6 +5306,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::SceneNumbers>
     for crate::api::layout::SceneNumbers
 {
     fn into_into_dart(self) -> crate::api::layout::SceneNumbers {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::layout::ScenePaginationView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.block.into_into_dart().into_dart(),
+            self.page.into_into_dart().into_dart(),
+            self.length_eighths.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::layout::ScenePaginationView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::layout::ScenePaginationView>
+    for crate::api::layout::ScenePaginationView
+{
+    fn into_into_dart(self) -> crate::api::layout::ScenePaginationView {
         self
     }
 }
@@ -5957,6 +6068,16 @@ impl SseEncode for Vec<crate::api::doc::NavigatorCharacter> {
     }
 }
 
+impl SseEncode for Vec<crate::api::doc::NavigatorNode> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::doc::NavigatorNode>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::doc::NavigatorScene> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6003,6 +6124,16 @@ impl SseEncode for Vec<crate::api::files::RecoveryOffer> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::files::RecoveryOffer>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::layout::ScenePaginationView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::layout::ScenePaginationView>::sse_encode(item, serializer);
         }
     }
 }
@@ -6056,6 +6187,17 @@ impl SseEncode for crate::api::doc::NavigatorCharacter {
     }
 }
 
+impl SseEncode for crate::api::doc::NavigatorNode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.block, serializer);
+        <crate::api::doc::BlockKind>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.text, serializer);
+        <Option<u64>>::sse_encode(self.parent, serializer);
+        <u32>::sse_encode(self.depth, serializer);
+    }
+}
+
 impl SseEncode for crate::api::doc::NavigatorScene {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6072,6 +6214,7 @@ impl SseEncode for crate::api::doc::NavigatorView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<crate::api::doc::NavigatorScene>>::sse_encode(self.scenes, serializer);
         <Vec<crate::api::doc::NavigatorCharacter>>::sse_encode(self.characters, serializer);
+        <Vec<crate::api::doc::NavigatorNode>>::sse_encode(self.outline, serializer);
     }
 }
 
@@ -6269,6 +6412,7 @@ impl SseEncode for crate::api::layout::PaginationView {
         <Option<crate::api::layout::PageView>>::sse_encode(self.title_page, serializer);
         <Vec<crate::api::layout::PageView>>::sse_encode(self.pages, serializer);
         <crate::api::layout::PaginationStats>::sse_encode(self.stats, serializer);
+        <Vec<crate::api::layout::ScenePaginationView>>::sse_encode(self.scenes, serializer);
     }
 }
 
@@ -6438,6 +6582,15 @@ impl SseEncode for crate::api::layout::SceneNumbers {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::layout::ScenePaginationView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.block, serializer);
+        <u32>::sse_encode(self.page, serializer);
+        <u64>::sse_encode(self.length_eighths, serializer);
     }
 }
 

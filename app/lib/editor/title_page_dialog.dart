@@ -21,15 +21,19 @@ import 'package:slugline/core/document_core.dart';
 /// is shown underneath in the order the file has it, and both go through the
 /// same call.
 class TitlePageDialog extends StatefulWidget {
-  const TitlePageDialog({required this.core, super.key});
+  const TitlePageDialog({required this.core, this.onCommitted, super.key});
 
   final DocumentCore core;
+  final VoidCallback? onCommitted;
 
-  static Future<void> show(BuildContext context, DocumentCore core) =>
-      showDialog<void>(
-        context: context,
-        builder: (_) => TitlePageDialog(core: core),
-      );
+  static Future<void> show(
+    BuildContext context,
+    DocumentCore core, {
+    VoidCallback? onCommitted,
+  }) => showDialog<void>(
+    context: context,
+    builder: (_) => TitlePageDialog(core: core, onCommitted: onCommitted),
+  );
 
   @override
   State<TitlePageDialog> createState() => _TitlePageDialogState();
@@ -98,7 +102,8 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
   /// is not an edit, and the core is what decides that — see
   /// `doc_set_title_field`.
   void _commit(String key) {
-    widget.core.setTitleField(key, _controllers[key]!.text);
+    final outcome = widget.core.setTitleField(key, _controllers[key]!.text);
+    if (outcome is EditOutcome_Applied) widget.onCommitted?.call();
   }
 
   @override

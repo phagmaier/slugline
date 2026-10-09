@@ -60,8 +60,10 @@ always will.
   name. See `docs/KEYMAP.md` for the full map.
 - **Live autocomplete** — character names and scene headings are suggested from
   what you've already written.
-- **Scene navigator** — outline sidebar to jump straight to any scene in your
-  screenplay.
+- **Outline navigator** — nested sections, synopses and scenes in source order,
+  with jumps to every outline block and character cue. Scene rows show actual
+  output start pages and occupied length in eighth-pages; pending pagination
+  is never replaced with an editor-row estimate.
 - **Find & replace** — quick search and replace designed specifically for text
   and Fountain formatting.
 - **Spell-check** — checks against your system's Hunspell dictionaries as you

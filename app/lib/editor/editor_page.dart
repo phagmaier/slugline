@@ -204,7 +204,8 @@ class EditorPageState extends State<EditorPage> {
     });
     if (_knownDocumentRevision != widget.controller.documentRevision) {
       _knownDocumentRevision = widget.controller.documentRevision;
-      if (_navigatorVisible) {
+      if (_navigatorVisible ||
+          (_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
         _navigatorRefresh?.cancel();
         _navigatorRefresh = Timer(
           const Duration(milliseconds: 120),
@@ -220,6 +221,7 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _refreshNavigator() {
+    _navigatorRefresh?.cancel();
     _navigatorRefresh = null;
     final navigator = _core.navigator();
     if (!mounted) return;
@@ -405,8 +407,13 @@ class EditorPageState extends State<EditorPage> {
 
   /// §Phase 7's title page. An ordinary modal, so autosave is held off while it
   /// is open like every other one.
-  Future<void> _showTitlePage() =>
-      withModal(() => TitlePageDialog.show(context, _core));
+  Future<void> _showTitlePage() => withModal(
+    () => TitlePageDialog.show(
+      context,
+      _core,
+      onCommitted: () => _pageIndicator?.invalidate(),
+    ),
+  );
 
   Future<void> _showSpelling() =>
       withModal(() => SpellDialog.show(context, widget.controller));
@@ -999,15 +1006,25 @@ class EditorPageState extends State<EditorPage> {
     );
   }
 
-  Widget _navigatorSidebar() => NavigatorSidebar(
-    key: _navigatorKey,
-    data: _navigator,
-    currentSceneBlock: _currentSceneBlock,
-    onSceneSelected: _jumpToScene,
-    onSceneReordered: _reorderScene,
-    onCharacterSelected: _jumpToCharacter,
-    onCollapse: () => _setNavigatorVisible(false),
-  );
+  Widget _navigatorSidebar() {
+    Widget sidebar() => NavigatorSidebar(
+      key: _navigatorKey,
+      data: _navigator,
+      scenePagination: _pageIndicator?.scenePagination ?? const {},
+      currentSceneBlock: _currentSceneBlock,
+      onSceneSelected: _jumpToScene,
+      onSceneReordered: _reorderScene,
+      onCharacterSelected: _jumpToCharacter,
+      onCollapse: () => _setNavigatorVisible(false),
+    );
+    final indicator = _pageIndicator;
+    return indicator == null
+        ? sidebar()
+        : ListenableBuilder(
+            listenable: indicator,
+            builder: (context, _) => sidebar(),
+          );
+  }
 }
 
 enum _Panel { none, find, palette }

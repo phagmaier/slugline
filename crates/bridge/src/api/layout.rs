@@ -166,6 +166,16 @@ pub struct PaginationStats {
     pub hinted_block: Option<u64>,
 }
 
+/// Scene length in occupied eighth-pages, rounded up once per scene.
+/// Each page contributes its first-to-last occupied scene row (including
+/// internal spacing and continuation furniture, excluding external blanks).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenePaginationView {
+    pub block: u64,
+    pub page: u32,
+    pub length_eighths: u64,
+}
+
 /// A complete pagination (§6's `PaginatedScript`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaginationView {
@@ -179,6 +189,7 @@ pub struct PaginationView {
     pub title_page: Option<PageView>,
     pub pages: Vec<PageView>,
     pub stats: PaginationStats,
+    pub scenes: Vec<ScenePaginationView>,
 }
 
 /// What a pagination request answered.
@@ -489,6 +500,7 @@ fn pagination_view(pagination: &Pagination) -> PaginationView {
         page_count: clamp_u32(script.pages.len()),
         title_page,
         pages,
+        scenes: scene_pagination(script, &pagination.config),
         stats: PaginationStats {
             block_hits: clamp_u32(script.stats.block_hits),
             block_misses: clamp_u32(script.stats.block_misses),
@@ -499,6 +511,57 @@ fn pagination_view(pagination: &Pagination) -> PaginationView {
             hinted_block: pagination.hinted_block.map(|block| block.0),
         },
     }
+}
+
+fn scene_pagination(
+    script: &paginator::PaginatedScript,
+    config: &PageConfig,
+) -> Vec<ScenePaginationView> {
+    let mut scenes: Vec<ScenePaginationView> = Vec::new();
+    let mut current = None;
+    for page in script.pages.iter() {
+        let mut band: Option<(i16, i16)> = None;
+        for line in page.lines.iter() {
+            if line.kind == paginator::LayoutLineKind::Content && line.is_scene_heading {
+                let Some(block) = line.block else { continue };
+                if current.is_none_or(|index: usize| scenes[index].block != block.0) {
+                    if let (Some(index), Some((first, last))) = (current, band.take()) {
+                        scenes[index].length_eighths +=
+                            (i32::from(last) - i32::from(first) + 1) as u64;
+                    }
+                    current = Some(scenes.len());
+                    scenes.push(ScenePaginationView {
+                        block: block.0,
+                        page: page.number.unwrap_or(1),
+                        length_eighths: 0,
+                    });
+                }
+            }
+            if current.is_some()
+                && matches!(
+                    line.kind,
+                    paginator::LayoutLineKind::Content
+                        | paginator::LayoutLineKind::More
+                        | paginator::LayoutLineKind::Continued
+                )
+            {
+                band = Some(match band {
+                    Some((first, last)) => (first.min(line.row), last.max(line.row)),
+                    None => (line.row, line.row),
+                });
+            }
+        }
+        if let (Some(index), Some((first, last))) = (current, band) {
+            scenes[index].length_eighths += (i32::from(last) - i32::from(first) + 1) as u64;
+        }
+    }
+    for scene in &mut scenes {
+        // Until this point the field held occupied rows, avoiding a second
+        // per-scene allocation solely for the conversion.
+        scene.length_eighths =
+            (scene.length_eighths * 8).div_ceil(u64::from(config.lines_per_page()));
+    }
+    scenes
 }
 
 fn page_view(
@@ -910,6 +973,176 @@ mod tests {
     }
 
     #[test]
+    fn scene_metadata_uses_printed_bands_shared_pages_and_excludes_title_page() {
+        let source = "INT. ROOM - DAY\n\nOne.\n\nEXT. ROAD - NIGHT\n\nTwo.\n";
+        let doc = Doc::parse(source);
+        let titled = Doc::parse(&format!("Title: Cover\n\n{source}"));
+        let setup = PageSetup {
+            debug_lines_per_page: Some(16),
+            ..letter()
+        };
+        let paginate = |handle| match block_on(doc_paginate(handle, setup.clone())) {
+            PaginationOutcome::Current { pagination } => pagination,
+            other => panic!("{other:?}"),
+        };
+        let before = paginate(doc.handle());
+        let with_title = paginate(titled.handle());
+        assert!(with_title.title_page.is_some());
+        assert_eq!(before.scenes.len(), 2);
+        assert_eq!(before.scenes[0].page, 1);
+        assert_eq!(
+            before.scenes[1].page, 1,
+            "both scenes share the actual page"
+        );
+        assert_eq!(
+            before
+                .scenes
+                .iter()
+                .map(|scene| (scene.page, scene.length_eighths))
+                .collect::<Vec<_>>(),
+            with_title
+                .scenes
+                .iter()
+                .map(|scene| (scene.page, scene.length_eighths))
+                .collect::<Vec<_>>(),
+        );
+        for (scene, ids) in before
+            .scenes
+            .iter()
+            .zip([[doc.id(0), doc.id(1)], [doc.id(2), doc.id(3)]])
+        {
+            let rows = before.pages[0]
+                .lines
+                .iter()
+                .filter(|line| {
+                    line.kind == LayoutLineKind::Content
+                        && line.block.is_some_and(|id| ids.contains(&id))
+                })
+                .map(|line| line.row)
+                .collect::<Vec<_>>();
+            let occupied = rows.iter().max().unwrap() - rows.iter().min().unwrap() + 1;
+            assert_eq!(scene.length_eighths, (occupied as u64 * 8).div_ceil(16));
+        }
+        let outcome = doc_apply(
+            doc.handle(),
+            crate::api::doc::EditCommand::ReplaceText {
+                block: doc.id(1),
+                start_utf16: 0,
+                end_utf16: 4,
+                with: (0..45).map(|i| format!("Action line {i}.\n")).collect(),
+            },
+            None,
+        );
+        assert!(matches!(outcome, EditOutcome::Applied { .. }));
+        let after = paginate(doc.handle());
+        assert!(after.scenes[0].length_eighths > before.scenes[0].length_eighths);
+        assert!(after.scenes[1].page > 1);
+        assert_ne!(after.revision, before.revision);
+        crate::api::doc::doc_undo(doc.handle()).unwrap();
+        assert_eq!(paginate(doc.handle()).scenes, before.scenes);
+    }
+
+    #[test]
+    fn scene_metadata_counts_wrapped_headings_and_continued_dual_rows_once() {
+        let heading = format!("INT. {} - DAY", "LONG ROOM ".repeat(18));
+        let speech = "A sentence that wraps across several narrow dialogue rows. ".repeat(24);
+        let source = format!(
+            "{heading}\n\nALICE\n{speech}\n\nBOB ^\n{speech}\n\nEXT. ROAD - NIGHT\n\nDone.\n"
+        );
+        let doc = Doc::parse(&source);
+        let setup = PageSetup {
+            debug_lines_per_page: Some(16),
+            ..letter()
+        };
+        let PaginationOutcome::Current { pagination } = block_on(doc_paginate(doc.handle(), setup))
+        else {
+            panic!("expected current pagination");
+        };
+        let blocks = doc_blocks(doc.handle(), 0, u32::MAX);
+        let second = blocks
+            .iter()
+            .position(|block| block.text == "EXT. ROAD - NIGHT")
+            .unwrap();
+        let first_ids: Vec<_> = blocks[..second].iter().map(|block| block.id).collect();
+        let first = &pagination.scenes[0];
+        assert_eq!(first.block, blocks[0].id);
+        assert_eq!(first.page, 1);
+        assert_eq!(pagination.scenes[1].block, blocks[second].id);
+        let lines: Vec<_> = pagination
+            .pages
+            .iter()
+            .flat_map(|page| &page.lines)
+            .collect();
+        assert!(
+            lines
+                .iter()
+                .filter(|line| line.block == Some(first.block))
+                .count()
+                > 1
+        );
+        assert!(lines.iter().any(|line| line.kind == LayoutLineKind::More));
+        assert!(lines
+            .iter()
+            .any(|line| line.kind == LayoutLineKind::Continued));
+        assert!(
+            pagination
+                .pages
+                .iter()
+                .any(|page| page.lines.windows(2).any(|pair| {
+                    pair[0].row == pair[1].row
+                        && pair[0].kind == LayoutLineKind::Content
+                        && pair[1].kind == LayoutLineKind::Content
+                        && pair[0].block != pair[1].block
+                })),
+            "dual lanes share an occupied row"
+        );
+        let occupied: u64 = pagination
+            .pages
+            .iter()
+            .map(|page| {
+                let mut rows = page
+                    .lines
+                    .iter()
+                    .filter(|line| {
+                        line.block.is_some_and(|id| first_ids.contains(&id))
+                            && matches!(
+                                line.kind,
+                                LayoutLineKind::Content
+                                    | LayoutLineKind::More
+                                    | LayoutLineKind::Continued
+                            )
+                    })
+                    .map(|line| line.row);
+                let Some(first) = rows.next() else { return 0 };
+                let (low, high) = rows.fold((first, first), |(low, high), row| {
+                    (low.min(row), high.max(row))
+                });
+                (high - low + 1) as u64
+            })
+            .sum();
+        assert_eq!(first.length_eighths, (occupied * 8).div_ceil(16));
+        let second_page = pagination
+            .pages
+            .iter()
+            .find(|page| {
+                page.lines
+                    .iter()
+                    .any(|line| line.block == Some(blocks[second].id))
+            })
+            .unwrap()
+            .number
+            .unwrap();
+        assert_eq!(pagination.scenes[1].page, second_page);
+    }
+
+    #[test]
+    fn nonprinting_structure_has_no_scene_pagination() {
+        let doc = Doc::parse("Title: Plan\n\n# Act\n\n= Summary\n\n/* INT. HIDDEN - DAY */\n");
+        assert!(doc.current().scenes.is_empty());
+        assert!(Doc::blank().current().scenes.is_empty());
+    }
+
+    #[test]
     fn an_empty_document_paginates_to_one_empty_page() {
         let doc = Doc::blank();
         let pagination = doc.current();
@@ -1158,6 +1391,34 @@ mod tests {
         let after = doc.current();
         assert_eq!(after.generation, doc.generation());
         assert!(doc.committed_at(doc.generation()));
+    }
+
+    #[test]
+    fn a_title_edit_rejects_already_computed_scene_metadata() {
+        let doc = Doc::parse("INT. ROOM - DAY\n\nAction.\n");
+        let handle = doc.handle();
+        let before = doc.generation();
+        stall::before_recording(handle.id, move || {
+            assert!(matches!(
+                crate::api::doc::doc_set_title_field(handle, "Title".into(), "New cover".into()),
+                EditOutcome::Applied { .. }
+            ));
+        });
+        let outcome = doc.paginate();
+        stall::forget(handle.id);
+        let PaginationOutcome::Stale { pagination } = outcome else {
+            panic!("a title edit must make the completed snapshot stale");
+        };
+        assert_eq!(pagination.generation, before);
+        assert!(!doc.committed_at(before));
+        assert!(!pagination.scenes.is_empty());
+        let current = doc.current();
+        assert_eq!(current.generation, doc.generation());
+        assert!(current.title_page.is_some());
+        assert_eq!(
+            current.scenes, pagination.scenes,
+            "title pages occupy no scene eighths"
+        );
     }
 
     #[test]

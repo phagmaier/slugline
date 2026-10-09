@@ -69,6 +69,7 @@ Future<CustomPainter> _preview(
     kind: LayoutLineKind.content,
   );
   final pagination = PaginationView(
+    scenes: const [],
     revision: base.revision,
     generation: base.generation,
     pageCount: 1,
