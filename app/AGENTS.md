@@ -32,6 +32,9 @@ Invariants:
   selector and palette; `docs/KEYMAP.md` is the keyboard map.
 - A block's kind changes only through `SetKind`. Panels stay children of
   the editor page so Escape closes them with a `setState`.
+- Kind pins are live through Save; after reload native Fountain syntax is
+  authority (ADR 0059). No Dart syntax/marker decisions, stored capitals or
+  hidden persisted pin cache. Deliberate mixed/lowercase cues require `@`.
 - The editor never decides where a page ends: both modes read Rust's
   `pageStarts`. The preview paints Rust's runs and parses no emphasis.
 - Dual-dialogue editing stays linear, but paired cue/body wraps use output
@@ -61,6 +64,6 @@ area), `flutter build linux --release`. Real-window suites run under Xvfb
 via `./tools/test_linux_integration.sh`. After touching the runner or
 upgrading Flutter, also `xvfb-run -a python3 ../tools/check_clean_close.py`.
 
-Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057. Full rules in
+Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0059. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this surface, update this file in the same change.

@@ -46,6 +46,11 @@ this file and the others to it.
 
 ### Changed
 
+- New and edited Fountain blocks omit redundant element-forcing markers while
+  preserving markers needed by native syntax. Unedited source remains byte-exact;
+  Save never changes authored capitalization or the current editing pin.
+  After reload source syntax, rather than a hidden pin cache, controls the type.
+
 - The README now gives the complete source-package/user-local installation
   commands, desktop-session PATH setup, and Fountain default-application command.
 

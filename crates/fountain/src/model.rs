@@ -228,9 +228,10 @@ pub struct Element {
     pub kind: BlockKind,
     /// User-visible text with emphasis markup retained inline, but with the
     /// element marker (`.`, `@`, `>`, `!`, `~`, `#`, `=`) removed — the marker
-    /// is carried by `kind` and `forced`, and is re-added on serialisation.
+    /// is carried by `kind`; canonical output re-adds it only where needed.
     pub text: String,
-    /// The element type was pinned by explicit Fountain syntax (§3.1).
+    /// The element type was pinned by explicit syntax or the editing session.
+    /// Canonical output does not persist a redundant pin (ADR 0059).
     pub forced: bool,
     /// Dual-dialogue right column marker (Fountain `^`).
     pub dual: bool,

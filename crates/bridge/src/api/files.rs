@@ -2785,6 +2785,87 @@ mod tests {
     }
 
     #[test]
+    fn clean_markers_checkpoint_a_replayable_base_without_changing_live_pins() {
+        let source =
+            "INT. HOUSE - DAY\n\nShe waits.\n\nMARY ^\nHello.\n\nCUT TO:\n\n!\n\nLast action.\n";
+        let it = Fixture::open_source("clean-markers", source);
+        let before = doc_blocks(it.handle, 0, u32::MAX);
+        for block in &before {
+            assert!(matches!(
+                doc_apply(
+                    it.handle,
+                    EditCommand::SetKind {
+                        block: block.id,
+                        kind: block.kind,
+                        section_level: block.section_level,
+                        forced: true,
+                    },
+                    None,
+                ),
+                EditOutcome::Applied { .. }
+            ));
+        }
+        let clean =
+            "INT. HOUSE - DAY\n\nShe waits.\n\nMARY ^\nHello.\n\nCUT TO:\n\n!\n\nLast action.\n";
+        assert_eq!(it.in_memory(), clean);
+        let live = doc_blocks(it.handle, 0, u32::MAX);
+        let identity = actor().run(move |state| {
+            let session = state.session(it.handle.id).unwrap();
+            (
+                session.document() as *const model::Document as usize,
+                session.document().revision(),
+                session.document_generation(),
+            )
+        });
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), clean);
+        assert_eq!(it.recovers_to(), clean);
+        assert!(it.journal_agrees_with_the_file());
+        assert_eq!(doc_blocks(it.handle, 0, u32::MAX), live);
+        assert_eq!(
+            actor().run(move |state| {
+                let session = state.session(it.handle.id).unwrap();
+                (
+                    session.document() as *const model::Document as usize,
+                    session.document().revision(),
+                    session.document_generation(),
+                )
+            }),
+            identity,
+            "Save neither replaces the actor-owned Document nor changes its revision"
+        );
+
+        // The empty `!` still occupies its parsed ID: a patch for the final
+        // Action must not target a different block after the checkpoint.
+        let last = before.last().unwrap();
+        assert!(matches!(
+            doc_apply(
+                it.handle,
+                EditCommand::ReplaceText {
+                    block: last.id,
+                    start_utf16: 0,
+                    end_utf16: 0,
+                    with: "Recovered. ".to_owned(),
+                },
+                None,
+            ),
+            EditOutcome::Applied { .. }
+        ));
+        assert_eq!(
+            it.recovers_to(),
+            clean.replace("Last action.", "Recovered. Last action.")
+        );
+        assert_eq!(it.recovers_to(), it.in_memory());
+        doc_undo(it.handle).unwrap();
+        assert_eq!(it.recovers_to(), clean);
+        doc_redo(it.handle).unwrap();
+        assert_eq!(it.recovers_to(), it.in_memory());
+    }
+
+    #[test]
     fn a_new_script_starts_with_a_useful_valid_fountain_template() {
         let source = starter_source(Path::new("/scripts/The Long Road.fountain"));
         assert!(source.starts_with("Title: The Long Road\nCredit: Written by\nAuthor:"));
@@ -5870,5 +5951,111 @@ mod tests {
         assert!(doc_undo(handle).is_none());
         assert_eq!(it.in_memory(), SCRIPT);
         assert_eq!(candidate.on_disk(), recovered.on_disk());
+    }
+
+    #[test]
+    fn empty_fdx_import_keeps_its_blank_recovery_base_and_saved_edit_identity() {
+        let it = Fixture::open("fdx-empty-recovery");
+        let input = it.root.join("empty.fdx");
+        let original = b"<FinalDraft DocumentType=\"Script\"><Content/></FinalDraft>";
+        fs::write(&input, original).unwrap();
+        let FdxImportOutcome::Imported { handle, .. } =
+            block_on(doc_import_fdx(input.to_string_lossy().into_owned()))
+        else {
+            panic!("an empty supported screenplay imports");
+        };
+        let candidate = Sibling {
+            script: input.clone(),
+            handle,
+        };
+        let block = doc_blocks(handle, 0, u32::MAX).into_iter().next().unwrap();
+        assert_eq!(block.kind, crate::api::doc::BlockKind::Action);
+        assert!(block.text.is_empty());
+        let journal_path = actor().run(move |state| {
+            state
+                .session_mut(handle.id)
+                .unwrap()
+                .journal_mut()
+                .unwrap()
+                .path()
+                .to_path_buf()
+        });
+        let initial = journal::read(&journal_path).unwrap();
+        assert!(initial.header.script.as_os_str().is_empty());
+        assert_eq!(
+            initial.header.base,
+            journal::checksum(&model::Document::blank().serialise())
+        );
+        let mut recovered = model::Document::blank();
+        for patch in &initial.patches {
+            recovered.replay(patch).unwrap();
+        }
+        assert_eq!(recovered.blocks().len(), 1);
+        assert_eq!(recovered.blocks()[0].text(), "");
+        assert_eq!(recovered.serialise(), candidate.in_memory());
+        assert!(doc_undo(handle).is_none());
+
+        let saved = it.root.join("empty-import.fountain");
+        assert!(matches!(
+            block_on(doc_save_as(
+                handle,
+                saved.to_string_lossy().into_owned(),
+                false
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        let persisted = fs::read_to_string(&saved).unwrap();
+        let checkpoint = journal::read(&journal_path).unwrap();
+        assert_eq!(journal::verify(&checkpoint.header).unwrap(), persisted);
+        let reopened = model::Document::parse(&persisted);
+        assert_eq!(
+            reopened.blocks().len(),
+            1,
+            "the caret block must not vanish"
+        );
+        assert_eq!(reopened.blocks()[0].id().0, block.id);
+        assert_eq!(doc_blocks(handle, 0, u32::MAX), vec![block.clone()]);
+        assert!(doc_undo(handle).is_none(), "Save adds no undo transaction");
+
+        assert!(matches!(
+            doc_apply(
+                handle,
+                EditCommand::ReplaceText {
+                    block: block.id,
+                    start_utf16: 0,
+                    end_utf16: 0,
+                    with: "First words — 日本 🎬.".to_owned(),
+                },
+                None,
+            ),
+            EditOutcome::Applied { .. }
+        ));
+        let expected = candidate.in_memory();
+        doc_undo(handle).unwrap();
+        assert_eq!(candidate.in_memory(), persisted);
+        doc_redo(handle).unwrap();
+        assert_eq!(candidate.in_memory(), expected);
+
+        // Release, offer and accept through the production recovery path.
+        actor().run(move |state| state.session_mut(handle.id).unwrap().set_journal(None));
+        let offer = block_on(recovery_pending())
+            .into_iter()
+            .find(|offer| Path::new(&offer.journal) == journal_path)
+            .expect("post-checkpoint edits produce a recovery offer");
+        assert!(offer.blocked.is_none());
+        let RecoveryOutcome::Recovered { handle } = block_on(recovery_accept(offer.journal)) else {
+            panic!("the edit must replay against the persisted empty Action");
+        };
+        let recovered = Sibling {
+            script: saved,
+            handle,
+        };
+        assert_eq!(recovered.in_memory(), expected);
+        assert_eq!(doc_blocks(handle, 0, u32::MAX)[0].id, block.id);
+        assert_eq!(
+            doc_blocks(handle, 0, u32::MAX)[0].text,
+            "First words — 日本 🎬."
+        );
+        assert_eq!(fs::read(&input).unwrap(), original);
     }
 }

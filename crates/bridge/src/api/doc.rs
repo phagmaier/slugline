@@ -3258,7 +3258,7 @@ mod tests {
         );
 
         assert_eq!(doc.kinds(), [BlockKind::Character, BlockKind::Dialogue]);
-        assert_eq!(doc.text(), "@JOHN\nHello.\n");
+        assert_eq!(doc.text(), "JOHN\nHello.\n");
     }
 
     #[test]

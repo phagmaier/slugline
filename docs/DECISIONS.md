@@ -27,11 +27,11 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0004 | Layering is enforced by a script, not by cargo-deny | `tools/check_layering.py`, `Cargo.toml` | extended by 0055 — FDX codec shares syntax types |
 | 0005 | Editor implementation: a single custom editing surface | `app/lib/editor/editor_surface.dart`, `spike/` | narrowed by 0018 — Dart line breaking is permanent |
 | 0006 | The project is called Slugline | `Cargo.toml`, `app/pubspec.yaml`, `crates/storage/src/paths.rs` | live |
-| 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | live |
+| 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | refined by 0059 — canonical syntax excludes redundant pins |
 | 0008 | Syntax lives in `fountain`, identity and history live in `document` | `crates/fountain/src/model.rs`, `crates/document/src/lib.rs`, `crates/document/src/document.rs`, `crates/document/src/edit.rs` | live |
 | 0009 | The bridge's document surface: flat kinds, patches, and refusals as values | `crates/bridge/src/api/doc.rs`, `app/flutter_rust_bridge.yaml`, `app/lib/src/rust/` | live |
 | 0010 | Paste is composed in the bridge, and grouped by the document | `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | live |
-| 0011 | Automatic classification is the recognition rules read forwards | `crates/fountain/src/infer.rs`, `crates/document/src/workflow.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | live |
+| 0011 | Automatic classification is the recognition rules read forwards | `crates/fountain/src/infer.rs`, `crates/document/src/workflow.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | partly superseded by 0059 — live pins are not unconditional persisted markers |
 | 0012 | The custom surface's semantics tree is a render object per block | `app/lib/editor/surface_semantics.dart`, `app/test/editor/accessibility_test.dart` | live |
 | 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | live |
 | 0014 | The autosave clock lives in Dart | `app/lib/editor/autosave.dart`, `app/lib/editor/editor_page.dart` | partly superseded by 0043 — "autosave writes no backup" |
@@ -79,6 +79,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0056 | Scene numbering is an explicit grouped Rust edit, not an output fallback | `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
 | 0062 | An imported untitled document begins with a complete recovery outcome | `crates/bridge/src/api/files.rs`, `crates/bridge/src/api/doc.rs`, `crates/bridge/src/actor.rs`, `crates/bridge/tests/persistence.rs` | live |
 | 0057 | Inline emphasis uses printed wraps and an editable source projection | `crates/fountain/src/emphasis.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs`, `crates/render_pdf/src/lib.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/line_layout.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/editor_controller.dart`, `docs/LINE_BREAKING.md` | live |
+| 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | live |
 
 ---
 
@@ -413,6 +414,8 @@ inherit a decision rather than make one.
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 1
 
+**Superseded by:** ADR 0059 refines canonical equality only; source tiling remains unchanged.
+
 ### Context
 
 §3.2 requires that opening and resaving a file loses nothing, and §1.2 makes
@@ -674,6 +677,8 @@ rendering of them (§3.2).
 ## ADR 0011 — Automatic classification is the recognition rules read forwards
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 3
+
+**Superseded by:** ADR 0059 for persisted markers only; live inference suppression remains unchanged.
 
 ### Context
 
@@ -4599,3 +4604,75 @@ survive boundaries, and title emphasis survives source-hard-line soft wraps.
 No verification result is asserted here; the integration owner runs the gates
 and reviews/regenerates affected baselines.
 
+---
+
+## ADR 0059 — Canonical Fountain persists necessary syntax, not redundant live pins
+
+**Date:** 2026-10-09 · **Status:** accepted · **Backlog:** X6
+
+**Supersedes:** ADR 0007's edited canonical flag equality and ADR 0011's unconditional serialization of live pins only.
+
+### Context
+
+The retained X6 review recorded a release reproduction where double-Enter
+and typing `MARY` below `JOHN` saved a redundant `@MARY`. A fresh reproduction
+on published main `af3ae3c` fails all three document consumer regressions:
+pinned heading, Action, cue and transition acquire `.`, `!`, `@` and `>` despite
+already being native syntax, and the edited uppercase cue retains redundant
+`@` inside an otherwise untouched BOM/CRLF file. The log is retained at
+`target/retained-features/x6/baseline-red.log`.
+
+Tab, digit shortcuts and double-Enter deliberately pin a type against live
+inference. Treating that session state as an unconditional output marker
+leaves a noisier source file and makes F7's source-case rendering expose
+machine-added markers rather than the writer's intended syntax.
+
+### Decision
+
+For new or edited canonical SceneHeading, Character, Transition and Action,
+use the existing shared grammar and existing context/title/protected-text
+guards to emit a forcing marker only when native Fountain needs it. Do not
+add another classifier. Untouched provenance continues through the verbatim
+path, including explicit markers, BOM, CRLF, indentation and trailing spaces.
+
+Preserve all authored text and capitalization. Serialization is a read, not
+an edit: it changes no live text, pin, revision, selection or history. A pin
+remains live through Save; after reload source syntax is authority. There is
+no persisted sidecar, hidden pin cache or automatic stored capitals.
+Necessary ambiguous markers, orphan cues, dual syntax, top-level title-key
+guards, literal punctuation and partial states remain protected. A pinned
+empty Action emits `!`: unlike a separator this represents a real block,
+needed by crash-journal base identities and empty imported documents.
+Whitespace-only Action lines also require `!` to avoid becoming separators.
+
+Canonical equality is kind/text/dual, not redundant `forced` equality.
+Undo still restores the original provenance and pin, so an untouched source
+marker returns with its exact bytes. Journal outcomes continue to carry live
+pins for edited blocks. The actor keeps its Document: Save does not replace
+it with a separately parsed document. Journal checkpoints refer to the exact
+saved bytes, and later outcome patches replay onto that source base.
+
+An imported untitled FDX session still starts against `Document::blank()`'s
+exact bytes and carries its full initial outcome (ADR 0062), never a header
+checksum of the imported serialization. Its first Save checkpoints the exact
+persisted Fountain, including an empty imported Action's identity-bearing `!`.
+
+### Product tradeoff and F7
+
+This deliberately enables F7, rather than silently uppercasing stored names.
+A deliberately typed mixed/lowercase Character (`McCLANE`, `mary`) requires
+`@`; once F7 lands it prints in its authored case in editor, preview and PDF.
+Writers wanting uppercase cues should type uppercase names. Naturally
+uppercase cues with a speech need no redundant marker and remain uppercase.
+The serializer does not change display code or the SceneHeading caps rule.
+
+### Verification contract
+
+Regressions cover clean native Save/reload, semantic kind/text/dual equality,
+Unicode/case, necessary markers, CRLF/BOM and byte-exact untouched blocks,
+restored source pins on Undo, and post-checkpoint crash replay targeting blocks
+after an empty forced Action. Empty FDX import covers the exact untitled blank
+base, first Save, later Unicode edits, Undo/Redo and production recovery
+offer/accept. Save is checked against actor identity, revision, generation,
+selection and live pins. Verification evidence belongs in the X6 backlog
+Result; no corpus source or golden fixture is reformatted by this change.

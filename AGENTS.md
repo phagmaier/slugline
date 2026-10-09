@@ -155,6 +155,10 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   goes through `Document::reinfer`, which the bridge calls after every edit;
   `Ctrl+K` and `Ctrl+F` open panels the editor page owns, so that Escape closes
   one with a `setState` and never reaches the document.
+- Save preserves live pins and authored text/case, emitting forcing syntax only
+  where native grammar/context requires it for canonical new/edited blocks.
+  Reload takes its pin truth from the source; no hidden persisted pin cache
+  or automatic stored capitals. Untouched provenance stays byte-exact (ADR 0059).
 - Widget tests run without the `.so`, so they drive the editor through
   `DocumentCore` with the double in `app/test/support/fake_core.dart`. That
   double does list surgery only: anything that decides what a screenplay *is*

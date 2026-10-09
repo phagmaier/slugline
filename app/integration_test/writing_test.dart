@@ -994,13 +994,12 @@ void main() {
       BlockKind.transition,
     ]);
 
-    // The file it writes: the cue carries `@` because Tab pinned it, and nothing
-    // else needs a marker at all.
+    // The file uses only necessary markers; Tab still pins the live cue.
     expect(
       controller.source,
       'INT. HOUSE - DAY\n\n'
       'John enters, holding a letter.\n\n'
-      '@JOHN\n'
+      'JOHN\n'
       '(quietly)\n'
       'It came.\n\n'
       'CUT TO:\n',
@@ -1083,7 +1082,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.enter);
     await type(tester, controller, 'Hello yourself.');
 
-    expect(controller.source, 'JOHN\nHello.\n\n@MARY\nHello yourself.\n');
+    expect(controller.source, 'JOHN\nHello.\n\nMARY\nHello yourself.\n');
   });
 
   // --- element-type changes are non-destructive ---------------------------

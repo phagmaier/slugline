@@ -276,13 +276,11 @@ void main() {
       'JOHN',
       'It came.',
     ]);
-    // Every one of these was pinned by hand, so every one is written in its
-    // forced form (§4.1) — including the `!` on an Action that would have read
-    // as Action anyway. That is what `forced = true` means, and §Phase 3 asks
-    // for it: it is the record that a human, not the editor, chose this.
+    // The live choices stay pinned, while saved syntax needs no redundant markers.
+    expect(controller.blocks.every((block) => block.forced), isTrue);
     expect(
       controller.source,
-      '.INT. HOUSE - DAY\n\n!John enters, holding a letter.\n\n@JOHN\nIt came.\n',
+      'INT. HOUSE - DAY\n\nJohn enters, holding a letter.\n\nJOHN\nIt came.\n',
     );
   });
 

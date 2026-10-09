@@ -12,6 +12,7 @@
 // Everything here happens under a temporary XDG root, so the run cannot see or
 // write the library index, journals or backups of the person running it.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -127,6 +128,145 @@ void main() {
     expect(reopened.source(), expected);
     reopened.close();
   });
+
+  testWidgets(
+    'typed kind choices save clean bytes and reload source authority',
+    (tester) async {
+      final file = path('clean-typed-kinds.fountain');
+      const untouched = '\uFEFF!Untouched.\t  \r\n\r\n';
+      File(file).writeAsStringSync('${untouched}Before.\r\n');
+      final core = (await Core.instance.openDocument(file))!;
+      addTearDown(core.close);
+      final controller = await openEditor(tester, core);
+      controller.moveToDocumentEdge(start: false);
+
+      Future<void> key(LogicalKeyboardKey key, {bool control = false}) async {
+        if (control) {
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        }
+        await tester.sendKeyEvent(key);
+        if (control) {
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        }
+        await tester.pump();
+      }
+
+      Future<void> type(String text) async {
+        controller.insertText(text);
+        await tester.pump();
+      }
+
+      await key(LogicalKeyboardKey.enter);
+      await key(LogicalKeyboardKey.digit1, control: true);
+      await type('INT. CAFÉ - DAY');
+      await key(LogicalKeyboardKey.enter);
+      await key(LogicalKeyboardKey.digit2, control: true);
+      await type('She waits — 日本 🎬.');
+      await key(LogicalKeyboardKey.enter);
+      await type('MARY');
+      await key(LogicalKeyboardKey.tab);
+      await key(LogicalKeyboardKey.enter);
+      await type('Hello.');
+      await key(LogicalKeyboardKey.enter);
+      await key(LogicalKeyboardKey.enter);
+      await type('McCLANE');
+      await key(LogicalKeyboardKey.digit3, control: true);
+      controller.toggleDual();
+      await key(LogicalKeyboardKey.enter);
+      await type('Yippee.');
+      await key(LogicalKeyboardKey.enter);
+      await key(LogicalKeyboardKey.digit6, control: true);
+      await type('CUT TO:');
+
+      const expected =
+          '${untouched}Before.\r\n\r\n'
+          'INT. CAFÉ - DAY\r\n\r\n'
+          'She waits — 日本 🎬.\r\n\r\n'
+          'MARY\r\nHello.\r\n\r\n'
+          '@McCLANE ^\r\nYippee.\r\n\r\n'
+          'CUT TO:\r\n';
+      final before = controller.blocks
+          .map((block) => (block.kind, block.text, block.dual))
+          .toList();
+      final revision = controller.documentRevision;
+      final selection = controller.selection;
+      // Dart's UTF-8 decoder discards a leading BOM; saved bytes must retain it.
+      final decodedExpected = expected.substring(1);
+      expect(controller.source, decodedExpected);
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      expect(File(file).readAsBytesSync(), utf8.encode(expected));
+      expect(
+        controller.blocks
+            .map((block) => (block.kind, block.text, block.dual))
+            .toList(),
+        before,
+        reason: 'Save does not normalize stored text',
+      );
+      expect(controller.documentRevision, revision);
+      expect(controller.selection, selection);
+      final liveHeading = core
+          .blocks(0, core.blockCount)
+          .firstWhere((block) => block.kind == BlockKind.sceneHeading);
+      core.apply(
+        EditCommand.replaceText(
+          block: liveHeading.id,
+          startUtf16: 0,
+          endUtf16: liveHeading.text.length,
+          with_: 'Ordinary words.',
+        ),
+      );
+      expect(
+        core
+            .blocks(0, core.blockCount)
+            .firstWhere((block) => block.id == liveHeading.id)
+            .kind,
+        BlockKind.sceneHeading,
+        reason: 'the live heading choice remains pinned after Save',
+      );
+      expect(core.undo(), isNotNull);
+      expect(core.source(), decodedExpected);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      core.close();
+      final reopened = (await Core.instance.openDocument(file))!;
+      addTearDown(reopened.close);
+      expect(reopened.source(), decodedExpected);
+      expect(
+        reopened
+            .blocks(0, reopened.blockCount)
+            .map((block) => (block.kind, block.text, block.dual))
+            .toList(),
+        before,
+      );
+      final reloadController = await openEditor(tester, reopened);
+      final heading = reloadController.blocks.firstWhere(
+        (block) => block.kind == BlockKind.sceneHeading,
+      );
+      reloadController.setSelection(
+        DocSelection(
+          anchor: DocPosition(block: heading.id, offsetUtf16: 0),
+          focus: DocPosition(block: heading.id, offsetUtf16: 0),
+        ),
+      );
+      // The previous UI heading pin is gone after reload: plain text once again
+      // follows native inference, while explicitly marked McCLANE stays a cue.
+      reopened.apply(
+        EditCommand.replaceText(
+          block: heading.id,
+          startUtf16: 0,
+          endUtf16: heading.text.length,
+          with_: 'Ordinary words.',
+        ),
+      );
+      expect(
+        reopened
+            .blocks(0, reopened.blockCount)
+            .firstWhere((block) => block.id == heading.id)
+            .kind,
+        BlockKind.action,
+      );
+    },
+  );
 
   testWidgets('a new script is a real file, and typing into it saves', (
     tester,

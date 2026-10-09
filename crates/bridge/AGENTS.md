@@ -30,6 +30,10 @@ Invariants:
   offsets.rs. `doc_format_selection` validates scanner semantics, groups one
   gesture and finishes through journalled `outcome`; marker-only formatting
   preserves element kinds rather than reinferring them (ADR 0057).
+- Save never reparses/replaces the actor's Document to clear redundant pins.
+  Source syntax becomes authority only on reload. Checkpoints describe the exact
+  saved bytes and subsequent outcomes must replay against their block identities,
+  including an empty forced Action's `!` representation (ADR 0059).
 - Keep `flutter_rust_bridge = "=2.12.0"` aligned with the Dart package and
   regenerate in the same change. Commit the generated bindings; never edit
   them by hand.
@@ -44,6 +48,6 @@ Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
 `cd app && flutter_rust_bridge_codegen generate`, then
 `./tools/check_bridge_bindings.sh` (the same check CI runs).
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0062. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0059, 0062. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

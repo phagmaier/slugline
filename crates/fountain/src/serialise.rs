@@ -53,11 +53,9 @@ pub fn serialise(out: &Output<'_>) -> String {
         }
     }
 
-    // An edited block with no text left has no Fountain representation: a blank
-    // line is a separator, so writing one would split its neighbours apart
-    // instead. Dropping it here — rather than emitting an empty line — is what
-    // keeps a cue whose dialogue was just deleted from silently becoming
-    // action. Nothing is lost; the block has no text to lose.
+    // Empty edited blocks usually have no Fountain representation. An explicitly
+    // pinned empty Action is the exception: `!` preserves an ID-bearing block
+    // for recovery. Dropping empty dialogue still protects orphaned cues below.
     let elements: Vec<(usize, &ElementRef<'_>)> = out
         .elements
         .iter()
@@ -234,7 +232,7 @@ fn canonical(
     let eaten_at_top = |line: &str| swallowed_by_title_page(at_top, title_page, line);
     match element.kind {
         BlockKind::SceneHeading => {
-            let forced = element.forced || !syntax::is_scene_heading(text) || eaten_at_top(text);
+            let forced = !syntax::is_scene_heading(text) || eaten_at_top(text);
             // `..` is Fountain's escape for a line that starts with a dot, not
             // a heading, so a forced heading whose own text starts with one is
             // written with a space after the marker. The parser trims there, so
@@ -256,8 +254,7 @@ fn canonical(
             // so a cue whose dialogue was deleted has to say so with `@`. And a
             // character called INT. is a scene heading unless it says
             // otherwise — the heading rule is checked first.
-            let forced = element.forced
-                || syntax::character_of(&cue).is_none()
+            let forced = syntax::character_of(&cue).is_none()
                 || syntax::is_scene_heading(&cue)
                 || syntax::marker_of(&cue).is_some()
                 || !next.is_some_and(BlockKind::continues_dialogue)
@@ -268,8 +265,7 @@ fn canonical(
             // `=== TO:` is a transition by §4.1 and a synopsis by its first
             // character; `INT. TO:` is a transition and a scene heading. The
             // parser resolves both the other way, so the marker settles it.
-            let forced = element.forced
-                || !syntax::is_transition(text)
+            let forced = !syntax::is_transition(text)
                 || syntax::marker_of(text).is_some()
                 || syntax::is_scene_heading(text)
                 || eaten_at_top(text);
@@ -282,13 +278,15 @@ fn canonical(
                 let first = index == 0;
                 let leading = line.len() - line.trim_start().len();
                 let opens_protected = protected_starts.binary_search(&(offset + leading)).is_ok();
+                // A blank source line is a separator, not authored Action text.
+                let blank = line.trim().is_empty();
                 let ambiguous = if first {
-                    element.forced
+                    blank
                         || opens_another_element(line, text.contains('\n'))
                         || opens_protected
                         || eaten_at_top(line)
                 } else {
-                    syntax::marker_of(line.trim_start()).is_some() || opens_protected
+                    blank || syntax::marker_of(line.trim_start()).is_some() || opens_protected
                 };
                 push_line(result, &prefixed("!", ambiguous, line), nl);
                 offset += line.len();
@@ -434,21 +432,21 @@ mod tests {
     }
 
     /// The property the canonical path owes the parser: re-reading what it
-    /// wrote gives back the same kinds, the same text, and the same flags.
+    /// wrote gives back the same kinds, text and duals, not redundant pins.
     fn assert_stable(source: &str) {
         let original = parse(source);
         let written = canonical_text(source);
         let reparsed = parse(&written);
 
-        let before: Vec<(BlockKind, &str, bool, bool)> = original
+        let before: Vec<(BlockKind, &str, bool)> = original
             .elements
             .iter()
-            .map(|e| (e.kind, e.text.as_str(), e.forced, e.dual))
+            .map(|e| (e.kind, e.text.as_str(), e.dual))
             .collect();
-        let after: Vec<(BlockKind, &str, bool, bool)> = reparsed
+        let after: Vec<(BlockKind, &str, bool)> = reparsed
             .elements
             .iter()
-            .map(|e| (e.kind, e.text.as_str(), e.forced, e.dual))
+            .map(|e| (e.kind, e.text.as_str(), e.dual))
             .collect();
         assert_eq!(
             before, after,
@@ -503,6 +501,57 @@ mod tests {
         assert_eq!(canonical_text(".SNOWY EXTERIOR\n"), ".SNOWY EXTERIOR\n");
         // Nothing gained where the text speaks for itself.
         assert_eq!(canonical_text("INT. HOUSE - DAY\n"), "INT. HOUSE - DAY\n");
+    }
+
+    #[test]
+    fn canonical_markers_follow_syntax_not_a_redundant_live_pin() {
+        let source = ".INT. CAFÉ - DAY\n\n!She waits — 日本 🎬.\n\n@MARY ^\nHello.\n\n>CUT TO:\n";
+        let expected = "INT. CAFÉ - DAY\n\nShe waits — 日本 🎬.\n\nMARY ^\nHello.\n\nCUT TO:\n";
+        assert_eq!(canonical_text(source), expected);
+        assert_stable(source);
+        assert_eq!(canonical_text(expected), expected);
+    }
+
+    #[test]
+    fn necessary_markers_preserve_authored_case_punctuation_and_context() {
+        for source in [
+            "@McCLANE\nHello.\n",
+            "@mary\nHello.\n",
+            "@ÉLODIE (on the phone)\nBonjour.\n",
+            "@INT. HOUSE\nHello.\n",
+            "@#NAME ^\nHello.\n",
+            "@MARY\n",
+            ".A nonstandard heading\n",
+            ". .partial\n",
+            ">a partial transition\n",
+            ">INT. TO:\n",
+            "!Title: Not metadata\n",
+            "!@literal\n",
+            "![[literal]]\n",
+            "!/* unfinished\n",
+        ] {
+            assert_stable(source);
+        }
+        assert_eq!(canonical_text("@McCLANE\nHello.\n"), "@McCLANE\nHello.\n");
+        assert_eq!(canonical_text("@mary\nHello.\n"), "@mary\nHello.\n");
+        // An uppercase base name with a lowercase extension is naturally a cue.
+        assert_eq!(
+            canonical_text("@ÉLODIE (on the phone)\nBonjour.\n"),
+            "ÉLODIE (on the phone)\nBonjour.\n"
+        );
+    }
+
+    #[test]
+    fn empty_pinned_action_and_whitespace_are_recoverable_source_text() {
+        for source in ["!\n", "!   \t\n", "!first\n!\n! \t\nlast\n"] {
+            let written = canonical_text(source);
+            let back = parse(&written);
+            let before = parse(source);
+            assert_eq!(back.elements[0].text, before.elements[0].text);
+            assert_stable(source);
+        }
+        assert_eq!(canonical_text("!\n"), "!\n");
+        assert_eq!(canonical_text("!   \t\n"), "!   \t\n");
     }
 
     /// Writes elements built by hand, which is what `SetKind` in the editor

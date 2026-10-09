@@ -2484,21 +2484,39 @@ page number and length for each scene.
 <a id="x6"></a>
 ### X6 — Cleaner Fountain on disk
 
-**Evidence (read).** Tab, Ctrl+digit and double-Enter set `forced`
-(`crates/bridge/src/api/doc.rs:769`, `:917`), and the serialiser writes the
-marker whenever `forced` is set (`crates/fountain/src/serialise.rs:259` for
-cues; `:237`, `:271`, `:286` for the others). The project's own test expects
-`JOHN\nHello.\n\n@MARY\nHello yourself.\n`
-(`app/integration_test/writing_test.dart:193`). Headings and cues are also
-upper-cased for display only, so a file can hold `@john` and
-`int. kitchen - day`.
+**Evidence (reproduced).** On published main `af3ae3c`, all three retained
+document consumer regressions fail: redundant `.`, `!`, `@` and `>` appear
+on pinned native syntax; an edited uppercase cue acquires redundant `@`
+inside an otherwise exact BOM/CRLF source. The fresh red log is
+`target/retained-features/x6/baseline-red.log`. The retained review also
+recorded the native double-Enter workflow saving redundant `@MARY`.
 
-**The decision.** Whether a file written by Slugline should carry a marker only
-where the text would otherwise be misread, and whether text shown in capitals
-should be stored in capitals. It is valid Fountain either way. The cost of
-changing: the "pin" would not survive a reload unless it is kept somewhere
-else, and ADR 0011 and the round-trip stability tests are built on the current
-rule.
+**The decision (ADR 0059).** Canonical new/edited blocks carry forcing markers
+only where existing grammar and context require them. Untouched provenance
+is still byte-exact. No Save-time text normalization, stored capitals or hidden
+persisted pins: the UI pin remains live until reload, then source syntax wins.
+Empty forced Action retains `!` so recovery has its ID-bearing base block.
+Necessary ambiguous markers, character orphans, duals, title-page guards,
+protected punctuation and whitespace/partial states remain recoverable.
+
+This intentionally unblocks F7: a deliberately typed mixed/lowercase Character
+needs `@` and will print in its own case after F7, not as automatically stored
+capitals. Standard uppercase names stay uppercase. Kind/text/dual equivalence,
+not incidental `forced` equality, is the canonical round-trip contract.
+
+The regressions cover necessary syntax and clean bytes, live choices
+through Save versus reload inference, Unicode/case, untouched BOM/CRLF,
+Undo-restored provenance, and post-checkpoint recovery including empty FDX
+imports. The original imported untitled blank base remains unchanged (ADR 0062).
+Verified before integration: 736 Rust tests; 742 Flutter widget tests; all
+seven native suites (94 tests across split runs); formatting, clippy, analysis,
+layering/version/docs/reference and regenerated-binding checks; Linux release
+build, Xvfb runtime budgets, all 15 ordinary closes and the no-network script.
+The native BOM expectation was corrected to compare raw saved bytes instead of
+Dart UTF-8-decoded source; the failed run remains retained. Journalled
+keystroke p99 after Find is 4.27 ms, with unchanged budgets. The actual full-disk
+regression passed in a private namespace. Evidence is under
+`target/retained-features/x6/`. Desktop manual gates remain pending.
 
 **Effort.** M.
 **Result:** _open_

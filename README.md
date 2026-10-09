@@ -202,6 +202,14 @@ script changes after warning approval, the new conversion needs fresh approval.
 FDX interchange is not an exact round trip for production revisions, locked
 pages, custom fonts or margins.
 
+New or edited blocks save with `.`, `@`, `>` and `!` only where Fountain needs
+them to preserve their meaning. Existing unedited source stays byte-exact.
+Tab and element shortcuts pin the type while you edit, including after Save;
+after reload the saved syntax decides the type. Text and capitalization are
+never automatically changed on disk. A deliberately mixed/lowercase cue such
+as `McCLANE` or `mary` therefore needs `@` to retain its Character meaning.
+Type `MCCLANE` or `MARY` when you want a standard uppercase cue.
+
 Use the palette for Preferences, Spell checking, Keyboard shortcuts, showing or
 hiding the navigator, distraction-free mode, page/continuous view and text size.
 View commands name the change they will make; text size stays between 12 and 24.

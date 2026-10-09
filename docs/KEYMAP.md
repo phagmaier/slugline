@@ -41,19 +41,24 @@ touches a character of the text — that is a dedicated test
 
 The number-pad digits do the same thing as the ones above the letters.
 
-Setting a type this way sets `forced = true`, exactly as §Phase 3 requires. Two
-consequences worth stating out loud:
+Setting a type this way pins it for the current editing session (ADR 0059).
+Two consequences worth stating out loud:
 
 * **It suppresses automatic re-classification.** Pressing `Ctrl+2` immediately
   after the editor promoted a line to a scene heading reverts it *and* keeps it
   reverted, however much more of that slug line you type.
-* **It is visible in the file**, as §4.1's forced form — `.` for a heading, `@`
-  for a cue, `>` for a transition, `!` for action. That is Fountain's own way of
-  recording "a human said so", which is the same thing `forced` means. The
-  element bar shows a pin beside the element name when a block carries one.
+* **Saving preserves syntax, not redundant pins.** A naturally recognized heading,
+  uppercase cue with dialogue, transition or ordinary Action needs no extra
+  `.`, `@`, `>` or `!`. A marker remains wherever Fountain requires one, including
+  mixed/lowercase cues, orphan cues and Action text resembling another element.
+  The element bar's pin stays live through Save; after reload source syntax is
+  authority, with no hidden pin cache.
 
-Automatic detection never forces anything. A block promoted by typing `INT.` is an
-unforced scene heading, and is written without a marker.
+Your text and capitalization are always stored as authored, never automatically
+uppercased. A deliberately typed Character named `McCLANE` or `mary` needs `@`.
+When F7's forced-cue display change lands, it will print in that authored case
+in editor, preview and PDF; type `MCCLANE` or `MARY` for an uppercase cue.
+Unedited explicit markers remain byte-exact until that block is edited.
 
 **Dual dialogue:** on a Character cue, `Ctrl+K` → “Toggle dual dialogue” flips
 the cue's flag without changing its text or selection. The marked cue's element

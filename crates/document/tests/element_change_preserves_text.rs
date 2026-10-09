@@ -174,6 +174,12 @@ fn changing_a_page_break_to_a_kind_that_carries_text_keeps_it_empty() {
         })
         .unwrap();
     assert_eq!(document.block(id).expect("still there").text(), "");
+    // Empty Action syntax preserves this block in the saved recovery base.
+    assert_eq!(document.serialise(), "Action.\n\n!\n");
+    let reopened = Document::parse(&document.serialise());
+    assert_eq!(reopened.blocks().len(), 2);
+    assert_eq!(reopened.blocks()[1].kind(), BlockKind::Action);
+    assert_eq!(reopened.blocks()[1].text(), "");
 }
 
 #[test]
@@ -192,8 +198,15 @@ fn setting_forced_does_not_touch_the_text_either() {
         document.block(id).expect("still there").text(),
         "INT. HOUSE - DAY"
     );
-    assert_eq!(document.serialise(), ".INT. HOUSE - DAY\n");
+    assert_eq!(document.serialise(), "INT. HOUSE - DAY\n");
     let reopened = Document::parse(&document.serialise());
     assert_eq!(reopened.blocks()[0].text(), "INT. HOUSE - DAY");
-    assert!(reopened.blocks()[0].forced());
+    assert!(
+        document.blocks()[0].forced(),
+        "serialization retains the live pin"
+    );
+    assert!(
+        !reopened.blocks()[0].forced(),
+        "reopen takes source authority"
+    );
 }
