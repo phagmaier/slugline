@@ -707,8 +707,32 @@ void main() {
       await _key(tester, LogicalKeyboardKey.keyS, control: true);
       expect(candidate.path, '/scripts/imported.fountain');
       expect(candidate.dirty, isFalse);
+      expect(_editor(tester).title, 'imported.fountain');
+      expect(find.text('Untitled', findRichText: true), findsNothing);
     },
   );
+
+  testWidgets('Save As renames the script in the bar and the close prompt', (
+    tester,
+  ) async {
+    final core = await _pump(tester);
+    final choice = pendingFileChoice(tester);
+    expect(_editor(tester).title, 'alpha.fountain');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await _key(tester, LogicalKeyboardKey.keyS, control: true);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    choice.complete('/scripts/gamma.fountain');
+    await tester.pumpAndSettle();
+    expect(core.opened.single.saveAsCalls, [
+      ('/scripts/gamma.fountain', false),
+    ]);
+    expect(_editor(tester).title, 'gamma.fountain');
+    expect(find.text('gamma', findRichText: true), findsOneWidget);
+    expect(find.text('alpha', findRichText: true), findsNothing);
+    _editor(tester).controller.insertText('More. ');
+    await _key(tester, LogicalKeyboardKey.keyW, control: true);
+    expect(find.text('Save changes to gamma.fountain?'), findsOneWidget);
+  });
 
   testWidgets(
     'candidate journal failure is not attributed to the old session',

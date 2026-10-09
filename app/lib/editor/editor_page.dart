@@ -67,6 +67,7 @@ class EditorPage extends StatefulWidget {
     this.onNewScript,
     this.onOpenScript,
     this.onImportFdx,
+    this.onSaved,
     this.title,
     super.key,
   });
@@ -106,6 +107,10 @@ class EditorPage extends StatefulWidget {
   final Future<void> Function()? onNewScript;
   final Future<void> Function()? onOpenScript;
   final Future<void> Function()? onImportFdx;
+
+  /// A save this page ran wrote the file. Save As is the one that gives the
+  /// script a new name, and [title] is the application's to work out again.
+  final VoidCallback? onSaved;
 
   final String? title;
 
@@ -393,8 +398,13 @@ class EditorPageState extends State<EditorPage> {
     final outcome = await withModal(
       () => saveWithDialogs(context, _core, forcePath: forcePath),
     );
-    widget.saveStatus?.record(outcome);
+    _recordSave(outcome);
     return outcome;
+  }
+
+  void _recordSave(SaveOutcome outcome) {
+    widget.saveStatus?.record(outcome);
+    if (outcome is SaveOutcome_Saved) widget.onSaved?.call();
   }
 
   Future<void> _showBackups() => withModal(() async {
@@ -598,7 +608,7 @@ class EditorPageState extends State<EditorPage> {
         return true;
       case UnsavedChoice.save:
         final outcome = await withModal(() => saveWithDialogs(context, _core));
-        widget.saveStatus?.record(outcome);
+        _recordSave(outcome);
         // The editor remains usable while the snapshot is written. A successful
         // save is permission to close only if it includes the latest edits.
         // A save the writer abandoned is not consent to lose the work either.

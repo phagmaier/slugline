@@ -94,6 +94,7 @@ This is the only place boxes are ticked.
 - [x] [B16](#b16) Closing the window can end the process in SIGSEGV
 - [x] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
 - [x] [B18](#b18) A retained Find query rescans the script on every edit
+- [x] [B19](#b19) Save As leaves the old name in the app bar
 
 **3. Fountain and output fidelity**
 
@@ -1189,6 +1190,28 @@ The separate release-process run passed startup and Xvfb RSS, but failed the
 zero-wakeup idle gate (best interval: zero CPU ticks, one voluntary switch).
 Evidence is in `target/b18-runtime-budgets.json`; it is recorded below rather
 than changing unrelated idle behaviour or relaxing that gate.
+
+<a id="b19"></a>
+### B19 — Save As leaves the old name in the app bar
+
+**Evidence (reproduced in a widget test).** Promoted from the 2026-10-09 X2
+note under [Found along the way](#found-along-the-way). `_SluglineAppState`
+reads the script's name from its path when it builds, and a Save As moves the
+path without rebuilding it. An imported script saved for the first time went on
+saying "Untitled"; `alpha.fountain` saved as `gamma.fountain` went on saying
+"alpha", in the bar and in "Save changes to alpha.fountain?".
+
+**Change.** The editor page reports a save that wrote the file, and the
+application reads the name again. Dart only; the core already returns from a
+Save As with the session on its new path.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `EditorPage.onSaved` fires after any save the page ran
+that wrote the file, and `_SluglineAppState` rebuilds, so the bar and the close
+prompt take the new name. `app/test/file_workflow_test.dart` holds both cases;
+on the rebuilt app a Save As through the real chooser changed the bar from
+"find" to "renamed" (`target/b20/look/07-after-save-as.png`). Commit:
+`B19 — Save As renames the script in the app bar`.
 
 ---
 
@@ -2835,6 +2858,7 @@ S1 is fixed, two windows cover it.
   Opening that saved file normally shows its filename. No title-refresh fix
   belongs to FDX interchange; the chooser subsequently suggests the correct
   saved basename. Evidence: `target/x2-fdx-smoke/native-fdx-export-finished.png`.
+  Promoted to [B19](#b19) on 2026-10-09.
 
 - 2026-10-09 — X2 source finding: an existing native Fountain title page with
   duplicate keys is still unsafe in the title form. `title_page_dialog.dart`

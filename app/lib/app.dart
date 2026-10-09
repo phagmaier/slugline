@@ -464,6 +464,12 @@ class _SluglineAppState extends State<SluglineApp> {
     setState(() => _open = null);
   }
 
+  /// The script's name is read from its path when this builds, and Save As
+  /// moves the path without anything else here changing.
+  void _scriptSaved() {
+    if (mounted) setState(() {});
+  }
+
   // --- events from the core --------------------------------------------------
 
   void _onCoreEvent(CoreEvent event) {
@@ -553,6 +559,7 @@ class _SluglineAppState extends State<SluglineApp> {
               onNewScript: _newScript,
               onOpenScript: _quickOpen,
               onImportFdx: _importFdx,
+              onSaved: _scriptSaved,
               title: _titleOf(open.core),
             ),
     );
