@@ -108,7 +108,7 @@ This is the only place boxes are ticked.
 - [x] [X4](#x4) Emphasis that wraps by printed width and is styled in the editor
 - [x] [X5](#x5) Outline in the navigator
 - [x] [X6](#x6) Cleaner Fountain on disk (fewer `@`, `.`, `!` markers)
-- [ ] [X7](#x7) Omit and restore (editable boneyard)
+- [x] [X7](#x7) Omit and restore (editable boneyard)
 
 ---
 
@@ -2630,7 +2630,27 @@ commands stage their history; extending that protection to other commands is a
 separate task.
 
 **Effort.** M.
-**Result:** _open_
+**Result:** 2026-10-09 — individually verified in `fcae98c`. The reported `café`
+remainder now has identical live and reopened semantics; restoration reattaches
+the exact original Dialogue. Delimiter hazards, directed/one-step history,
+late atomic refusals and Redo recovery patches have retained consumer regressions.
+Actual recovery offers/acceptance pass both before and after a saved checkpoint,
+followed by editable restoration and exact BOM/CRLF Save/reopen.
+
+All 778 Rust tests, 763 widget tests and 103 native tests across all seven suites
+pass. Native palette/F1, partial Unicode Save/reopen, whole-scene dual-cue
+restoration, preview and Poppler PDF exclusion are exercised. FRB generation and
+binding drift, formatting, clippy, analysis, enforced lockfile, layering/version,
+reference and docs checks pass. The actual full-disk test passes in a private
+mount namespace, leaving host `/tmp` alone. The Linux release builds; after-Find
+journalled p99 is 2.54 ms and frame-build p99 is 6.15 ms with unchanged budgets.
+
+Release startup best is 377.880 ms; Xvfb RSS best is 273.219 MiB. The third
+ten-second idle interval has zero CPU ticks and voluntary switches; all samples
+are retained. All 15 ordinary closes exit zero with exact saved bytes. The
+no-network linkage and isolated `--version` checks pass. Full reproduction,
+failed experiments, process JSON and release hashes remain under
+`target/retained-features/x7/`. Manual desktop gates 1–5 remain pending.
 
 ---
 
