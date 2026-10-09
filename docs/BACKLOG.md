@@ -1479,6 +1479,13 @@ pagination landing holds the view — a text-size, window-width or page-view
 change still keeps the pixel offset. Commit:
 `B28 — pages that land leave the view on the text it was on`.
 
+**Follow-up, 2026-10-09:** `Keep the editor's visible text across geometry changes`
+closes the limitation above: text-size, window-width and page-view changes now
+hold the first whole visible row at the same screen position, using the existing
+fixed-column wraps. Focused page-indicator, geometry, scroll-restore and Find
+widget tests pass, including partial rows, late pagination, the script's top
+and clamping at its end; the caret stays untouched.
+
 <a id="b29"></a>
 ### B29 — The idle gate fails on a workstation and passes on hosted CI
 

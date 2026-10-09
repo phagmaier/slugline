@@ -92,6 +92,8 @@ this file and the others to it.
 
 ### Fixed
 
+- Changing editor text size, resizing the window or switching page view keeps
+  the text being read in place instead of jumping to different lines.
 - Reopening a script from the library or quick-open list, or accepting crash
   recovery, resumes at its saved reading row instead of returning to the top.
 

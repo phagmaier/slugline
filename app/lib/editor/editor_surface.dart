@@ -229,16 +229,10 @@ class EditorSurfaceState extends State<EditorSurface>
       _reportedRow = -1;
     }
     final shift = widget.obscuredTop - oldWidget.obscuredTop;
-    if (shift != 0 && _scroll.hasClients) {
-      // Every row has just moved by this much. The view moves with them, so
-      // the text stays where it was being read — silently, because the layout
-      // that follows in this frame is what reads the new position.
-      _scroll.position.correctPixels(math.max(0.0, _scroll.offset + shift));
-      if (shift > 0) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _uncoverSelection();
-        });
-      }
+    if (shift > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _uncoverSelection();
+      });
     }
     if (oldWidget.pageIndicator != widget.pageIndicator) {
       oldWidget.pageIndicator?.removeListener(_onPaginationChanged);
@@ -317,8 +311,17 @@ class EditorSurfaceState extends State<EditorSurface>
     }
   }
 
-  /// Rebuilds for pages that have moved, with the view left on the text it
-  /// was on.
+  /// Rebuilds for pages that have moved, with the view left on the text it was on.
+  void _adoptPagination() {
+    final from = _builtGeometry;
+    final to = _geometry;
+    if (to == from) return;
+    _holdVisibleRow(from, to);
+    _builtGeometry = to;
+    setState(() {});
+  }
+
+  /// Holds the first whole visible row across a change in its pixel geometry.
   ///
   /// Every page break above a row puts a gap's worth of pixels above it, and
   /// the scroll offset is pixels. Left as it was, a view parked on page 3 would
@@ -327,16 +330,12 @@ class EditorSurfaceState extends State<EditorSurface>
   /// first whole row in the view is found in the geometry the offset belongs
   /// to and put back where it was in the new one. The very top is the
   /// exception: a script showing its first line goes on showing the top of its
-  /// first sheet.
-  void _adoptPagination() {
-    final from = _builtGeometry;
-    final to = _geometry;
-    if (to == from) return;
-    _builtGeometry = to;
-    if (from != null &&
-        !_initialScrollPending &&
-        _scroll.hasClients &&
-        _scroll.offset > 0) {
+  /// first sheet. Size and width fit the same fixed-column wraps to a different
+  /// grid; page view changes only the margins and gaps. Those changes therefore
+  /// hold the same source text by holding its row, without moving the caret.
+  void _holdVisibleRow(EditorGeometry? from, EditorGeometry to) {
+    if (from == null || _initialScrollPending || !_scroll.hasClients) return;
+    if (_scroll.offset > 0) {
       final top = _scroll.offset;
       // The first row that starts in the view, give or take half a pixel: a
       // sliver of the row above is not what is being read, and a break that
@@ -350,8 +349,16 @@ class EditorSurfaceState extends State<EditorSurface>
         // and the extent it is checked against is not known until then.
         _scroll.position.correctPixels(math.max(0.0, now - (was - top)));
       }
+    } else if (to.topInset != from.topInset) {
+      // Opening Find makes room above even the first row of a short script.
+      _scroll.position.correctPixels(
+        math.max(0.0, to.topInset - from.topInset),
+      );
     }
-    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // The new extent may clamp near the end. Park the row actually shown.
+      if (mounted) _reportScroll();
+    });
   }
 
   void _scheduleInitialScroll() {
@@ -1207,7 +1214,16 @@ class EditorSurfaceState extends State<EditorSurface>
       builder: (context, constraints) {
         _viewportWidth = constraints.maxWidth;
         _viewportHeight = constraints.maxHeight;
-        final geometry = _builtGeometry = _geometry;
+        final geometry = _geometry;
+        final from = _builtGeometry;
+        if (from != null &&
+            (from.metrics != geometry.metrics ||
+                from.viewportWidth != geometry.viewportWidth ||
+                from.pageView != geometry.pageView ||
+                from.topInset != geometry.topInset)) {
+          _holdVisibleRow(from, geometry);
+        }
+        _builtGeometry = geometry;
         final contentWidth = math.max(
           _viewportWidth,
           geometry.columnLeft +

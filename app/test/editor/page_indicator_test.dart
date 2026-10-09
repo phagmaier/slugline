@@ -782,6 +782,8 @@ void main() {
       required int initialScrollRow,
       PageSetup setup = letter,
       _OutputCore? reopen,
+      double textSize = 15,
+      bool pageView = true,
     }) async {
       final core =
           reopen ??
@@ -802,6 +804,8 @@ void main() {
             controller: controller,
             initialScrollRow: initialScrollRow,
             initialPageSetup: setup,
+            textSize: textSize,
+            pageView: pageView,
           ),
         ),
       );
@@ -817,6 +821,198 @@ void main() {
       await tester.pump();
       expect(geometry(tester).sheeted, isTrue);
     }
+
+    Future<void> resizeText(
+      WidgetTester tester, {
+      double? textSize,
+      bool? pageView,
+    }) async {
+      final page = tester.widget<EditorPage>(find.byType(EditorPage));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditorPage(
+            controller: page.controller,
+            initialScrollRow: page.initialScrollRow,
+            initialPageSetup: page.initialPageSetup,
+            textSize: textSize ?? page.textSize,
+            pageView: pageView ?? page.pageView,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    for (final pageView in [false, true]) {
+      testWidgets('text size keeps the source text in view ($pageView)', (
+        tester,
+      ) async {
+        final core = await open(tester, initialScrollRow: 150, textSize: 12);
+        await land(tester, core);
+        await resizeText(tester, pageView: pageView);
+        final controller = tester
+            .widget<EditorPage>(find.byType(EditorPage))
+            .controller;
+        final position = scroll(tester);
+        position.jumpTo(geometry(tester).yOfRow(150) - 5);
+        await tester.pump();
+        final source = controller.positionAt(150, 0);
+        final selection = controller.selection;
+        final before = geometry(tester).lineHeight;
+
+        await resizeText(tester, textSize: 16);
+
+        expect(geometry(tester).lineHeight, greaterThan(before));
+        expect(
+          position.pixels,
+          closeTo(geometry(tester).yOfRow(150) - 5, 1e-6),
+        );
+        expect(
+          controller.positionAt(
+            geometry(tester).rowAtY(position.pixels) + 1,
+            0,
+          ),
+          source,
+        );
+        expect(controller.selection, selection, reason: 'reading, not editing');
+        expect(core.scrollRow, 149);
+
+        await resizeText(tester, textSize: 12);
+
+        expect(
+          position.pixels,
+          closeTo(geometry(tester).yOfRow(150) - 5, 1e-6),
+        );
+      });
+
+      testWidgets('window width keeps the source text in view ($pageView)', (
+        tester,
+      ) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 700));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final core = await open(tester, initialScrollRow: 150, textSize: 20);
+        await land(tester, core);
+        await resizeText(tester, pageView: pageView);
+        final controller = tester
+            .widget<EditorPage>(find.byType(EditorPage))
+            .controller;
+        final source = controller.positionAt(150, 0);
+        final before = geometry(tester).lineHeight;
+
+        await tester.binding.setSurfaceSize(const Size(640, 700));
+        await tester.pumpAndSettle();
+
+        final drawn = geometry(tester);
+        expect(drawn.lineHeight, lessThan(before));
+        expect(scroll(tester).pixels, closeTo(drawn.yOfRow(150), 1e-6));
+        expect(
+          controller.positionAt(drawn.rowAtY(scroll(tester).pixels), 0),
+          source,
+        );
+        expect(core.scrollRow, 150);
+
+        await tester.binding.setSurfaceSize(const Size(1200, 700));
+        await tester.pumpAndSettle();
+
+        expect(
+          scroll(tester).pixels,
+          closeTo(geometry(tester).yOfRow(150), 1e-6),
+        );
+      });
+    }
+
+    testWidgets('switching page view keeps the source text in view', (
+      tester,
+    ) async {
+      final core = await open(tester, initialScrollRow: 250);
+      await land(tester, core);
+      final controller = tester
+          .widget<EditorPage>(find.byType(EditorPage))
+          .controller;
+      final source = controller.positionAt(250, 0);
+
+      await resizeText(tester, pageView: false);
+
+      expect(geometry(tester).sheeted, isFalse);
+      expect(
+        scroll(tester).pixels,
+        closeTo(geometry(tester).yOfRow(250), 1e-6),
+      );
+      expect(
+        controller.positionAt(
+          geometry(tester).rowAtY(scroll(tester).pixels),
+          0,
+        ),
+        source,
+      );
+      expect(core.scrollRow, 250);
+
+      await resizeText(tester, pageView: true);
+
+      expect(geometry(tester).sheeted, isTrue);
+      expect(
+        scroll(tester).pixels,
+        closeTo(geometry(tester).yOfRow(250), 1e-6),
+      );
+    });
+
+    testWidgets('a size change before pagination lands keeps the reading row', (
+      tester,
+    ) async {
+      final core = await open(tester, initialScrollRow: 150, textSize: 12);
+
+      await resizeText(tester, textSize: 16);
+
+      expect(geometry(tester).sheeted, isFalse);
+      expect(
+        scroll(tester).pixels,
+        closeTo(geometry(tester).yOfRow(150), 1e-6),
+      );
+
+      await land(tester, core);
+
+      expect(
+        scroll(tester).pixels,
+        closeTo(geometry(tester).yOfRow(150), 1e-6),
+      );
+      expect(core.scrollRow, 150);
+    });
+
+    testWidgets('geometry changes leave the top of the script at the top', (
+      tester,
+    ) async {
+      final core = await open(tester, initialScrollRow: 0, textSize: 12);
+      await land(tester, core);
+
+      await resizeText(tester, textSize: 16);
+      expect(scroll(tester).pixels, 0);
+      await resizeText(tester, pageView: false);
+      expect(scroll(tester).pixels, 0);
+      await tester.binding.setSurfaceSize(const Size(640, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpAndSettle();
+      expect(scroll(tester).pixels, 0);
+      expect(core.scrollRow, 0);
+    });
+
+    testWidgets('shrinking near the end parks the clamped reading row', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final core = await open(tester, initialScrollRow: 0, textSize: 20);
+      await land(tester, core);
+      final position = scroll(tester);
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pump();
+      final before = geometry(tester).rowAtY(position.pixels);
+
+      await resizeText(tester, textSize: 12);
+
+      expect(position.pixels, position.maxScrollExtent);
+      expect(core.scrollRow, geometry(tester).rowAtY(position.pixels));
+      expect(core.scrollRow, lessThan(before), reason: 'more text fits now');
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('a restored row is still at the top when the sheets arrive', (
       tester,
