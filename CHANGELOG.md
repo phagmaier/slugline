@@ -150,6 +150,10 @@ this file and the others to it.
 - Hosted Rust verification refreshes Ubuntu package metadata before installing
   Poppler, avoiding stale package-version HTTP 404 failures before tests start.
 
+- The headless idle check measures the same process on a workstation as on a
+  hosted runner. Run from a desktop session it used to inherit that session's
+  bus, and the desktop's accessibility traffic was counted as Slugline waking.
+
 - Closing the window while something was still animating — the library sliding
   back after closing a script, a dialog fading in — could end the process with
   a segmentation fault and a crash report, after the script had been saved and

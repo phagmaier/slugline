@@ -201,6 +201,13 @@ def launch(source, desktop, record):
             env["LP_NUM_THREADS"] = "4"
             env["GDK_SCALE"] = "1"
             env["GDK_DPI_SCALE"] = "1"
+            # Run from a desktop session, the process would inherit that
+            # session's bus, GTK's accessibility bridge would join the live
+            # desktop's AT-SPI bus through it, and every message that bus sent
+            # would wake the main thread: somebody else's wakeups, charged to
+            # the idle budget. A hosted runner has no such bus (ADR 0065).
+            env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+            env.pop("AT_SPI_BUS_ADDRESS", None)
         for name in ("CONFIG", "DATA", "STATE", "CACHE", "RUNTIME"):
             directory = work / name.lower()
             directory.mkdir(mode=0o700)

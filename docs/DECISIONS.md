@@ -85,6 +85,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | refined by 0063 — provenance-only seam normalization and checkpoint recovery |
 | 0063 | Saved checkpoint outcomes use the base's identities without changing live state | `crates/storage/src/journal.rs`, `crates/bridge/src/api/files.rs`, `crates/document/src/omission.rs`, `crates/document/tests/omission.rs`, `app/integration_test/writing_test.dart` | live |
 | 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | live |
+| 0065 | The headless budget profile does not join the desktop's session bus | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md` | live |
 
 ---
 
@@ -5139,3 +5140,59 @@ bundle's restore is checked wherever that tool runs.
 
 Opening a script from the library still starts at its top, and so does an
 accepted recovery; the row is used by session restore alone.
+
+---
+
+## ADR 0065 — The headless budget profile does not join the desktop's session bus
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Extends:** ADR 0050's default software profile. Its thresholds, sampling and
+`--desktop` profile are unchanged.
+
+### Context
+
+The idle gate failed on the development machine in every measured run from W4
+on, and passed on hosted CI: zero CPU ticks and one voluntary switch of the
+main thread in each quiet ten-second interval. Nothing had attributed it.
+
+Logging every thread's switches at 50 ms placed the wakeups six to nine
+seconds after each burst of frames — after startup settles, and after each
+30-second status refresh — and never otherwise. Two launches differing in one
+variable each settled it. Without `DBUS_SESSION_BUS_ADDRESS` there were none;
+with it and `NO_AT_BRIDGE=1` there were none. Run as gdb's child, the wakeup is
+`dbus_watch_handle` called from libatspi's main-loop source: a message arriving
+on an accessibility bus.
+
+`xvfb-run` started from a desktop session hands that session's bus address to
+the process. GTK's accessibility bridge finds the live desktop's AT-SPI bus
+through it and joins, and whatever that bus then sends wakes the main thread.
+The application sets no timer for it and does no work when it arrives. A hosted
+runner has no session bus, which is the whole difference.
+
+### Decision
+
+The default profile removes `DBUS_SESSION_BUS_ADDRESS` and `AT_SPI_BUS_ADDRESS`
+from the measured process's environment, beside the display, scale and
+software-rendering settings it already pins. The budget is still zero ticks and
+zero voluntary switches in the best of three intervals. `--desktop` keeps the
+environment it is given: there the bus is part of the desktop being measured.
+
+Rejected: allowing one switch per interval, which would admit a real
+ten-second poller; `NO_AT_BRIDGE=1`, which also silences the bridge where a bus
+is legitimately present and so measures a differently configured process than
+the one shipped; a private `dbus-run-session`, which adds a process and a
+dependency to answer a question that needs neither.
+
+### Evidence and consequences
+
+On one release bundle: the unchanged harness measured 1, 74 and 1 switches and
+failed; with the two variables removed it measured 0, 74 and 0 and passed, the
+74 being the status refresh. A do-nothing three-second GLib timer preloaded
+into the same unmodified bundle then measured 4, 68 and 3 and failed, so the
+profile has not blinded the gate. Startup settling also fell from 13.2 s to
+10.6 s. Reports and probes are under `target/b29/`.
+
+The headless profile now measures the same process on a workstation as on a
+runner. On a real desktop that runs an accessibility bus the application is
+woken by that bus's messages; a `--desktop` run can show one main-thread switch
+with no CPU tick for that reason, and manual gate 5's reader should know it.

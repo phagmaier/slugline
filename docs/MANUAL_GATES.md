@@ -110,7 +110,10 @@ a GPU desktop. The same harness has a manual profile that keeps that limit:
    interval with zero CPU ticks and voluntary switches, and best-of-three
    reference-script RSS < 250 MiB over three consecutive observation intervals.
    Inspect all recorded samples, not only the passing minimum. Record the date,
-   desktop/GPU, toolchain and report here.
+   desktop/GPU, toolchain and report here. A desktop that runs an accessibility
+   bus wakes the main thread through GTK's bridge some seconds after a burst of
+   frames: one switch, no CPU tick (ADR 0065). Say so if that is what an
+   interval shows; it is the desktop's message, not a timer of Slugline's.
 
 **Result:** pending. The 2026-10-06 Xvfb baseline exceeds 250 MiB and does not
 settle the real-desktop claim. A headless pass does not close this gate.

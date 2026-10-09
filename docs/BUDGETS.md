@@ -78,9 +78,14 @@ not been separated from an application overrun. The additional 320 MiB ceiling
 is deliberately an environment-specific regression limit, with roughly 10%
 headroom above the observed range, not evidence that the 250 MiB desktop budget
 passes. The software profile pins `LP_NUM_THREADS=4`, X11 and scale 1 to
-reduce variation across headless machines. CI and release preflight run this
-profile; `--desktop` preserves the graphics and scale environment and asserts
-250 MiB. Both use the same harness and retain raw process logs with `--output`.
+reduce variation across headless machines. It also removes
+`DBUS_SESSION_BUS_ADDRESS` and `AT_SPI_BUS_ADDRESS` (ADR 0065): started from a
+desktop session the process would otherwise join that desktop's accessibility
+bus through GTK's bridge and be woken by it, which is not the application
+idling badly and is not what a hosted runner measures. CI and release preflight
+run this profile; `--desktop` preserves the graphics, scale and session
+environment and asserts 250 MiB. Both use the same harness and retain raw
+process logs with `--output`.
 
 If the ten-second startup watchdog fails, the launch record's
 `startup_diagnostics` captures live state before SIGTERM/SIGKILL cleanup:

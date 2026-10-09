@@ -104,6 +104,7 @@ This is the only place boxes are ticked.
 - [x] [B26](#b26) Late spell-check results pull a scrolled view back to the caret
 - [x] [B27](#b27) An ordinary quit restores no session
 - [x] [B28](#b28) A restored page-view session is left on earlier text when its sheets arrive
+- [x] [B29](#b29) The idle gate fails on a workstation and passes on hosted CI
 
 **3. Fountain and output fidelity**
 
@@ -1468,6 +1469,35 @@ lines, sheeted and at rest (`target/b27/after/`). Limitation: only a
 pagination landing holds the view — a text-size, window-width or page-view
 change still keeps the pixel offset. Commit:
 `B28 — pages that land leave the view on the text it was on`.
+
+<a id="b29"></a>
+### B29 — The idle gate fails on a workstation and passes on hosted CI
+
+**Evidence (reproduced and attributed).** Promoted from the W4, X1 and B18
+notes under [Found along the way](#found-along-the-way).
+`tools/check_runtime_budgets.py` failed idle here in every measured run from
+W4 on — zero CPU ticks, one voluntary main-thread switch in each quiet
+interval — and passed on hosted CI. The wakeups come six to nine seconds after
+each burst of frames. They stop without `DBUS_SESSION_BUS_ADDRESS`, and with it
+and `NO_AT_BRIDGE=1`; under gdb the wakeup is `dbus_watch_handle` called from
+libatspi. `xvfb-run` started from a desktop session passes on that session's
+bus, GTK's accessibility bridge joins the live desktop's AT-SPI bus through it,
+and that bus's messages wake the main thread. No timer of the application's is
+involved.
+
+**Change.** The harness's default profile removes `DBUS_SESSION_BUS_ADDRESS`
+and `AT_SPI_BUS_ADDRESS` from the measured process (ADR 0065). The budget, the
+sampling and `--desktop` are unchanged. Tooling and docs only.
+
+**Effort.** S.
+**Result:** 2026-10-09 — on one bundle the unchanged harness measured 1, 74
+and 1 switches and failed; the new profile measured 0, 74 and 0 and passed,
+the 74 being the status refresh; a do-nothing three-second GLib timer
+preloaded into the same bundle then measured 4, 68 and 3 and failed
+(`target/b29/`). Limitation: on a real desktop with an accessibility bus the
+wakeups are still there, and a `--desktop` run can show them; manual gate 5
+now says so. Commit:
+`B29 — the headless idle check leaves the desktop's session bus behind`.
 
 ---
 
@@ -3108,6 +3138,7 @@ S1 is fixed, two windows cover it.
   The first interval also changed its thread set. Retained report:
   `target/b18-runtime-budgets.json`. Cause not established; no retry, idle
   workaround or threshold change made as part of the Find fix.
+  Attributed and resolved as [B29](#b29) on 2026-10-09.
 
 - 2026-10-09 — X2 native smoke: Save As writes the chosen Fountain file and
   marks the imported document saved, but the app bar still says “Untitled”.
@@ -3147,6 +3178,7 @@ S1 is fixed, two windows cover it.
   interval, matching the retained W4–W8 finding. Startup (376.025 ms) and
   Xvfb RSS (274.93 MiB) pass. No threshold/harness change or idle fix belongs
   to X1. Raw samples: `target/x1-dual-smoke/runtime-budgets-isolated.json`.
+  Attributed and resolved as [B29](#b29) on 2026-10-09.
 
 - 2026-10-08 — final installed stabilization smoke: Find's real pointer/key
   assertions and exact CRLF bytes pass twice, then an ordinary
@@ -3349,6 +3381,7 @@ not part of that item.
   This is a pre-existing failure in the current environment, not a passed idle
   gate. Investigate the wakeups separately; no threshold, harness or production
   code was changed for the controls.
+  Attributed and resolved as [B29](#b29) on 2026-10-09.
 
 - 2026-10-06 — W4's restored-viewport page-one case led to a separate code-read
   navigation gap: `Ctrl+Home` calls `moveToDocumentEdge`, but
