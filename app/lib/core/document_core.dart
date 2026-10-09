@@ -141,13 +141,18 @@ abstract class DocumentCore {
   /// The title page, in the order a save would write it (§6's `doc_title_page`).
   List<rust.TitleEntryView> titlePage();
 
-  /// Sets one title-page field; an empty [value] removes it. One undo step per
-  /// call, and setting a field to what it already holds is not an edit at all.
+  /// Sets one occurrence of a title-page field; an empty [value] removes only
+  /// that entry. One undo step per call; setting an entry to what it already
+  /// holds is not an edit at all. [occurrence] is zero-based within [key].
   ///
   /// [key] is matched case-insensitively against the keys Fountain names, and
   /// kept verbatim otherwise — the format allows any key and a writer's
   /// `Revision Colour:` is theirs.
-  rust.EditOutcome setTitleField(String key, String value);
+  rust.EditOutcome setTitleField(
+    String key,
+    String value, {
+    int occurrence = 0,
+  });
 
   /// Applies one command. [before] is the selection the user had before the
   /// edit, so that undo restores the caret as well as the text (§3.4).
@@ -403,8 +408,16 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
   List<rust.TitleEntryView> titlePage() => rust.docTitlePage(handle: _handle);
 
   @override
-  rust.EditOutcome setTitleField(String key, String value) =>
-      rust.docSetTitleField(handle: _handle, key: key, value: value);
+  rust.EditOutcome setTitleField(
+    String key,
+    String value, {
+    int occurrence = 0,
+  }) => rust.docSetTitleEntry(
+    handle: _handle,
+    key: key,
+    occurrence: occurrence,
+    value: value,
+  );
 
   @override
   rust.EditOutcome apply(

@@ -5494,6 +5494,116 @@ mod tests {
         assert_eq!(it.in_memory(), saved);
     }
 
+    #[test]
+    fn clearing_a_repeated_title_field_preserves_the_other_entries() {
+        use crate::api::doc::{doc_close, doc_set_title_field, doc_title_page};
+        let mut it = Fixture::open_source("title-clear-repeated", REPEATED_TITLE);
+        let mut expected = doc_title_page(it.handle);
+        expected.remove(1);
+        doc_set_title_field(it.handle, "Author".to_owned(), String::new());
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.journalled(), 1);
+        assert_eq!(it.recovers_to(), it.in_memory());
+        doc_undo(it.handle).unwrap();
+        assert_eq!(it.in_memory(), REPEATED_TITLE);
+        doc_redo(it.handle).unwrap();
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.recovers_to(), it.in_memory());
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        let saved = it.on_disk();
+        assert!(saved.starts_with('\u{feff}'));
+        assert!(saved.ends_with("\r\n\r\nThe house  is quiet.\r\n"));
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.in_memory(), saved);
+    }
+
+    #[test]
+    fn later_title_entries_can_be_edited_and_removed_individually() {
+        use crate::api::doc::{doc_close, doc_set_title_entry, doc_title_page};
+        let source = REPEATED_TITLE.replace(
+            "Revision Colour: Blue\r\n",
+            "Author: Third author\r\nRevision Colour: Blue\r\nRevision Colour: Pink\r\n",
+        );
+        let mut it = Fixture::open_source("title-entry", &source);
+        let original = doc_title_page(it.handle);
+        let mut expected = original.clone();
+        doc_set_title_entry(
+            it.handle,
+            "Author".to_owned(),
+            1,
+            "D. Wallace\nSecond line".to_owned(),
+        );
+        expected[2].value = "D. Wallace\nSecond line".to_owned();
+        assert_eq!(doc_title_page(it.handle), expected);
+        doc_set_title_entry(it.handle, "Author".to_owned(), 1, String::new());
+        expected.remove(2);
+        assert_eq!(doc_title_page(it.handle), expected);
+        doc_set_title_entry(
+            it.handle,
+            "Revision Colour".to_owned(),
+            1,
+            "Green".to_owned(),
+        );
+        expected.last_mut().unwrap().value = "Green".to_owned();
+        assert_eq!(doc_title_page(it.handle), expected);
+        doc_set_title_entry(it.handle, "Revision Colour".to_owned(), 0, String::new());
+        expected.remove(expected.len() - 2);
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.journalled(), 4);
+        assert_eq!(it.recovers_to(), it.in_memory());
+
+        for _ in 0..4 {
+            doc_undo(it.handle).unwrap();
+        }
+        assert_eq!(it.in_memory(), source);
+        for _ in 0..4 {
+            doc_redo(it.handle).unwrap();
+        }
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.recovers_to(), it.in_memory());
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        let saved = it.on_disk();
+        assert!(saved.starts_with('\u{feff}'));
+        assert!(saved.ends_with("\r\n\r\nThe house  is quiet.\r\n"));
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(doc_title_page(it.handle), expected);
+        assert_eq!(it.in_memory(), saved);
+    }
+
+    #[test]
+    fn unchanged_or_invalid_title_occurrences_record_nothing() {
+        use crate::api::doc::{doc_set_title_entry, doc_title_page};
+        let it = Fixture::open_source("title-entry-no-op", REPEATED_TITLE);
+        let original = doc_title_page(it.handle);
+        assert!(matches!(
+            doc_set_title_entry(
+                it.handle,
+                "Author".to_owned(),
+                1,
+                "Daniel Wallace".to_owned()
+            ),
+            EditOutcome::Applied { .. }
+        ));
+        assert!(matches!(
+            doc_set_title_entry(it.handle, "Author".to_owned(), 3, "Wrong entry".to_owned()),
+            EditOutcome::Rejected { .. }
+        ));
+        assert_eq!(doc_title_page(it.handle), original);
+        assert!(!it.dirty());
+        assert_eq!(it.journalled(), 0);
+        assert!(doc_undo(it.handle).is_none());
+        assert_eq!(it.in_memory(), REPEATED_TITLE);
+    }
+
     // -----------------------------------------------------------------------
     // Exporting a PDF (§Phase 7)
     // -----------------------------------------------------------------------

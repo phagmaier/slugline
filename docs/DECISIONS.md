@@ -53,7 +53,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0030 | The completion popup names its gestures, and its rows are not click targets | `app/lib/editor/editor_surface.dart`, `app/test/editor/autocomplete_test.dart` | partly superseded by 0041 — popup activation and row cap |
 | 0031 | A character extension is recognised by its letters, not its punctuation | `crates/document/src/entities.rs` | live |
 | 0032 | The PDF writer is ours, and it interprets emphasis without leaving a gap | `crates/render_pdf/src/pdf.rs`, `crates/render_pdf/fonts/`, `crates/render_pdf/tests/golden.rs` | partly superseded by 0044/0045 — printed alignment and shared preview interpretation |
-| 0033 | A title-page edit is journalled like any other edit | `crates/document/src/recovery.rs`, `crates/storage/src/journal.rs`, `crates/bridge/src/api/doc.rs` | live |
+| 0033 | A title-page edit is journalled like any other edit | `crates/document/src/recovery.rs`, `crates/storage/src/journal.rs`, `crates/bridge/src/api/doc.rs` | refined by 0066 — repeated title entries |
 | 0034 | Calibration: the grid is Final Draft's, and the references disagree with each other | `crates/layout/src/metrics.rs`, `crates/render_pdf/tests/element_indents.rs` | refined by 0046 — spacing belongs to lyric runs |
 | 0035 | The navigator is a Rust semantic snapshot and a Dart interaction | `crates/bridge/src/api/doc.rs`, `app/lib/editor/navigator_sidebar.dart`, `crates/document/src/entities.rs` | partly superseded by 0041; extended by 0058 — navigator drawer below 900 px |
 | 0036 | Spell checking is an immutable Rust snapshot and a Dart overlay | `crates/spell/src/lib.rs`, `crates/bridge/src/api/spell.rs`, `app/lib/editor/spell_dialog.dart` | live |
@@ -86,6 +86,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0063 | Saved checkpoint outcomes use the base's identities without changing live state | `crates/storage/src/journal.rs`, `crates/bridge/src/api/files.rs`, `crates/document/src/omission.rs`, `crates/document/tests/omission.rs`, `app/integration_test/writing_test.dart` | live |
 | 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | live |
 | 0065 | The headless budget profile does not join the desktop's session bus | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md` | live |
+| 0066 | Repeated title entries are shown and edited individually | `crates/fountain/src/model.rs`, `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/title_page_dialog.dart` | live |
 
 ---
 
@@ -2614,6 +2615,8 @@ inspectable.
 ## ADR 0033 — A title-page edit is journalled like any other edit
 
 **Date:** 2026-07-26 · **Status:** accepted · **Phase:** 7
+
+**Superseded by:** ADR 0066 refines which entry a title-field edit addresses.
 
 ### Context
 
@@ -5196,3 +5199,47 @@ The headless profile now measures the same process on a workstation as on a
 runner. On a real desktop that runs an accessibility bus the application is
 woken by that bus's messages; a `--desktop` run can show one main-thread switch
 with no CPU tick for that reason, and manual gate 5's reader should know it.
+
+---
+
+## ADR 0066 — Repeated title entries are shown and edited individually
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Refines:** ADR 0033's field addressing; its history and journal rules remain.
+
+### Context
+
+A native Fountain file can repeat a title key. The title form showed only its
+first entry, but clearing that box removed every entry with the key. S4 stopped
+untouched forms from writing, while leaving this destructive mismatch unresolved.
+
+### Decision
+
+Show each existing entry in its own box, including repeated custom fields and
+multi-line values. Group the standard fields under their usual labels and the
+custom fields below; equal keys keep their source order. Do not merge entries
+or normalise their values.
+
+`doc_set_title_entry` addresses a key and its zero-based occurrence in the live
+title page. Editing or clearing affects only that entry; the older
+`doc_set_title_field` addresses occurrence zero and obeys the same removal rule.
+The occurrence after the last can append, and larger occurrences are refused.
+The form updates the remaining occurrences when it removes an entry, retaining
+each surviving box's identity and pending text. A standard field with no entries
+still offers an empty box.
+
+Keep ADR 0033's one entry per undo step and whole-title-page outcome in the crash
+journal. An unchanged box sends nothing; an unchanged or refused core call
+records nothing. An untouched form preserves the original source bytes.
+
+### Alternatives and consequences
+
+A single merged box would erase the distinction the file made between entries.
+Showing later entries as read-only would prevent the writer from editing them.
+Individual boxes expose all the existing text and make deletion explicit.
+
+The focused title-page widget and bridge tests cover later and custom entries,
+focus-loss/dispose commits, deletion followed by editing a surviving box, no-op
+and invalid occurrences, Undo/Redo, journal replay and save/reopen. Whole-page
+provenance is dropped by an intentional title edit as before; Undo restores the
+original bytes, and the BOM, CRLF and untouched body survive save/reopen.

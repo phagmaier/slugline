@@ -61,12 +61,10 @@ const List<(String, String, String)> _fields = [
 ];
 
 class _TitlePageDialogState extends State<TitlePageDialog> {
-  final Map<String, TextEditingController> _controllers = {};
-  final Map<String, FocusNode> _focus = {};
-
-  /// What the core holds under each key: as read on opening, then as this form
-  /// last wrote it. A key with no entry holds nothing.
-  final Map<String, String> _held = {};
+  final Map<String, List<_TitleBox>> _boxes = {};
+  // Keep removed boxes alive until dispose: focus loss can be what removed one.
+  final List<_TitleBox> _all = [];
+  bool _closing = false;
 
   /// Keys the file has that the form above does not name.
   List<String> _extra = const [];
@@ -74,23 +72,26 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
   @override
   void initState() {
     super.initState();
-    // A file may repeat a key. The first entry is the one `setTitleField` reads
-    // and writes, so it is the one a box shows; the later ones stay in the file
-    // as they are, and are not this form's to merge.
     for (final entry in widget.core.titlePage()) {
-      _held.putIfAbsent(entry.key, () => entry.value);
+      _addBox(entry.key, entry.value);
     }
     _extra = [
-      for (final key in _held.keys)
+      for (final key in _boxes.keys)
         if (!_fields.any((field) => field.$1 == key)) key,
     ];
-    for (final key in [for (final field in _fields) field.$1, ..._extra]) {
-      _controllers[key] = TextEditingController(text: _held[key] ?? '');
-      _focus[key] = FocusNode()
-        ..addListener(() {
-          if (!_focus[key]!.hasFocus) _commit(key);
-        });
+    for (final (key, _, _) in _fields) {
+      if (!_boxes.containsKey(key)) _addBox(key, '');
     }
+  }
+
+  void _addBox(String key, String value) {
+    final group = _boxes.putIfAbsent(key, () => []);
+    final box = _TitleBox(key, group.length, value);
+    group.add(box);
+    _all.add(box);
+    box.focus.addListener(() {
+      if (!box.focus.hasFocus) _commit(box);
+    });
   }
 
   @override
@@ -98,14 +99,13 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
     // Committed on the way out as well as on focus loss: closing the dialog with
     // the caret still in a box is the ordinary way to finish typing in one, and
     // it must not be the way to lose what was typed.
-    for (final key in _controllers.keys) {
-      _commit(key);
+    _closing = true;
+    for (final box in _all) {
+      _commit(box);
     }
-    for (final controller in _controllers.values) {
-      controller.dispose();
-    }
-    for (final node in _focus.values) {
-      node.dispose();
+    for (final box in _all) {
+      box.controller.dispose();
+      box.focus.dispose();
     }
     super.dispose();
   }
@@ -115,12 +115,33 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
   /// A box nobody typed in is never sent. What it shows is not always what a
   /// write of it would leave — a key the file wrote with nothing after it reads
   /// as empty, and sending empty removes the line.
-  void _commit(String key) {
-    final text = _controllers[key]!.text;
-    if (text == (_held[key] ?? '')) return;
-    final outcome = widget.core.setTitleField(key, text);
+  void _commit(_TitleBox box) {
+    if (!box.active) return;
+    final text = box.controller.text;
+    if (text == box.held) return;
+    final group = _boxes[box.key]!;
+    final outcome = widget.core.setTitleField(
+      box.key,
+      text,
+      occurrence: group.indexOf(box),
+    );
     if (outcome is! EditOutcome_Applied) return;
-    _held[key] = text;
+    box.held = text;
+    if (text.isEmpty) {
+      // Removing a box shifts only this key's later occurrences. The remaining
+      // boxes keep their controllers and their source entry, even with pending
+      // text, and the next commit uses their new occurrence.
+      group.remove(box);
+      box.active = false;
+      if (group.isEmpty && !_closing) {
+        if (_fields.any((field) => field.$1 == box.key)) {
+          _addBox(box.key, '');
+        } else {
+          _extra.remove(box.key);
+        }
+      }
+    }
+    if (!_closing) setState(() {});
     widget.onCommitted?.call();
   }
 
@@ -135,19 +156,21 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final (key, label, hint) in _fields) _box(key, label, hint),
+              for (final (key, label, hint) in _fields)
+                for (final box in _boxes[key]!) _box(box, label, hint),
               if (_extra.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(
                   'Also in this file',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
-                for (final key in _extra) _box(key, key, ''),
+                for (final key in _extra)
+                  for (final box in _boxes[key]!) _box(box, key, ''),
               ],
               const SizedBox(height: 12),
               Text(
-                'These are the Fountain title page. Clearing a box removes the '
-                'line from the file; the title page is not printed with a page '
+                'Each box is one Fountain title entry. Clearing a box removes '
+                'only that entry; the title page is not printed with a page '
                 'number and is not page one.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -164,15 +187,16 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
     );
   }
 
-  Widget _box(String key, String label, String hint) => Padding(
+  Widget _box(_TitleBox box, String label, String hint) => Padding(
+    key: ObjectKey(box),
     padding: const EdgeInsets.symmetric(vertical: 6),
     child: TextField(
-      key: Key('title-field-$key'),
-      controller: _controllers[key],
-      focusNode: _focus[key],
+      key: box.widgetKey,
+      controller: box.controller,
+      focusNode: box.focus,
       minLines: 1,
       maxLines: null,
-      onSubmitted: (_) => _commit(key),
+      onSubmitted: (_) => _commit(box),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint.isEmpty ? null : hint,
@@ -181,4 +205,19 @@ class _TitlePageDialogState extends State<TitlePageDialog> {
       ),
     ),
   );
+}
+
+class _TitleBox {
+  _TitleBox(this.key, int occurrence, this.held)
+    : widgetKey = Key(
+        'title-field-$key${occurrence == 0 ? '' : '-${occurrence + 1}'}',
+      ),
+      controller = TextEditingController(text: held);
+
+  final String key;
+  final Key widgetKey;
+  final TextEditingController controller;
+  final FocusNode focus = FocusNode();
+  String held;
+  bool active = true;
 }

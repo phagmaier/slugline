@@ -192,25 +192,46 @@ impl TitlePage {
     }
 
     pub fn get(&self, field: &TitleField) -> Option<&str> {
+        self.get_entry(field, 0)
+    }
+
+    pub fn get_entry(&self, field: &TitleField, occurrence: usize) -> Option<&str> {
         self.entries
             .iter()
-            .find(|e| &e.field == field)
+            .filter(|e| &e.field == field)
+            .nth(occurrence)
             .map(|e| e.value.as_str())
     }
 
     /// Sets a field, replacing the first entry with that key or appending a new
     /// one. An empty value removes the entry.
     pub fn set(&mut self, field: TitleField, value: String) {
+        self.set_entry(field, 0, value);
+    }
+
+    /// Edits one occurrence of a key, leaving its other entries alone. The
+    /// occurrence just after the last may append; a larger one is refused.
+    pub fn set_entry(&mut self, field: TitleField, occurrence: usize, value: String) -> bool {
+        let mut matching = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.field == field)
+            .map(|(index, _)| index);
+        let at = matching.nth(occurrence);
+        if at.is_none() && occurrence > self.entries.iter().filter(|e| e.field == field).count() {
+            return false;
+        }
         self.provenance = None;
-        match self.entries.iter_mut().find(|e| e.field == field) {
-            Some(entry) if value.is_empty() => {
-                let field = entry.field.clone();
-                self.entries.retain(|e| e.field != field);
+        match at {
+            Some(index) if value.is_empty() => {
+                self.entries.remove(index);
             }
-            Some(entry) => entry.value = value,
+            Some(index) => self.entries[index].value = value,
             None if value.is_empty() => {}
             None => self.entries.push(TitleEntry { field, value }),
         }
+        true
     }
 
     /// The entries in canonical emission order (§ Phase 1, "Title page emitted

@@ -214,12 +214,16 @@ class FakeCore implements DocumentCore {
   List<TitleEntryView> titlePage() => List.of(title);
 
   @override
-  EditOutcome setTitleField(String key, String value) {
+  EditOutcome setTitleField(String key, String value, {int occurrence = 0}) {
     titleEdits.add((key, value));
-    final at = title.indexWhere((entry) => entry.key == key);
+    final matching = [
+      for (var i = 0; i < title.length; i++)
+        if (title[i].key == key) i,
+    ];
+    final at = occurrence < matching.length ? matching[occurrence] : -1;
     // The real core answers "nothing happened" for a value that is already
     // there, so this does too.
-    if (at < 0 ? value.isEmpty : title[at].value == value) {
+    if (at < 0 ? value.isEmpty : value.isNotEmpty && title[at].value == value) {
       return _applied(caret: null);
     }
     if (value.isEmpty) {

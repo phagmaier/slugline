@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2142752448;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1028086234;
 
 // Section: executor
 
@@ -1552,6 +1552,44 @@ fn wire__crate__api__files__doc_set_scroll_impl(
                 let output_ok = Result::<_, ()>::Ok({
                     crate::api::files::doc_set_scroll(api_handle, api_row);
                 })?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__doc__doc_set_title_entry_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "doc_set_title_entry",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <crate::api::doc::DocumentHandle>::sse_decode(&mut deserializer);
+            let api_key = <String>::sse_decode(&mut deserializer);
+            let api_occurrence = <u32>::sse_decode(&mut deserializer);
+            let api_value = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::doc::doc_set_title_entry(
+                    api_handle,
+                    api_key,
+                    api_occurrence,
+                    api_value,
+                ))?;
                 Ok(output_ok)
             })())
         },
@@ -4269,27 +4307,27 @@ fn pde_ffi_dispatcher_primary_impl(
         36 => wire__crate__api__files__doc_reload_impl(port, ptr, rust_vec_len, data_len),
         40 => wire__crate__api__files__doc_save_impl(port, ptr, rust_vec_len, data_len),
         41 => wire__crate__api__files__doc_save_as_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__lifecycle__init_app_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__files__session_park_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__spell__spell_add_personal_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__spell__spell_add_project_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__spell__spell_check_block_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__spell__spell_configure_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__spell__spell_suggest_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__events__emit_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__files__init_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__lifecycle__init_app_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__files__library_create_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__files__library_duplicate_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__files__library_list_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__files__library_open_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__files__library_remove_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__files__library_rename_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__files__prefs_set_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__files__recovery_accept_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__files__recovery_discard_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__files__recovery_pending_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__files__session_park_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__files__session_restore_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__files__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__spell__spell_add_personal_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__spell__spell_add_project_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__spell__spell_check_block_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__spell__spell_configure_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__spell__spell_suggest_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4329,17 +4367,18 @@ fn pde_ffi_dispatcher_sync_impl(
         39 => wire__crate__api__doc__doc_restore_omitted_impl(ptr, rust_vec_len, data_len),
         42 => wire__crate__api__doc__doc_set_entity_pinned_impl(ptr, rust_vec_len, data_len),
         43 => wire__crate__api__files__doc_set_scroll_impl(ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__doc__doc_set_title_field_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__doc__doc_title_page_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__files__doc_watch_state_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__spell__spell_ignore_all_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__spell__spell_ignore_once_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__spell__spell_status_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__doc__doc_set_title_entry_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__doc__doc_set_title_field_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__doc__doc_source_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__doc__doc_tab_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__doc__doc_tab_target_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__doc__doc_title_page_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__doc__doc_undo_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__files__doc_watch_state_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__files__prefs_get_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__spell__spell_ignore_all_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__spell__spell_ignore_once_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__spell__spell_status_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

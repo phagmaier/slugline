@@ -63,7 +63,7 @@ String docSource({required DocumentHandle handle}) =>
 List<TitleEntryView> docTitlePage({required DocumentHandle handle}) =>
     RustLib.instance.api.crateApiDocDocTitlePage(handle: handle);
 
-/// Sets one title-page field. An empty `value` removes it.
+/// Sets the first entry of one title-page field. An empty `value` removes only it.
 ///
 /// One field per call, and one undo step per call, because that is how the
 /// Phase 7 title-page editor is used: a writer fills in a form, and the
@@ -82,6 +82,21 @@ EditOutcome docSetTitleField({
 }) => RustLib.instance.api.crateApiDocDocSetTitleField(
   handle: handle,
   key: key,
+  value: value,
+);
+
+/// Edits one occurrence of a title key, in source order, with one undo step.
+/// An empty value removes only that entry. The occurrence after the last can
+/// append a new entry; a larger occurrence is refused without an edit.
+EditOutcome docSetTitleEntry({
+  required DocumentHandle handle,
+  required String key,
+  required int occurrence,
+  required String value,
+}) => RustLib.instance.api.crateApiDocDocSetTitleEntry(
+  handle: handle,
+  key: key,
+  occurrence: occurrence,
   value: value,
 );
 

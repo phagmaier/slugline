@@ -225,10 +225,98 @@ void main() {
 
     await tester.enterText(box('Draft date'), '26 July 2026');
     await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.ensureVisible(box('Contact'));
     await tester.tap(box('Contact'));
     await tester.pump();
     await close(tester);
 
     expect(core.titleEdits, [('Draft date', '26 July 2026')]);
   });
+
+  testWidgets('every repeated title entry has its own box', (tester) async {
+    core.title.addAll(native);
+    await openModal(tester);
+
+    expect(box('Author-2'), findsOneWidget);
+    expect(shown(tester, 'Author-2'), 'Daniel Wallace');
+    expect(box('Revision Colour-2'), findsOneWidget);
+    expect(shown(tester, 'Revision Colour-2'), 'Pink');
+  });
+
+  testWidgets('editing a later entry leaves its neighbours alone', (
+    tester,
+  ) async {
+    core.title.addAll(native);
+    await openModal(tester);
+    await tester.enterText(box('Author-2'), 'D. Wallace\nAnother line');
+    await close(tester);
+
+    expect(core.titlePage(), [
+      ...native.take(2),
+      const TitleEntryView(key: 'Author', value: 'D. Wallace\nAnother line'),
+      ...native.skip(3),
+    ]);
+    expect(core.titleEdits, [('Author', 'D. Wallace\nAnother line')]);
+  });
+
+  testWidgets(
+    'clearing an earlier entry keeps later edits aimed at their boxes',
+    (tester) async {
+      core.title.addAll(native);
+      await openModal(tester);
+      await tester.enterText(box('Author'), '');
+      // Focus loss removes the first entry while the second box starts editing.
+      await tester.enterText(box('Author-2'), 'D. Wallace');
+      await close(tester);
+
+      expect(core.titlePage(), [
+        native[0],
+        const TitleEntryView(key: 'Author', value: 'D. Wallace'),
+        ...native.skip(3),
+      ]);
+      expect(core.titleEdits, [('Author', ''), ('Author', 'D. Wallace')]);
+    },
+  );
+
+  testWidgets('custom repeated entries can be cleared separately', (
+    tester,
+  ) async {
+    core.title.addAll(native);
+    await openModal(tester);
+    await tester.enterText(box('Revision Colour'), '');
+    await close(tester);
+
+    expect(core.titlePage(), [...native.take(4), native[5]]);
+    expect(core.titleEdits, [('Revision Colour', '')]);
+  });
+
+  testWidgets(
+    'removing all occurrences leaves a box for a new standard field',
+    (tester) async {
+      core.title.addAll(native);
+      await openModal(tester);
+      await tester.enterText(box('Author'), '');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      await tester.enterText(box('Author-2'), '');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(shown(tester, 'Author'), '');
+      await tester.enterText(box('Author'), 'New author');
+      await close(tester);
+
+      expect(
+        core
+            .titlePage()
+            .where((entry) => entry.key == 'Author')
+            .map((entry) => entry.value),
+        ['New author'],
+      );
+      expect(core.titleEdits, [
+        ('Author', ''),
+        ('Author', ''),
+        ('Author', 'New author'),
+      ]);
+    },
+  );
 }

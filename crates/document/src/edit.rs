@@ -113,6 +113,12 @@ pub enum EditCommand {
         field: TitleField,
         value: String,
     },
+    /// Edits one entry of a repeated title key, in its source order.
+    SetTitleEntry {
+        field: TitleField,
+        occurrence: usize,
+        value: String,
+    },
     /// Explicit, lossless boneyard operations; arbitrary Opaque edits stay refused.
     OmitSelection {
         at: DocSelection,

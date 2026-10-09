@@ -518,7 +518,7 @@ pub fn doc_title_page(handle: DocumentHandle) -> Vec<TitleEntryView> {
     })
 }
 
-/// Sets one title-page field. An empty `value` removes it.
+/// Sets the first entry of one title-page field. An empty `value` removes only it.
 ///
 /// One field per call, and one undo step per call, because that is how the
 /// Phase 7 title-page editor is used: a writer fills in a form, and the
@@ -532,6 +532,19 @@ pub fn doc_title_page(handle: DocumentHandle) -> Vec<TitleEntryView> {
 /// fill the undo stack with edits that did not happen.
 #[frb(sync)]
 pub fn doc_set_title_field(handle: DocumentHandle, key: String, value: String) -> EditOutcome {
+    doc_set_title_entry(handle, key, 0, value)
+}
+
+/// Edits one occurrence of a title key, in source order, with one undo step.
+/// An empty value removes only that entry. The occurrence after the last can
+/// append a new entry; a larger occurrence is refused without an edit.
+#[frb(sync)]
+pub fn doc_set_title_entry(
+    handle: DocumentHandle,
+    key: String,
+    occurrence: u32,
+    value: String,
+) -> EditOutcome {
     actor().run(move |state| {
         let Some(session) = state.session_mut(handle.id) else {
             return no_such_document();
@@ -540,8 +553,9 @@ pub fn doc_set_title_field(handle: DocumentHandle, key: String, value: String) -
         // it neither joins the run of typing before it nor leaves one open.
         let document = session.interrupt();
         let revision = document.revision();
-        let result = document.apply(model::EditCommand::SetTitlePage {
+        let result = document.apply(model::EditCommand::SetTitleEntry {
             field: model::TitleField::from_key(&key),
+            occurrence: occurrence as usize,
             value,
         });
         // A field that already held this recorded no step, so the page it left

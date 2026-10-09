@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use slugline_fountain::{
     infer_kind, needs_blank_between, parse, serialise, BlockKind, Context as InferContext,
-    ElementRef, LineEnding, Output, TitlePage,
+    ElementRef, LineEnding, Output, TitleField, TitlePage,
 };
 
 use crate::edit::{
@@ -568,26 +568,43 @@ impl Document {
             EditCommand::OmitSelection { at } => self.omit_selection(at),
             EditCommand::OmitScene { block } => self.omit_scene(block),
             EditCommand::RestoreOmitted { at } => self.restore_omitted(at),
-            EditCommand::SetTitlePage { field, value } => {
-                if self.title_page.get(&field) == (!value.is_empty()).then_some(value.as_str()) {
-                    return Ok(EditResult {
-                        changed: Vec::new(),
-                        removed: Vec::new(),
-                        inserted: Vec::new(),
-                        selection: self.caret_at_start(),
-                    });
-                }
-                self.record(Inverse::TitlePage(Box::new(self.title_page.clone())), None);
-                self.title_page.set(field, value);
-                Ok(EditResult {
-                    changed: Vec::new(),
-                    removed: Vec::new(),
-                    inserted: Vec::new(),
-                    selection: self.caret_at_start(),
-                })
-            }
+            EditCommand::SetTitlePage { field, value } => self.set_title_entry(field, 0, value),
+            EditCommand::SetTitleEntry {
+                field,
+                occurrence,
+                value,
+            } => self.set_title_entry(field, occurrence, value),
         }?;
         Ok(result)
+    }
+
+    fn set_title_entry(
+        &mut self,
+        field: TitleField,
+        occurrence: usize,
+        value: String,
+    ) -> Result<EditResult, EditError> {
+        let count = self
+            .title_page
+            .entries
+            .iter()
+            .filter(|e| e.field == field)
+            .count();
+        if occurrence > count {
+            return Err(EditError::BadRange);
+        }
+        if self.title_page.get_entry(&field, occurrence)
+            != (!value.is_empty()).then_some(value.as_str())
+        {
+            self.record(Inverse::TitlePage(Box::new(self.title_page.clone())), None);
+            self.title_page.set_entry(field, occurrence, value);
+        }
+        Ok(EditResult {
+            changed: Vec::new(),
+            removed: Vec::new(),
+            inserted: Vec::new(),
+            selection: self.caret_at_start(),
+        })
     }
 
     /// Applies a patch the crash journal recorded (§Phase 4).
@@ -1471,7 +1488,9 @@ impl Document {
             EditCommand::MoveScene { scene, .. } => {
                 Some(DocSelection::caret(DocPosition::new(*scene, 0)))
             }
-            EditCommand::SetTitlePage { .. } => self.caret_at_start(),
+            EditCommand::SetTitlePage { .. } | EditCommand::SetTitleEntry { .. } => {
+                self.caret_at_start()
+            }
             EditCommand::OmitSelection { at } | EditCommand::RestoreOmitted { at } => Some(*at),
             EditCommand::OmitScene { block } => {
                 Some(DocSelection::caret(DocPosition::new(*block, 0)))

@@ -344,10 +344,11 @@ rewrite the title page of a native Fountain file. Promoted from the two
   journal: `doc_set_title_field` journalled the page even when the document
   had recorded no step.
 
-**Change.** The form shows a key's first entry — the one the core reads and
-writes — and commits a box only when its text differs from what the core holds.
+**Change.** The form shows each title entry in its own box, including repeated
+keys, and commits a box only when its text differs from what the core holds.
 `doc_set_title_field` journals the title page only when the document recorded
-a step. Repeated native keys are neither merged nor normalised.
+a step. Per-occurrence edits and clears affect only that entry (ADR 0066);
+repeated native keys are neither merged nor normalised.
 
 **Done when.** Opening and closing the form changes no title entry and adds no
 dirty state, Undo step or journal record, for repeated keys, multi-line values
@@ -363,10 +364,17 @@ first entry and writes only boxes whose text changed, and `doc_set_title_field`
 no longer journals a field it left alone; the title-page widget tests and two
 bridge regressions (unchanged fields record nothing and save byte-identically;
 a repeated-key edit changes only its first entry through Undo/Redo, recovery
-and save/reopen) pass. Limitation: a repeated key's later entries stay in the
+and save/reopen) pass. The limitation at that commit was that a repeated key's later entries stay in the
 file and print but are not shown in the form, and clearing its box removes them
 all, as `TitlePage::set` always has. Commit:
 `S4 — the title form writes only the boxes that were edited`.
+
+**Follow-up:** 2026-10-09 — resolved the repeated-key limitation under ADR 0066:
+every existing entry has an editable box, and editing or clearing one preserves
+its neighbours, including pending edits after an earlier entry is removed.
+Focused title-page widget and Rust checks cover unchanged forms, custom and
+multi-line entries, Undo/Redo, recovery and save/reopen with the BOM, CRLF and
+untouched body retained. Commit: `S4 — edit and clear repeated title entries individually`.
 
 ---
 
