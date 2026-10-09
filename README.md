@@ -301,19 +301,16 @@ Architecture decisions are recorded in `docs/DECISIONS.md`.
 
 ## Development
 
-```sh
-cargo test --workspace                                    # Rust tests
-python3 tools/check_layering.py                           # crate layering
-python3 tools/check_version.py                            # consistent versioning
-cd app && flutter test                                    # Dart unit tests
-./tools/test_linux_integration.sh                         # Linux integration tests
-./tools/check_no_network.sh                               # network-isolation gate
-cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
-```
+Follow the [development workflow](AGENTS.md#development-workflow). For routine
+Rust edits, `./tools/agent.sh quick <crate> [cargo-test-args...]` selects a test
+filter or target. For Flutter edits, run the relevant widget test file from
+`app/`. Format changed code and verify the behavior touched; do not run the
+whole Rust/Flutter/native/release matrix per small task.
 
-Run integration tests under `xvfb-run` — they open real windows and need a
-fixed virtual display for reproducible results (`xorg-server-xvfb` on Arch,
-`xvfb` on Debian).
+Full development command references are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Native integration tests need `xvfb-run` (`xorg-server-xvfb` on Arch, `xvfb` on
+Debian); use `./tools/agent.sh native <suite> [flutter-test-args...]` when the
+behavior requires the real runtime/input system. `native --list` lists suites.
 
 ### Project layout
 
@@ -329,10 +326,11 @@ docs/            Architecture decisions and dependency justifications
 
 ### Regenerating the bridge
 
-Only after changing `crates/bridge/src/api/`:
+When the exposed bridge API/types change; implementation-only edits do not need
+regeneration:
 
 ```sh
-cargo install flutter_rust_bridge_codegen cargo-expand   # once
+cargo install flutter_rust_bridge_codegen cargo-expand   # only if missing
 cd app && flutter_rust_bridge_codegen generate
 ```
 
@@ -341,11 +339,17 @@ hand-edited.
 
 ## Verification
 
-Pull requests and `main` run Rust formatting, Clippy and tests; Flutter analysis,
-unit and Xvfb integration tests; version and layering checks; desktop metadata
-validation; a release build; and the network-isolation gate. A version tag must
-pass the same release gates plus tarball and AppImage smoke tests before GitHub
-publishes any assets. See [the release guide](docs/RELEASING.md).
+For development, follow the [focused verification policy](AGENTS.md#verification).
+Small changes use relevant checks; full suites run at substantial development
+boundaries or on explicit request. Release work is deferred until the project's
+explicitly requested final release task; agents do not wait on hosted CI for
+routine completion.
+
+Pull requests and `main` run fast documentation, contract and tooling checks.
+The expensive Rust/Flutter/native/build/packaging matrix is the manually
+triggered **Final validation** workflow. A version tag still runs release
+validation and artifact smoke tests before publishing assets. See
+[the release guide](docs/RELEASING.md).
 
 ## What's left?
 

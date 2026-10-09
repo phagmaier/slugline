@@ -13,8 +13,10 @@ Invariants:
   else is an overlay the editor paints (ADR 0036).
 - The checker never sees a mutable document — snapshots only.
 
-Verify: `cargo test -p slugline_spell`.
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_spell` filter or test target. Use the whole crate
+only when warranted, without unrelated Flutter/native/release checks.
 
 Governing ADRs: 0036. Full rules in `AGENTS.md`; the layer map in
-`docs/ARCHITECTURE.md`. When an ADR changes this crate, update this file in
-the same change.
+`docs/ARCHITECTURE.md`. Update these notes only when their invariants or
+pointers change.

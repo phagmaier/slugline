@@ -53,10 +53,13 @@ together with `Cargo.toml` when adding a crate or an edge.
 - The planned fixes live in [BACKLOG.md](BACKLOG.md), in priority order. Find
   the next workable item with `python3 tools/backlog.py next` (first unticked,
   non-blocked). One item per change; reproduce before changing.
-- Environment pre-flight: `./tools/doctor.sh`. Scoped checks:
-  `./tools/agent.sh quick <crate>`, `./tools/agent.sh docs`,
-  `./tools/agent.sh lint`. See the Verification section of AGENTS.md for the
-  full list and the budgets in [BUDGETS.md](BUDGETS.md).
+- Use [AGENTS.md's workflow](../AGENTS.md#development-workflow): focused checks
+  for routine edits, full suites once at substantial development boundaries,
+  release work only on the final release task. `./tools/doctor.sh` is for setup
+  problems. `./tools/agent.sh quick <crate> [cargo-test-args...]` supports focused
+  Rust checks; `native <suite> [flutter-test-args...]` selects a native suite.
+  `docs` and `lint` are optional combined checks, not per-item gates.
+  Consult [BUDGETS.md](BUDGETS.md) when changing performance-sensitive behavior.
 - Bridge offsets are UTF-16 code units named `*_utf16`; offsets inside
   `document` are UTF-8 bytes. Never round or clamp an invalid boundary.
 - There is no timer anywhere in the core; the autosave clock is Dart's.

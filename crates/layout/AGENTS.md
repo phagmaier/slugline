@@ -35,12 +35,15 @@ Invariants:
 Rust uppercase display is shared with `fountain::case`, so necessary saved cue
 markers and rendering agree through reopen (ADR 0060).
 
-Verify: `cargo test -p slugline_layout`. Golden changes are deliberate or
-they are bugs:
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_layout` filter or test target. Break/checkpoint
+changes need incremental differential coverage; wrap changes need the Rust/Dart
+line-break contract checks. Use the whole crate only when warranted. Regenerate
+fixtures only for deliberate output/contract changes:
 `UPDATE_LAYOUT_GOLDENS=1 cargo test -p slugline_layout --test golden`,
 `UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential`
 — each needs a sentence in the commit message.
 
 Governing ADRs: 0020, 0022, 0044, 0046, 0048, 0049, 0054, 0057, 0060. Full rules in
-`AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
-this crate, update this file in the same change.
+`AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes only
+when their invariants or pointers change.

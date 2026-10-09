@@ -10,7 +10,7 @@ fails: the release version by `check_version.py`, the crate layering by
 `check_layering.py`, the parser by the tiling test, the PDF by its hashes. The
 prose had nothing, and prose is what an agent reads before it reads the code —
 so a doc that describes a file that has moved, an ADR that has been superseded
-without saying so, or a checklist item ticked against no commit, is a defect
+without saying so, or a checklist item ticked without a result, is a defect
 that nothing was catching.
 
 Seven checks, each one a mistake that had actually happened in this tree:
@@ -33,9 +33,8 @@ Seven checks, each one a mistake that had actually happened in this tree:
    the item says `**Blocked by XN.**` and `— *blocked by XN*`, and XN says
    `— *unblocks XN*` back.
 
-A checked box whose `Result` still says "commit pending" is reported as a
-warning rather than a failure: writing the result and committing it are two
-acts, and the rule only says the Result must end up naming the commit.
+Results may reference a commit subject or state that work is uncommitted.
+Completion is about the requested behavior and relevant checks, not a hash.
 """
 
 import re
@@ -55,13 +54,7 @@ DOCS = [
     "docs/archive/SPEC.md",
     "docs/archive/REVIEW.md",
     "docs/ARCHITECTURE.md",
-    "crates/fountain/AGENTS.md",
-    "crates/document/AGENTS.md",
-    "crates/layout/AGENTS.md",
-    "crates/render_pdf/AGENTS.md",
-    "crates/storage/AGENTS.md",
-    "crates/spell/AGENTS.md",
-    "crates/bridge/AGENTS.md",
+    *(str(path.relative_to(ROOT)) for path in sorted(ROOT.glob("crates/*/AGENTS.md"))),
     "app/AGENTS.md",
     "docs/BACKLOG.md",
     "docs/BUDGETS.md",
@@ -302,7 +295,10 @@ def backlog(text: str) -> None:
     for match in re.finditer(r"^### ([A-Z]+\d+) — .*?(?=^### |\Z)", text, re.M | re.S):
         item, body = match.group(1), match.group(0)
         if "**Result:**" in body:
-            results[item] = "_open_" not in body.split("**Result:**", 1)[1].split("\n\n")[0]
+            result = body.split("**Result:**", 1)[1].split("\n\n")[0].strip()
+            if not result:
+                fail("docs/BACKLOG.md", f"{item} has an empty Result; use _open_ until complete")
+            results[item] = bool(result) and "_open_" not in result
 
     seen = set()
     for ticked, item, anchor in checklist:
@@ -318,8 +314,6 @@ def backlog(text: str) -> None:
             state = "ticked" if ticked == "x" else "unticked"
             other = "filled in" if results[item] else "_open_"
             fail("docs/BACKLOG.md", f"{item} is {state} but its Result is {other}")
-        if ticked == "x" and "commit pending" in text.split(f"### {item} — ", 1)[1][:4000]:
-            warnings.append(f"{item} is ticked but its Result still says 'commit pending'")
 
     for item in sections:
         if item not in seen:

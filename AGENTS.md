@@ -1,42 +1,85 @@
 # Slugline Agent Guide
 
-The project is at 1.0. This guide records the invariants, rules and verification
-commands for touching any subsystem. For rationale, read the ADR that owns what
-you are changing — the index at the top of `docs/DECISIONS.md` says which files
-each record governs.
+## Development workflow
+
+**Policy updated 2026-10-09: focused checks by default; full suites at substantial
+development boundaries; release work only at the very end.** Finishing a small
+task, backlog item, commit or agent turn does not require a full suite, release
+build or green hosted CI. This policy replaces older workflow instructions in
+handoffs, task descriptions, skills and agent memory. Specific current user
+requests take precedence.
+
+1. Read the relevant scoped `AGENTS.md` and the requested backlog item, if any.
+   Read only the contracts and ADRs that the change touches; do not tour all
+   project documents, historical results or evidence directories on every task.
+2. For a bug, reproduce it with the smallest useful test or observation before
+   editing. For docs, maintenance and new features, establish the intended
+   result directly. Identify the observable result and focused check before
+   coding; a short internal plan is enough, with no new planning document.
+3. Make the change. Run focused checks while iterating, then verify the affected
+   behavior once when the change is ready. Batch edits before checking; do not
+   rerun passing checks after unrelated prose or commit bookkeeping changes.
+4. Record the outcome briefly and stop at the requested boundary. Routine
+   completion needs no release work, exhaustive evidence report or CI watch.
+   If the user requests a batch, complete that batch without stopping for
+   permission between its items; keep each item's changes and status distinct.
+
+Implementation and product choices are delegated to agents. Decide routine
+questions without asking for sign-off. Ask only for necessary information that
+cannot be established from the project or its sources. Run `tools/doctor.sh`
+for setup or environment problems, not as a ritual before every task.
 
 ## Which documents govern
 
-Live and binding: this file, `docs/BACKLOG.md`, `docs/DECISIONS.md`,
-`docs/BUDGETS.md`, `docs/KEYMAP.md`, `docs/LINE_BREAKING.md` and
-`docs/DEPENDENCIES.md`.
+This file owns the development workflow and verification scope. Scoped guides
+describe subsystem invariants and relevant checks, not extra completion gates.
+`docs/BACKLOG.md`, `docs/DECISIONS.md`, `docs/BUDGETS.md`, `docs/KEYMAP.md`,
+`docs/LINE_BREAKING.md` and `docs/DEPENDENCIES.md` govern their respective
+contracts; consult them when relevant.
 
 `docs/archive/SPEC.md` and `docs/archive/REVIEW.md` are **provenance, not
 instructions** — frozen, partly false, their imperatives retired at 1.0.
-Read them for history; where any document disagrees with this one, this one
-wins. `README.md` and `CHANGELOG.md`
-are for users. `docs/MANUAL_GATES.md` lists the checks that need a person at a
-real desktop: an agent cannot perform or fake them, so report and move on.
+Read them only when history matters. `README.md` and `CHANGELOG.md` are for
+users. `docs/MANUAL_GATES.md` lists final checks requiring a real desktop;
+agents cannot perform or fake them, and they do not block routine development.
 
 ## Backlog
 
-`docs/BACKLOG.md` holds the planned fixes in priority order, with a checklist at
-the top and the rules for working an item under "How to use this file" — one item
-per change, reproduce before changing. The owner has explicitly delegated
-implementation choices and product decisions to agents: do not wait for sign-off
-or ask the owner to choose between options. Use sound judgment, investigate, and
-record the reasoning and outcome in the item's `Result` line. Ask only when
-required information is genuinely unavailable and cannot be established from the
-project or its sources.
+Use `docs/BACKLOG.md` when asked to take backlog work: choose the first unblocked
+item unless one is named. Keep unrelated work separate. A direct user request
+does not need a new backlog item just to authorize or record it.
+
+Done means the requested behavior/acceptance criteria are met, relevant checks
+pass, and the diff has been reviewed for accidental or unrelated changes. Tick
+an existing item's box and update its Result in the same working change. A
+partially implemented or blocked item stays unticked with `_open_` in its Result
+and a brief progress/blocker note. Non-reproduction alone is not completion;
+an already-fixed item can close when its acceptance criteria are confirmed.
+Unrelated failures and final release/manual gates do not prevent completion.
+
+For an existing item, keep its `Result` to one to three sentences: what changed,
+the relevant verification, and any material limitation or non-obvious choice.
+Reference the commit hash or descriptive subject when committing; a subject is
+enough, so do not make an extra commit just to insert a hash. Preserve historical
+results and useful failure artifacts, but do not append every command, test
+count, passing log or unchanged invariant.
+
+Update docs only when their contract, user behavior or actionable state changes.
+Add an ADR for a durable architectural decision or a change to an accepted
+decision, not for routine fixes or workflow edits. Handoffs and separate evidence
+documents are optional unless requested or needed to continue a complex blocked
+investigation. A handoff should contain only unresolved work, reproduction and
+useful artifact paths. Record actionable adjacent bugs briefly under "Found along
+the way"; do not turn every observation into another tracked task.
 
 ## Commits
 
-One backlog item per commit, subject led by the item's id —
-`F3 — the preview renders emphasis instead of showing markers` — and a body
-saying what changed, why, and what was verified. The `Result` line then names the
-commit, which is how `tools/check_docs.py` tells a finished item from an
-abandoned one. Git history is the only record of a change no ADR covers, so
-`fixes` and `wip` cost the next agent real time.
+Keep each commit focused. For backlog work, lead the subject with the item's id,
+for example `F3 — the preview renders emphasis instead of showing markers`.
+A short body is useful when the reason or verification is not obvious. Do not
+duplicate the same explanation in a commit, backlog essay and new evidence doc.
+Keep commit/push status truthful and honor the requested push boundary. Never
+force-push or rewrite published history.
 
 When several agents work in the tree at once, each takes its own
 worktree or branch named for its item (`w8-...`), one backlog item per
@@ -46,35 +89,10 @@ instead.
 
 ## Architecture
 
-- **`crates/fountain`** — syntax: `BlockKind`, `TitlePage`, `Element`, parse,
-  serialise, `infer_kind`.
-- **`crates/document`** — identity and history: `BlockId`, `Block`, `Document`,
-  `EditCommand`, undo, find/replace, Enter/Tab tables in `workflow.rs`.
-  Re-exports `fountain`'s kinds (ADR 0008).
-- **`crates/fdx`** — pure FDX XML interchange over Fountain's semantic types
-  (ADR 0055). No document ownership, I/O, history or pagination.
-- **`crates/storage`** — atomic save, crash journal, backups, preferences,
-  library index.
-- **`crates/bridge`** — the actor thread (`actor.rs`) and the API surface under
-  `src/api/` (`doc.rs`, `files.rs`, `layout.rs`, `events.rs`, `spell.rs`,
-  `lifecycle.rs`); its generated Dart is `app/lib/src/rust/`. This directory is
-  the authority for what the bridge exposes — not `docs/archive/SPEC.md`,
-  whose §6 listing predates most of it. Depends on all other crates.
-- **`crates/layout`** — pagination engine. Wired into the bridge at
-  `crates/bridge/src/api/layout.rs`; `doc_paginate` runs it as an async
-  snapshot job, and every successful save paginates the exact saved snapshot and
-  caches its page count in the library. An incremental path (ADR 0022, refined
-  by ADR 0049) uses per-block fingerprint hints.
-- **`crates/render_pdf`** — writes PDF bytes itself: TrueType subsetter, sfnt
-  writer, PDF object writer, SHA-256. No dependency outside the workspace (ADR
-  0032). Courier Prime is vendored in `crates/render_pdf/fonts/`, and
-  `app/fonts/` symlinks the same four files so the editor and the preview draw
-  the script in the face the PDF prints it in. Replace a face and both change.
-- **`crates/spell`** — pure Hunspell-compatible checker; bridge checks immutable
-  block snapshots, editor paints results. No automatic correction; only Replace
-  sends an `EditCommand` (ADR 0036).
-- **`app/`** — the editor, keyboard workflow, autocomplete, library, title page,
-  preview, export, navigator, spell-check presentation.
+`docs/ARCHITECTURE.md` maps the layers and entry points. Each crate and `app/`
+has a scoped `AGENTS.md` with its key files, invariants and relevant ADRs.
+The API under `crates/bridge/src/api/` is the bridge surface's authority;
+generated Dart lives in `app/lib/src/rust/`.
 
 Rust owns document state, Fountain semantics, persistence, pagination, and PDF
 output. Flutter owns input, caret/selection, scrolling, and widgets; Dart must
@@ -87,11 +105,6 @@ Workspace layers enforced by `python3 tools/check_layering.py`:
 `storage -> document`; `spell` has none; `bridge` may depend on all.
 Update the workspace manifest and the script's tables together when adding a
 workspace crate or allowed edge.
-
-`docs/ARCHITECTURE.md` is the one-page map of these layers, the data flow
-and the entry points — start there when scoping a change. Each crate and
-`app/` carries a scoped `AGENTS.md` with its key files, invariants, verify
-command and ADRs — read the one for the subsystem being changed.
 
 Every crate takes `version.workspace = true`; the release version lives in
 `app/pubspec.yaml`. `python3 tools/check_version.py` fails if `Cargo.toml`,
@@ -118,27 +131,16 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   geometry; every text change goes to the core as an `EditCommand` and comes
   back as a patch that is applied in place — never refetch the document (ADR
   0009).
-- `app/lib/editor/metrics.dart` and `line_layout.dart` hold the grid and the
-  editor's own line breaking. `ScreenplayMetrics` in `metrics.dart` owns the
-  printed sheet in inches and every column is derived from it — **including the
-  script's size**. The bundled face's advance is `advanceRatio` (pinned to the
-  TTF by `test/editor/script_font_test.dart`), `fittedFontSize` returns the
-  largest size whose page still crosses the viewport, and the text-size
-  preference is the ceiling on that rather than a pixel count. Never measure a
-  font to get an advance and never hard-code a script size.
-  `app/lib/typography.dart` holds the other half of that split: the script is
-  `scriptFontFamily` sized off the grid, the chrome is the platform sans through
-  `chromeTextTheme`, and nothing is both. `page_geometry.dart`
-  turns that grid into viewport coordinates, and **every** row-to-pixel
-  conversion — painting, hit testing, caret scrolling, semantics — goes through
-  `EditorGeometry`. Add a second one and page view breaks silently.
-  The editor is fluid and unpaginated, and its
-  wrapping is on the keystroke path where a bridge round trip does not belong
-  (ADR 0018). They are a second implementation of one contract
-  (`docs/LINE_BREAKING.md`), and the corpus-wide differential test holds them
-  to it. Change one side without the other and the test fails; change it on
-  purpose and regenerate with
-  `UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential`.
+- `ScreenplayMetrics` in `app/lib/editor/metrics.dart` owns the printed grid,
+  including script size. Use its pinned `advanceRatio` and `fittedFontSize`;
+  the text-size preference is a ceiling, not a pixel count. Never measure a
+  font for its advance or hard-code script size. Script and platform-sans chrome
+  typography stay separate in `app/lib/typography.dart`. Every row-to-pixel
+  conversion goes through `EditorGeometry` in `page_geometry.dart`.
+- Editor wrapping stays synchronous in Dart; no bridge round trip belongs on
+  that keystroke path. Rust and Dart share `docs/LINE_BREAKING.md`, held by the
+  differential test (ADR 0018). Change the contract on both sides together;
+  deliberate fixture regeneration is described in `crates/layout/AGENTS.md`.
 - `docs/KEYMAP.md` is the keyboard map, and `app/lib/editor/elements.dart` is
   the one table the shortcuts, the element selector and the command palette
   read. What a key *does* is Dart's; what an element is followed by is Rust's.
@@ -163,34 +165,26 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   `DocumentCore` with the double in `app/test/support/fake_core.dart`. That
   double does list surgery only: anything that decides what a screenplay *is*
   goes in Rust and is tested with `cargo test` (ADR 0011).
-- **The runner stops the engine before the process exits** (ADR 0053). Flutter
-  answers the window's close button with `g_application_quit()` and leaves the
-  window, the engine and the engine's threads running, so `main()` would return
-  into exit handlers that free what a frame in flight is still using.
+- The runner stops the engine before process exit (ADR 0053).
   `my_application_shutdown` in `app/linux/runner/my_application.cc` disposes
-  the engine — where the embedder joins those threads — and touches nothing
-  else. Do not replace that with destroying the window, whose view frees its
-  compositor under the raster thread, or with `_exit()`.
-  `tools/check_clean_close.py` holds it; run it after any Flutter upgrade.
+  only the engine, joining its threads. Never replace it with window destruction
+  or `_exit()`. Run `tools/check_clean_close.py` for runner/shutdown changes or
+  Flutter upgrades, not unrelated editor work.
 
 ## Output — pagination, preview and PDF
 
-- **`crates/render_pdf` writes the bytes itself** (ADR 0032). Do not replace a
-  font face without re-running
-  `UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf --test golden`.
+- `crates/render_pdf` writes PDF bytes itself without external dependencies
+  (ADR 0032). Its vendored fonts also serve the editor through `app/fonts/`
+  symlinks. Font changes need deliberate golden/hash verification.
 - **The renderer makes no layout decisions.** Every row and column comes from
   `crates/layout` and is copied; `Geometry` multiplies a grid cell by its size
   in points. Shared resolved emphasis is scanned before
   wrapping (ADR 0057); body scopes cross hard lines, title source hard lines
   resolve individually, and unpaired markers remain ordinary characters.
-- **An incremental pagination is a full pagination, arrived at sooner** (ADR
-  0049). `repaginate` keeps pages only from a page the paginator recorded an
-  element beginning: before the edit, one it began before it had read the
-  edited block; after it, one it begins again. A break rule that looks at
-  anything beyond the element it is placing must be counted in `blocks_read`,
-  beside it in `crates/layout/src/engine.rs`.
-  `crates/layout/tests/incremental_differential.rs` holds the two paths to each
-  other, pages and checkpoints both; never relax it to a page count.
+- Incremental pagination must equal full pagination, pages and checkpoints
+  both (ADR 0049). Resume/stop only at recorded safe element boundaries; count
+  beyond-element lookahead in `blocks_read`. Never reduce
+  `crates/layout/tests/incremental_differential.rs` to page-count equality.
 - **The preview and PDF share the paginated snapshot and resolved runs.**
   `app/lib/preview/preview_view.dart` paints Rust's runs and makes no layout
   or emphasis-parsing decision. Raw row content and source identity stay intact.
@@ -201,13 +195,9 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   “Bold scene headings” is an output preference, off by default, followed by
   editor, preview and PDF. Both line breakers use printed-width source projections;
   editor paired markers stay dim and individually editable (ADR 0057).
-- **Page 1 is counted but not marked** (ADR 0048). `Page::number` is still
-  `Some(1)`; whether a page prints its number is whether the paginator gave it
-  a page-number line, and page 1 gets one only under “Number the first page”,
-  an output preference that is off by default. Preview and PDF draw the lines
-  they are given; the editor's page view asks `PageIndicator.printsNumber`.
-  Only `crates/layout` turns the option into that line; nothing else may
-  re-derive it from the preference.
+- Page 1 is counted but unmarked by default (ADR 0048). Only the paginator
+  turns “Number the first page” into a page-number line. Preview/PDF draw it;
+  editor page view asks `PageIndicator.printsNumber`, never the preference.
 - **An export is not a Save As** (ADR 0029). `doc_export_pdf` and
   `doc_export_fountain` both refuse `AlreadyExists` (retry with
   `overwrite: true`) and `ScriptIsOpen` (never retried). The export dialog
@@ -287,147 +277,121 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
 
 - `flutter build linux` invokes cargokit to compile `crates/bridge` and bundle
   `libslugline_bridge.so`; do not add a separate Rust build step.
-- After changing `crates/bridge/src/api/`, run
-  `cargo install flutter_rust_bridge_codegen cargo-expand` once, then
-   `cd app && flutter_rust_bridge_codegen generate`. Commit the generated
-   bindings in `app/lib/src/rust/`; never edit them by hand. CI holds them
-   with `tools/check_bridge_bindings.sh`, which regenerates to a temp dir
-   and diffs — a stale binding fails there instead of in the Xvfb suites. Run
-   `./tools/agent.sh bindings` for the same check locally.
+- When the exposed bridge API/types change, run
+  `cd app && flutter_rust_bridge_codegen generate`. Include generated Dart and
+  Rust bindings in the change; never edit them by hand. Implementation-only
+  edits under `src/api/` do not need regeneration. Install codegen tools only
+  if missing. `tools/check_bridge_bindings.sh` regenerates into a temp directory
+  and diffs; do not repeat that expensive check immediately after successful
+  generation unless investigating drift or changing codegen configuration.
 - Keep Rust `flutter_rust_bridge = "=2.12.0"` and Dart
   `flutter_rust_bridge: 2.12.0` exactly aligned. Bump both and regenerate
   bindings in the same change.
 
 ## Verification
 
-While you work, run what your change can break; before calling it done, run the
-whole list. `tools/agent.sh` wraps the common invocations so every agent runs
-the same flags (`./tools/agent.sh quick <crate>`, `./tools/agent.sh docs`,
-`./tools/agent.sh lint`, `./tools/agent.sh backlog-next`, `./tools/agent.sh
-regen` for print-only goldens). Environment pre-flight is
-`./tools/doctor.sh`.
+Choose checks from the changed behavior and its failure modes. The commands in
+scoped guides are a menu, not a mandatory list for every edit.
 
-One subsystem at a time:
+| Change | Normal completion checks |
+| --- | --- |
+| Prose or agent instructions | Review the diff; run `python3 tools/check_docs.py` when changing governed docs. No Rust/Flutter builds or tests. |
+| Local Rust behavior | Format touched code and run the relevant test filter or test target in the owning crate. Use the whole crate only when the impact warrants it. |
+| Local Flutter behavior | Format touched Dart; run the relevant widget test file or named tests. Analyze changed files when code/types change. |
+| Save, recovery, source preservation or history | Focused tests for affected persistence/round-trip/Undo behavior, including failure cases. Use save/reopen or native checks where a unit test cannot cover the failure. |
+| Shared syntax, wrapping, pagination or output | The affected contract/differential/golden tests and relevant consumers, not every unrelated suite. |
+| Tooling/configuration | Exercise the changed tool or configuration; shell syntax for shell edits. Layering, version, reference and binding checks only when their inputs change. |
 
-```sh
-cargo test -p slugline_<crate>       # fountain, fdx, document, layout, render_pdf, storage, spell, bridge
-cd app && flutter test test/<area>/  # editor/, preview/, library/, settings/
-```
+Start with existing coverage. Add a regression test when it catches a meaningful
+behavioral failure; do not add tests for prose, trivial presentation changes or
+tests that merely repeat the implementation. Confirm filtered tests actually run.
 
-Rust checks from the repository root:
+`./tools/agent.sh quick <crate> [cargo-test-args...]` supports focused Rust
+checks; `./tools/agent.sh native <suite> [flutter-test-args...]` selects one native
+suite (`native --list` lists them). The optional `docs` command combines fast
+structural checks; `lint` is workspace-wide. None is a mandatory pre-flight.
+Run dependency resolution only for setup or dependency/toolchain changes.
 
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-python3 tools/check_layering.py
-python3 tools/check_version.py
-python3 tools/check_docs.py                # the docs still point at real files and live ADRs
-python3 tools/make_reference.py --check   # after touching fountain's syntax, parser or serialiser
-```
+### Full development validation
 
-Flutter checks from `app/`:
+Run the complete applicable Rust/Flutter suites **once at the end of a substantial
+feature, refactor or accumulated batch of related changes**, or when the user
+explicitly requests full validation. A shared-contract change spanning several
+layers or a broad runtime/toolchain change is a useful boundary; line count or
+the end of each small backlog item is not. Choose that boundary before starting
+expensive checks. Do not use full validation as an automatic per-commit gate.
 
-```sh
-flutter pub get --enforce-lockfile   # fails if the lockfile is not this toolchain's
-dart format --output=none --set-exit-if-changed lib test integration_test test_driver
-flutter analyze
-flutter test
-flutter build linux --release
-```
+Rust validation is `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets -- -D warnings` and
+`cargo test --workspace`. Flutter validation from `app/` is the whole-tree
+Dart format check, `flutter analyze` and `flutter test`. Run both for a broad
+cross-layer batch; a substantial change confined to one side needs that side.
+After they pass, rerun only checks affected by subsequent changes or failures.
 
-The Dart tree is formatter-clean, generated bindings included, and CI fails if
-`dart format` would change anything. Run `dart format` on the Dart you touch;
-on a clean tree that reformats nothing else. The style is the formatter's
-default for the package's language version; there is no project configuration.
+Native tests are for behavior requiring the real bridge, input system or runner.
+Select the relevant suite with `./tools/agent.sh native <suite>`; the complete
+`./tools/test_linux_integration.sh` belongs to a batch affecting several native
+workflows or an explicit full native validation, not every UI edit.
+An app build needed for reproduction is allowed; do not build a release bundle
+just to close an ordinary task. Run `tools/check_clean_close.py` for
+runner/shutdown changes or Flutter upgrades, and `tools/check_runtime_budgets.py`
+for relevant performance changes; neither is a routine feature-completion gate.
 
-Integration tests open real windows and go through Xvfb; this is the script CI
-runs, one test at a time, and it fails if its list and the files on disk
-disagree:
+### Release and hosted CI
 
-```sh
-./tools/test_linux_integration.sh
-```
+**GitHub release compilation, packaging, installers, AppImage/tarball smokes,
+network-isolation checks, release preflight and publishing are deferred until the
+project's final release task is explicitly requested.** Do not run, wait for,
+retry or fix them during normal development. A small task being "done" does not
+make it a release task. `docs/RELEASING.md` and `tools/release_preflight.sh` are
+references for that final task, not a development checklist.
 
-`./tools/check_no_network.sh` and the packaging smoke tests need the release
-bundle. `./tools/release_preflight.sh` runs everything on this page plus
-packaging and the metadata validators — the one command that proves a release
-candidate, needing `LINUXDEPLOY` set — and is overkill for anything that is not
-a release. Its one difference is a plain `flutter pub get`, so that a newer
-local Flutter can still run it; CI is what holds the lockfile.
+Automatic development CI in `.github/workflows/checks.yml` runs cheap docs and
+tooling checks. The expensive matrix in `.github/workflows/ci.yml` is manual
+final validation; do not trigger it during routine development. The tag-triggered
+release workflow remains reserved for final publishing. Do not poll or wait for
+CI as part of routine completion. Inspect CI only when requested or needed to
+diagnose the current change; report actual results without claiming unobserved
+success.
 
-Golden regeneration (each needs a sentence in the commit message saying whether
-the change was deliberate):
+### Evidence and correctness
 
-```sh
-UPDATE_LAYOUT_GOLDENS=1 cargo test -p slugline_layout --test golden
-UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf --test golden
-UPDATE_LINE_BREAK_FIXTURES=1 cargo test -p slugline_layout --test line_break_differential
-```
+Report what was checked and any relevant limitation briefly. Keep useful failed
+logs/cores for unresolved defects; do not manufacture a new evidence dossier for
+passing work. Do not mask a reproduced failure with sleeps, slower input,
+retries, relaxed assertions or forced termination.
 
-`crates/render_pdf/tests/text_extraction.rs` needs `poppler-utils`; without it
-the test prints `SKIPPED` and stops. CI installs it. The export integration
-suite needs it too (`pdftotext`, `pdftohtml`) and does not skip: the script
-above refuses to start without them, and CI's flutter job installs them.
+If a check fails, determine whether the failure belongs to this change before
+expanding the work. Repair failures caused by the change; record unrelated ones
+briefly and continue. Use a minimal prior-version control only when attribution
+will change that decision. Do not build a clean checkout or rerun a full matrix
+by default. After repeated attempts reveal the same external blocker with no
+new evidence, stop the detour and report the narrow blocker. Never claim the
+affected behavior is verified when its relevant check still fails.
 
-To look at a PDF rather than a hash:
-`cargo run -p slugline_render_pdf --example dump -- script.fountain out.pdf [a4]`
+When relevant, verify exact bytes, BOM/CRLF, untouched source, journal recovery
+and actual reopen. Full-disk classification alone is not a real full-disk test;
+PDF extraction marked `SKIPPED` is not a pass. Widget, native, installed and
+real-desktop results are distinct: Xvfb does not close manual GPU gate 5. An
+ordinary-close check must inspect process exit and retain a failing core, not
+just wrapper success. Mention only the gates relevant to the change or requested
+validation; do not restate every pending manual gate in every completion.
 
-The full-disk test needs a small filesystem: CI mounts a 4 MB tmpfs and names
-it in `SLUGLINE_FULL_DISK_DIR`. Locally the variable is unset and the test
-falls back to proving only error classification; to run the real thing without
-root, `unshare -Umr` a mount namespace,
-`mount -t tmpfs -o size=4m,mode=1777` a scratch directory, and point the
-variable at it.
-
-The benchmark (`integration_test/keystroke_benchmark_test.dart`) measures the
-keystroke path with and without the crash journal; both must stay under budget,
-and the second number is what matters in a real session. `docs/BUDGETS.md` is
-the live list of thresholds and what measures each — never change one without
-changing its test in the same change.
-
-F9's process budgets measure the shipped release bundle separately from the
-Flutter integration suites (ADR 0050):
-
-```sh
-xvfb-run -a python3 tools/check_runtime_budgets.py --output target/runtime-budgets.json
-```
-
-It requires `xdotool`, installed in the CI flutter and release jobs. Startup is
-exec to the first-frame window with an empty script argument; no-argument startup
-opens the library, and the caret is static. Idle waits for measured quiet, then
-requires zero CPU ticks and zero voluntary thread switches over ten seconds.
-The Xvfb RSS ceiling is 320 MiB; the 250 MiB GPU-session budget remains manual
-gate 5. Do not claim that a software-rendered pass proves the real-desktop figure.
-`--only` selects a budget for deliberate failure checks; revert every injected
-regression and rebuild.
-
-The same bundle must also close the ordinary way (ADR 0053):
-
-```sh
-xvfb-run -a python3 tools/check_clean_close.py --output target/clean-close.json
-```
-
-Five runs of three closes, each a `WM_DELETE_WINDOW` sent while a frame is
-still being drawn, each required to exit zero by itself with the saved bytes
-intact. The crash it guards against is a race, so one green close proves
-nothing and a red one is never a flake: read the retained process log and the
-core. `--binary` points it at another bundle, such as the installed one.
+Regenerate goldens only for deliberate output/contract changes, explain why
+briefly, and never bless a failure by updating expected output. Scoped guides
+and `./tools/agent.sh regen` contain the regeneration commands. Budget thresholds
+remain governed by `docs/BUDGETS.md`; change the measuring test and contract
+together if deliberately changing one.
 
 ## Project constraints
 
 - Add a one-line justification to `docs/DEPENDENCIES.md` in the same change as
   every new Rust or Dart dependency. Avoid large transitive dependency trees.
-- `Cargo.toml`'s `rust-version = "1.85"` is a fact about the dependency graph
-  (`hashbrown` under `spellbook`, `notify-types` under `notify`), and CI's `msrv`
-  job builds on exactly that toolchain. Avoid std APIs stabilised later, or raise
-  the floor deliberately in the same change — which is why `storage` uses
-  `libc::flock` and not `File::try_lock` (1.89); see ADR 0042.
-- `app/pubspec.lock` is the resolution of the toolchain CI pins (Flutter 3.44.8),
-  and CI resolves with `--enforce-lockfile`. The SDK pins four packages
-  exactly, so `pub get` under a newer Flutter rewrites them — as does anything
-  that runs it for you, the bridge code generator included. Restore the lockfile
-  unless the change is a deliberate dependency or toolchain bump.
+- Rust's minimum version is 1.85; avoid newer std APIs unless raising the floor
+  deliberately. Storage uses `libc::flock`, not newer `File::try_lock` (ADR 0042).
+- `app/pubspec.lock` belongs to Flutter 3.44.8. Newer Flutter, including codegen
+  running `pub get`, may rewrite it. Restore it unless deliberately changing
+  dependencies or the toolchain; CI uses `--enforce-lockfile`.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
 - Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. A later

@@ -100,7 +100,7 @@ def cmd_next() -> int:
             print(f"Note: stale block mark resolved; {item} waited on {declared[item]}, which is done.")
         if skipped:
             print(f"Skipped blocked: {', '.join(skipped)}")
-        print("Read the item's section in full, then reproduce before changing anything (see BACKLOG 'How to use this file').")
+        print("Read the item; reproduce bugs, choose focused checks, and follow AGENTS.md's completion policy.")
         return 0
     print("No unticked, unblocked items. The backlog is clear or everything left is blocked.")
     if skipped:

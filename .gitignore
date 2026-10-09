@@ -14,3 +14,4 @@
 
 # Local tooling
 .direnv/
+/tools/__pycache__/

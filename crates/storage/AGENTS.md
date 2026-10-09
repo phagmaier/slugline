@@ -34,10 +34,13 @@ Invariants:
 - `storage` uses `libc::flock`, not `File::try_lock`, because the workspace
   floor is Rust 1.85 (ADR 0042).
 
-Verify: `cargo test -p slugline_storage`. The full-disk test is only the
-real thing with a small filesystem in `SLUGLINE_FULL_DISK_DIR` (CI mounts a
-4 MB tmpfs); otherwise it proves error classification alone.
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_storage` filter or test target, covering affected
+save/recovery/error cases. Use the whole crate only when warranted. The full-disk
+test is only the real thing with a small filesystem in `SLUGLINE_FULL_DISK_DIR`
+(CI mounts a 4 MB tmpfs); otherwise it proves error classification alone. It is
+not a mandatory test for unrelated storage edits.
 
 Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043, 0063. Full rules
-in `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR
-changes this crate, update this file in the same change.
+in `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes
+only when their invariants or pointers change.

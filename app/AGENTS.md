@@ -68,13 +68,20 @@ Invariants:
   into the process's exit handlers. Never destroy the window there instead,
   and never `_exit()` (ADR 0053).
 
-Verify from `app/`: `flutter pub get --enforce-lockfile`,
-`dart format --output=none --set-exit-if-changed lib test integration_test test_driver`,
-`flutter analyze`, `flutter test` (or `flutter test test/<area>/` for one
-area), `flutter build linux --release`. Real-window suites run under Xvfb
-via `./tools/test_linux_integration.sh`. After touching the runner or
-upgrading Flutter, also `xvfb-run -a python3 ../tools/check_clean_close.py`.
+Verification follows the [root policy](../AGENTS.md#verification). From `app/`,
+format touched Dart, analyze changed files as needed, and run the relevant
+widget test file or named tests. Use an area suite only when the impact warrants
+it. Do not run all widget/native suites or a release build for a small UI fix.
+Run `flutter pub get --enforce-lockfile` only for setup or dependency changes.
+
+For a real-window/input/bridge failure, select one suite with
+`../tools/agent.sh native <suite> [flutter-test-args...]`; it runs under Xvfb.
+All files via `../tools/test_linux_integration.sh` are for a
+substantial native batch or explicit full native validation. After runner or
+shutdown changes or a Flutter upgrade, run `tools/check_clean_close.py` from
+the root under Xvfb against the relevant bundle. Build only if needed for that
+check or reproduction. Release/packaging work waits for the final release task.
 
 Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060, 0061. Full rules in
-`AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
-this surface, update this file in the same change.
+`AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes only
+when their invariants or pointers change.

@@ -22,25 +22,44 @@ For whoever (or whatever) picks up an item:
    another says so on its own checklist line — `— *unblocks XN*` — so the
    dependency is visible from either end. `tools/check_docs.py` holds both to each
    other.
-2. Read the item's section in full, then **reproduce the problem before changing
-   anything**. If it does not reproduce, do not "fix" it: write what you found on
-   the item's `Result` line and stop.
-3. Follow `AGENTS.md` — its invariants and its verification commands apply to
-   every item here. Where an item changes something an accepted ADR decided, add
-   a superseding ADR in the same change; do not edit the old one.
+2. Read the item's section. For a bug, reproduce it with a focused test or
+   observation before editing. If it does not reproduce, record that briefly
+   rather than making a speculative fix. New features and docs changes need an
+   intended result, not a fabricated failing runtime test.
+3. Follow [AGENTS.md](../AGENTS.md#verification): focused verification is enough
+   to finish a routine item. Full suites run once at a substantial development
+   boundary or on explicit request; finishing each item does not trigger them.
+   Historical test inventories and release checks in item descriptions are not
+   recurring completion requirements. Release work waits for the explicitly
+   requested final release task. Add an ADR only for a durable architectural
+   decision or a change to an accepted decision; never rewrite the old decision.
 4. The owner has delegated implementation choices and product decisions to
    agents. Do not wait for sign-off or ask the owner to choose between options.
-   Use judgment, do any needed research or deliberation, and record the reason
-   for the choice. Larger or uncertain items may need planning before coding;
+   Use judgment and record only non-obvious choices that matter to the outcome.
+   Larger or uncertain items may need planning before coding;
    that planning is part of the work, not an approval gate.
-5. Stay inside the item. If you notice something else, add a line under
-   [Found along the way](#found-along-the-way) instead of fixing it.
-6. When the work is verified: tick the item's box in the checklist and fill in
-   its `Result` line with the date, the commit, and anything that turned out
-   differently from what the item describes. Do not delete items. One item per
-   commit, with the item's id leading the subject — see `AGENTS.md`. Tick the box
-   once the commit exists, so the `Result` can name it; a ticked box whose
-   `Result` still says "commit pending" is reported by `tools/check_docs.py`.
+5. Stay inside the item. Record actionable adjacent defects briefly under
+   [Found along the way](#found-along-the-way); do not log every observation.
+6. When the requested behavior/acceptance criteria are met and relevant checks
+   pass, review the diff, tick the item's box and fill in its `Result`
+   with the date, outcome, focused verification and any material limitation in
+   one to three sentences. Name the commit hash or intended descriptive subject
+   when committing; a subject avoids a second bookkeeping commit just to add a
+   hash. State separately if work is uncommitted. Do not delete historical items
+   or expand their existing results into new reports. One item per commit, with
+   its id leading the subject. Completion needs no exhaustive test counts,
+   passing logs, separate handoff or green hosted CI.
+
+Partial or blocked work remains unticked with `_open_` in its Result and a brief
+progress/blocker note. Non-reproduction alone does not close a bug; an
+already-fixed item can close when its acceptance criteria are confirmed. Fixing
+a subset of an item's criteria is not completion. Unrelated failures and final
+release/manual gates do not hold an otherwise completed item open. For a
+requested batch, finish it without permission stops and update each status.
+
+These rules were streamlined on 2026-10-09. Follow them over older handoffs,
+remembered backlog workflows and per-item verification lists. Direct user work
+outside the backlog does not require adding a tracking item.
 
 Effort: **S** is under a day, **M** a few days, **L** a week or more.
 

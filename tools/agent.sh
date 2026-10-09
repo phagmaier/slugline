@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# One entry point for the checks AGENTS.md lists, so humans and agents of any
-# kind run the same commands with the same flags.
+# Optional check shortcuts. AGENTS.md decides scope: focused checks for routine
+# work, full suites at substantial development boundaries, release work at the end.
 #
-#   ./tools/agent.sh doctor              # environment pre-flight
-#   ./tools/agent.sh quick <crate>       # one Rust crate: fountain|fdx|document|layout|render_pdf|storage|spell|bridge
+#   ./tools/agent.sh doctor              # setup/environment diagnosis
+#   ./tools/agent.sh quick <crate> [cargo-test-args...]  # add a filter/--test target; omit for the whole crate
+#   ./tools/agent.sh native <suite> [flutter-test-args...]  # one native suite; --list shows names
 #   ./tools/agent.sh docs                # layering + version + docs + reference checks (fast, no build)
 #   ./tools/agent.sh lint                # cargo fmt check + clippy (slower, whole workspace)
 #   ./tools/agent.sh backlog-next        # first unticked, non-blocked BACKLOG item
@@ -13,12 +14,12 @@
 # Run from anywhere. Thin wrapper only: the underlying tools remain the
 # authority, this script only fixes their invocation. Prefer it over
 # re-deriving flags from prose.
-set -uo pipefail
+set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 usage() {
-  sed -n '2,/^$/p' "$ROOT/tools/agent.sh" | sed 's/^# \?//'
+  sed -n '2,/^[^#]/p' "$ROOT/tools/agent.sh" | sed '$d; s/^# \?//'
 }
 
 cmd=${1:-help}
@@ -31,22 +32,31 @@ case "$cmd" in
     case "$crate" in
       fountain|fdx|document|layout|render_pdf|storage|spell|bridge) ;;
       *)
-        echo "usage: tools/agent.sh quick <crate>" >&2
+        echo "usage: tools/agent.sh quick <crate> [cargo-test-args...]" >&2
         echo "crates: fountain fdx document layout render_pdf storage spell bridge" >&2
         exit 2
         ;;
     esac
-    exec cargo test -p "slugline_$crate"
+    shift 2
+    cd "$ROOT"
+    exec cargo test -p "slugline_$crate" "$@"
+    ;;
+  native)
+    if [ "$#" -lt 2 ]; then
+      echo "usage: tools/agent.sh native <suite> [flutter-test-args...] (or native --list)" >&2
+      exit 2
+    fi
+    shift
+    exec "$ROOT/tools/test_linux_integration.sh" "$@"
     ;;
   docs)
-    set -e
     python3 "$ROOT/tools/check_layering.py"
     python3 "$ROOT/tools/check_version.py"
     python3 "$ROOT/tools/check_docs.py"
     python3 "$ROOT/tools/make_reference.py" --check
     ;;
   lint)
-    set -e
+    cd "$ROOT"
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
     ;;

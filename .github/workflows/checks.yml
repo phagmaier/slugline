@@ -1,0 +1,30 @@
+name: Development checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Docs and tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Documentation and contracts
+        run: ./tools/agent.sh docs
+      - name: Shell syntax
+        run: |
+          for script in tools/*.sh; do
+            bash -n "$script"
+          done
+      - name: Workflow tooling regressions
+        run: python3 -B -m unittest discover -s tools -p 'test_*.py'

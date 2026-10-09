@@ -1,5 +1,15 @@
 # Releasing Slugline
 
+**Deferred until the project's final release task is explicitly requested.**
+This guide does not apply to ordinary development or completion of a backlog
+item. Do not build, package, wait for or debug GitHub releases as part of those
+tasks. Follow [AGENTS.md](../AGENTS.md#verification) for development checks.
+
+Routine pushes run lightweight **Development checks**. The existing complete
+matrix is available as the manually triggered **Final validation** workflow in
+`.github/workflows/ci.yml`; trigger it only for the requested final validation.
+The tag-triggered publishing workflow remains separate and unchanged.
+
 `app/pubspec.yaml` owns the public release version. `Cargo.toml`, AppStream
 metadata, and `CHANGELOG.md` repeat it where their formats require a copy.
 `tools/check_version.py` checks the application copies.

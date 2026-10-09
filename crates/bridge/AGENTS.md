@@ -52,10 +52,15 @@ Invariants:
   normal untitled blank journal base, not an undo command or a stored FDX path
   (ADR 0062).
 
-Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
-`cd app && flutter_rust_bridge_codegen generate`, then
-`./tools/check_bridge_bindings.sh` (the same check CI runs).
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_bridge` filter or test target; the whole crate
+only when warranted. When exposed API/types change, run
+`cd app && flutter_rust_bridge_codegen generate` and include generated outputs.
+Implementation-only edits do not require regeneration. Do not regenerate a
+second time via `tools/check_bridge_bindings.sh` after successful generation
+unless investigating drift or changing codegen configuration. Native checks
+are for failures requiring the real bridge/runtime, not every bridge edit.
 
 Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0061, 0062, 0063. Full rules in
-`AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
-this crate, update this file in the same change.
+`AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes only
+when their invariants or pointers change.

@@ -45,8 +45,11 @@ Invariants:
   compare kind/text/dual, not redundant pins. Undo restores provenance and pins
   together (ADR 0059); keep identity-bearing empty forced Action blocks.
 
-Verify: `cargo test -p slugline_document`.
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_document` filter or test target. Use the whole
+crate only when warranted; cover affected history/Undo and source-preservation
+behavior without running unrelated Flutter/native/release suites.
 
 Governing ADRs: 0008, 0010, 0011, 0055, 0056, 0057, 0059, 0061, 0063. Full rules in `AGENTS.md`; the layer map
-in `docs/ARCHITECTURE.md`. When an ADR changes this crate, update this file
-in the same change.
+in `docs/ARCHITECTURE.md`. Update these notes only when their invariants or
+pointers change.

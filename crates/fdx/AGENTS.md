@@ -33,6 +33,9 @@ persistence, history, layout or production-revision fidelity (ADR 0055).
   validate canonical Fountain kind/text/dual identity order for save/reopen.
   Recovery initialization is the bridge/storage owner's full semantic patch.
 
-Verify after integration: `cargo test -p slugline_fdx` and
-`python3 tools/check_layering.py`. No fixture implies producer provenance, and
-self-roundtrip tests are not independent consumer verification.
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_fdx` filter or test target; the whole crate only
+when warranted. Run `python3 tools/check_layering.py` when dependency edges
+change. No fixture implies producer provenance, and self-roundtrip tests are not
+independent consumer verification. Release/package checks wait for the final
+release task. Update these notes only when their invariants or pointers change.

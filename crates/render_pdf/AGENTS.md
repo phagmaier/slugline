@@ -28,10 +28,13 @@ Invariants:
 - To look at a PDF rather than a hash:
   `cargo run -p slugline_render_pdf --example dump -- script.fountain out.pdf [a4]`.
 
-Verify: `cargo test -p slugline_render_pdf`. Hash changes are deliberate or
-they are bugs: `UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf
---test golden` — with a sentence in the commit message.
+Verification follows the [root policy](../../AGENTS.md#verification): run the
+relevant `cargo test -p slugline_render_pdf` filter or test target. Include golden
+or text-extraction coverage when output changes; use the whole crate only when
+warranted. Regenerate hashes only for deliberate output changes:
+`UPDATE_PDF_HASHES=1 cargo test -p slugline_render_pdf --test golden`, with a
+brief reason in the commit message. No release/package checks for routine edits.
 
 Governing ADRs: 0032, 0044, 0045, 0047, 0048, 0054, 0057, 0060. Full rules in `AGENTS.md`;
-the layer map in `docs/ARCHITECTURE.md`. When an ADR changes this crate,
-update this file in the same change.
+the layer map in `docs/ARCHITECTURE.md`. Update these notes only when their
+invariants or pointers change.

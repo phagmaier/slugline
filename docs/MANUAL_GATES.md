@@ -4,8 +4,9 @@ Some properties of this application are properties of the *session* — the inpu
 method, the screen reader, the printer, the display server — and no test in
 this repository can stand in for them. Each gate below names what automation
 already proves, what a person still has to do, and exactly how. None of them
-blocks day-to-day development; all of them should be run before calling any
-1.0.x done, and the results recorded here (date, machine, pass/fail).
+blocks day-to-day development. Run them during the explicitly requested final
+release validation and record the results here (date, machine, pass/fail).
+Routine task completion does not require repeating or enumerating these gates.
 
 ## 0. What was already checked on 2026-09-13
 

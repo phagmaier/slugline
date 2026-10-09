@@ -1,12 +1,10 @@
-name: CI
+name: Final validation
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
-# A second push to the same branch cancels the first: CI is a gate, not a log.
+# Full tests, native builds and packaging are deliberately manual and reserved
+# for the explicitly requested final validation. Routine pushes use checks.yml.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
