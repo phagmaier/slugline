@@ -98,6 +98,7 @@ This is the only place boxes are ticked.
 - [x] [B20](#b20) Closing the window while a script is still opening throws
 - [x] [B21](#b21) The status line gives a block that prints nothing the wrong page
 - [x] [B22](#b22) `Ctrl+F` with the find bar already open does nothing
+- [x] [B23](#b23) The find bar covers the matches under it
 
 **3. Fountain and output fidelity**
 
@@ -1284,6 +1285,33 @@ own key handler. Three tests in `app/test/editor/find_replace_test.dart` cover a
 new selection, no new selection, and the key inside the bar after a search with
 no matches; `docs/KEYMAP.md` says it. Commit:
 `B22 — Ctrl+F with the find bar open returns to the field`.
+
+<a id="b23"></a>
+### B23 — The find bar covers the matches under it
+
+**Evidence (reproduced in widget tests).** Promoted from the 2026-10-07 W8 note
+under [Found along the way](#found-along-the-way). The bar floats over the top
+right of the script; the surface brought a match into the viewport, not out
+from under the bar. At the top of a script there was nowhere to scroll to, and
+walking back up through the matches put each one three rows from the top edge,
+behind it. `target/w8-smoke/after-dark-find-open.png`: three of seven hidden.
+
+**Change.** While the bar is up the surface is told how far down it reaches.
+`EditorGeometry` adds that to the air above the first row, the scroll position
+moves with it so the text stays where it was, and a match the caret lands on is
+shown below it. The bar still floats and is measured after layout, not assumed.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `EditorSurface.obscuredTop`, `EditorGeometry.topInset`
+and `EditorPage._measureFindBar`. `find_highlight_test.dart` holds a match at
+the top of a script, Find opening on one, walking back through 59 of them, and
+text that stays put when nothing needs uncovering; the widget suite and the
+native `editor` suite pass, whose Find test now subtracts the scroll offset
+when it names a pixel, and the rebuilt app shows all seven matches of the W8
+fixture below the bar (`target/b20/look/`). Limitation: only the match the
+caret is on is kept clear — the whole band under the bar, not just its
+columns — so other tinted matches can lie under it until stepped to.
+Commit: `B23 — the find bar no longer sits on the match the caret is on`.
 
 ---
 
@@ -3084,6 +3112,7 @@ not part of that item.
   (`target/w8-smoke/after-dark-find-open.png`). The surface scrolls a selected
   match into the viewport, not out from under the bar. It predates W8 and shows
   more now that every other match is tinted. Left unchanged.
+  Promoted to [B23](#b23) on 2026-10-09.
 - 2026-10-07 — W8, read: every edit re-runs the retained Find query through a
   synchronous whole-document scan, even with the bar closed; the original
   keystroke benchmark never opened Find. Reproduced and resolved as

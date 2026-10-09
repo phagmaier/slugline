@@ -38,6 +38,7 @@ class EditorSurface extends StatefulWidget {
     this.pageView = true,
     this.boldSceneHeadings = false,
     this.highlightMatches = false,
+    this.obscuredTop = 0,
     this.pageIndicator,
     this.focusNode,
     this.onOpenPalette,
@@ -68,6 +69,13 @@ class EditorSurface extends StatefulWidget {
   /// outlives the bar, for `Ctrl+G`, and a script that stayed marked up after
   /// the search was put away would be a search that never ends.
   final bool highlightMatches;
+
+  /// How much of the top of the viewport the page above has put something
+  /// over, in pixels: the find bar, while it is up. The rows get that much more
+  /// air above them, so that the first of them can come out from under it, and
+  /// the caret is shown below it whenever it moves — a match the bar is sitting
+  /// on is not found.
+  final double obscuredTop;
 
   /// Where Rust's paginator put the page breaks.
   ///
@@ -164,6 +172,7 @@ class EditorSurfaceState extends State<EditorSurface>
     pageStarts: widget.pageIndicator?.pageStarts ?? const [],
     pageView: widget.pageView,
     scrollbarWidth: kMinInteractiveDimension,
+    topInset: widget.obscuredTop,
   );
 
   /// The composing region the platform is holding, in offsets into the focused
@@ -216,6 +225,18 @@ class EditorSurfaceState extends State<EditorSurface>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.textSize != widget.textSize) {
       _reportedRow = -1;
+    }
+    final shift = widget.obscuredTop - oldWidget.obscuredTop;
+    if (shift != 0 && _scroll.hasClients) {
+      // Every row has just moved by this much. The view moves with them, so
+      // the text stays where it was being read — silently, because the layout
+      // that follows in this frame is what reads the new position.
+      _scroll.position.correctPixels(math.max(0.0, _scroll.offset + shift));
+      if (shift > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _uncoverSelection();
+        });
+      }
     }
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onDocumentChanged);
@@ -902,7 +923,23 @@ class EditorSurfaceState extends State<EditorSurface>
     }
   }
 
-  /// Keeps the caret on screen with a few rows of air around it.
+  /// Brings the selection out from under [EditorSurface.obscuredTop] when
+  /// that has just come down over it: Find opening on a match is the case.
+  ///
+  /// A bare caret is left where it is — the keyboard is in the bar, and moving
+  /// the script for a caret nobody is looking at is a jump for nothing — and so
+  /// is a selection the writer has scrolled away from.
+  void _uncoverSelection() {
+    if (!_scroll.hasClients || !_controller.hasSelection) return;
+    final caretTop = _geometry.yOfRow(_controller.caretRow);
+    final top = _scroll.offset;
+    if (caretTop + _lineHeight > top && caretTop < top + widget.obscuredTop) {
+      _ensureCaretVisible();
+    }
+  }
+
+  /// Keeps the caret on screen with a few rows of air around it, and below
+  /// whatever [EditorSurface.obscuredTop] says is covering the top.
   void _ensureCaretVisible() {
     if (_initialScrollPending || _restoreInProgress || !_scroll.hasClients) {
       return;
@@ -910,12 +947,12 @@ class EditorSurfaceState extends State<EditorSurface>
     final margin = 3 * _lineHeight;
     final caretTop = _geometry.yOfRow(_controller.caretRow);
     final caretBottom = caretTop + _lineHeight;
-    final top = _scroll.offset;
-    final bottom = top + _scroll.position.viewportDimension;
+    final top = _scroll.offset + widget.obscuredTop;
+    final bottom = _scroll.offset + _scroll.position.viewportDimension;
 
     double? target;
     if (caretTop - margin < top) {
-      target = caretTop - margin;
+      target = caretTop - margin - widget.obscuredTop;
     } else if (caretBottom + margin > bottom) {
       target = caretBottom + margin - _scroll.position.viewportDimension;
     }
@@ -1113,9 +1150,13 @@ class EditorSurfaceState extends State<EditorSurface>
                     child: SingleChildScrollView(
                       controller: _scroll,
                       child: SizedBox(
+                        // With something over the top, a script shorter than
+                        // the viewport still has to scroll by that much: it
+                        // is how its first rows come out from under it, and
+                        // how the rest stays put when they have no need to.
                         height: math.max(
                           geometry.contentHeight,
-                          constraints.maxHeight,
+                          constraints.maxHeight + widget.obscuredTop,
                         ),
                         width: contentWidth,
                         child: Stack(

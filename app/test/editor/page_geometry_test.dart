@@ -13,17 +13,42 @@ EditorGeometry _geometry({
   int totalRows = 300,
   List<PageStart> pageStarts = const [],
   bool pageView = false,
+  double topInset = 0,
 }) => EditorGeometry(
   metrics: _metrics,
   viewportWidth: viewportWidth,
   totalRows: totalRows,
   pageStarts: pageStarts,
   pageView: pageView,
+  topInset: topInset,
 );
 
 const _starts = [PageStart(row: 54, number: 2), PageStart(row: 110, number: 3)];
 
 void main() {
+  test('a top inset moves every row down by itself and nothing else', () {
+    // What the find bar covers while it is up. A click still has to land on
+    // the row it was aimed at, sheets and all.
+    for (final pageView in [false, true]) {
+      final plain = _geometry(pageStarts: _starts, pageView: pageView);
+      final inset = _geometry(
+        pageStarts: _starts,
+        pageView: pageView,
+        topInset: 150,
+      );
+      for (final row in [0, 53, 54, 109, 110, 299]) {
+        expect(inset.yOfRow(row), plain.yOfRow(row) + 150);
+        expect(inset.rowAtY(inset.yOfRow(row) + 1), row);
+      }
+      expect(inset.contentHeight, plain.contentHeight + 150);
+      expect(inset.sheets().map((sheet) => sheet.top), [
+        for (final sheet in plain.sheets()) sheet.top + 150,
+      ]);
+      expect(inset.columnLeft, plain.columnLeft);
+      expect(inset, isNot(plain));
+    }
+  });
+
   group('the measure', () {
     test('is six inches of text and does not stretch with the viewport', () {
       // Sixty columns is the whole point: a wider window buys more margin, not

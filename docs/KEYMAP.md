@@ -405,6 +405,10 @@ the caret first (for example with `→`) to amend it instead.
 is in it. Pressed from the script it also does what opening does: text selected
 there becomes the search. Pressed inside the bar it leaves the search alone.
 
+The bar floats over the top right of the script and is not left sitting on the
+match the caret is on. While it is open the script has that much more room
+above its first line, and a match is shown below the bar.
+
 Inside the palette, `↑` and `↓` move the highlight and `Enter` runs it.
 
 “Go to page…” is also in the palette. Enter a page number and press `Enter` or

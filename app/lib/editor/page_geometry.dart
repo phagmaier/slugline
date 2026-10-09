@@ -23,6 +23,7 @@ class EditorGeometry {
     this.pageStarts = const [],
     this.pageView = false,
     this.scrollbarWidth = 0,
+    this.topInset = 0,
   });
 
   final ScreenplayMetrics metrics;
@@ -43,6 +44,12 @@ class EditorGeometry {
   /// view, or the column in continuous view, is centred in the remaining space
   /// regardless of whether the scrollbar is painted.
   final double scrollbarWidth;
+
+  /// How much of the top of the viewport something floats over, in pixels: the
+  /// find bar, while it is up. It is added to the air above the first row, so
+  /// that the top of the script can be scrolled out from under it. Chrome, not
+  /// page — the one measurement here that is not a fraction of an inch.
+  final double topInset;
 
   double get advance => metrics.advance;
   double get lineHeight => metrics.lineHeight;
@@ -89,8 +96,8 @@ class EditorGeometry {
   double get sheetWidth => metrics.paperWidth;
 
   /// Air above the first row. One inch of page in page view, so the first sheet
-  /// has its top margin; half an inch otherwise.
-  double get topPadding => metrics.down(sheeted ? 1 : 0.5);
+  /// has its top margin; half an inch otherwise. [topInset] comes on top of it.
+  double get topPadding => metrics.down(sheeted ? 1 : 0.5) + topInset;
 
   /// The space between two sheets, and the bottom and top margins they bring
   /// with them. Two inches of margin plus half an inch of shadowed air.
@@ -214,6 +221,7 @@ class EditorGeometry {
       other.totalRows == totalRows &&
       other.pageView == pageView &&
       other.scrollbarWidth == scrollbarWidth &&
+      other.topInset == topInset &&
       _sameStarts(other.pageStarts, pageStarts);
 
   @override
@@ -223,6 +231,7 @@ class EditorGeometry {
     totalRows,
     pageView,
     scrollbarWidth,
+    topInset,
     pageStarts.length,
     pageStarts.isEmpty ? 0 : pageStarts.last.row,
   );

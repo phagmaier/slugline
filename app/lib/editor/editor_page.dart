@@ -139,6 +139,11 @@ class EditorPageState extends State<EditorPage> {
   final GlobalKey<FindBarState> _findKey = GlobalKey<FindBarState>();
   bool _compactLayout = false;
 
+  /// How far down the surface the find bar reaches, for the surface to keep
+  /// the caret out from under. Read after layout, because the bar's height is
+  /// its own: its filter takes a line to itself in a narrow window.
+  double _findBarBottom = 0;
+
   int _externalChangeSerial = 0;
   int _modalSerial = 0;
   bool _scriptActionActive = false;
@@ -354,13 +359,33 @@ class EditorPageState extends State<EditorPage> {
     // Before the bar exists, so that it opens on this search: the selection's
     // text if there is one to take, the last query otherwise.
     if (panel == _Panel.find) widget.controller.startFind();
-    setState(() => _panel = panel);
+    setState(() {
+      _panel = panel;
+      _findBarBottom = 0;
+    });
+    if (panel == _Panel.find) _measureFindBar();
   }
 
   void _dismiss() {
     if (_panel == _Panel.none) return;
-    setState(() => _panel = _Panel.none);
+    setState(() {
+      _panel = _Panel.none;
+      _findBarBottom = 0;
+    });
     _editorFocus.requestFocus();
+  }
+
+  void _measureFindBar() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final bar = _findKey.currentContext?.findRenderObject();
+      final surface = _surfaceKey.currentContext?.findRenderObject();
+      final bottom = bar is RenderBox && surface is RenderBox && bar.hasSize
+          ? bar.localToGlobal(bar.size.bottomLeft(Offset.zero)).dy -
+                surface.localToGlobal(Offset.zero).dy
+          : 0.0;
+      if (bottom != _findBarBottom) setState(() => _findBarBottom = bottom);
+    });
   }
 
   // --- saving ----------------------------------------------------------------
@@ -826,6 +851,7 @@ class EditorPageState extends State<EditorPage> {
                                   pageIndicator: _pageIndicator,
                                   initialScrollRow: widget.initialScrollRow,
                                   highlightMatches: _panel == _Panel.find,
+                                  obscuredTop: _findBarBottom,
                                   focusNode: _editorFocus,
                                   // The surface has the focus, so it sees these keys first and
                                   // hands the ones that are not editing back up here.
@@ -850,11 +876,22 @@ class EditorPageState extends State<EditorPage> {
                                   child: Align(
                                     alignment: Alignment.topRight,
                                     child: SingleChildScrollView(
-                                      child: FindBar(
-                                        key: _findKey,
-                                        controller: widget.controller,
-                                        onDismiss: _dismiss,
-                                      ),
+                                      child:
+                                          NotificationListener<
+                                            SizeChangedLayoutNotification
+                                          >(
+                                            onNotification: (_) {
+                                              _measureFindBar();
+                                              return true;
+                                            },
+                                            child: SizeChangedLayoutNotifier(
+                                              child: FindBar(
+                                                key: _findKey,
+                                                controller: widget.controller,
+                                                onDismiss: _dismiss,
+                                              ),
+                                            ),
+                                          ),
                                     ),
                                   ),
                                 ),

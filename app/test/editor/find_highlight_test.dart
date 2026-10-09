@@ -20,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_surface.dart';
+import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/editor/page_geometry.dart';
 
 import '../support/fake_core.dart';
@@ -86,6 +87,12 @@ Future<void> _find(
   await tester.pump(const Duration(milliseconds: 200));
   await tester.pumpAndSettle();
 }
+
+/// How far down the surface the find bar reaches. The rows sit that much lower
+/// while it is up, so that none of them is stuck under it.
+double _barBottom(WidgetTester tester) =>
+    tester.getBottomLeft(find.byType(FindBar)).dy -
+    tester.getTopLeft(find.byType(EditorSurface)).dy;
 
 /// The surface's painter, as installed right now.
 dynamic _painter(WidgetTester tester) => tester
@@ -228,7 +235,10 @@ void main() {
     // action is the block under the heading and starts at the left margin, so
     // its sixteenth and thirtieth cells are where the two words begin.
     final row = controller.layout.firstRowOf(1);
-    final geometry = editorGeometry(totalRows: controller.layout.totalRows);
+    final geometry = editorGeometry(
+      totalRows: controller.layout.totalRows,
+      topInset: _barBottom(tester),
+    );
     Rect word(int column) => Rect.fromLTWH(
       geometry.columnLeft + column * geometry.advance,
       geometry.yOfRow(row),
@@ -562,5 +572,116 @@ void main() {
     expect(controller.matches, hasLength(2), reason: 'and the list did');
     expect(controller.matchIndex, 0, reason: 'and so did its place in it');
     expect(told, 1);
+  });
+
+  group('the find bar does not cover the match the caret is on', () {
+    ScrollPosition scroll(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(EditorSurface),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+            ),
+          ),
+        )
+        .position;
+
+    /// Where [row] is drawn, measured down from the top of the surface.
+    double rowTop(WidgetTester tester, int row) =>
+        (_painter(tester).geometry as EditorGeometry).yOfRow(row) -
+        scroll(tester).pixels;
+
+    FakeCore long() => FakeCore([
+      for (var n = 1; n <= 120; n++)
+        _block(n, BlockKind.action, 'Line $n of the house.'),
+    ]);
+
+    testWidgets('at the top of the script, where there is nowhere to scroll', (
+      tester,
+    ) async {
+      final controller = await pumpEditorPage(tester, _script());
+      expect(scroll(tester).maxScrollExtent, 0);
+      await _find(tester, controller, 'house');
+
+      expect(
+        rowTop(tester, controller.caretRow),
+        greaterThanOrEqualTo(_barBottom(tester)),
+      );
+      expect(_selected(tester), isNotEmpty, reason: 'and it is painted there');
+    });
+
+    testWidgets('walking back up through the matches', (tester) async {
+      final controller = await pumpEditorPage(tester, long());
+      await _find(tester, controller, 'house');
+      for (var step = 0; step < 60; step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      }
+      await tester.pumpAndSettle();
+      expect(scroll(tester).pixels, greaterThan(0));
+
+      for (var step = 0; step < 59; step++) {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
+        final top = rowTop(tester, controller.caretRow);
+        expect(top, greaterThanOrEqualTo(_barBottom(tester)), reason: '$step');
+        expect(top, lessThan(editorViewportHeight));
+      }
+      expect(controller.matchIndex, 1);
+    });
+
+    testWidgets('when Find opens on a match that is under it', (tester) async {
+      final controller = await pumpEditorPage(tester, _script());
+      // The first "house" of the action, selected: the search Find opens on.
+      selectFromTo(controller, 1, 16, 1, 21);
+      await tester.pump();
+      final row = controller.caretRow;
+
+      await _pressFind(tester);
+
+      expect(controller.matchIndex, 0);
+      expect(controller.caretRow, row);
+      expect(rowTop(tester, row), greaterThanOrEqualTo(_barBottom(tester)));
+    });
+
+    // Nothing to search for, so no match is chosen and nothing is a reason to
+    // move: not a caret well clear of the bar, and not a bare caret under it,
+    // which nobody is looking at while the keyboard is in the bar. The short
+    // script is the one with nowhere to scroll until the bar is up.
+    for (final (name, blocks, caret) in [
+      ('long', 120, 60),
+      ('short', 14, 13),
+      ('short, with the caret under the bar', 14, 0),
+    ]) {
+      testWidgets('opening and closing Find leaves a script where it was: '
+          '$name', (tester) async {
+        final controller = await pumpEditorPage(
+          tester,
+          FakeCore([
+            for (var n = 1; n <= blocks; n++)
+              _block(n, BlockKind.action, 'Line $n of the house.'),
+          ]),
+        );
+        caretAt(controller, caret, 0);
+        await tester.pumpAndSettle();
+        final row = controller.caretRow;
+        final before = rowTop(tester, row);
+        final offset = scroll(tester).pixels;
+        expect(offset > 0, name == 'long');
+
+        await _pressFind(tester);
+        expect(find.byType(FindBar), findsOneWidget);
+        expect(before < _barBottom(tester), caret == 0);
+        // To a rounding: the rows and the view have both moved by the bar.
+        expect(rowTop(tester, row), closeTo(before, 0.001));
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byType(FindBar), findsNothing);
+        expect(rowTop(tester, row), closeTo(before, 0.001));
+        expect(scroll(tester).pixels, closeTo(offset, 0.001));
+      });
+    }
   });
 }

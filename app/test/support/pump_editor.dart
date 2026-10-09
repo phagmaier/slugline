@@ -32,6 +32,8 @@ EditorGeometry editorGeometry({
   // default has to match the widget's or every pixel here is off by the
   // difference between 6 inches and 8.5.
   bool pageView = true,
+  // What the find bar covers while it is up; the rows sit that much lower.
+  double topInset = 0,
 }) {
   // The same derivation the surface runs, and deliberately not a second copy of
   // it: the size follows the viewport, so a helper that measured a font — as
@@ -48,6 +50,7 @@ EditorGeometry editorGeometry({
     totalRows: totalRows,
     pageView: pageView,
     scrollbarWidth: kMinInteractiveDimension,
+    topInset: topInset,
   );
 }
 

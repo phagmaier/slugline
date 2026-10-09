@@ -482,6 +482,10 @@ void main() {
 
     /// Where the cells of [block] from [from] to [to] are on screen. They must
     /// share a row.
+    ///
+    /// Less what the surface has scrolled: while the find bar is up the rows
+    /// have its height above them and the view is that much further down, so
+    /// that the text is where it was.
     Rect cells(
       WidgetTester tester,
       EditorController controller,
@@ -490,6 +494,18 @@ void main() {
       int to,
     ) {
       final geometry = painter(tester).geometry as EditorGeometry;
+      final scrolled = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(EditorSurface),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable && widget.axis == Axis.vertical,
+              ),
+            ),
+          )
+          .position
+          .pixels;
       final layout = controller.layout;
       final lineIndex = layout.lineIndexAt(block, from);
       final line = layout.linesOf(block)[lineIndex];
@@ -502,7 +518,9 @@ void main() {
         geometry.yOfRow(layout.firstRowOf(block) + lineIndex),
         (right - left) * geometry.advance,
         geometry.lineHeight,
-      ).shift(tester.getTopLeft(find.byType(EditorSurface)));
+      ).shift(
+        tester.getTopLeft(find.byType(EditorSurface)) - Offset(0, scrolled),
+      );
     }
 
     /// The window as it is drawn, one byte per channel.

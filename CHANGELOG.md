@@ -89,6 +89,8 @@ this file and the others to it.
 - `Ctrl+F` with the find bar already open returns to the find field with its
   text selected. From the script it also searches for newly selected text, as
   opening Find does.
+- The find bar no longer sits on the match the caret is on. While it is open
+  the script has room above its first line, and each match is shown below it.
 - Opening and closing the title page form no longer rewrites a title page that
   repeats a key or leaves one empty. Only a field that was actually edited is
   written; looking adds nothing to Undo, the unsaved state or the recovery
