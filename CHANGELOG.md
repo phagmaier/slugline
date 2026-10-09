@@ -84,6 +84,8 @@ this file and the others to it.
 - Closing the window while a script is still opening no longer logs an error or
   can leave a stray temporary file beside the recovery records. The quit waits
   for the open to finish and closes that script like any other.
+- The status line's page for a note, synopsis or section under a paragraph that
+  crosses pages is the page the paragraph ends on, not the one it began on.
 - Opening and closing the title page form no longer rewrites a title page that
   repeats a key or leaves one empty. Only a field that was actually edited is
   written; looking adds nothing to Undo, the unsaved state or the recovery

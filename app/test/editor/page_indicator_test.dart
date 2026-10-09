@@ -229,6 +229,66 @@ void main() {
     },
   );
 
+  test(
+    'a block that prints nothing is on the page the text above ends on',
+    () async {
+      final controller = EditorController(
+        FakeCore([
+          _block(1, 80),
+          BlockView(
+            id: 2,
+            kind: BlockKind.note,
+            sectionLevel: 0,
+            text: 'A private note.',
+            forced: false,
+            dual: false,
+            readOnly: false,
+            inlineRuns: const [],
+          ),
+          _block(3, 5),
+        ]),
+      );
+      addTearDown(controller.dispose);
+      final indicator = PageIndicator(
+        controller: controller,
+        // The paragraph runs from page 1 to page 3; the note under it reaches
+        // no page, and the paragraph after it follows on page 3.
+        output: FakeOutput(
+          _pagination([
+            _page(1, 1, 0, 30),
+            _page(2, 1, 30, 60),
+            PageView(
+              number: 3,
+              lines: [..._page(3, 1, 60, 80).lines, ..._page(3, 3, 0, 5).lines],
+            ),
+          ]),
+        ),
+        setup: const PageSetup(
+          paper: PaperSize.usLetter,
+          sceneNumbers: SceneNumbers.off,
+          boldSceneHeadings: false,
+          numberFirstPage: false,
+          debugLinesPerPage: null,
+        ),
+      );
+      addTearDown(indicator.dispose);
+      await indicator.refresh();
+
+      final note = controller.layout.firstRowOf(1);
+      indicator.updateVisibleRow(note - 1);
+      expect(indicator.label, 'Page 3 of 3');
+      indicator.updateVisibleRow(note);
+      expect(indicator.label, 'Page 3 of 3');
+      indicator.updateVisibleRow(controller.layout.firstRowOf(2));
+      expect(indicator.label, 'Page 3 of 3');
+      // The block that prints keeps its own lines' pages.
+      indicator.updateVisibleRow(0);
+      expect(indicator.label, 'Page 1 of 3');
+      indicator.updateVisibleRow(45);
+      expect(indicator.label, 'Page 2 of 3');
+    },
+  );
+
   group('page starts', () {
     PageIndicator indicatorOver(
       EditorController controller,

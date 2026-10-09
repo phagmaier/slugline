@@ -266,6 +266,7 @@ class PageIndicator extends ChangeNotifier {
     _pageStarts = null;
 
     final firstPageAtBlock = <int, int>{};
+    final lastPageAtBlock = <int, int>{};
     for (final page in pagination.pages) {
       final number = page.number;
       if (number == null) continue;
@@ -275,6 +276,7 @@ class PageIndicator extends ChangeNotifier {
         final block = line.block;
         if (block == null) continue;
         firstPageAtBlock.putIfAbsent(block, () => number);
+        lastPageAtBlock[block] = number;
         if (line.sourceLine case final sourceLine?) {
           _pageAtLine[(block, sourceLine)] = number;
           // The page's first line that came from the document. A page opens
@@ -287,12 +289,14 @@ class PageIndicator extends ChangeNotifier {
     }
 
     // Sections, notes and other non-printing blocks have no paginator row.
-    // Associate them with the preceding printable page so the label remains
+    // Associate them with the page the text above them ends on — not the one
+    // it began on, which for a paragraph that crossed a page is an earlier
+    // page than the lines either side of the note — so the label remains
     // stable while the writer scrolls through source-only material.
     var page = pagination.pages.firstOrNull?.number ?? 1;
     for (final block in controller.blocks) {
-      page = firstPageAtBlock[block.id] ?? page;
-      _pageAtBlock[block.id] = page;
+      _pageAtBlock[block.id] = firstPageAtBlock[block.id] ?? page;
+      page = lastPageAtBlock[block.id] ?? page;
     }
 
     _total = pagination.pageCount;

@@ -96,6 +96,7 @@ This is the only place boxes are ticked.
 - [x] [B18](#b18) A retained Find query rescans the script on every edit
 - [x] [B19](#b19) Save As leaves the old name in the app bar
 - [x] [B20](#b20) Closing the window while a script is still opening throws
+- [x] [B21](#b21) The status line gives a block that prints nothing the wrong page
 
 **3. Fountain and output fidelity**
 
@@ -1240,6 +1241,26 @@ journal file, in the same ~315 ms, and `tools/check_clean_close.py` passes
 (`target/b20/`). Limitation: a quit waits for an open in flight, so one stuck
 on a dead mount holds the window until the read returns. Commit:
 `B20 — a quit waits for the script that is still opening`.
+
+<a id="b21"></a>
+### B21 — The status line gives a block that prints nothing the wrong page
+
+**Evidence (reproduced in a unit test).** Promoted from the 2026-10-06 W5 note
+under [Found along the way](#found-along-the-way). `PageIndicator._adopt` gave
+a note, synopsis or section the page its predecessor *began* on: under a
+paragraph running from page 1 to page 3 the label read "Page 1 of 3" between
+two lines that both read "Page 3 of 3".
+
+**Change.** Carry the page the text above *ends* on to the blocks that reach no
+page. Still only Rust's snapshot, read back; a block that prints keeps the
+pages of its own lines.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `_adopt` records each block's last page as well as its
+first and gives non-printing blocks the last page of the text above them.
+`app/test/editor/page_indicator_test.dart` holds the note case and passes with
+the go-to-page tests. Commit:
+`B21 — a block that prints nothing takes the page the text above ends on`.
 
 ---
 
@@ -3069,6 +3090,7 @@ not part of that item.
   while scrolling past such a note. W5's own lookup uses the page the text
   above ends on and does not go through the indicator; the indicator is
   unchanged.
+  Promoted to [B21](#b21) on 2026-10-09.
 - 2026-10-06 — W5, read: `CHANGELOG.md` has no entry for W1–W4. New, Open and
   Close shortcuts, the added palette commands, `Shift+Enter` line breaks and
   "Go to page…" are all user-visible and all absent from "Unreleased"; W5 adds
