@@ -3261,7 +3261,12 @@ not part of that item.
 - 2026-10-09 — B27, read: a script opened from the library starts at its top
   although its entry keeps the row it was put away at, and a recovery accepted
   after a crash starts at the top too — `_openPath` and `_adopt` are given a
-  row by session restore alone. Not exercised and left unchanged.
+  row by session restore alone. Resolved on 2026-10-09:
+  `Restore saved reading positions when reopening scripts` makes `_adopt`
+  reuse the path's library row unless session restore supplied one (ADR 0067).
+  File-workflow widget tests and focused native persistence tests cover library,
+  quick-open, accepted recovery, shortened files, quit/unmount races and exact
+  bytes through recovery Save/reopen.
 
 - 2026-10-09 — B20, seen in a widget test: `_onExitRequested` disposes the open
   script's controller and leaves its `EditorPage` in the tree, so any frame

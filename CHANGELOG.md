@@ -92,6 +92,9 @@ this file and the others to it.
 
 ### Fixed
 
+- Reopening a script from the library or quick-open list, or accepting crash
+  recovery, resumes at its saved reading row instead of returning to the top.
+
 - Quitting with a script open comes back to that script, on the lines it was
   showing, the next time Slugline starts without a file named. A script put
   away with `Ctrl+W` is not reopened. After a crash the script also comes back

@@ -9,6 +9,7 @@ import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/command_palette.dart';
 import 'package:slugline/editor/editor_page.dart';
+import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/library/library_page.dart';
 import 'package:slugline/library/quick_open_dialog.dart';
@@ -42,7 +43,7 @@ const _preferences = PreferencesView(
   backupKeepDays: 7,
 );
 
-ScriptView _script(String id, int modified) => ScriptView(
+ScriptView _script(String id, int modified, {int scrollRow = 0}) => ScriptView(
   id: id,
   path: '/scripts/$id.fountain',
   title: id,
@@ -51,14 +52,18 @@ ScriptView _script(String id, int modified) => ScriptView(
   pageCount: 1,
   missing: false,
   open: false,
-  scrollRow: 0,
+  scrollRow: scrollRow,
 );
 
 class _AppCore implements Core {
   final opened = <FakeCore>[];
   final requests = <String>[];
   bool failOpen = false;
+  String? documentText;
+  final scrollRows = <String, int>{};
+  List<ScriptView> restoredSession = [];
   Completer<void>? holdOpen;
+  Completer<List<ScriptView>>? holdLibrary;
   PreferencesView currentPreferences = _preferences;
   final preferenceWrites = <PreferencesView>[];
   bool failPreferences = false;
@@ -89,12 +94,15 @@ class _AppCore implements Core {
   @override
   Future<List<RecoveryOffer>> pendingRecoveries() async => [];
   @override
-  Future<List<ScriptView>> sessionToRestore() async => [];
+  Future<List<ScriptView>> sessionToRestore() async => restoredSession;
   @override
-  Future<List<ScriptView>> library() async => [
-    _script('alpha', 2),
-    _script('beta', 1),
-  ];
+  Future<List<ScriptView>> library() async {
+    if (holdLibrary case final held?) return held.future;
+    return [
+      _script('alpha', 2, scrollRow: scrollRows['alpha'] ?? 0),
+      _script('beta', 1, scrollRow: scrollRows['beta'] ?? 0),
+    ];
+  }
 
   /// One entry per shutdown: how many opens were still unanswered at it.
   final shutdowns = <int>[];
@@ -128,9 +136,10 @@ class _AppCore implements Core {
       _opening -= 1;
     }
     if (failOpen) return null;
-    final core = FakeCore.single(BlockKind.action, 'Text from $path.')
-      ..eventHandle = opened.length + 1
-      ..filePath = path;
+    final core =
+        FakeCore.single(BlockKind.action, documentText ?? 'Text from $path.')
+          ..eventHandle = opened.length + 1
+          ..filePath = path;
     core.onDisk = core.source();
     opened.add(core);
     return core;
@@ -201,6 +210,84 @@ Future<void> _runPalette(WidgetTester tester, String label) async {
 }
 
 void main() {
+  testWidgets('library and quick open restore each script at its saved row', (
+    tester,
+  ) async {
+    final core = await _pump(tester, open: false);
+    core.documentText = List.generate(200, (i) => 'Action line $i.').join('\n');
+    core.scrollRows.addAll({'alpha': 42, 'beta': 68});
+
+    void expectRow(int row) {
+      expect(core.opened.last.scrollRow, row);
+      final position = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(EditorSurface),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable && widget.axis == Axis.vertical,
+              ),
+            ),
+          )
+          .position;
+      expect(position.pixels, greaterThan(0));
+    }
+
+    await _key(tester, LogicalKeyboardKey.enter);
+    expectRow(42);
+    await _chooseBeta(tester);
+    expectRow(68);
+  });
+
+  testWidgets('a saved row beyond the end clamps to the shortened script', (
+    tester,
+  ) async {
+    final core = await _pump(tester, open: false);
+    core.scrollRows['alpha'] = 999;
+    await _key(tester, LogicalKeyboardKey.enter);
+    expect(_editor(tester).initialScrollRow, 999);
+    expect(core.opened.single.scrollRow, 0);
+  });
+
+  testWidgets('an explicit session row of zero overrides the library row', (
+    tester,
+  ) async {
+    final core = _AppCore()
+      ..documentText = List.generate(200, (i) => 'Action line $i.').join('\n')
+      ..restoredSession = [_script('alpha', 2)];
+    core.scrollRows['alpha'] = 42;
+    addTearDown(core.eventBus.close);
+    await tester.pumpWidget(SluglineApp(core: core));
+    await tester.pumpAndSettle();
+    expect(core.opened.single.scrollRow, 0);
+    expect(_editor(tester).initialScrollRow, 0);
+  });
+
+  for (final quit in [false, true]) {
+    testWidgets(
+      '${quit ? 'quitting' : 'unmounting'} during the saved-row lookup adopts nothing',
+      (tester) async {
+        final core = await _pump(tester, open: false);
+        final lookup = core.holdLibrary = Completer<List<ScriptView>>();
+        await _key(tester, LogicalKeyboardKey.enter);
+        expect(core.opened, hasLength(1));
+        expect(find.byType(EditorPage), findsNothing);
+        if (quit) {
+          final exit = tester.binding.handleRequestAppExit();
+          await tester.pumpAndSettle();
+          expect(await exit, AppExitResponse.exit);
+        } else {
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+        lookup.complete([_script('alpha', 2, scrollRow: 42)]);
+        await tester.pumpAndSettle();
+        expect(core.opened.single.closes, 1);
+        expect(find.byType(EditorPage), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final width in [640.0, 1200.0]) {
     testWidgets(
       'palette navigator actions work at width $width and keep the draft',

@@ -265,7 +265,7 @@ class _SluglineAppState extends State<SluglineApp> {
 
   // --- opening and closing ---------------------------------------------------
 
-  Future<void> _openPath(String path, {int initialScrollRow = 0}) async {
+  Future<void> _openPath(String path, {int? initialScrollRow}) async {
     final core = await _opening(() => widget.core.openDocument(path));
     if (core == null) {
       _say('The script could not be opened or created.');
@@ -388,8 +388,25 @@ class _SluglineAppState extends State<SluglineApp> {
     return path == null ? null : File(path).parent.path;
   }
 
-  Future<void> _adopt(DocumentCore core, {int initialScrollRow = 0}) async {
-    if (_exiting) {
+  Future<void> _adopt(DocumentCore core, {int? initialScrollRow}) async {
+    if (!mounted || _exiting) {
+      core.close();
+      return;
+    }
+    var scrollRow = initialScrollRow ?? 0;
+    final path = core.path;
+    if (initialScrollRow == null && path != null) {
+      // Opening and recovering keep the library's parked row. Use it for every
+      // way an existing script arrives, not only startup's session restore.
+      // Untitled/imported scripts and paths absent from the cache start at zero.
+      for (final script in await widget.core.library()) {
+        if (script.path == path) {
+          scrollRow = script.scrollRow;
+          break;
+        }
+      }
+    }
+    if (!mounted || _exiting) {
       core.close();
       return;
     }
@@ -422,7 +439,7 @@ class _SluglineAppState extends State<SluglineApp> {
         controller: controller,
         autosave: autosave,
         status: status,
-        initialScrollRow: initialScrollRow,
+        initialScrollRow: scrollRow,
         navigatorVisible: preferences.navigatorVisible,
       );
     });

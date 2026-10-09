@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:slugline/app.dart';
 import 'package:slugline/core/core.dart';
 import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
@@ -955,6 +956,88 @@ void main() {
           'the editor should be scrolled past the top after session restore',
     );
   });
+
+  for (final recover in [false, true]) {
+    testWidgets(
+      '${recover ? 'accepted recovery' : 'library reopening'} restores the saved reading row',
+      (tester) async {
+        // Put away prior test sessions so startup presents only this scenario.
+        for (final entry in await Core.instance.sessionToRestore()) {
+          (await Core.instance.openDocument(entry.path))?.close();
+        }
+        final file = path('reading-row-$recover.fountain');
+        final source =
+            '\uFEFF${[for (var i = 1; i <= 200; i++) '!Action line $i.\t  \r\n\r\n'].join()}';
+        File(file).writeAsStringSync(source);
+        final document = (await Core.instance.openDocument(file))!;
+        document.setScrollRow(42);
+        await document.parkScrollRow();
+        // The binding's UTF-8 decoder consumes the BOM; disk checks below use
+        // bytes so the file's BOM is still held to byte-exact preservation.
+        var expected = document.source();
+        File? journal;
+        List<int>? recorded;
+        if (recover) {
+          final controller = EditorController(document);
+          controller.insertText('Recovered words. ');
+          expected = document.source();
+          final entry = (await Core.instance.library()).singleWhere(
+            (entry) => entry.path == file,
+          );
+          journal = File('${root.path}/state/journal/${entry.id}.log');
+          recorded = journal.readAsBytesSync();
+          controller.dispose();
+        } else {
+          document.close();
+        }
+        // Preserve the real recorded outcome as an orphaned crash journal;
+        // closing the seed released its kernel lock and removed its journal.
+        if (journal != null) journal.writeAsBytesSync(recorded!);
+
+        await tester.pumpWidget(SluglineApp(core: Core.instance));
+        await tester.pumpAndSettle();
+        if (recover) {
+          expect(find.text('Recover'), findsOneWidget);
+          await tester.tap(find.text('Recover'));
+        } else {
+          await tester.tap(find.text('reading-row-false'));
+        }
+        await tester.pumpAndSettle();
+        final editor = tester.widget<EditorPage>(find.byType(EditorPage));
+        expect(editor.controller.core.path, file);
+        expect(editor.controller.source, expected);
+        expect(editor.controller.core.dirty, recover);
+        expect(File(file).readAsBytesSync(), utf8.encode(source));
+        final position = tester
+            .state<ScrollableState>(
+              find.descendant(
+                of: find.byType(EditorSurface),
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Scrollable && widget.axis == Axis.vertical,
+                ),
+              ),
+            )
+            .position;
+        expect(position.pixels, greaterThan(0));
+        expect(
+          (await Core.instance.library())
+              .singleWhere((entry) => entry.path == file)
+              .scrollRow,
+          42,
+          reason: 'the actual viewport must report the saved row back to Rust',
+        );
+        if (recover) {
+          await tester.state<EditorPageState>(find.byType(EditorPage)).save();
+          expect(File(file).readAsBytesSync(), utf8.encode('\uFEFF$expected'));
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        final reopened = (await Core.instance.openDocument(file))!;
+        expect(reopened.source(), expected);
+        reopened.close();
+      },
+    );
+  }
 
   testWidgets('a script whose file has gone is shown as missing, not dropped', (
     tester,

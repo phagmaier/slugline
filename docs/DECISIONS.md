@@ -84,9 +84,10 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0058 | The outline is source-ordered Rust structure and scene length is paginated occupied eighths | `crates/bridge/src/api/doc.rs`, `crates/bridge/src/api/layout.rs`, `app/lib/editor/navigator_sidebar.dart`, `app/lib/editor/page_indicator.dart` | live |
 | 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | refined by 0063 — provenance-only seam normalization and checkpoint recovery |
 | 0063 | Saved checkpoint outcomes use the base's identities without changing live state | `crates/storage/src/journal.rs`, `crates/bridge/src/api/files.rs`, `crates/document/src/omission.rs`, `crates/document/tests/omission.rs`, `app/integration_test/writing_test.dart` | live |
-| 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | live |
+| 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | refined by 0067 — reading row on explicit open and recovery |
 | 0065 | The headless budget profile does not join the desktop's session bus | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md` | live |
 | 0066 | Repeated title entries are shown and edited individually | `crates/fountain/src/model.rs`, `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/title_page_dialog.dart` | live |
+| 0067 | Reopening and recovery reuse the saved reading row | `app/lib/app.dart`, `app/test/file_workflow_test.dart`, `app/integration_test/persistence_test.dart` | live |
 
 ---
 
@@ -5096,6 +5097,8 @@ forcing policy, dependency, budget or golden output changes.
 
 **Date:** 2026-10-09 · **Status:** accepted
 
+**Superseded by:** ADR 0067 refines reading-row restoration for explicit opens and accepted recovery.
+
 ### Context
 
 The library index carries `open` and `scroll_row` for each script, and startup
@@ -5243,3 +5246,42 @@ focus-loss/dispose commits, deletion followed by editing a surviving box, no-op
 and invalid occurrences, Undo/Redo, journal replay and save/reopen. Whole-page
 provenance is dropped by an intentional title edit as before; Undo restores the
 original bytes, and the BOM, CRLF and untouched body survive save/reopen.
+
+---
+
+## ADR 0067 — Reopening and recovery reuse the saved reading row
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Refines:** ADR 0064's reading-row restoration; its quit, put-away and settle rules remain.
+
+### Context
+
+The library keeps a script's reading row after it is put away or crashes.
+Opening and recovery retain that entry, but only startup session restore passed
+its row to the editor. Library and quick-open selections and accepted recovery
+therefore returned to the top and replaced the stored row with zero.
+
+### Decision
+
+Whenever the app adopts an existing script, use its path's current library row
+unless the caller supplies an explicit row, including zero. Resolve the row in
+`_adopt`, before replacing the current editor, so library, quick-open, named
+startup paths and successful or degraded recovery follow the same rule.
+
+Untitled/imported scripts and paths absent from the index start at zero. The
+editor's existing geometry applies the row and clamps it if the file became
+shorter; pagination landing still preserves that viewport. This restores a
+visual row, not a source-text anchor across edits or changes in wrapping.
+
+### Consequences and verification
+
+The library remains a cache: losing it costs reading position, never text.
+Recovery still requires the writer's choice and remains dirty until saved.
+After the asynchronous library lookup, adoption rechecks whether the app is
+mounted or exiting and closes an unused handle instead of creating an editor.
+
+File-workflow widget tests cover separate library/quick-open rows, shortening,
+an explicit zero session row and quit/unmount during lookup. Focused native
+persistence tests exercise actual library opening and accepted journal recovery,
+check the viewport's reported row, preserve file bytes before Save and verify
+the recovered text and BOM/untouched CRLF bytes through Save and actual reopen.
