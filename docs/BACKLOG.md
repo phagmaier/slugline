@@ -105,6 +105,7 @@ This is the only place boxes are ticked.
 - [x] [B27](#b27) An ordinary quit restores no session
 - [x] [B28](#b28) A restored page-view session is left on earlier text when its sheets arrive
 - [x] [B29](#b29) The idle gate fails on a workstation and passes on hosted CI
+- [x] [B30](#b30) A frame built after a quit is agreed asserts on a disposed controller
 
 **3. Fountain and output fidelity**
 
@@ -1498,6 +1499,29 @@ preloaded into the same bundle then measured 4, 68 and 3 and failed
 wakeups are still there, and a `--desktop` run can show them; manual gate 5
 now says so. Commit:
 `B29 — the headless idle check leaves the desktop's session bus behind`.
+
+<a id="b30"></a>
+### B30 — A frame built after a quit is agreed asserts on a disposed controller
+
+**Evidence (reproduced in a widget test).** Promoted from the 2026-10-09 B20
+note under [Found along the way](#found-along-the-way). `_onExitRequested`
+disposed the open script's controller and left its `EditorPage` in the tree.
+The window is there for a few more frames, and one that rebuilds the surface —
+a resize does it — hands the disposed controller a new painter to notify:
+"A EditorController was used after being disposed". A debug build asserts; a
+release build listens to a notifier that is gone.
+
+**Change.** A quit no longer disposes the script. `shutdown` has ended its
+session in the core (B27), the autosave clock is stopped before that, and the
+page stays whole until the application's own `dispose` lets go of it. Dart
+only, in `app/lib/app.dart`.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `file_workflow_test.dart` resizes, opens the palette
+and waits out a status refresh after the quit is agreed, with the page still
+there and nothing thrown; the widget suite passes, and
+`tools/check_clean_close.py` passes on the rebuilt bundle. Commit:
+`B30 — a quit leaves the script on screen whole until the window goes`.
 
 ---
 
@@ -3236,6 +3260,7 @@ not part of that item.
   built between the quit being agreed and the process going asserts
   "EditorController was used after being disposed" in a debug build. Release
   builds do not check. Not changed: B20 only orders the quit behind an open.
+  Promoted to [B30](#b30) on 2026-10-09.
 
 - 2026-10-08 — B16, reproduced under Xvfb: closing the window the moment it
   first appears, while the script named on the command line is still being

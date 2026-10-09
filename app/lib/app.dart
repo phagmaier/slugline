@@ -160,11 +160,12 @@ class _SluglineAppState extends State<SluglineApp> {
     // what makes it the one the next launch comes back to. Closed first, it
     // would be a script the writer had put away. Only the autosave clock is
     // stopped before, so that it cannot fire at a session that has just ended.
-    final open = _open;
-    _open = null;
-    open?.autosave.dispose();
+    //
+    // The script is not disposed here at all. Its page is on screen for the
+    // frames the window has left, and a page whose controller has been taken
+    // from under it cannot be rebuilt. [dispose] lets go of it with the rest.
+    _open?.autosave.dispose();
     await widget.core.shutdown();
-    open?.dispose();
     return AppExitResponse.exit;
   }
 

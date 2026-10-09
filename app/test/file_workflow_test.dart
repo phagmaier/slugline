@@ -530,7 +530,27 @@ void main() {
     expect(core.openAtShutdown, [
       ['/scripts/alpha.fountain'],
     ]);
-    expect(core.opened.single.closes, 1, reason: 'and then it is let go');
+    expect(core.opened.single.closes, 0);
+    await tester.pumpWidget(const SizedBox());
+    expect(core.opened.single.closes, 1, reason: 'let go with the app');
+  });
+
+  testWidgets('frames built after a quit is agreed still have their script', (
+    tester,
+  ) async {
+    // The window stays for a few frames after the answer, and the page with
+    // it. Anything that rebuilds or resizes it then reads the controller.
+    final core = await _pump(tester);
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+
+    tester.view.physicalSize = const Size(700, 800);
+    await tester.pump();
+    await _key(tester, LogicalKeyboardKey.keyK, control: true);
+    await tester.pump(const Duration(seconds: 31));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(EditorPage), findsOneWidget);
+    expect(core.opened.single.closes, 0, reason: 'let go with the app');
   });
 
   testWidgets('a script put away is not open at the quit that follows', (

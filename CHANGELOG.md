@@ -100,6 +100,8 @@ this file and the others to it.
 - In page view a script that comes back scrolled part of the way down shows
   the lines it was left on. It used to slip back a few lines for every page
   above them, once the sheets were drawn.
+- Resizing the window, or anything else that redraws it, in the moment after a
+  quit has been agreed no longer redraws a script that had already been let go.
 - A script scrolled away from the caret to read stays there. Spell-check
   results arriving, ignoring a misspelling and a search with no matches no
   longer bring the view back to the caret; moving it, typing and stepping to a
