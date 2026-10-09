@@ -27,10 +27,10 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0004 | Layering is enforced by a script, not by cargo-deny | `tools/check_layering.py`, `Cargo.toml` | extended by 0055 — FDX codec shares syntax types |
 | 0005 | Editor implementation: a single custom editing surface | `app/lib/editor/editor_surface.dart`, `spike/` | narrowed by 0018 — Dart line breaking is permanent |
 | 0006 | The project is called Slugline | `Cargo.toml`, `app/pubspec.yaml`, `crates/storage/src/paths.rs` | live |
-| 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | refined by 0059 — canonical syntax excludes redundant pins |
+| 0007 | Round-tripping is a tiling invariant, not a comparison | `crates/fountain/src/parse.rs`, `crates/fountain/src/serialise.rs` | refined by 0059 — canonical syntax excludes redundant pins; narrowed by 0061 — explicit safe boneyard replacement |
 | 0008 | Syntax lives in `fountain`, identity and history live in `document` | `crates/fountain/src/model.rs`, `crates/document/src/lib.rs`, `crates/document/src/document.rs`, `crates/document/src/edit.rs` | live |
 | 0009 | The bridge's document surface: flat kinds, patches, and refusals as values | `crates/bridge/src/api/doc.rs`, `app/flutter_rust_bridge.yaml`, `app/lib/src/rust/` | live |
-| 0010 | Paste is composed in the bridge, and grouped by the document | `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | live |
+| 0010 | Paste is composed in the bridge, and grouped by the document | `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | extended by 0061 — safe omission transactions |
 | 0011 | Automatic classification is the recognition rules read forwards | `crates/fountain/src/infer.rs`, `crates/document/src/workflow.rs`, `crates/bridge/src/api/doc.rs`, `crates/document/src/document.rs` | partly superseded by 0059 — live pins are not unconditional persisted markers |
 | 0012 | The custom surface's semantics tree is a render object per block | `app/lib/editor/surface_semantics.dart`, `app/test/editor/accessibility_test.dart` | live |
 | 0013 | The crash journal records outcomes, not commands | `crates/storage/src/journal.rs`, `crates/document/src/recovery.rs`, `crates/bridge/src/api/doc.rs` | live |
@@ -82,6 +82,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0059 | Canonical Fountain persists necessary syntax, not redundant live pins | `crates/fountain/src/serialise.rs`, `crates/document/tests/clean_fountain.rs`, `crates/bridge/src/api/files.rs`, `app/integration_test/persistence_test.dart` | refined by 0060 — necessary authored-case syntax |
 | 0060 | Forced Character cues retain authored case on every surface | `crates/fountain/src/case.rs`, `crates/fountain/src/serialise.rs`, `crates/layout/src/engine.rs`, `app/lib/editor/metrics.dart`, `app/lib/editor/editor_surface.dart`, `crates/render_pdf/tests/text_extraction.rs`, `app/integration_test/export_test.dart`, `app/integration_test/persistence_test.dart` | live |
 | 0058 | The outline is source-ordered Rust structure and scene length is paginated occupied eighths | `crates/bridge/src/api/doc.rs`, `crates/bridge/src/api/layout.rs`, `app/lib/editor/navigator_sidebar.dart`, `app/lib/editor/page_indicator.dart` | live |
+| 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | live |
 
 ---
 
@@ -415,6 +416,8 @@ inherit a decision rather than make one.
 ## ADR 0007 — Round-tripping is a tiling invariant, not a comparison
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 1
+**Superseded by:** ADR 0061 permits explicit, whole-boneyard omission/restoration;
+ordinary Opaque edits remain prohibited and parsed provenance still tiles exactly.
 
 **Superseded by:** ADR 0059 refines canonical equality only; source tiling remains unchanged.
 
@@ -617,6 +620,8 @@ insert `inserted` in ascending index.
 ## ADR 0010 — Paste is composed in the bridge, and grouped by the document
 
 **Date:** 2026-07-25 · **Status:** accepted · **Phase:** 2
+**Superseded by:** ADR 0061 adds explicit safe omission transactions; ordinary
+pasted Opaque material still follows this ADR's Action conversion.
 
 ### Context
 
@@ -4610,6 +4615,156 @@ survive boundaries, and title emphasis survives source-hard-line soft wraps.
 No verification result is asserted here; the integration owner runs the gates
 and reviews/regenerates affected baselines.
 
+
+---
+
+## ADR 0061 — Omissions carry lossless semantic fragments inside Fountain boneyards
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Extends:** ADR 0007's protected-block model and ADR 0010's grouped structural
+gestures. Only explicit safe boneyard replacement narrows provenance-only Opaque
+editing; ordinary commands retain their existing protections.
+
+### Context
+
+X7 requires exact partial selections, not silently widened whole elements, and
+saved/reopened omissions must restore editable screenplay semantics. Fountain
+has no standalone Dialogue or Parenthetical marker. Commenting only a raw
+fragment therefore loses its kind when a cue or adjacent block changes.
+Inventing a cue, keeping a persisted sidecar, or globally allowing Opaque text
+editing would either alter the screenplay or expose comment-terminator hazards.
+
+### Decision
+
+The three palette-only commands are **Omit selection**, **Omit scene** and
+**Restore omitted text**, reached through Ctrl+K; there are no dedicated key
+bindings. Omit selection preserves the exact character boundaries supplied by
+the editor (UTF-16 converted fallibly through `offsets.rs`). A collapsed or
+separator-only selection is refused without mutation. A selection ending at the next block's
+start excludes that block. Omit scene uses the heading at/before the focus
+through the block before the next heading, including sections, notes, existing
+boneyards and empty structural blocks.
+Selection omission refuses existing read-only boneyards; scene omission may contain complete nested boneyards. A partial
+selection that leaves an unclosed comment or nested-note opener in a visible remainder is
+also refused atomically rather than letting that opener capture the generated
+omission or unrelated later text. Selecting the complete delimiter span is
+safe; the selected opener/terminator text is escaped losslessly in the record.
+
+A generated omission is a real standalone Fountain `/* ... */` boneyard,
+represented as read-only Opaque. Its content is a readable, versioned semantic
+record, not a fake screenplay cue/sentinel or an external sidecar. The header is
+`Slugline omission v2`; a trailing `checksum` line carries a 16-digit hexadecimal
+FNV-1a integrity check of the complete UTF-8 record prefix, including the outer
+opener and newlines, before that checksum line. This detects accidental damage,
+not maliciously authored records; structural and semantic validation still
+reject records that cannot be represented safely.
+
+`left`, `right`, `before` and `after-seam` are either `none` or an element record.
+`preceding N` is followed by N `prior` records, nearest first, witnessing the
+preceding speech owner. `following N` is followed by N `after` records. The
+remaining one-or-more `block` records are the selected fragments in document
+order. Each element record carries a kind, the original forced/dual bits
+(`0`/`1`), and quoted exact model/source text,
+including inline emphasis. Kinds are `scene`, `action`, `character`, `dialogue`,
+`parenthetical`, `transition`, `centered`, `lyric`, `section-1` through
+`section-6`, `synopsis`, `note`, `page-break`, and `boneyard`.
+Backslash, slash, square brackets, quote, LF and CR are escaped as `\\`,
+`\x2f`, `\x5b`/`\x5d`, `\"`, `\n`, and `\r`; every slash is replaced, not merely backslash-prefixed, because
+Fountain comment recognition does not treat `\/` as an escaped slash.
+Escaped brackets cannot create a nested-note opener around the omission record.
+Unicode scalars are literal. Even unmatched
+`*/`, nested/unclosed `/*`, and existing boneyards are consequently conserved
+without being able to close the outer comment. Block ids are never persisted.
+
+Partial boundary blocks remain visible and retain their ids; one block split
+on both sides gives its second remainder a fresh id. The left/right witnesses
+retain exact remainder text and semantics. Fountain trims single-line markers,
+so matching normalized remainders recover their original seam whitespace.
+Restore joins the selected fragments back to matching witnessed remainders.
+Changed text, kind, dual ownership or missing adjacent content refuses the
+gesture; newer neighboring text is never overwritten or silently merged.
+When a reopen has reclassified a known untouched speech remainder, its exact witness permits
+restoring the original semantics. A different-kind, different-text seam, a
+missing remainder, or a missing cue that would orphan restored speech refuses
+the entire gesture. Restore never searches elsewhere or overwrites new text.
+
+Boneyards interrupt speech context. Any unselected speech tail serializes as
+literal forced Action blocks with real separators while omitted; `following`
+witnesses restore those original Dialogue/Parenthetical kinds when the text
+still matches. A preceding unchanged cue's `before` witness restores its
+original forced bit after a reopen required an `@` to keep that cue a cue.
+Existing same-kind text edits also refuse restoration. Marker drift after a
+provenance-backed reopen is allowed only when the exact text, kind and dual
+semantics still match: ADR 0059 intentionally drops redundant live forced pins.
+The stored original flags are restored in the live document, without demanding
+redundant markers on disk.
+
+Restore acts on the boneyard under a collapsed caret, or every boneyard
+intersecting a nonempty selection, ignoring editable blocks between them. A
+recognizable malformed/unsupported semantic record refuses restoration; its
+metadata must never silently become printable Action. Foreign boneyards are
+unwrapped and parsed as body Fountain (never as a replacement title page).
+Closed, nested, unclosed-to-EOF and empty foreign comments are supported.
+Nested comments remain real, separately restorable boneyards. Reintroducing an
+unclosed nested comment before later writing is refused so it cannot swallow
+that writing.
+Reassembled typed fragments are passed through the real Fountain serializer and
+parser before mutation. A change to text, kind or dual semantics refuses the
+restore rather than consuming a record that Save would partially discard or
+reinterpret. Literal unclosed comments in printable text therefore stay safely
+inside their lossless record; they are not exposed as source that swallows text.
+
+These are explicit structural document commands. Arbitrary ReplaceText,
+Split/Merge, SetKind, DeleteRange and ordinary InsertBlocks still cannot edit
+or manufacture Opaque blocks. Generated omissions/restored nested boneyards
+may have no original provenance; that is the sole narrowing of the old
+provenance-only Opaque model. The parser's exact source tiling remains intact.
+Untouched blocks/title retain their source; selected fragments and structural
+seams use the existing canonical/provenance paths. Undo restores ids, original
+provenance, exact source and the directed caret/selection. Each gesture is one
+isolated transaction and one journal outcome; a late restoration failure rolls
+back the entire group. There is no reinference of stored fragments or their
+unrelated neighbors. Preview/PDF already exclude Opaque at layout's boundary.
+
+### Live seams and one-step history
+
+The retained draft left the right ` friend.` as Dialogue after omitting `café`
+from `JOHN` / `Hello café friend.`; Fountain reopens it as Action because the
+boneyard interrupts the speech. The omission gesture now uses the shared grammar
+for its left remainder and makes the interrupted right/tail explicit Action
+through SetKind. Records retain original fragments/flags for exact restoration.
+No Save-time actor reparse, hidden cue or redundant-marker policy is added.
+
+Necessary orphan `@` syntax can also change a lowercase cue extension's rendering
+under ADR 0060. An omission pins that temporary cue consistently in the same
+gesture; restoration reinstates its original flags after matching the expected
+visible witness. A forcing difference that changes Character rendering is never
+accepted merely because the block has reopened provenance. Nested-note seams
+that could capture the generated record refuse before any splice.
+
+The combined experimental snapshot's independent SetKind steps reproduced Undo
+stopping at an intermediate split. An inner group also replaced the actual
+scene selection with its computed scene range. All three public omission commands
+now enter one group at the document mutation boundary with the caller's directed
+selection. Existing grouped callers retain their atomic rollback. One gesture
+produces one history transaction and one journal outcome. The gesture's new
+history is staged independently and appended only on success, so a late refusal
+retains existing Undo/Redo text without cloning the whole history. Undo/Redo
+patches now express the identities at the transaction boundaries: newly inserted
+remainders are never also journalled as changes to missing blocks. Recognizable
+record structure with a damaged header refuses rather than becoming foreign
+printable comment text.
+
+### Regression contract
+
+Consumer regressions cover Unicode offsets, reversed/cross-block partial
+selections, trimmed heading/cue/parenthetical seams, dual/forced semantics,
+whole scene boundaries, nested/comment terminators, changed context, malformed
+records and late-group rollback, Save/reopen/journal replay and actual recovery
+offer/acceptance before and after a checkpoint, actual editable
+restoration, palette patch/undo/redo selections, and omission exclusion from
+preview rows and Poppler-extracted PDF text. Generated-binding reconciliation,
+formatting and execution are recorded with the X7 backlog Result.
 ---
 
 ## ADR 0059 — Canonical Fountain persists necessary syntax, not redundant live pins

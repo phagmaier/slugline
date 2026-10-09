@@ -60,6 +60,10 @@ always will.
   name. See `docs/KEYMAP.md` for the full map.
 - **Live autocomplete** — character names and scene headings are suggested from
   what you've already written.
+- **Omit and restore** — use the command palette to omit an exact selection or
+  a whole scene into a restorable Fountain boneyard. Each command is one Undo
+  step; omitted text stays out of preview and PDF and survives Save/reopen.
+  Restore refuses changed context or damaged records while keeping the text.
 - **Outline navigator** — nested sections, synopses and scenes in source order,
   with jumps to every outline block and character cue. Scene rows show actual
   output start pages and occupied length in eighth-pages; pending pagination

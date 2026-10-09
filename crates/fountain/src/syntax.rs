@@ -227,6 +227,14 @@ pub fn without_notes_and_boneyards(source: &str) -> Cow<'_, str> {
 }
 
 pub(crate) fn note_text_is_balanced(text: &str) -> bool {
+    note_balance(text, false) == Some(0)
+}
+
+pub(crate) fn note_openers_are_closed(text: &str) -> bool {
+    note_balance(text, true) == Some(0)
+}
+
+fn note_balance(text: &str, allow_unmatched_closes: bool) -> Option<usize> {
     let bytes = text.as_bytes();
     let mut depth = 0usize;
     let mut index = 0;
@@ -235,16 +243,17 @@ pub(crate) fn note_text_is_balanced(text: &str) -> bool {
             depth += 1;
             index += 2;
         } else if &bytes[index..index + 2] == b"]]" {
-            let Some(next) = depth.checked_sub(1) else {
-                return false;
+            depth = match depth.checked_sub(1) {
+                Some(next) => next,
+                None if allow_unmatched_closes => 0,
+                None => return None,
             };
-            depth = next;
             index += 2;
         } else {
             index += 1;
         }
     }
-    depth == 0
+    Some(depth)
 }
 
 fn span_at(spans: &[Range<usize>], position: usize) -> Option<&Range<usize>> {

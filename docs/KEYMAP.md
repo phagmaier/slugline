@@ -78,6 +78,19 @@ ASCII space, retaining other whitespace. Already-numbered and already-unnumbered
 scripts are not dirtied by a no-op command. Numbers are saved in Fountain and
 printed according to the existing Scene numbers output setting. Save and export
 never number a script automatically. Neither command has a dedicated shortcut.
+**Omit and restore:** `Ctrl+K` → “Omit selection”, “Omit scene”, or
+“Restore omitted text” (no dedicated shortcuts, ADR 0061). Selection omission
+keeps exact partial character boundaries; a collapsed selection is refused.
+Selection omission refuses existing read-only boneyards and selections leaving
+an unclosed comment or nested-note opener in a visible remainder, without widening.
+Scene omission follows Rust's existing scene-heading boundaries. Omitted text
+is a read-only Fountain boneyard and is absent from preview/PDF. Restore uses
+the boneyard under the caret or those intersecting the selection, returning
+editable screenplay elements. Each gesture is one undo step, including the
+directed caret/selection. Save/reopen retains the text and element semantics.
+Changed neighboring text/semantics, damaged omission records, or fragments that
+cannot safely round-trip refuse restoration without changing text. Undo the
+context change before restoring; an unsafe record remains lossless and omitted.
 
 
 ---

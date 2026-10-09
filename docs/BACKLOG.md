@@ -2597,13 +2597,37 @@ Manual desktop gates and the inherited hosted startup investigation remain open.
 <a id="x7"></a>
 ### X7 — Omit and restore
 
-**Evidence (read).** A `/* … */` block is read-only in the editor — the status
+**Evidence (reproduced).** A `/* … */` block is read-only in the editor — the status
 bar says "That block round-trips verbatim and cannot be edited"
 (`app/lib/editor/element_bar.dart:345`) — and nothing in the editor creates
-one.
+one. The retained draft reproduces the reported `café` seam: its live right
+remainder is Dialogue but reopens as Action. A fractured nested note swallows
+the generated record. Experimental fixes reproduced intermediate-step Undo and
+wrong scene selections. Fresh failures are retained under
+`target/retained-features/x7/`.
 
 **Change.** Commands to move a selection or a scene into a boneyard block and
 back out, each one undo step.
+
+**Decision (ADR 0061).** Store exact semantic fragments and seam/owner witnesses
+inside a checksummed, slash-escaped real boneyard. Use the final ADR 0059/0060
+necessary-marker policy. During omission, SetKind makes interrupted right/tail
+speech explicit Action; necessary orphan cue forcing agrees with saved rendering.
+The record restores original semantics only after matching witnesses and validating
+reassembly with the actual serializer/parser. Unsafe nested-note/comment seams,
+changed context, bad checksums and damaged/unsupported headers refuse atomically.
+
+Group at the public mutation boundary, preserving the actual directed selection.
+Stage the new history separately so a late multi-restore failure retains existing
+Undo/Redo text. A reproduced recovery failure after Redo was fixed by emitting
+transaction-boundary identities; newly inserted remainders cannot also be changes
+to absent IDs. Save remains read-only over actor state. Palette, KEYMAP and F1
+help share all three commands, with no dedicated shortcuts.
+
+**Found along the way (read).** Generic `apply_group` rollback still clears
+pre-existing Redo after a late failure in unrelated grouped commands. X7's public
+commands stage their history; extending that protection to other commands is a
+separate task.
 
 **Effort.** M.
 **Result:** _open_

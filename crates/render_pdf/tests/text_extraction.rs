@@ -320,3 +320,77 @@ fn the_reference_feature_extracts_to_every_scene_it_has() {
         "every scene heading in the script is selectable in the PDF"
     );
 }
+
+#[test]
+fn omissions_are_absent_from_preview_rows_and_pdf_until_restored() {
+    use slugline_document::{BlockKind, DocPosition, DocSelection, EditCommand};
+    let mut document = Document::parse(
+        "INT. OMITTED - DAY\n\nSecret scene words.\n\nEXT. VISIBLE - DAY\n\nBefore SECRET after.\n",
+    );
+    let scene = document.blocks()[0].id();
+    document
+        .apply(EditCommand::OmitScene { block: scene })
+        .unwrap();
+    let action = document.blocks().last().unwrap().id();
+    document
+        .apply(EditCommand::OmitSelection {
+            at: DocSelection {
+                anchor: DocPosition::new(action, 7),
+                focus: DocPosition::new(action, 13),
+            },
+        })
+        .unwrap();
+    let saved = document.serialise();
+    let mut reopened = Document::parse(&saved);
+    let config = PageConfig::us_letter();
+    let output = paginate(&reopened, &config);
+    let preview_text = output
+        .pages
+        .iter()
+        .flat_map(|page| page.lines.iter())
+        .map(|line| line.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(preview_text.contains("Before"));
+    assert!(preview_text.contains("after."));
+    for hidden in [
+        "SECRET",
+        "Secret scene words",
+        "OMITTED",
+        "Slugline omission",
+    ] {
+        assert!(!preview_text.contains(hidden), "{hidden}");
+    }
+    let pdf = render(&output, &config, &DocumentInfo::default());
+    let Some(text) = require_pdftotext(extract(&pdf, &[])) else {
+        return;
+    };
+    assert!(text.contains("Before"));
+    assert!(text.contains("after."));
+    for hidden in [
+        "SECRET",
+        "Secret scene words",
+        "OMITTED",
+        "Slugline omission",
+    ] {
+        assert!(!text.contains(hidden), "{hidden}");
+    }
+    let last = reopened.blocks().last().unwrap();
+    let selection = DocSelection {
+        anchor: DocPosition::new(reopened.blocks()[0].id(), 0),
+        focus: DocPosition::new(last.id(), last.text().len() as u32),
+    };
+    reopened
+        .apply(EditCommand::RestoreOmitted { at: selection })
+        .unwrap();
+    assert!(!reopened
+        .blocks()
+        .iter()
+        .any(|block| block.kind() == BlockKind::Opaque));
+    let Some(restored) = require_pdftotext(extract(&export(&reopened.serialise()), &[])) else {
+        return;
+    };
+    assert!(restored.contains("Secret scene words."));
+    assert!(restored.contains("OMITTED"));
+    assert!(restored.contains("Before SECRET after."));
+}

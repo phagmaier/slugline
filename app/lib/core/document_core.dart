@@ -181,6 +181,11 @@ abstract class DocumentCore {
     rust.InlineStyle style,
   );
 
+  /// Lossless, isolated boneyard gestures; Rust owns fragments and scene bounds.
+  rust.EditOutcome omitSelection(rust.DocSelection at);
+  rust.EditOutcome omitScene(rust.DocSelection at);
+  rust.EditOutcome restoreOmitted(rust.DocSelection at);
+
   /// Tab, or Shift+Tab, on the block the caret is in. `null` where the table
   /// says Tab does nothing there — not a refusal, just no next element type.
   rust.EditOutcome? tab(rust.DocSelection at, {required bool shift});
@@ -431,6 +436,18 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
     rust.DocSelection at,
     rust.InlineStyle style,
   ) => rust.docFormatSelection(handle: _handle, at: at, style: style);
+
+  @override
+  rust.EditOutcome omitSelection(rust.DocSelection at) =>
+      rust.docOmitSelection(handle: _handle, at: at);
+
+  @override
+  rust.EditOutcome omitScene(rust.DocSelection at) =>
+      rust.docOmitScene(handle: _handle, at: at);
+
+  @override
+  rust.EditOutcome restoreOmitted(rust.DocSelection at) =>
+      rust.docRestoreOmitted(handle: _handle, at: at);
 
   @override
   rust.EditOutcome? tab(rust.DocSelection at, {required bool shift}) =>

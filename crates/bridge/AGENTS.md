@@ -30,6 +30,9 @@ Invariants:
   offsets.rs. `doc_format_selection` validates scanner semantics, groups one
   gesture and finishes through journalled `outcome`; marker-only formatting
   preserves element kinds rather than reinferring them (ADR 0057).
+- Omit selection/scene and Restore omitted text are structural, journalled
+  outcomes without reinference (ADR 0061); offsets still convert only through
+  `offsets.rs`, and exact pre/post selections belong to the transaction.
 - Save never reparses/replaces the actor's Document to clear redundant pins.
   Source syntax becomes authority only on reload. Checkpoints describe the exact
   saved bytes and subsequent outcomes must replay against their block identities,
@@ -51,6 +54,6 @@ Verify: `cargo test -p slugline_bridge`, plus after touching `src/api/`:
 `cd app && flutter_rust_bridge_codegen generate`, then
 `./tools/check_bridge_bindings.sh` (the same check CI runs).
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0062. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0061, 0062. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this crate, update this file in the same change.

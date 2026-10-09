@@ -24,6 +24,9 @@ Invariants:
   metadata and output. Plain gaps are implied; paired markers and escape slashes
   are hidden source ranges. Dialogue adds sung-line metadata through
   `dialogue_source_runs`, never a second scanner (ADR 0057).
+- `omission.rs` owns ADR 0061's versioned, lossless semantic records inside
+  actual Fountain boneyards. Every slash is escaped; malformed recognizable
+  records must not become printable fallback text.
 - Canonical edited/new blocks persist kind/text/dual, not redundant live pins
   (ADR 0059). Use shared grammar/context guards; preserve an empty forced Action
   as `!` for recovery identity and whitespace Action lines as non-separators.
@@ -38,6 +41,6 @@ Verify: `cargo test -p slugline_fountain`, plus
 `python3 tools/make_reference.py --check` after touching syntax, parser or
 serialiser.
 
-Governing ADRs: 0007, 0008, 0011, 0057, 0059, 0060. Full rules in `AGENTS.md`; the layer map
+Governing ADRs: 0007, 0008, 0011, 0057, 0059, 0060, 0061. Full rules in
 in `docs/ARCHITECTURE.md`. When an ADR changes this crate, update this file
 in the same change.

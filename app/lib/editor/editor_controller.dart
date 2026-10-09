@@ -78,6 +78,25 @@ class EditorController extends ChangeNotifier {
   int get documentRevision => _documentRevision;
   DocSelection get selection => _selection;
   bool get hasSelection => _selection.anchor != _selection.focus;
+
+  /// Availability is selection geometry over Rust's read-only flags, not
+  /// screenplay classification or parsing of a boneyard record.
+  bool get canRestoreOmitted {
+    final (from, to) = orderedSelection;
+    final first = _indexById[from.block]!;
+    final last = _indexById[to.block]!;
+    for (var index = first; index <= last; index++) {
+      final block = _blocks[index];
+      if (block.readOnly &&
+          (!hasSelection ||
+              (index != last || to.offsetUtf16 != 0) &&
+                  (index != first || from.offsetUtf16 != block.text.length))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   SpellStatus get spellStatus => _spellStatus;
   bool get _canCheckSpelling =>
       _spellStatus.enabled &&
@@ -769,6 +788,11 @@ class EditorController extends ChangeNotifier {
 
   /// Shift+Enter. The core owns which elements can contain a hard newline.
   void insertLineBreak() => _outcome(core.lineBreak(_selection));
+
+  /// Palette-only omission gestures. The patch owns the resulting selection.
+  void omitSelection() => _outcome(core.omitSelection(_selection));
+  void omitScene() => _outcome(core.omitScene(_selection));
+  void restoreOmitted() => _outcome(core.restoreOmitted(_selection));
 
   /// Commits the highlighted item. This is deliberately the only completion
   /// method that writes text, and is called only from Tab/Enter key handling.

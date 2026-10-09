@@ -135,6 +135,117 @@ void main() {
     expect(await File(path('export.fountain')).readAsString(), _script);
   });
 
+  testWidgets(
+    'native X7 whole scene palette excludes preview PDF and restores editable dual cues',
+    (tester) async {
+      const source =
+          'INT. OMIT - DAY #12A#\n\n@McCLANE\nSECRET CAFÉ.\n\n@Partner ^\nSecret reply.\n\n/* nested /* kept */ note */\n\nEXT. KEEP - NIGHT #13#\n\nVisible ending.\n';
+      final file = File(path('omitted-native.fountain'))
+        ..writeAsStringSync(source);
+      final core = (await Core.instance.openDocument(file.path))!;
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(home: EditorPage(controller: controller)),
+      );
+      final original = controller.blocks
+          .map((b) => (b.kind, b.text, b.forced, b.dual))
+          .toList();
+      final at = DocSelection(
+        anchor: DocPosition(block: controller.blocks[2].id, offsetUtf16: 5),
+        focus: DocPosition(block: controller.blocks[1].id, offsetUtf16: 1),
+      );
+      controller.setSelection(at);
+      Future<void> command(String label) async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Element or command'),
+          label,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(InkWell, label));
+        await tester.pumpAndSettle();
+      }
+
+      await command('Omit scene');
+      expect(controller.lastRejection, isNull);
+      final comment = controller.selection;
+      final omittedSource = controller.source;
+      expect(controller.blocks.first.kind, BlockKind.opaque);
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      expect(File(file.path).readAsStringSync(), omittedSource);
+      final output = core as ScreenplayOutput;
+      final pagination = switch (await output.paginate(letter)) {
+        PaginationOutcome_Current(:final pagination) => pagination,
+        final other => throw TestFailure('$other'),
+      };
+      final printed = pagination.pages
+          .expand((p) => p.lines)
+          .map((l) => l.content)
+          .join('\n');
+      expect(printed, contains('Visible ending.'));
+      expect(printed, isNot(contains('SECRET')));
+      expect(pagination.scenes.length, 1);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PreviewView(
+              pagination: pagination,
+              paper: PaperSize.usLetter,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<PreviewView>(find.byType(PreviewView)).pagination,
+        pagination,
+      );
+      expect(tester.takeException(), isNull);
+      final omittedPdf = path('omitted-native.pdf');
+      expect(
+        await output.exportPdf(omittedPdf, setup: letter),
+        isA<SaveOutcome_Saved>(),
+      );
+      final extracted = await Process.run('pdftotext', [omittedPdf, '-']);
+      expect(extracted.exitCode, 0);
+      expect(extracted.stdout, contains('Visible ending.'));
+      expect(extracted.stdout, isNot(contains('SECRET')));
+      await tester.pumpWidget(
+        MaterialApp(home: EditorPage(controller: controller)),
+      );
+      controller.setSelection(comment);
+      await command('Restore omitted text');
+      expect(controller.lastRejection, isNull);
+      expect(
+        controller.blocks.map((b) => (b.kind, b.text, b.forced, b.dual)),
+        original,
+      );
+      controller.undo();
+      expect(controller.selection, comment);
+      expect(controller.source, omittedSource);
+      controller.redo();
+      expect(await core.save(), isA<SaveOutcome_Saved>());
+      final restoredPdf = path('restored-native.pdf');
+      expect(
+        await output.exportPdf(restoredPdf, setup: letter),
+        isA<SaveOutcome_Saved>(),
+      );
+      final restoredText = await Process.run('pdftotext', [restoredPdf, '-']);
+      expect(restoredText.exitCode, 0);
+      expect(restoredText.stdout, contains('McCLANE'));
+      expect(restoredText.stdout, contains('SECRET CAFÉ.'));
+      controller.undo();
+      controller.undo();
+      expect(controller.selection, at);
+      expect(controller.source, source);
+      expect(controller.core.undo(), isNull);
+    },
+  );
+
   for (final dual in [false, true]) {
     testWidgets('forced cue case reaches paginated preview and PDF, dual=$dual', (
       tester,

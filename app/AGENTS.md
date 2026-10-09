@@ -53,6 +53,9 @@ Invariants:
   `PageIndicator`'s async pagination; invalidate scene metadata immediately on
   edits/setup changes, and reject stale or superseded requests. The controller's
   local edit epoch is not Rust's undo revision.
+- Omit selection, Omit scene and Restore omitted text are palette-only commands
+  from `elements.dart` (ADR 0061). The controller applies core patches and
+  selections; neither it nor the fake parses semantic omission records.
 - The tree is formatter-clean including generated bindings: run `dart
   format` on the Dart you touch. The lockfile belongs to Flutter 3.44.8;
   restore it unless bumping deliberately.
@@ -72,6 +75,6 @@ area), `flutter build linux --release`. Real-window suites run under Xvfb
 via `./tools/test_linux_integration.sh`. After touching the runner or
 upgrading Flutter, also `xvfb-run -a python3 ../tools/check_clean_close.py`.
 
-Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060. Full rules in
+Governing ADRs: 0005, 0011, 0012, 0018, 0041, 0045, 0052, 0053, 0054, 0055, 0056, 0057, 0058, 0059, 0060, 0061. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. When an ADR changes
 this surface, update this file in the same change.

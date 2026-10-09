@@ -9,9 +9,9 @@ use std::ops::Range;
 
 /// The element types the editor models (§3.1).
 ///
-/// Anything the parser recognises but the editor does not model — a boneyard
-/// comment, for instance — becomes [`BlockKind::Opaque`] and round-trips
-/// verbatim rather than gaining a variant here.
+/// Boneyards are [`BlockKind::Opaque`]: parsed comments round-trip verbatim,
+/// while explicit omission records may be generated/restored safely (ADR 0061).
+/// Ordinary text editing still cannot modify an Opaque block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockKind {
     SceneHeading,
@@ -28,7 +28,7 @@ pub enum BlockKind {
     Synopsis,
     Note,
     PageBreak,
-    /// Valid Fountain the editor does not model. Round-trips verbatim.
+    /// Read-only Fountain boneyard; explicit omission/restoration is safe.
     Opaque,
 }
 

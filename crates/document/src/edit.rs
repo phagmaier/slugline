@@ -113,6 +113,16 @@ pub enum EditCommand {
         field: TitleField,
         value: String,
     },
+    /// Explicit, lossless boneyard operations; arbitrary Opaque edits stay refused.
+    OmitSelection {
+        at: DocSelection,
+    },
+    OmitScene {
+        block: BlockId,
+    },
+    RestoreOmitted {
+        at: DocSelection,
+    },
 }
 
 impl EditCommand {
@@ -162,10 +172,10 @@ pub enum EditError {
     NoBlockAfter(BlockId),
     /// `from` and `to` are in the same document but the range is not coherent.
     BadRange,
-    /// The block is Opaque. §3.2 defines an Opaque block as one that always has
-    /// provenance and therefore always round-trips exactly — editing one would
-    /// take that away, and an edit that removes the `*/` from a boneyard
-    /// comment turns the rest of the script into a comment.
+    /// A boneyard record or its neighboring context cannot be restored safely.
+    CannotRestoreOmission,
+    /// Arbitrary editing of an Opaque block is unsafe. Only the explicit
+    /// omission/restoration operations may replace a complete boneyard.
     NotEditable(BlockId),
     /// Applying the command would leave a block in a state the model cannot
     /// represent safely. `block` is `None` for a not-yet-inserted block.
@@ -186,6 +196,9 @@ impl fmt::Display for EditError {
             ),
             EditError::NoBlockAfter(id) => write!(f, "block {} has no block after it", id.0),
             EditError::BadRange => write!(f, "the range is not coherent"),
+            EditError::CannotRestoreOmission => {
+                write!(f, "omitted text cannot be restored safely: its record or neighboring context changed")
+            }
             EditError::NotEditable(id) => {
                 write!(f, "block {} is opaque and round-trips verbatim", id.0)
             }

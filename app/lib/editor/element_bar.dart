@@ -345,6 +345,8 @@ String rejectionMessage(EditRejection rejection) => switch (rejection) {
   EditRejection.notEditable =>
     'That block round-trips verbatim and cannot be edited.',
   EditRejection.noBlockAfter => 'Nothing to join this to.',
+  EditRejection.cannotRestoreOmission =>
+    'Omitted text cannot be restored safely: its record or neighboring context changed.',
   _ => 'That edit was refused.',
 };
 

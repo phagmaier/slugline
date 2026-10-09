@@ -290,6 +290,8 @@ pub enum EditRejection {
     /// The command needs a block after this one and there is none.
     NoBlockAfter,
     BadRange,
+    /// Omission metadata is malformed or neighboring screenplay context changed.
+    CannotRestoreOmission,
     /// The block round-trips verbatim and cannot be edited (§3.2).
     NotEditable,
     /// The command would leave a block in a state the model cannot represent.
@@ -873,12 +875,11 @@ pub fn doc_format_selection(
         let Some(session) = state.session_mut(handle.id) else {
             return no_such_document();
         };
-        let document = session.document();
-        let at = match to_model_selection(document, Some(at)) {
+        let at = match to_model_selection(session.document(), Some(at)) {
             Ok(selection) => selection.expect("Some in, Some out"),
             Err(rejection) => return rejection,
         };
-        let plan = match formatting_plan(document, at, style) {
+        let plan = match formatting_plan(session.document(), at, style) {
             Ok(plan) => plan,
             Err(error) => return rejected(rejection_of(&error), error.to_string()),
         };
@@ -892,6 +893,55 @@ pub fn doc_format_selection(
             }
             group.set_selection(plan.selection)
         });
+        outcome(session, result)
+    })
+}
+
+/// Omits exact selected fragments, preserving their semantics inside a boneyard.
+#[frb(sync)]
+pub fn doc_omit_selection(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    omission_edit(handle, at, false, false)
+}
+
+/// Omits the scene containing the focus, using document scene boundaries.
+#[frb(sync)]
+pub fn doc_omit_scene(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    omission_edit(handle, at, true, false)
+}
+
+/// Restores boneyards intersecting the selection, or the one under the caret.
+#[frb(sync)]
+pub fn doc_restore_omitted(handle: DocumentHandle, at: DocSelection) -> EditOutcome {
+    omission_edit(handle, at, false, true)
+}
+
+fn omission_edit(
+    handle: DocumentHandle,
+    at: DocSelection,
+    scene: bool,
+    restore: bool,
+) -> EditOutcome {
+    actor().run(move |state| {
+        let Some(session) = state.session_mut(handle.id) else {
+            return no_such_document();
+        };
+        let document = session.document();
+        let at = match to_model_selection(document, Some(at)) {
+            Ok(selection) => selection.expect("Some in, Some out"),
+            Err(rejection) => return rejection,
+        };
+        let command = if restore {
+            model::EditCommand::RestoreOmitted { at }
+        } else if scene {
+            model::EditCommand::OmitScene {
+                block: at.focus.block,
+            }
+        } else {
+            model::EditCommand::OmitSelection { at }
+        };
+        let result = session.interrupt().apply_with_selection(command, Some(at));
+        // Stored fragments already carry screenplay semantics. Reinferring here
+        // would change unrelated cues/partial elements and defeat conservation.
         outcome(session, result)
     })
 }
@@ -1920,6 +1970,7 @@ fn rejection_of(error: &model::EditError) -> EditRejection {
         model::EditError::BadOffset { .. } => EditRejection::BadOffset,
         model::EditError::NoBlockAfter(_) => EditRejection::NoBlockAfter,
         model::EditError::BadRange => EditRejection::BadRange,
+        model::EditError::CannotRestoreOmission => EditRejection::CannotRestoreOmission,
         model::EditError::NotEditable(_) => EditRejection::NotEditable,
         model::EditError::InvalidBlock { .. } => EditRejection::InvalidBlock,
     }
@@ -3956,5 +4007,60 @@ mod tests {
         );
         drop(doc);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn omission_bridge_uses_exact_utf16_and_restores_one_selection_transaction() {
+        let doc = Doc::parse("@BOB\nBefore 😀 café after.\n\nLast.\n");
+        let original = doc.text();
+        let dialogue = doc.id(1);
+        let invalid = DocSelection {
+            anchor: DocPosition {
+                block: dialogue,
+                offset_utf16: 8,
+            },
+            focus: DocPosition {
+                block: dialogue,
+                offset_utf16: 9,
+            },
+        };
+        assert!(matches!(
+            doc_omit_selection(doc.handle(), invalid),
+            EditOutcome::Rejected {
+                reason: EditRejection::BadUtf16Offset,
+                ..
+            }
+        ));
+        assert_eq!(doc.text(), original);
+        assert!(doc_undo(doc.handle()).is_none());
+        let at = DocSelection {
+            anchor: DocPosition {
+                block: dialogue,
+                offset_utf16: 14,
+            },
+            focus: DocPosition {
+                block: dialogue,
+                offset_utf16: 7,
+            },
+        };
+        let EditOutcome::Applied { result } = doc_omit_selection(doc.handle(), at) else {
+            panic!("omit applies");
+        };
+        let comment = result.selection.unwrap();
+        assert_eq!(doc.blocks()[1].text, "Before ");
+        assert_eq!(doc.blocks()[2].kind, BlockKind::Opaque);
+        assert_eq!(doc.blocks()[3].text, " after.");
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(at));
+        assert_eq!(doc.text(), original);
+        assert!(doc_undo(doc.handle()).is_none());
+        assert_eq!(doc_redo(doc.handle()).unwrap().selection, Some(comment));
+        assert!(matches!(
+            doc_restore_omitted(doc.handle(), comment),
+            EditOutcome::Applied { .. }
+        ));
+        assert_eq!(doc.blocks()[1].text, "Before 😀 café after.");
+        assert_eq!(doc.blocks()[1].kind, BlockKind::Dialogue);
+        assert_eq!(doc_undo(doc.handle()).unwrap().selection, Some(comment));
+        assert_eq!(doc.blocks()[2].kind, BlockKind::Opaque);
     }
 }

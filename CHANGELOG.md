@@ -31,6 +31,12 @@ this file and the others to it.
   Every row jumps to its source block; scene rows show the real output start
   page and occupied length in eighth-pages. Pagination metadata is pending,
   rather than estimated, between edits and the next current Rust snapshot.
+- Ctrl+K now offers “Omit selection”, “Omit scene” and “Restore omitted text”.
+  Exact partial selections and their element types survive in restorable
+  Fountain boneyards, including after Save/reopen. Each gesture is one undo
+  step with the caret/selection restored; omitted material does not print.
+  Restoration refuses damaged records, changed neighbors and source that cannot
+  round-trip safely, leaving the lossless omitted record intact.
 - Dual dialogue prints adjacent speeches side by side in preview and PDF.
   On the second Character cue, use Ctrl+K → “Toggle dual dialogue”; the element
   bar identifies marked cues. Both speeches wrap to the printed column widths

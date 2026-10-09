@@ -160,6 +160,23 @@ List<EditorCommand> editorCommands({
       shortcut: 'Shift+Enter',
       run: controller.insertLineBreak,
     ),
+    if (controller.hasSelection)
+      EditorCommand(
+        group: 'Edit',
+        label: omitSelectionLabel,
+        run: controller.omitSelection,
+      ),
+    EditorCommand(
+      group: 'Edit',
+      label: omitSceneLabel,
+      run: controller.omitScene,
+    ),
+    if (controller.canRestoreOmitted)
+      EditorCommand(
+        group: 'Edit',
+        label: restoreOmittedLabel,
+        run: controller.restoreOmitted,
+      ),
     EditorCommand(
       group: 'Edit',
       label: 'Undo',

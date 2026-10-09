@@ -88,7 +88,12 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       MaterialApp(
-        home: EditorPage(controller: controller, navigatorVisible: true),
+        home: EditorPage(
+          controller: controller,
+          navigatorVisible: true,
+          onShowShortcuts: () =>
+              ShortcutsDialog.show(tester.element(find.byType(EditorPage))),
+        ),
       ),
     );
     await tester.tap(find.byType(EditorSurface));
@@ -123,6 +128,170 @@ void main() {
     if (control) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
   }
+
+  Future<void> omissionCommand(WidgetTester tester, String label) async {
+    await press(tester, LogicalKeyboardKey.keyK, control: true);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Element or command'),
+      label,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(InkWell, label));
+    await tester.pumpAndSettle();
+  }
+
+  for (final selected in ['café', '😀 café']) {
+    testWidgets(
+      'native X7 exact partial $selected Save reopen and directed history',
+      (tester) async {
+        final source =
+            '\uFEFF!Untouched.\t  \r\n\r\nJOHN\r\nHello $selected friend.\r\n';
+        final controller = await open(tester, source);
+        final body = controller.blocks.last;
+        final before = DocSelection(
+          anchor: DocPosition(block: body.id, offsetUtf16: 6 + selected.length),
+          focus: DocPosition(block: body.id, offsetUtf16: 6),
+        );
+        controller.setSelection(before);
+        await omissionCommand(tester, 'Omit selection');
+        expect(controller.lastRejection, isNull);
+        final omittedSource = controller.source;
+        final comment = controller.selection;
+        expect(controller.focusedBlock.kind, BlockKind.opaque);
+        expect(controller.blocks.last.kind, BlockKind.action);
+        expect(controller.blocks.last.text, ' friend.');
+        final decoded = RustDocumentCore.parse(omittedSource);
+        expect(
+          decoded
+              .blocks(0, decoded.blockCount)
+              .map((b) => (b.kind, b.text, b.dual)),
+          controller.blocks.map((b) => (b.kind, b.text, b.dual)),
+        );
+        decoded.close();
+        final file = '${scratch.path}/partial-${selected.length}.fountain';
+        expect(await controller.core.saveAs(file), isA<SaveOutcome_Saved>());
+        final bytes = File(file).readAsBytesSync();
+        expect(bytes, utf8.encode('\uFEFF$omittedSource'));
+        expect(controller.selection, comment);
+        controller.undo();
+        expect(controller.selection, before);
+        expect(controller.source, source.substring(1));
+        expect(controller.core.undo(), isNull);
+        controller.redo();
+        expect(controller.selection, comment);
+        expect(controller.source, omittedSource);
+        final reopenedFile =
+            '${scratch.path}/reopen-${selected.length}.fountain';
+        File(reopenedFile).writeAsBytesSync(bytes);
+        final reopenedCore = (await Core.instance.openDocument(reopenedFile))!;
+        final reopened = EditorController(reopenedCore);
+        addTearDown(reopened.dispose);
+        await tester.pumpWidget(
+          MaterialApp(home: EditorPage(controller: reopened)),
+        );
+        final opaque = reopened.blocks.firstWhere(
+          (b) => b.kind == BlockKind.opaque,
+        );
+        reopened.setSelection(
+          DocSelection(
+            anchor: DocPosition(block: opaque.id, offsetUtf16: 0),
+            focus: DocPosition(block: opaque.id, offsetUtf16: 0),
+          ),
+        );
+        final restoreBefore = reopened.selection;
+        await omissionCommand(tester, 'Restore omitted text');
+        expect(reopened.lastRejection, isNull);
+        expect(reopened.blocks.last.kind, BlockKind.dialogue);
+        expect(reopened.blocks.last.text, 'Hello $selected friend.');
+        expect(reopened.source, source.substring(1));
+        expect(await reopened.core.save(), isA<SaveOutcome_Saved>());
+        expect(File(reopenedFile).readAsBytesSync(), utf8.encode(source));
+        reopened.undo();
+        expect(reopened.selection, restoreBefore);
+        expect(reopened.source, omittedSource);
+        expect(reopened.core.undo(), isNull);
+        reopened.redo();
+        expect(reopened.source, source.substring(1));
+      },
+    );
+  }
+
+  testWidgets(
+    'native X7 foreign boneyards and changed or corrupt witnesses refuse safely',
+    (tester) async {
+      for (final source in [
+        '/* Hidden. */\n',
+        '/* outer /* inner */ end */\n',
+        '/* unfinished to EOF',
+        '/* */\n',
+      ]) {
+        final controller = await open(tester, source);
+        await omissionCommand(tester, 'Restore omitted text');
+        expect(controller.lastRejection, isNull);
+        expect(controller.source, isNot(source));
+        controller.undo();
+        expect(controller.source, source);
+        expect(controller.core.undo(), isNull);
+        controller.redo();
+      }
+      final controller = await open(tester, 'JOHN\nHello café friend.\n');
+      final body = controller.blocks.last.id;
+      controller.setSelection(
+        DocSelection(
+          anchor: DocPosition(block: body, offsetUtf16: 10),
+          focus: DocPosition(block: body, offsetUtf16: 6),
+        ),
+      );
+      await omissionCommand(tester, 'Omit selection');
+      final comment = controller.selection;
+      final right = controller.blocks.last.id;
+      controller.jumpToBlock(right);
+      controller.insertText('Changed ');
+      controller.setSelection(comment);
+      final changed = controller.source;
+      final changedBlocks = controller.blocks
+          .map((b) => (b.id, b.kind, b.text, b.forced, b.dual))
+          .toList();
+      await omissionCommand(tester, 'Restore omitted text');
+      expect(controller.lastRejection, EditRejection.cannotRestoreOmission);
+      expect(controller.source, changed);
+      expect(
+        controller.blocks.map((b) => (b.id, b.kind, b.text, b.forced, b.dual)),
+        changedBlocks,
+      );
+      for (final header in ['Slugline omission v9', 'xlugline omission v2']) {
+        final corrupt = changed.replaceFirst('Slugline omission v2', header);
+        final damaged = await open(tester, corrupt);
+        damaged.jumpToBlock(
+          damaged.blocks.firstWhere((b) => b.kind == BlockKind.opaque).id,
+        );
+        final before = damaged.source;
+        await omissionCommand(tester, 'Restore omitted text');
+        expect(damaged.lastRejection, EditRejection.cannotRestoreOmission);
+        expect(damaged.source, before);
+        expect(damaged.core.undo(), isNull);
+      }
+      await press(tester, LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byType(ShortcutsDialog), findsOneWidget);
+      for (final label in [
+        'Omit selection',
+        'Omit scene',
+        'Restore omitted text',
+      ]) {
+        await tester.scrollUntilVisible(
+          find.text('Ctrl+K → $label'),
+          200,
+          scrollable: find.descendant(
+            of: find.byType(ShortcutsDialog),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        expect(find.text('Ctrl+K → $label'), findsOneWidget);
+      }
+    },
+  );
 
   for (final width in [1100.0, 800.0]) {
     testWidgets(

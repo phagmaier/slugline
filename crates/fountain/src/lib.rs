@@ -35,6 +35,7 @@ pub mod emphasis;
 mod infer;
 mod lines;
 mod model;
+pub mod omission;
 mod parse;
 mod serialise;
 mod syntax;

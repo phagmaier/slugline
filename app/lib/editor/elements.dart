@@ -30,6 +30,9 @@ class ElementChoice {
 
 /// Palette-only cue command: no keyboard shortcut is assigned.
 const String toggleDualDialogueLabel = 'Toggle dual dialogue';
+const String omitSelectionLabel = 'Omit selection';
+const String omitSceneLabel = 'Omit scene';
+const String restoreOmittedLabel = 'Restore omitted text';
 
 /// Whole-script commands, available only through the palette.
 const String numberScenesLabel = 'Number scenes';
@@ -38,9 +41,9 @@ const String removeSceneNumbersLabel = 'Remove scene numbers';
 /// The element types a writer can set, in the order the selector lists them:
 /// the six that make up a scene first, then the rest.
 ///
-/// [BlockKind.opaque] is absent on purpose. It is content the editor does not
-/// model and that round-trips verbatim (§3.2); the core refuses every edit to
-/// one, so offering it would be offering a refusal.
+/// [BlockKind.opaque] is absent on purpose: it is not an element type a writer
+/// can set. Safe omission/restoration uses the dedicated commands above;
+/// ordinary edits to a boneyard remain refused (ADR 0061).
 const List<ElementChoice> elementChoices = [
   ElementChoice(BlockKind.sceneHeading, digit: 1),
   ElementChoice(BlockKind.action, digit: 2),

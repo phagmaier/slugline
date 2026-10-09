@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'doc.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `adopt`, `block_source_runs`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `formatting_is_sound`, `formatting_plan`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `scene_numbers`, `selection_view`, `source_style_at`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
+// These functions are ignored because they are not marked as `pub`: `adopt`, `block_source_runs`, `clamp_u32`, `completion_context`, `completion_kind`, `enter`, `entity_kind_name`, `finish`, `formatting_is_sound`, `formatting_plan`, `inferring`, `journal`, `kind_view`, `match_view`, `model_entity_kind`, `model_kind`, `model_new_block`, `model_query`, `no_such_document`, `omission_edit`, `ordered`, `outcome_with_title_page`, `outcome`, `paste`, `plain_blocks`, `position_view`, `record_patch`, `refresh_entities`, `rejected`, `rejection_of`, `result_view`, `scene_numbers`, `selection_view`, `source_style_at`, `step`, `tab_target`, `to_model_command`, `to_model_position`, `to_model_selection`, `view_of`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FormattingEdit`, `FormattingPlan`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -210,6 +210,24 @@ EditOutcome docFormatSelection({
   at: at,
   style: style,
 );
+
+/// Omits exact selected fragments, preserving their semantics inside a boneyard.
+EditOutcome docOmitSelection({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocOmitSelection(handle: handle, at: at);
+
+/// Omits the scene containing the focus, using document scene boundaries.
+EditOutcome docOmitScene({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocOmitScene(handle: handle, at: at);
+
+/// Restores boneyards intersecting the selection, or the one under the caret.
+EditOutcome docRestoreOmitted({
+  required DocumentHandle handle,
+  required DocSelection at,
+}) => RustLib.instance.api.crateApiDocDocRestoreOmitted(handle: handle, at: at);
 
 /// Tab, or Shift+Tab, on the block the caret is in.
 ///
@@ -530,6 +548,9 @@ enum EditRejection {
   /// The command needs a block after this one and there is none.
   noBlockAfter,
   badRange,
+
+  /// Omission metadata is malformed or neighboring screenplay context changed.
+  cannotRestoreOmission,
 
   /// The block round-trips verbatim and cannot be edited (§3.2).
   notEditable,

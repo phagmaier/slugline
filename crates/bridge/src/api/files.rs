@@ -2785,6 +2785,319 @@ mod tests {
     }
 
     #[test]
+    fn omission_save_reopen_restore_and_journal_replay_conserve_body_and_title() {
+        use crate::api::doc::{doc_close, doc_omit_selection, doc_restore_omitted, BlockKind};
+        let source =
+            "\u{feff}Title: Omission\r\n\r\n@BOB\r\nBefore 😀 café */ after.\r\n\r\nLast.\r\n";
+        let mut it = Fixture::open_source("omission", source);
+        let body = doc_blocks(it.handle, 0, u32::MAX);
+        let original_title = crate::api::doc::doc_title_page(it.handle);
+        let at = DocSelection {
+            anchor: DocPosition {
+                block: body[1].id,
+                offset_utf16: 7,
+            },
+            focus: DocPosition {
+                block: body[1].id,
+                offset_utf16: 17,
+            },
+        };
+        let EditOutcome::Applied { result } = doc_omit_selection(it.handle, at) else {
+            panic!("omit applies");
+        };
+        let comment = result.selection.unwrap();
+        let omitted_source = it.in_memory();
+        assert_eq!(it.journalled(), 1);
+        assert_eq!(it.recovers_to(), omitted_source);
+        assert_eq!(it.on_disk(), source);
+        assert_eq!(doc_undo(it.handle).unwrap().selection, Some(at));
+        assert_eq!(it.in_memory(), source);
+        assert_eq!(it.recovers_to(), source);
+        assert_eq!(doc_redo(it.handle).unwrap().selection, Some(comment));
+        assert_eq!(it.recovers_to(), omitted_source);
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), omitted_source);
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(it.in_memory(), omitted_source);
+        let blocks = doc_blocks(it.handle, 0, u32::MAX);
+        let omitted = blocks
+            .iter()
+            .find(|block| block.kind == BlockKind::Opaque)
+            .unwrap();
+        let position = DocPosition {
+            block: omitted.id,
+            offset_utf16: 3,
+        };
+        let selected_comment = DocSelection {
+            anchor: position,
+            focus: position,
+        };
+        assert!(matches!(
+            doc_restore_omitted(it.handle, selected_comment),
+            EditOutcome::Applied { .. }
+        ));
+        let restored = it.in_memory();
+        assert_eq!(it.journalled(), 1);
+        assert_eq!(it.recovers_to(), restored);
+        assert_eq!(crate::api::doc::doc_title_page(it.handle), original_title);
+        let restored_body = doc_blocks(it.handle, 0, u32::MAX);
+        assert_eq!(
+            restored_body
+                .iter()
+                .map(|block| (&block.text, block.kind, block.forced, block.dual))
+                .collect::<Vec<_>>(),
+            body.iter()
+                .map(|block| (&block.text, block.kind, block.forced, block.dual))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            doc_undo(it.handle).unwrap().selection,
+            Some(selected_comment)
+        );
+        assert_eq!(it.in_memory(), omitted_source);
+        assert_eq!(it.recovers_to(), omitted_source);
+        doc_redo(it.handle).unwrap();
+        assert_eq!(it.recovers_to(), restored);
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), restored);
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(
+            doc_blocks(it.handle, 0, u32::MAX)
+                .iter()
+                .map(|block| (&block.text, block.kind))
+                .collect::<Vec<_>>(),
+            body.iter()
+                .map(|block| (&block.text, block.kind))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn omitted_unicode_is_offered_accepted_and_restored_after_checkpoint_and_redo() {
+        use crate::api::doc::{doc_close, doc_omit_selection, doc_restore_omitted, BlockKind};
+
+        let source = "\u{feff}Title: Recovery\r\n\r\n@BOB\r\nHello 😀 café friend.\r\n";
+        for checkpoint in [false, true] {
+            let mut it = Fixture::open_source("omission-accepted-recovery", source);
+            let body = doc_blocks(it.handle, 0, u32::MAX);
+            let selection = DocSelection {
+                anchor: DocPosition {
+                    block: body[1].id,
+                    offset_utf16: 13,
+                },
+                focus: DocPosition {
+                    block: body[1].id,
+                    offset_utf16: 9,
+                },
+            };
+            let EditOutcome::Applied { result } = doc_omit_selection(it.handle, selection) else {
+                panic!("Unicode omission applies");
+            };
+            let comment = result.selection.unwrap();
+            let omitted = it.in_memory();
+            if checkpoint {
+                assert!(matches!(
+                    block_on(doc_save(it.handle)),
+                    SaveOutcome::Saved { .. }
+                ));
+            }
+            assert!(matches!(
+                doc_restore_omitted(it.handle, comment),
+                EditOutcome::Applied { .. }
+            ));
+            doc_undo(it.handle).unwrap();
+            doc_redo(it.handle).unwrap();
+            doc_undo(it.handle).unwrap();
+            assert_eq!(it.in_memory(), omitted);
+
+            // Release the journal without discarding it and lose the session,
+            // reproducing the state a new process admits through the real API.
+            let old_handle = it.handle;
+            let journal_path = actor().run(move |state| {
+                let session = state.session_mut(old_handle.id).unwrap();
+                let path = session.journal_mut().unwrap().path().to_path_buf();
+                session.set_journal(None);
+                state.close(old_handle.id);
+                path
+            });
+            let offer = block_on(recovery_pending())
+                .into_iter()
+                .find(|offer| Path::new(&offer.journal) == journal_path)
+                .expect("the omission is offered for recovery");
+            assert!(offer.blocked.is_none());
+            let RecoveryOutcome::Recovered { handle } = block_on(recovery_accept(offer.journal))
+            else {
+                panic!("omission history is accepted without losing its seams");
+            };
+            it.handle = handle;
+            assert_eq!(it.in_memory(), omitted);
+            assert!(doc_undo(handle).is_none());
+            let recovered = doc_blocks(handle, 0, u32::MAX);
+            assert_eq!(recovered[1].kind, BlockKind::Dialogue);
+            assert_eq!(recovered.last().unwrap().kind, BlockKind::Action);
+            let comment = recovered
+                .iter()
+                .find(|b| b.kind == BlockKind::Opaque)
+                .unwrap();
+            let at = DocPosition {
+                block: comment.id,
+                offset_utf16: 0,
+            };
+            assert!(matches!(
+                doc_restore_omitted(
+                    handle,
+                    DocSelection {
+                        anchor: at,
+                        focus: at
+                    }
+                ),
+                EditOutcome::Applied { .. }
+            ));
+            assert_eq!(it.in_memory(), source);
+            assert!(matches!(
+                block_on(doc_save(handle)),
+                SaveOutcome::Saved { .. }
+            ));
+            assert_eq!(fs::read(&it.script).unwrap(), source.as_bytes());
+            doc_close(handle);
+            it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+            assert_eq!(it.in_memory(), source);
+            assert_eq!(
+                doc_blocks(it.handle, 0, u32::MAX)[1].kind,
+                BlockKind::Dialogue
+            );
+        }
+    }
+
+    #[test]
+    fn a_late_omission_restore_refusal_does_not_append_a_partial_journal_outcome() {
+        use crate::api::doc::{doc_restore_omitted, EditRejection};
+        let source = "/*\nSlugline omission v99\n*/\n\n/*\n!Editable after restoration\n*/\n";
+        let it = Fixture::open_source("omission-refused", source);
+        let blocks = doc_blocks(it.handle, 0, u32::MAX);
+        let selection = DocSelection {
+            anchor: DocPosition {
+                block: blocks[0].id,
+                offset_utf16: 0,
+            },
+            focus: DocPosition {
+                block: blocks[1].id,
+                offset_utf16: blocks[1].text.len() as u32,
+            },
+        };
+        assert!(matches!(
+            doc_restore_omitted(it.handle, selection),
+            EditOutcome::Rejected {
+                reason: EditRejection::CannotRestoreOmission,
+                ..
+            }
+        ));
+        assert_eq!(it.in_memory(), source);
+        assert_eq!(it.recovers_to(), source);
+        assert_eq!(it.journalled(), 0);
+        assert!(!it.dirty());
+        assert!(doc_undo(it.handle).is_none());
+        assert!(doc_redo(it.handle).is_none());
+    }
+
+    #[test]
+    fn whole_scene_omission_survives_checkpoint_recovery_and_grouped_restore() {
+        use crate::api::doc::{doc_close, doc_omit_scene, doc_restore_omitted, BlockKind};
+        let source = "Title: Scene witness\n\nINT. ROOM - DAY #12A#\n\nBOB\nFirst 😀.\n\nMARY ^\nSecond café.\n\n/* old /* nested */ comment */\n\nEXT. NEXT - NIGHT #13#\n\nUntouched.\n";
+        let mut it = Fixture::open_source("omitted-scene", source);
+        let before = doc_blocks(it.handle, 0, u32::MAX);
+        let at = DocSelection {
+            anchor: DocPosition {
+                block: before[2].id,
+                offset_utf16: 2,
+            },
+            focus: DocPosition {
+                block: before[2].id,
+                offset_utf16: 2,
+            },
+        };
+        let EditOutcome::Applied { result } = doc_omit_scene(it.handle, at) else {
+            panic!("scene omission applies");
+        };
+        let comment = result.selection.unwrap();
+        let omitted_source = it.in_memory();
+        assert_eq!(it.journalled(), 1);
+        assert_eq!(it.recovers_to(), omitted_source);
+        assert_eq!(doc_undo(it.handle).unwrap().selection, Some(at));
+        assert_eq!(it.in_memory(), source);
+        assert!(doc_undo(it.handle).is_none());
+        assert_eq!(doc_redo(it.handle).unwrap().selection, Some(comment));
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        assert_eq!(it.on_disk(), omitted_source);
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        let blocks = doc_blocks(it.handle, 0, u32::MAX);
+        let position = DocPosition {
+            block: blocks
+                .iter()
+                .find(|block| block.kind == BlockKind::Opaque)
+                .unwrap()
+                .id,
+            offset_utf16: 0,
+        };
+        let selected = DocSelection {
+            anchor: position,
+            focus: position,
+        };
+        assert!(matches!(
+            doc_restore_omitted(it.handle, selected),
+            EditOutcome::Applied { .. }
+        ));
+        let restored = it.in_memory();
+        let actual = doc_blocks(it.handle, 0, u32::MAX);
+        assert_eq!(
+            actual
+                .iter()
+                .map(|block| (&block.text, block.kind, block.dual))
+                .collect::<Vec<_>>(),
+            before
+                .iter()
+                .map(|block| (&block.text, block.kind, block.dual))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(it.journalled(), 1);
+        assert_eq!(it.recovers_to(), restored);
+        assert_eq!(doc_undo(it.handle).unwrap().selection, Some(selected));
+        assert_eq!(it.recovers_to(), omitted_source);
+        assert!(doc_undo(it.handle).is_none());
+        doc_redo(it.handle).unwrap();
+        assert_eq!(it.recovers_to(), restored);
+        assert!(matches!(
+            block_on(doc_save(it.handle)),
+            SaveOutcome::Saved { .. }
+        ));
+        doc_close(it.handle);
+        it.handle = block_on(library_open(it.script.to_string_lossy().into_owned())).unwrap();
+        let reopened = doc_blocks(it.handle, 0, u32::MAX);
+        assert_eq!(
+            reopened
+                .iter()
+                .map(|block| (&block.text, block.kind, block.dual))
+                .collect::<Vec<_>>(),
+            before
+                .iter()
+                .map(|block| (&block.text, block.kind, block.dual))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
     fn clean_markers_checkpoint_a_replayable_base_without_changing_live_pins() {
         let source =
             "INT. HOUSE - DAY\n\nShe waits.\n\nMARY ^\nHello.\n\nCUT TO:\n\n!\n\nLast action.\n";

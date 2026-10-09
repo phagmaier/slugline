@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:slugline/editor/elements.dart';
 
 /// The in-app reference for `docs/KEYMAP.md`.
 class ShortcutsDialog extends StatelessWidget {
@@ -131,6 +132,9 @@ const _sections = <(String, List<(String, String)>)>[
       ('Ctrl+Backspace / Ctrl+Delete', 'Delete one word'),
       ('Tab / Shift+Tab', 'Cycle the context-appropriate element'),
       ('Ctrl+1 … Ctrl+0', 'Set screenplay element type'),
+      ('Ctrl+K → $omitSelectionLabel', 'Omit exactly the selected text'),
+      ('Ctrl+K → $omitSceneLabel', 'Omit the scene at the caret'),
+      ('Ctrl+K → $restoreOmittedLabel', 'Restore the selected boneyards'),
     ],
   ),
   (

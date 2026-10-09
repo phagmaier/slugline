@@ -265,6 +265,13 @@ impl History {
         self.trim();
     }
 
+    /// Commits an independently staged gesture only after it succeeds.
+    pub(crate) fn append_edit(&mut self, transaction: Transaction) {
+        self.close();
+        self.undone.clear();
+        self.push_done(transaction);
+    }
+
     pub(crate) fn can_undo(&self) -> bool {
         !self.done.is_empty() || self.open.as_ref().is_some_and(|t| !t.inverses.is_empty())
     }

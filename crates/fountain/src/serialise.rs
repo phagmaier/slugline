@@ -56,16 +56,35 @@ pub fn serialise(out: &Output<'_>) -> String {
     // Empty edited blocks usually have no Fountain representation. An explicitly
     // pinned empty Action is the exception: `!` preserves an ID-bearing block
     // for recovery. Dropping empty dialogue still protects orphaned cues below.
-    let elements: Vec<(usize, &ElementRef<'_>)> = out
+    let mut after_boneyard = false;
+    let elements: Vec<(usize, &ElementRef<'_>, BlockKind)> = out
         .elements
         .iter()
         .enumerate()
         .filter(|(_, element)| !vanishes(element))
+        .map(|(index, element)| {
+            if element.kind == BlockKind::Opaque
+                && element
+                    .text
+                    .trim_start()
+                    .starts_with("/*\nSlugline omission ")
+            {
+                after_boneyard = true;
+            } else if !element.kind.continues_dialogue() {
+                after_boneyard = false;
+            }
+            let written_kind = if after_boneyard && element.kind.continues_dialogue() {
+                BlockKind::Action
+            } else {
+                element.kind
+            };
+            (index, element, written_kind)
+        })
         .collect();
 
-    for (index, &(original_index, element)) in elements.iter().enumerate() {
-        let previous = index.checked_sub(1).map(|i| elements[i].1.kind);
-        let next = elements.get(index + 1).map(|(_, element)| element.kind);
+    for (index, &(original_index, element, written_kind)) in elements.iter().enumerate() {
+        let previous = index.checked_sub(1).map(|i| elements[i].2);
+        let next = elements.get(index + 1).map(|(_, _, kind)| *kind);
 
         // The blank line that ends a title page is written only once something
         // follows it, so a document that is nothing but a title page still ends
@@ -80,9 +99,16 @@ pub fn serialise(out: &Output<'_>) -> String {
             .elements
             .get(original_index + 1)
             .is_some_and(|element| element.kind.continues_dialogue() && vanishes(element));
+        let omitted_dialogue_context = elements.get(index + 1).is_some_and(|(_, element, _)| {
+            element.kind == BlockKind::Opaque
+                && element
+                    .text
+                    .trim_start()
+                    .starts_with("/*\nSlugline omission ")
+        });
         let orphaned_character = element.kind == BlockKind::Character
             && !element.forced
-            && removed_dialogue_context
+            && (removed_dialogue_context || omitted_dialogue_context)
             && !next.is_some_and(BlockKind::continues_dialogue);
         if orphaned_character {
             if let Some(text) = verbatim(out.source, &element.provenance) {
@@ -98,7 +124,7 @@ pub fn serialise(out: &Output<'_>) -> String {
                 continue;
             }
         }
-        let original = (!orphaned_character)
+        let original = (!orphaned_character && written_kind == element.kind)
             .then(|| verbatim(out.source, &element.provenance))
             .flatten();
         match original {
@@ -113,11 +139,24 @@ pub fn serialise(out: &Output<'_>) -> String {
                 result.push_str(text);
             }
             None => {
-                separate(&mut result, previous, element.kind, nl);
-                canonical(&mut result, element, index == 0, out.title_page, next, nl);
+                separate(&mut result, previous, written_kind, nl);
+                if written_kind != element.kind {
+                    // A boneyard breaks speech context. Preserve literal tail
+                    // text as forced Action until Restore reattaches its stored
+                    // semantic witnesses; never let it become an accidental cue.
+                    let visible = ElementRef {
+                        kind: written_kind,
+                        forced: true,
+                        provenance: None,
+                        ..element.clone()
+                    };
+                    canonical(&mut result, &visible, index == 0, out.title_page, next, nl);
+                } else {
+                    canonical(&mut result, element, index == 0, out.title_page, next, nl);
+                }
                 // The next block may be verbatim, in which case nobody else
                 // will write the blank line between them.
-                if next.is_some_and(|next| needs_blank_between(element.kind, next)) {
+                if next.is_some_and(|next| needs_blank_between(written_kind, next)) {
                     result.push_str(nl);
                 }
             }

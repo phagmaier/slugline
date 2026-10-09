@@ -461,6 +461,67 @@ class FakeCore implements DocumentCore {
     );
   }
 
+  // Explicit outcome patches only; omission semantics belong to Rust.
+  EditResult? omitSelectionPatch;
+  EditResult? omitScenePatch;
+  EditResult? restoreOmittedPatch;
+  final List<(String, DocSelection)> omissionCalls = [];
+
+  @override
+  EditOutcome omitSelection(DocSelection at) =>
+      _suppliedOmission('selection', at, omitSelectionPatch);
+
+  @override
+  EditOutcome omitScene(DocSelection at) =>
+      _suppliedOmission('scene', at, omitScenePatch);
+
+  @override
+  EditOutcome restoreOmitted(DocSelection at) =>
+      _suppliedOmission('restore', at, restoreOmittedPatch);
+
+  EditOutcome _suppliedOmission(
+    String gesture,
+    DocSelection before,
+    EditResult? patch,
+  ) {
+    omissionCalls.add((gesture, before));
+    if (refuseWith case final reason?) {
+      refuseWith = null;
+      return EditOutcome.rejected(
+        reason: reason,
+        message: 'refused by the test',
+      );
+    }
+    if (patch == null) {
+      return const EditOutcome.rejected(
+        reason: EditRejection.badRange,
+        message:
+            'Omission semantics require the native core or a supplied patch.',
+      );
+    }
+    if (patch.changed.isNotEmpty ||
+        patch.removed.isNotEmpty ||
+        patch.inserted.isNotEmpty) {
+      final snapshot = List<BlockView>.of(_blocks);
+      _dualSelections[snapshot] = before;
+      _oppositeSelections[snapshot] = patch.selection;
+      _undo.add(snapshot);
+      _redo.clear();
+      _blocks.removeWhere((block) => patch.removed.contains(block.id));
+      for (final block in patch.changed) {
+        _blocks[_indexOf(block.id)] = block;
+      }
+      final inserted = List<InsertedBlock>.of(patch.inserted)
+        ..sort((a, b) => a.index.compareTo(b.index));
+      for (final insertion in inserted) {
+        _blocks.insert(insertion.index, insertion.block);
+      }
+      _dirty = true;
+      _journalled++;
+    }
+    return EditOutcome.applied(result: patch);
+  }
+
   final List<DocSelection> lineBreaks = [];
 
   /// Every Tab, as `(selection, shift)`.

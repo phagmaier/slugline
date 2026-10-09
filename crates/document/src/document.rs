@@ -17,6 +17,9 @@ use crate::history::{CoalesceKey, History, Inverse, TextEditKind, Transaction};
 use crate::recovery::{BlockSnapshot, Patch, ReplayError};
 use crate::BlockId;
 
+#[path = "omission.rs"]
+mod omission;
+
 /// One element of the script, with an identity Flutter can hold on to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
@@ -368,6 +371,27 @@ impl Document {
         if let Some(selection) = before {
             self.check_selection(selection)?;
         }
+        if matches!(
+            command,
+            EditCommand::OmitSelection { .. }
+                | EditCommand::OmitScene { .. }
+                | EditCommand::RestoreOmitted { .. }
+        ) {
+            // Stage only this gesture's history. A late multi-restore refusal
+            // must not erase pre-existing redo or evict older undo transactions.
+            let previous_history = std::mem::take(&mut self.history);
+            let outcome = self.apply_group(before, |group| {
+                group.apply(command)?;
+                Ok(())
+            });
+            let transaction = outcome.as_ref().ok().and_then(|_| self.history.take_undo());
+            self.history = previous_history;
+            if let Some(transaction) = transaction {
+                self.history.append_edit(transaction);
+            }
+            return outcome;
+        }
+
         let revision = self.revision;
         let result = self.apply_command(command)?;
         if self.revision != revision {
@@ -541,6 +565,9 @@ impl Document {
             EditCommand::DeleteRange { from, to } => self.delete_range(from, to),
             EditCommand::MoveScene { scene, before } => self.move_scene(scene, before),
             EditCommand::SetDual { block, dual } => self.set_dual(block, dual),
+            EditCommand::OmitSelection { at } => self.omit_selection(at),
+            EditCommand::OmitScene { block } => self.omit_scene(block),
+            EditCommand::RestoreOmitted { at } => self.restore_omitted(at),
             EditCommand::SetTitlePage { field, value } => {
                 if self.title_page.get(&field) == (!value.is_empty()).then_some(value.as_str()) {
                     return Ok(EditResult {
@@ -1328,6 +1355,8 @@ impl Document {
         transaction: Transaction,
         selection: Option<DocSelection>,
     ) -> (Transaction, EditResult) {
+        let initial_ids: std::collections::HashSet<_> =
+            self.blocks.iter().map(|block| block.id).collect();
         let mut opposite = Transaction {
             inverses: Vec::new(),
             before_revision: transaction.before_revision,
@@ -1385,6 +1414,16 @@ impl Document {
             }
         }
 
+        // The journal sees only the two transaction boundaries. A block born
+        // during redo belongs in inserted even if a later inverse changes it;
+        // intermediate-only identities must never appear in a recovery patch.
+        let final_ids: std::collections::HashSet<_> =
+            self.blocks.iter().map(|block| block.id).collect();
+        removed.retain(|id| initial_ids.contains(id));
+        inserted.retain(|id| final_ids.contains(id));
+        changed.retain(|id| {
+            initial_ids.contains(id) && final_ids.contains(id) && !inserted.contains(id)
+        });
         for ids in [&mut changed, &mut removed, &mut inserted] {
             ids.sort_unstable();
             ids.dedup();
@@ -1433,6 +1472,10 @@ impl Document {
                 Some(DocSelection::caret(DocPosition::new(*scene, 0)))
             }
             EditCommand::SetTitlePage { .. } => self.caret_at_start(),
+            EditCommand::OmitSelection { at } | EditCommand::RestoreOmitted { at } => Some(*at),
+            EditCommand::OmitScene { block } => {
+                Some(DocSelection::caret(DocPosition::new(*block, 0)))
+            }
         }
     }
 
@@ -1748,7 +1791,7 @@ fn push_unique(ids: &mut Vec<BlockId>, id: BlockId) {
     }
 }
 
-/// Opaque blocks are verbatim by definition (§3.2) and refuse every edit.
+/// Opaque refuses ordinary edits; only explicit omission operations replace it.
 fn check_editable(block: &Block) -> Result<(), EditError> {
     if block.kind == BlockKind::Opaque {
         Err(EditError::NotEditable(block.id))
