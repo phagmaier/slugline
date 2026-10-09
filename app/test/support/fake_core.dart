@@ -1015,6 +1015,12 @@ class FakeCore implements DocumentCore {
   @override
   void setScrollRow(int row) => scrollRow = row;
 
+  /// The rows that were written down, in order.
+  final List<int> parkedRows = [];
+
+  @override
+  Future<void> parkScrollRow() async => parkedRows.add(scrollRow);
+
   EditOutcome _unchanged() => _applied(caret: null);
 
   EditResult _restore(List<BlockView> snapshot) {

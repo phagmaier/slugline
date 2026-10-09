@@ -339,9 +339,13 @@ abstract class DocumentCore {
   /// Restores one, having first backed up what is there now (§Phase 4).
   Future<files.SaveOutcome> restoreBackup(String backupPath);
 
-  /// Parks the scroll position, so that session restore and a crash both know
-  /// where the writer was.
+  /// Tells the core where the writer is, so that a quit comes back to it. In
+  /// memory only: this runs for every row scrolled past.
   void setScrollRow(int row);
+
+  /// Writes that position down, so that a process that dies comes back to it
+  /// as well. Asked for once scrolling has settled, because it is a file write.
+  Future<void> parkScrollRow();
 
   void close();
 }
@@ -612,6 +616,9 @@ class RustDocumentCore implements DocumentCore, ScreenplayOutput {
 
   @override
   void setScrollRow(int row) => files.docSetScroll(handle: _handle, row: row);
+
+  @override
+  Future<void> parkScrollRow() => files.sessionPark();
 
   @override
   void close() => rust.docClose(handle: _handle);

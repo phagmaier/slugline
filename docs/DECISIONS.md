@@ -84,6 +84,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0058 | The outline is source-ordered Rust structure and scene length is paginated occupied eighths | `crates/bridge/src/api/doc.rs`, `crates/bridge/src/api/layout.rs`, `app/lib/editor/navigator_sidebar.dart`, `app/lib/editor/page_indicator.dart` | live |
 | 0061 | Omissions carry lossless semantic fragments inside Fountain boneyards | `crates/fountain/src/omission.rs`, `crates/document/src/omission.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/elements.dart`, `app/lib/editor/commands.dart`, `app/lib/editor/editor_controller.dart` | refined by 0063 — provenance-only seam normalization and checkpoint recovery |
 | 0063 | Saved checkpoint outcomes use the base's identities without changing live state | `crates/storage/src/journal.rs`, `crates/bridge/src/api/files.rs`, `crates/document/src/omission.rs`, `crates/document/tests/omission.rs`, `app/integration_test/writing_test.dart` | live |
+| 0064 | A quit parks the session; putting a script away ends it | `crates/bridge/src/state.rs`, `crates/bridge/src/api/files.rs`, `crates/storage/src/library.rs`, `app/lib/app.dart`, `app/lib/editor/editor_page.dart`, `tools/check_clean_close.py` | live |
 
 ---
 
@@ -5084,3 +5085,57 @@ Core and native consumers reproduce live and saved-source whitespace deletions,
 require atomic refusal and verify the existing Undo selection/text remains usable. The failed
 logs and final verification belong to the X7 backlog Result. No journal version,
 forcing policy, dependency, budget or golden output changes.
+
+---
+
+## ADR 0064 — A quit parks the session; putting a script away ends it
+
+**Date:** 2026-10-09 · **Status:** accepted
+
+### Context
+
+The library index carries `open` and `scroll_row` for each script, and startup
+reopens the first open one at that row. The comments beside both said a quit
+and a crash each put the writer back where they were. Neither did. `shutdown`
+closed every document, and a close marks its script not open, so an ordinary
+quit came back to the library; Dart had in any case closed the script before
+calling it. `doc_set_scroll` only changes memory, so a process that died came
+back to the row of the last unrelated index write — row 0 unless a save had
+followed the scrolling. Whether a clean quit should reopen the script had never
+been decided, only assumed in both directions.
+
+### Decision
+
+**Quitting with a script open is not putting it away.** The next launch that
+names no file comes back to that script at the row it was showing. `Ctrl+W`,
+and switching to another script, put a script away: it is not reopened. Crash
+recovery still comes first and a file named on the command line still wins.
+
+- The core has two endings for a session. `AppState::close` is the writer
+  putting the script away. `AppState::park` is the application going with it
+  open: the same journal discard and unwatch, with the library entry left open
+  and given the row. `shutdown` parks.
+- **Dart calls `shutdown` before it lets go of the open script.** Disposing the
+  controller closes the document, and a document closed first is one that was
+  put away. Only the autosave clock stops earlier.
+- The row reaches the disk when Dart says so, through `session_park`: two
+  seconds after the view last moved, and when a script is put away. The core
+  has no clock to do it (ADR 0014) and `doc_set_scroll` runs per row, which is
+  too often for a file write. A process that dies inside those two seconds
+  comes back to the row before the last scroll.
+- Save As takes the session to the new path: the old entry is closed and the
+  new one takes the row.
+
+The index is still a cache (ADR 0043). Deleting it costs the session along with
+the recent list, and nothing else.
+
+### Consequences
+
+The first launch after an ordinary quit opens a script instead of the library.
+`tools/check_clean_close.py`'s third launch names no script and used to rely on
+that library; it now has to come back to the script its second launch was
+closed in, puts it away, and closes the library as before — so the shipped
+bundle's restore is checked wherever that tool runs.
+
+Opening a script from the library still starts at its top, and so does an
+accepted recovery; the row is used by session restore alone.

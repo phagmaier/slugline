@@ -92,6 +92,11 @@ this file and the others to it.
 
 ### Fixed
 
+- Quitting with a script open comes back to that script, on the lines it was
+  showing, the next time Slugline starts without a file named. A script put
+  away with `Ctrl+W` is not reopened. After a crash the script also comes back
+  where it had been scrolled to, not at its top. Save As no longer leaves the
+  old file as one to come back to.
 - A script scrolled away from the caret to read stays there. Spell-check
   results arriving, ignoring a misspelling and a search with no matches no
   longer bring the view back to the caret; moving it, typing and stepping to a

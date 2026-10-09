@@ -220,6 +220,12 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   not `fsync`ed on purpose; do not "fix" that without reading the ADR.
 - The library index, the session and the backups' bookkeeping are **caches**.
   Deleting any of them must cost nothing but convenience.
+- **A quit parks the session; putting a script away ends it** (ADR 0064).
+  `shutdown` leaves a script that is still open marked open in the index, with
+  its row, and the next launch reopens it; `doc_close` marks it put away. Dart
+  calls `shutdown` before it disposes the open script. `doc_set_scroll` is
+  memory only — `session_park` writes the index when Dart's settle timer or a
+  put-away says so, never per row.
 - A journal file's *absence* is what says a session ended cleanly.
   `Journal::discard` removes it and nothing else may. `Journal::create` will
   not start a session over one that is already there. `Journal::replace` is the

@@ -102,6 +102,7 @@ This is the only place boxes are ticked.
 - [x] [B24](#b24) A one-page script draws no sheet in page view
 - [x] [B25](#b25) `Ctrl+Home` does nothing in a restored session whose caret is at the top
 - [x] [B26](#b26) Late spell-check results pull a scrolled view back to the caret
+- [x] [B27](#b27) An ordinary quit restores no session
 
 **3. Fountain and output fidelity**
 
@@ -1403,6 +1404,38 @@ and an empty search leaving the view alone, and a find step onto the match
 already selected and refused typing still coming back to the caret; the widget
 suite passes. Commit:
 `B26 — news that is not about the caret leaves the view where it is`.
+
+<a id="b27"></a>
+### B27 — An ordinary quit restores no session
+
+**Evidence (reproduced on the release bundle and in tests).** Promoted from the
+2026-10-09 B24 note under [Found along the way](#found-along-the-way).
+`shutdown` closed every document, a close marks its script not open, and Dart
+had closed the script before calling it: a quit with a script open came back to
+the library (`target/b24/before/b1-restored-at-rest.png`). A killed process
+came back to its script at the row of the last unrelated index write — row 0
+unless a save had followed the scrolling — because `doc_set_scroll` changes
+memory only. Save As also left the old path marked open, which after `Ctrl+W`
+made it the script to come back to.
+
+**Change.** Decided and recorded as ADR 0064: a quit with a script open comes
+back to it where it was showing; a script put away with `Ctrl+W` does not come
+back. `shutdown` parks open sessions instead of closing them and Dart calls it
+before it lets go of the script. The row is written through `session_park` when
+the view has been still for two seconds — Dart's clock, the core has none — and
+when a script is put away. Save As closes the old entry and carries the row.
+
+**Effort.** S.
+**Result:** 2026-10-09 — `AppState::park`, `session_park`, the reordered
+`_onExitRequested` and the settle timer in `EditorPage`. Bridge tests hold the
+quit, put-away, died and Save As cases, widget tests the order and the timer,
+and the native `persistence` suite the real `shutdown`. On the rebuilt bundle a
+quit and a `SIGKILL` both come back to the same lines of page 7 and `Ctrl+W`
+then `SIGKILL` to the library (`target/b27/`); `tools/check_clean_close.py`
+passes, and its third launch now has to come back to the script and put it
+away. Limitation: a process that dies within two seconds of a scroll comes
+back to the row before it. Commit:
+`B27 — a quit comes back to the script that was open`.
 
 ---
 
@@ -3127,6 +3160,11 @@ not part of that item.
   that died with a script open comes back to it, and at row 0: `doc_set_scroll`
   changes the index in memory and nothing writes it until something else does.
   Whether a clean quit should reopen the script is not recorded anywhere.
+  Promoted to [B27](#b27) on 2026-10-09; ADR 0064 records the decision.
+- 2026-10-09 — B27, read: a script opened from the library starts at its top
+  although its entry keeps the row it was put away at, and a recovery accepted
+  after a crash starts at the top too — `_openPath` and `_adopt` are given a
+  row by session restore alone. Not exercised and left unchanged.
 
 - 2026-10-09 — B20, seen in a widget test: `_onExitRequested` disposes the open
   script's controller and leaves its `EditorPage` in the tree, so any frame

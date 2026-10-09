@@ -41,6 +41,6 @@ test is only the real thing with a small filesystem in `SLUGLINE_FULL_DISK_DIR`
 (CI mounts a 4 MB tmpfs); otherwise it proves error classification alone. It is
 not a mandatory test for unrelated storage edits.
 
-Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043, 0063. Full rules
+Governing ADRs: 0013, 0026, 0027, 0028, 0029, 0038, 0042, 0043, 0063, 0064. Full rules
 in `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes
 only when their invariants or pointers change.

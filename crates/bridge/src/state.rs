@@ -103,12 +103,29 @@ impl AppState {
     /// did not crash, so a close that forgets to discard it is a close that
     /// offers a spurious recovery.
     pub fn close(&mut self, handle: u64) {
+        self.end(handle, false);
+    }
+
+    /// Ends a document's session with its script still open: the application
+    /// is going away, and the next launch comes back to what the writer was in.
+    ///
+    /// Everything [`AppState::close`] does, except telling the library that the
+    /// script was put away.
+    pub fn park(&mut self, handle: u64) {
+        self.end(handle, true);
+    }
+
+    fn end(&mut self, handle: u64, still_open: bool) {
         if let Some(mut session) = self.documents.remove(&handle) {
             if let Some(journal) = session.journal.take() {
                 let _ = journal.discard();
             }
             if let (Some(storage), Some(id)) = (self.storage.as_mut(), session.id.as_ref()) {
-                storage.library.closed(id, session.scroll_row());
+                if still_open {
+                    storage.library.set_scroll(id, session.scroll_row());
+                } else {
+                    storage.library.closed(id, session.scroll_row());
+                }
                 if let Some(path) = session.path.as_ref() {
                     // A path this session is no longer holding has nothing left
                     // to suppress. `unwatch` forgets it too; this is the half

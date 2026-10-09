@@ -158,6 +158,9 @@ class Core implements LibraryCore {
   /// Ends the session: every journal is discarded and the library index is
   /// written. A session that skips this looks like a crash on next startup,
   /// which is exactly right when it *was* one.
+  ///
+  /// A script still open when this runs is the one the next launch comes back
+  /// to, so it has to run before that script is closed.
   Future<void> shutdown() => files.shutdown();
 
   // --- library ---------------------------------------------------------------
@@ -187,6 +190,10 @@ class Core implements LibraryCore {
   }
 
   Future<List<files.ScriptView>> sessionToRestore() => files.sessionRestore();
+
+  /// Writes down which scripts are open, so that a process that dies after one
+  /// was put away does not come back to it.
+  Future<void> parkSession() => files.sessionPark();
 
   @override
   Future<files.ScriptView?> duplicate(String id) =>

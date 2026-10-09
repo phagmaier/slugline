@@ -854,6 +854,53 @@ void main() {
     },
   );
 
+  testWidgets('a quit with a script open is a session the next launch finds', (
+    tester,
+  ) async {
+    // What a new process reads: the index on disk, not this one's memory.
+    Map<String, dynamic> onDisk(String file) {
+      final index =
+          jsonDecode(File('${root.path}/data/library.json').readAsStringSync())
+              as Map<String, dynamic>;
+      return (index['scripts'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((script) => script['path'] == file);
+    }
+
+    final quit = path('session-quit.fountain');
+    final putAway = path('session-put-away.fountain');
+    File(quit).writeAsStringSync('INT. HOUSE - DAY\n');
+    File(putAway).writeAsStringSync('INT. HOUSE - DAY\n');
+
+    final closed = RustDocumentCore.of(
+      (await files.libraryOpen(path: putAway))!,
+    );
+    closed.setScrollRow(7);
+    closed.close();
+    final open = RustDocumentCore.of((await files.libraryOpen(path: quit))!);
+    open.setScrollRow(42);
+    expect(onDisk(quit)['scroll_row'], 0, reason: 'a row is not a file write');
+    await open.parkScrollRow();
+    expect(onDisk(quit)['scroll_row'], 42, reason: 'until it is asked for');
+    open.setScrollRow(328);
+
+    await Core.instance.shutdown();
+
+    expect(onDisk(quit)['open'], isTrue);
+    expect(onDisk(quit)['scroll_row'], 328);
+    expect(onDisk(putAway)['open'], isFalse);
+    expect(
+      await Core.instance.pendingRecoveries(),
+      isEmpty,
+      reason: 'and it ended cleanly: nothing is offered for recovery',
+    );
+    final session = await Core.instance.sessionToRestore();
+    expect(session.map((script) => script.path), contains(quit));
+    expect(session.map((script) => script.path), isNot(contains(putAway)));
+    // The session is over as far as the core goes; this lets go of the handle.
+    open.close();
+  });
+
   testWidgets('session restore applies the parked row to the editor viewport', (
     tester,
   ) async {

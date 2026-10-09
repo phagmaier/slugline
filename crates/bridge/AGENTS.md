@@ -39,6 +39,10 @@ Invariants:
   including an empty forced Action's `!` representation (ADR 0059). Pass the
   saved snapshot's source-ordered identities to the journal checkpoint/rebuild;
   translate outcomes there without changing actor identities or history (ADR 0063).
+- `AppState::close` is a script put away; `AppState::park` is the application
+  going with it open, and is what `shutdown` uses so the next launch reopens it.
+  `shutdown` and `session_park` are process-wide: a test ends its own session
+  with `park` rather than calling either (ADR 0064).
 - `doc_navigator` supplies outline parent/depth in source order (ADR 0058).
   Scene page/occupied-eighth length travels in the async pagination snapshot;
   deriving it never runs on the actor or the keystroke path.
@@ -61,6 +65,6 @@ second time via `tools/check_bridge_bindings.sh` after successful generation
 unless investigating drift or changing codegen configuration. Native checks
 are for failures requiring the real bridge/runtime, not every bridge edit.
 
-Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0061, 0062, 0063. Full rules in
+Governing ADRs: 0001, 0002, 0009, 0010, 0020, 0029, 0055, 0056, 0057, 0058, 0059, 0061, 0062, 0063, 0064. Full rules in
 `AGENTS.md`; the layer map in `docs/ARCHITECTURE.md`. Update these notes only
 when their invariants or pointers change.

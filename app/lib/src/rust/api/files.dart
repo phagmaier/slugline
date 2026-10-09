@@ -39,6 +39,10 @@ Future<bool> init({
 /// Dart calls this from the window's close handler. If it never runs — because
 /// the process was killed — the journals stay on disk and the next startup finds
 /// them, which is exactly the behaviour they exist for.
+///
+/// A script still open here is one the writer quit out of, not one they put
+/// away, so it stays marked open and [`session_restore`] gives it back to the
+/// next launch. Dart must therefore call this *before* it closes that script.
 Future<void> shutdown() => RustLib.instance.api.crateApiFilesShutdown();
 
 /// §6's `library_list`.
@@ -96,8 +100,17 @@ Future<bool> libraryRemove({required String id, required bool deleteFile}) =>
 Future<List<ScriptView>> sessionRestore() =>
     RustLib.instance.api.crateApiFilesSessionRestore();
 
-/// Records where the writer is in a script, so that a crash does not lose the
-/// scroll position along with everything else.
+/// Writes down which scripts are open and where the writer is in each, so that
+/// a process that dies comes back to that and not to whatever the index held
+/// the last time something else wrote it.
+///
+/// Dart says when — once scrolling has settled, and when a script is put away.
+/// There is no clock here to do it (ADR 0014), and [`doc_set_scroll`] runs for
+/// every row scrolled past, which is far too often for a file write.
+Future<void> sessionPark() => RustLib.instance.api.crateApiFilesSessionPark();
+
+/// Records where the writer is in a script. In memory only: a quit writes it
+/// with everything else, and [`session_park`] writes it for a crash.
 void docSetScroll({required DocumentHandle handle, required int row}) =>
     RustLib.instance.api.crateApiFilesDocSetScroll(handle: handle, row: row);
 

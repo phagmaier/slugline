@@ -8,8 +8,10 @@ library sliding in after Ctrl+W, a dialog fading in over the script, and focus
 moving through the library. Each process must exit zero by itself. A signal, a
 close that needs terminating and a script whose bytes are not what was saved
 are all failures. The second launch edits what the first one saved, so its
-bytes also prove what the reopened editor held. Each run has fresh XDG
-directories and a disposable CRLF script.
+bytes also prove what the reopened editor held. The third names no script and
+must come back to the one the second was closed in, which it puts away to
+reach the library. Each run has fresh XDG directories and a disposable CRLF
+script.
 """
 
 import argparse
@@ -127,8 +129,23 @@ def wait_saved(process, state, script, expected):
     )
 
 
-def session(binary, work, name, script, expected, before_close, record):
-    """One launch, closed by `before_close`'s frames and a WM_DELETE_WINDOW."""
+def wait_put_away(process, state):
+    """Ctrl+W has closed the script: its journal, which says a session is
+    under way, is gone."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        sample(process)
+        if not any((state / "slugline/journal").glob("*")):
+            return
+        time.sleep(0.01)
+    raise CloseFailure("Ctrl+W did not put the restored script away")
+
+
+def session(binary, work, name, script, expected, before_close, record, restored=None):
+    """One launch, closed by `before_close`'s frames and a WM_DELETE_WINDOW.
+
+    `restored` is the script a launch that names none must come back to: the
+    one the session before it was closed in."""
     entry = {"session": name}
     record["sessions"].append(entry)
     env = os.environ.copy()
@@ -163,9 +180,13 @@ def session(binary, work, name, script, expected, before_close, record):
                 time.sleep(0.005)
             window = windows.splitlines()[0]
             xdotool("windowfocus", "--sync", window)
-            if script:
-                wait_open(process, work / "state", script)
+            if script or restored:
+                wait_open(process, work / "state", script or restored)
             wait_still(process)
+            if restored:
+                xdotool("key", "ctrl+w")
+                wait_put_away(process, work / "state")
+                wait_still(process)
             entry["ready_ms"] = round((time.monotonic() - started) * 1000, 1)
             if script:
                 xdotool("key", "ctrl+End")
@@ -250,7 +271,10 @@ def run(args, report):
             closes = [
                 session(binary, work, "save-close", script, saved, close_document, record),
                 session(binary, work, "reopen", script, resaved, open_dialog, record),
-                session(binary, work, "library", None, None, move_focus, record),
+                session(
+                    binary, work, "library", None, None, move_focus, record,
+                    restored=script,
+                ),
             ]
         print(
             f"run {index + 1}/{args.runs}: " + ", ".join(

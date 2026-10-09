@@ -156,9 +156,15 @@ class _SluglineAppState extends State<SluglineApp> {
     if (_opensActive > 0) {
       await (_opensSettled ??= Completer<void>()).future;
     }
-    _open?.dispose();
+    // The core hears about the quit while the script is still open: that is
+    // what makes it the one the next launch comes back to. Closed first, it
+    // would be a script the writer had put away. Only the autosave clock is
+    // stopped before, so that it cannot fire at a session that has just ended.
+    final open = _open;
     _open = null;
+    open?.autosave.dispose();
     await widget.core.shutdown();
+    open?.dispose();
     return AppExitResponse.exit;
   }
 
@@ -505,6 +511,9 @@ class _SluglineAppState extends State<SluglineApp> {
   Future<void> _closeScript() async {
     _open?.dispose();
     setState(() => _open = null);
+    // Put away, and written down as put away: the index on disk still says
+    // open, and a process that died here would come back to the script.
+    unawaited(widget.core.parkSession());
   }
 
   /// The script's name is read from its path when this builds, and Save As

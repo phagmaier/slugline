@@ -161,6 +161,12 @@ class EditorPageState extends State<EditorPage> {
   Timer? _navigatorSuppressionTimer;
   bool _suppressNavigatorScroll = false;
 
+  /// Runs once the view has stopped moving, to have its row written down. The
+  /// core is told every row as it passes and keeps it in memory, which is
+  /// enough for a quit; a process that dies has only what is on disk.
+  Timer? _scrollSettled;
+  static const Duration _scrollSettleDelay = Duration(seconds: 2);
+
   DocumentCore get _core => widget.controller.core;
 
   @override
@@ -185,6 +191,7 @@ class EditorPageState extends State<EditorPage> {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
       _navigatorRefresh?.cancel();
+      _scrollSettled?.cancel();
       _navigator = _core.navigator();
       _knownDocumentRevision = widget.controller.documentRevision;
       _rebuildSceneMap();
@@ -202,6 +209,7 @@ class EditorPageState extends State<EditorPage> {
     _navigatorRefresh?.cancel();
     _scrollHighlightDebounce?.cancel();
     _navigatorSuppressionTimer?.cancel();
+    _scrollSettled?.cancel();
     _pageIndicator?.dispose();
     widget.controller.removeListener(_onControllerChanged);
     _editorFocus.dispose();
@@ -336,7 +344,12 @@ class EditorPageState extends State<EditorPage> {
   }
 
   void _onScrolled(int row) {
-    _core.setScrollRow(row);
+    final core = _core..setScrollRow(row);
+    _scrollSettled?.cancel();
+    _scrollSettled = Timer(
+      _scrollSettleDelay,
+      () => unawaited(core.parkScrollRow()),
+    );
     _pageIndicator?.updateVisibleRow(row);
     _suppressNavigatorScroll = false;
     _navigatorSuppressionTimer?.cancel();

@@ -337,10 +337,14 @@ fn load_preferences(paths: &Paths) -> CorePreferences {
 /// Dart calls this from the window's close handler. If it never runs — because
 /// the process was killed — the journals stay on disk and the next startup finds
 /// them, which is exactly the behaviour they exist for.
+///
+/// A script still open here is one the writer quit out of, not one they put
+/// away, so it stays marked open and [`session_restore`] gives it back to the
+/// next launch. Dart must therefore call this *before* it closes that script.
 pub async fn shutdown() {
     actor().run(|state| {
         for handle in state.handles() {
-            state.close(handle);
+            state.park(handle);
         }
         save_library(state);
     });
@@ -545,8 +549,19 @@ pub async fn session_restore() -> Vec<ScriptView> {
     })
 }
 
-/// Records where the writer is in a script, so that a crash does not lose the
-/// scroll position along with everything else.
+/// Writes down which scripts are open and where the writer is in each, so that
+/// a process that dies comes back to that and not to whatever the index held
+/// the last time something else wrote it.
+///
+/// Dart says when — once scrolling has settled, and when a script is put away.
+/// There is no clock here to do it (ADR 0014), and [`doc_set_scroll`] runs for
+/// every row scrolled past, which is far too often for a file write.
+pub async fn session_park() {
+    actor().run(save_library);
+}
+
+/// Records where the writer is in a script. In memory only: a quit writes it
+/// with everything else, and [`session_park`] writes it for a crash.
 #[frb(sync)]
 pub fn doc_set_scroll(handle: DocumentHandle, row: u32) {
     actor().run(move |state| {
@@ -2460,12 +2475,20 @@ fn rebind(state: &mut AppState, handle: u64, path: PathBuf, id: String) {
             let _ = watcher.unwatch(old);
         }
     }
-    if let Some(session) = state.session_mut(handle) {
+    // The session leaves the old file's entry as well: left marked open, it
+    // would be a script for the next launch to come back to.
+    let left = state.session_mut(handle).map(|session| {
+        let old_id = session.id().map(str::to_owned);
         session.set_file(path.clone(), id.clone());
-    }
-    if let Some(storage) = state.storage_mut() {
+        (old_id, session.scroll_row())
+    });
+    if let (Some(storage), Some((old_id, scroll_row))) = (state.storage_mut(), left) {
+        if let Some(old_id) = old_id.filter(|old_id| *old_id != id) {
+            storage.library.closed(&old_id, scroll_row);
+        }
         storage.library.add(&path);
         storage.library.opened(&id);
+        storage.library.set_scroll(&id, scroll_row);
     }
     hydrate_pins(state, handle, &id);
     watch(state, handle, &path);
@@ -2740,8 +2763,8 @@ mod tests {
     use std::time::Duration;
 
     use crate::api::doc::{
-        doc_apply, doc_blocks, doc_line_break, doc_redo, doc_source, doc_undo, DocPosition,
-        DocSelection, EditCommand, EditOutcome,
+        doc_apply, doc_blocks, doc_close, doc_line_break, doc_redo, doc_source, doc_undo,
+        DocPosition, DocSelection, EditCommand, EditOutcome,
     };
 
     const SCRIPT: &str = "The house is quiet.\n";
@@ -3860,6 +3883,98 @@ mod tests {
         assert_eq!(scripts.len(), 1);
         assert_eq!(scripts[0].page_count, 0);
         assert_eq!(it.pagination_runs(), 0);
+    }
+
+    /// What the next launch would be told to reopen: the index as it is on
+    /// disk, read the way a new process reads it.
+    fn session_on_disk(root: &Path) -> Vec<ScriptEntry> {
+        Library::load(&Paths::under(root).library_index()).session()
+    }
+
+    /// What [`shutdown`] does, to one script. The real one ends every session
+    /// in the process, and the tests running beside this one have theirs open.
+    fn quit(handle: DocumentHandle) {
+        actor().run(move |state| {
+            state.park(handle.id);
+            save_library(state);
+        });
+    }
+
+    #[test]
+    fn a_quit_with_a_script_open_comes_back_to_it_where_the_writer_was() {
+        let it = Fixture::open("session-quit");
+        doc_set_scroll(it.handle, 328);
+
+        quit(it.handle);
+
+        let session = session_on_disk(&it.root);
+        assert_eq!(session.len(), 1, "the script was open when the app went");
+        assert_eq!(session[0].path, it.script);
+        assert_eq!(session[0].scroll_row, 328);
+        assert!(
+            block_on(recovery_pending()).is_empty(),
+            "and it went cleanly: there is nothing to offer"
+        );
+    }
+
+    #[test]
+    fn a_script_the_writer_put_away_is_not_reopened() {
+        let it = Fixture::open("session-put-away");
+        doc_set_scroll(it.handle, 12);
+
+        doc_close(it.handle);
+        quit(it.handle);
+
+        assert!(session_on_disk(&it.root).is_empty());
+    }
+
+    #[test]
+    fn a_process_that_dies_comes_back_to_the_row_that_was_parked() {
+        let it = Fixture::open("session-died");
+        doc_set_scroll(it.handle, 328);
+        assert_eq!(
+            session_on_disk(&it.root)[0].scroll_row,
+            0,
+            "a row is not a file write"
+        );
+
+        block_on(session_park());
+
+        let session = session_on_disk(&it.root);
+        assert_eq!(session.len(), 1);
+        assert_eq!(session[0].scroll_row, 328);
+    }
+
+    #[test]
+    fn a_script_put_away_and_parked_is_not_reopened_by_a_process_that_dies() {
+        let it = Fixture::open("session-put-away-died");
+
+        doc_close(it.handle);
+        block_on(session_park());
+
+        assert!(session_on_disk(&it.root).is_empty());
+    }
+
+    #[test]
+    fn save_as_takes_the_session_and_its_row_to_the_new_file() {
+        let it = Fixture::open("session-save-as");
+        doc_set_scroll(it.handle, 40);
+        let renamed = it.root.join("renamed.fountain");
+
+        assert!(matches!(
+            block_on(doc_save_as(
+                it.handle,
+                renamed.to_string_lossy().into_owned(),
+                false
+            )),
+            SaveOutcome::Saved { .. }
+        ));
+        quit(it.handle);
+
+        let session = session_on_disk(&it.root);
+        assert_eq!(session.len(), 1, "the old file is not open any more");
+        assert_eq!(session[0].path, renamed);
+        assert_eq!(session[0].scroll_row, 40);
     }
 
     #[test]

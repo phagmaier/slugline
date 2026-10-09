@@ -441,6 +441,31 @@ void main() {
     expect(_position(tester).pixels, _offsetOfRow(30));
   });
 
+  testWidgets('the row is written down once the view has stopped moving', (
+    tester,
+  ) async {
+    // The core is told every row, in memory. A process that dies has only
+    // what reached the disk, and a row scrolled past is not worth a write.
+    final core = _script(100);
+    await pumpEditorPage(tester, core);
+    final position = _position(tester);
+    await tester.pump(const Duration(seconds: 3));
+    core.parkedRows.clear();
+
+    for (final row in [10, 20, 30]) {
+      position.jumpTo(_offsetOfRow(row));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    expect(core.scrollRow, 30);
+    expect(core.parkedRows, isEmpty, reason: 'still moving');
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(core.parkedRows, [30]);
+
+    await tester.pump(const Duration(seconds: 10));
+    expect(core.parkedRows, [30], reason: 'once, not on a clock');
+  });
+
   testWidgets('the scrollbar thumb can be dragged', (tester) async {
     final controller = EditorController(_script(100));
     addTearDown(controller.dispose);

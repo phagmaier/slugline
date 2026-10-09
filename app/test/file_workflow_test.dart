@@ -100,8 +100,23 @@ class _AppCore implements Core {
   final shutdowns = <int>[];
   int _opening = 0;
 
+  /// One entry per shutdown: the scripts the core still held open at it.
+  final openAtShutdown = <List<String?>>[];
+
+  /// How often the session was written down without a shutdown.
+  int parks = 0;
+
   @override
-  Future<void> shutdown() async => shutdowns.add(_opening);
+  Future<void> shutdown() async {
+    shutdowns.add(_opening);
+    openAtShutdown.add([
+      for (final script in opened)
+        if (script.closes == 0) script.filePath,
+    ]);
+  }
+
+  @override
+  Future<void> parkSession() async => parks += 1;
 
   @override
   Future<DocumentCore?> openDocument(String path) async {
@@ -504,6 +519,30 @@ void main() {
       expect(find.byType(SnackBar), findsNothing);
     },
   );
+
+  testWidgets('a quit tells the core while the script is still open', (
+    tester,
+  ) async {
+    // The core marks what it still holds at shutdown as the session to come
+    // back to. A script closed first is one the writer put away.
+    final core = await _pump(tester);
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+    expect(core.openAtShutdown, [
+      ['/scripts/alpha.fountain'],
+    ]);
+    expect(core.opened.single.closes, 1, reason: 'and then it is let go');
+  });
+
+  testWidgets('a script put away is not open at the quit that follows', (
+    tester,
+  ) async {
+    final core = await _pump(tester);
+    await _key(tester, LogicalKeyboardKey.keyW, control: true);
+    expect(find.byType(EditorPage), findsNothing);
+    expect(core.parks, 1, reason: 'written down as put away, for a crash');
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+    expect(core.openAtShutdown, [<String?>[]]);
+  });
 
   testWidgets('nothing is opened once a quit is under way', (tester) async {
     final core = await _pump(tester, open: false);
