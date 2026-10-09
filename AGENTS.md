@@ -149,10 +149,10 @@ are UTF-8 byte offsets and are named for it (ADR 0008).
   mutation must end in one of them — never in a bare `document.apply`.
 - **The editor never decides where a page ends.** The `page_view` preference
   draws sheets instead of one column, but both modes read `PageIndicator`'s
-  `pageStarts`, which is Rust's paginated snapshot re-expressed in editor rows.
-  Before the first snapshot lands there are no page starts and the surface draws
-  a plain column — that is the correct answer, not a gap to fill with an
-  estimate.
+  `firstPage` and `pageStarts`, which are Rust's paginated snapshot re-expressed
+  in editor rows. Before the first snapshot lands there is no first page and the
+  surface draws a plain column — that is the correct answer, not a gap to fill
+  with an estimate.
 - A block's kind changes only through `SetKind`. Automatic re-classification
   goes through `Document::reinfer`, which the bridge calls after every edit;
   `Ctrl+K` and `Ctrl+F` open panels the editor page owns, so that Escape closes

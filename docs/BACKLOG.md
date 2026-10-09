@@ -99,6 +99,7 @@ This is the only place boxes are ticked.
 - [x] [B21](#b21) The status line gives a block that prints nothing the wrong page
 - [x] [B22](#b22) `Ctrl+F` with the find bar already open does nothing
 - [x] [B23](#b23) The find bar covers the matches under it
+- [x] [B24](#b24) A one-page script draws no sheet in page view
 
 **3. Fountain and output fidelity**
 
@@ -1312,6 +1313,35 @@ fixture below the bar (`target/b20/look/`). Limitation: only the match the
 caret is on is kept clear — the whole band under the bar, not just its
 columns — so other tinted matches can lie under it until stepped to.
 Commit: `B23 — the find bar no longer sits on the match the caret is on`.
+
+<a id="b24"></a>
+### B24 — A one-page script draws no sheet in page view
+
+**Evidence (reproduced in widget tests).** Promoted from the 2026-10-06 B2 note
+under [Found along the way](#found-along-the-way). Sheets were drawn when
+`PageIndicator.pageStarts` had an entry, and that list leaves page 1 out: a
+script that paginates to one page — every new script — showed the plain column
+with page view on (`target/b20/look/01-open.png`). The same tests found a second
+cause. Nothing rebuilt the surface when a pagination landed, so a script of any
+length left alone while its pages arrived kept the geometry of the frame before
+them; the real app happened to rebuild soon enough.
+
+**Change.** `PageIndicator.firstPage` is the number of the snapshot's first
+page — null before a pagination, and for one with no page in it.
+`EditorGeometry` draws sheets when it is given one, and the surface rebuilds
+when a landed pagination moves a row. Still only Rust's snapshot, read back:
+the editor decides nothing about where the page ends.
+
+**Effort.** S.
+**Result:** 2026-10-09 — one-page, empty and multi-page scripts draw their
+sheets once the snapshot lands, with the editor at rest; a script that prints
+nothing draws none, and before the snapshot the column is plain.
+`page_geometry_test.dart` and `page_indicator_test.dart` hold each case, the
+native `editor`, `writing` and `persistence` suites pass, and the rebuilt app
+shows the sheet under a one-page, an empty and a typed-into script
+(`target/b24/after/`). Limitation: a sheet is as tall as its rows, so a short
+script sits on a short sheet, as a last page always has. Commit:
+`B24 — a script of one page draws its sheet`.
 
 ---
 
@@ -3017,6 +3047,19 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-09 — B24, reproduced in a widget probe and left unchanged: in page
+  view a restored scroll row is applied against the first frame's continuous
+  geometry. When the sheets arrive, every row moves down by the page gaps above
+  it and the view is left on earlier text — row 217 instead of 250 with two
+  breaks above. It predates B24, which only makes the sheets arrive at once.
+- 2026-10-09 — B24, observed on the release bundle: an ordinary quit restores no
+  session. `shutdown` closes every document, `Library::closed` marks each one
+  not open, and the next launch shows the library — `scroll_row` 328 parked,
+  `open` false (`target/b24/before/b1-restored-at-rest.png`). Only a process
+  that died with a script open comes back to it, and at row 0: `doc_set_scroll`
+  changes the index in memory and nothing writes it until something else does.
+  Whether a clean quit should reopen the script is not recorded anywhere.
+
 - 2026-10-09 — B20, seen in a widget test: `_onExitRequested` disposes the open
   script's controller and leaves its `EditorPage` in the tree, so any frame
   built between the quit being agreed and the process going asserts
@@ -3190,6 +3233,7 @@ not part of that item.
   `EditorGeometry.sheeted` requires a nonempty start list. A one-page pagination
   therefore has no sheet furniture despite page view being enabled. Not
   exercised or changed; investigate separately from horizontal centring.
+  Promoted to [B24](#b24) on 2026-10-09.
 - 2026-10-06 — While indexing the ADRs, found an unowned correctness gap.
   ADR 0022 (incremental repagination by checkpoint) said its missing
   `repaginate`-versus-`paginate_snapshot` equivalence test was owed to "ADR 0025's

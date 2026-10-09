@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' hide PageView;
@@ -7,6 +8,7 @@ import 'package:slugline/core/document_core.dart';
 import 'package:slugline/editor/editor_controller.dart';
 import 'package:slugline/editor/editor_page.dart';
 import 'package:slugline/editor/editor_surface.dart';
+import 'package:slugline/editor/page_geometry.dart';
 import 'package:slugline/editor/page_indicator.dart';
 import 'package:slugline/typography.dart';
 
@@ -88,9 +90,14 @@ class _OutputCore extends FakeCore implements ScreenplayOutput {
   PaginationView pagination;
   final List<PageSetup> setups = [];
 
+  /// Set to keep a pagination from landing until it completes, the way the
+  /// worker's answer arrives some frames after the script is on screen.
+  Completer<void>? hold;
+
   @override
   Future<PaginationOutcome> paginate(PageSetup setup) async {
     setups.add(setup);
+    await hold?.future;
     return PaginationOutcome.current(pagination: pagination);
   }
 
@@ -150,6 +157,7 @@ void main() {
           expect(indicator.total, 0);
           expect(indicator.words, 0);
           expect(indicator.label, 'No printed pages');
+          expect(indicator.firstPage, isNull);
           expect(indicator.pageStarts, isEmpty);
           expect(indicator.positionForPage(1), isNull);
           expect(notifications, 1);
@@ -181,6 +189,7 @@ void main() {
       ]);
       await indicator.refresh();
       expect(indicator.label, 'Page 2 of 2');
+      expect(indicator.firstPage, 1);
       expect(indicator.pageStarts, isNotEmpty);
       expect(indicator.positionForPage(2), isNotNull);
       output.pagination = _pagination([]);
@@ -189,11 +198,14 @@ void main() {
       expect(indicator.total, 0);
       expect(indicator.words, 0);
       expect(indicator.label, 'No printed pages');
+      expect(indicator.firstPage, isNull);
       expect(indicator.pageStarts, isEmpty);
       expect(indicator.positionForPage(2), isNull);
       output.pagination = _pagination([_page(1, 1, 0, 80)]);
       await indicator.refresh();
       expect(indicator.label, 'Page 1 of 1');
+      expect(indicator.firstPage, 1);
+      expect(indicator.pageStarts, isEmpty);
       expect(notifications, 4);
     });
   });
@@ -322,6 +334,40 @@ void main() {
         isEmpty,
         reason: 'an unpaginated editor draws no page furniture',
       );
+      expect(indicator.firstPage, isNull);
+    });
+
+    test('a script of one page has a first page and no starts', () async {
+      final controller = EditorController(FakeCore([_block(1, 5)]));
+      addTearDown(controller.dispose);
+      final output = FakeOutput(_pagination([_page(1, 1, 0, 5)]));
+      final indicator = PageIndicator(
+        controller: controller,
+        output: output,
+        setup: const PageSetup(
+          paper: PaperSize.usLetter,
+          sceneNumbers: SceneNumbers.off,
+          boldSceneHeadings: false,
+          numberFirstPage: false,
+          debugLinesPerPage: null,
+        ),
+      );
+      addTearDown(indicator.dispose);
+
+      await indicator.refresh();
+      expect(indicator.firstPage, 1);
+      expect(indicator.pageStarts, isEmpty);
+
+      // The blank sheet an empty script prints: a page no line of the document
+      // reached is a page all the same.
+      output.pagination = _pagination([const PageView(number: 1, lines: [])]);
+      await indicator.refresh();
+      expect(indicator.firstPage, 1);
+      expect(indicator.label, 'Page 1 of 1');
+
+      output.closed = true;
+      await indicator.refresh();
+      expect(indicator.firstPage, isNull, reason: 'no snapshot, no claim');
     });
 
     test('name the editor row each page opens on, page one excepted', () async {
@@ -526,6 +572,168 @@ void main() {
         await paintsSheetNumber(tester, '1.', firstPageNumbered: true),
         isTrue,
       );
+    });
+  });
+
+  group('page view draws a sheet per page once a pagination lands', () {
+    Finder surfacePaint() => find.descendant(
+      of: find.byType(EditorSurface),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString() == '_SurfacePainter',
+      ),
+    );
+
+    EditorGeometry geometry(WidgetTester tester) =>
+        (tester.widget<CustomPaint>(surfacePaint()).painter! as dynamic)
+                .geometry
+            as EditorGeometry;
+
+    /// The paper of [sheet], as the painter draws it.
+    RRect paper(
+      EditorGeometry geometry,
+      ({double top, double bottom, int number}) sheet,
+    ) => RRect.fromRectAndRadius(
+      Rect.fromLTRB(
+        geometry.sheetLeft,
+        sheet.top,
+        geometry.sheetLeft + geometry.sheetWidth,
+        sheet.bottom,
+      ),
+      const Radius.circular(4),
+    );
+
+    /// An editor whose pagination has been asked for and has not landed: the
+    /// script is on screen, settled, with nothing further to rebuild it.
+    Future<(_OutputCore, EditorController)> open(
+      WidgetTester tester,
+      List<PageView> pages, {
+      int lines = 5,
+      bool pageView = true,
+    }) async {
+      final core = _OutputCore([_block(1, lines)], _pagination(pages))
+        ..hold = Completer<void>();
+      final controller = EditorController(core);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditorPage(controller: controller, pageView: pageView),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(geometry(tester).sheeted, isFalse);
+      expect(geometry(tester).sheets(), isEmpty);
+      expect(surfacePaint(), isNot(paints..rrect()), reason: 'a plain column');
+      return (core, controller);
+    }
+
+    testWidgets('a script of one page', (tester) async {
+      final (core, _) = await open(tester, [_page(1, 1, 0, 5)]);
+      final before = geometry(tester).yOfRow(0);
+
+      core.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+
+      final drawn = geometry(tester);
+      expect(find.textContaining('Page 1 of 1'), findsOneWidget);
+      expect(drawn.sheeted, isTrue);
+      final sheet = drawn.sheets().single;
+      expect(sheet.number, 1);
+      expect(surfacePaint(), paints..rrect(rrect: paper(drawn, sheet)));
+      // The sheet brings its inch of top margin; the column had half of one.
+      expect(drawn.yOfRow(0), greaterThan(before));
+    });
+
+    testWidgets('an empty script, which prints one blank page', (tester) async {
+      final (core, _) = await open(tester, [
+        const PageView(number: 1, lines: []),
+      ], lines: 0);
+
+      core.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+
+      final drawn = geometry(tester);
+      expect(drawn.sheets().single.number, 1);
+      expect(
+        surfacePaint(),
+        paints..rrect(rrect: paper(drawn, drawn.sheets().single)),
+      );
+    });
+
+    testWidgets('a script of several, left alone while its pages arrive', (
+      tester,
+    ) async {
+      final (core, _) = await open(tester, [
+        _page(1, 1, 0, 3),
+        _page(2, 1, 3, 5),
+      ]);
+
+      core.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+
+      final drawn = geometry(tester);
+      final sheets = drawn.sheets().toList();
+      expect(sheets.map((sheet) => sheet.number), [1, 2]);
+      // Each sheet is its paper and then its edge.
+      expect(
+        surfacePaint(),
+        paints
+          ..rrect(rrect: paper(drawn, sheets[0]))
+          ..rrect(rrect: paper(drawn, sheets[0]))
+          ..rrect(rrect: paper(drawn, sheets[1]))
+          ..rrect(rrect: paper(drawn, sheets[1])),
+      );
+    });
+
+    testWidgets('and follows the script from one page to two and back', (
+      tester,
+    ) async {
+      final (core, controller) = await open(tester, [_page(1, 1, 0, 5)]);
+      core.hold!.complete();
+      core.hold = null;
+      await tester.pumpAndSettle();
+      expect(geometry(tester).sheets().map((sheet) => sheet.number), [1]);
+
+      core.pagination = _pagination([_page(1, 1, 0, 3), _page(2, 1, 3, 5)]);
+      controller.insertText('More. ');
+      await tester.pumpAndSettle(const Duration(milliseconds: 200));
+      expect(geometry(tester).sheets().map((sheet) => sheet.number), [1, 2]);
+
+      core.pagination = _pagination([_page(1, 1, 0, 5)]);
+      controller.undo();
+      await tester.pumpAndSettle(const Duration(milliseconds: 200));
+      expect(geometry(tester).sheets().map((sheet) => sheet.number), [1]);
+    });
+
+    testWidgets('but none for a script that prints nothing', (tester) async {
+      final (core, _) = await open(tester, []);
+
+      core.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.textContaining('No printed pages'), findsOneWidget);
+      expect(geometry(tester).sheeted, isFalse);
+      expect(surfacePaint(), isNot(paints..rrect()));
+    });
+
+    testWidgets('and none in the continuous view', (tester) async {
+      final (core, _) = await open(tester, [
+        _page(1, 1, 0, 5),
+      ], pageView: false);
+
+      core.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.textContaining('Page 1 of 1'), findsOneWidget);
+      expect(geometry(tester).sheeted, isFalse);
+      expect(geometry(tester).rules(), isEmpty);
+      expect(surfacePaint(), isNot(paints..rrect()));
     });
   });
 

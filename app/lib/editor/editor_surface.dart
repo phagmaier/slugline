@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show kPrimaryButton, kSecondaryButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
@@ -169,6 +170,7 @@ class EditorSurfaceState extends State<EditorSurface>
     metrics: _metrics,
     viewportWidth: _viewportWidth,
     totalRows: _controller.layout.totalRows,
+    firstPage: widget.pageIndicator?.firstPage,
     pageStarts: widget.pageIndicator?.pageStarts ?? const [],
     pageView: widget.pageView,
     scrollbarWidth: kMinInteractiveDimension,
@@ -214,6 +216,7 @@ class EditorSurfaceState extends State<EditorSurface>
     _initialFocus = _controller.selection.focus;
     _displayColumns = _controller.layout.displayColumns;
     _controller.addListener(_onDocumentChanged);
+    widget.pageIndicator?.addListener(_onPaginationChanged);
     _focusNode.addListener(_onFocusChanged);
     _scroll.addListener(_refreshSemantics);
     _scroll.addListener(_reportScroll);
@@ -238,6 +241,10 @@ class EditorSurfaceState extends State<EditorSurface>
         });
       }
     }
+    if (oldWidget.pageIndicator != widget.pageIndicator) {
+      oldWidget.pageIndicator?.removeListener(_onPaginationChanged);
+      widget.pageIndicator?.addListener(_onPaginationChanged);
+    }
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onDocumentChanged);
       widget.controller.addListener(_onDocumentChanged);
@@ -254,6 +261,7 @@ class EditorSurfaceState extends State<EditorSurface>
     _connection?.close();
     _lineCache.dispose();
     _controller.removeListener(_onDocumentChanged);
+    widget.pageIndicator?.removeListener(_onPaginationChanged);
     _focusNode.removeListener(_onFocusChanged);
     _scroll.removeListener(_refreshSemantics);
     _scroll.removeListener(_reportScroll);
@@ -277,6 +285,28 @@ class EditorSurfaceState extends State<EditorSurface>
       _refreshSemantics(geometryChanged: true);
     }
     _refreshSemantics();
+  }
+
+  /// The geometry the last build laid the rows out with.
+  EditorGeometry? _builtGeometry;
+
+  /// A pagination that lands changes where the sheets are, and nothing else
+  /// here rebuilds for it: the document has not changed. The painter repaints
+  /// on its own, but with the geometry of the last build, so a script opened
+  /// and left alone would go on being drawn as it was before its pages were
+  /// known. The indicator also reports every edit and every page scrolled past,
+  /// which is why this asks whether a row has moved first.
+  void _onPaginationChanged() {
+    if (!mounted || _geometry == _builtGeometry) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      // A scroll position correcting itself during layout reports a row too.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      setState(() {});
+    }
   }
 
   void _scheduleInitialScroll() {
@@ -1112,7 +1142,7 @@ class EditorSurfaceState extends State<EditorSurface>
       builder: (context, constraints) {
         _viewportWidth = constraints.maxWidth;
         _viewportHeight = constraints.maxHeight;
-        final geometry = _geometry;
+        final geometry = _builtGeometry = _geometry;
         final contentWidth = math.max(
           _viewportWidth,
           geometry.columnLeft +
@@ -1713,11 +1743,11 @@ class _SurfacePainter extends CustomPainter {
 
   /// The sheets, or the rules that stand in for them.
   ///
-  /// Neither is computed here. `pageStarts` is Rust's pagination re-expressed in
-  /// editor rows, and both branches below are ways of drawing the same list. If
-  /// it is empty — nothing paginated yet, or a test with no core behind it —
-  /// this draws nothing at all, and the surface is the plain centred column it
-  /// has always been.
+  /// Neither is computed here. `firstPage` and `pageStarts` are Rust's
+  /// pagination re-expressed in editor rows, and both branches below are ways
+  /// of drawing the same pages. With no first page — nothing paginated yet,
+  /// nothing that prints, or a test with no core behind it — this draws nothing
+  /// at all, and the surface is the plain centred column it has always been.
   void _paintPageFurniture(Canvas canvas, double top, double bottom) {
     if (geometry.sheeted) {
       _paintSheets(canvas, top, bottom);

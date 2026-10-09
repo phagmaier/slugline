@@ -20,6 +20,7 @@ class EditorGeometry {
     required this.metrics,
     required this.viewportWidth,
     required this.totalRows,
+    this.firstPage,
     this.pageStarts = const [],
     this.pageView = false,
     this.scrollbarWidth = 0,
@@ -30,14 +31,20 @@ class EditorGeometry {
   final double viewportWidth;
   final int totalRows;
 
-  /// Where the paginator put each page break, in editor rows, ascending.
+  /// The number of the page the first row is on, as the paginator gave it.
   ///
-  /// Empty until Rust has paginated — and in a widget test with no pagination at
-  /// all, which then simply draws no page furniture.
+  /// Null until Rust has paginated and found a page to print — and in a widget
+  /// test with no pagination at all, which then simply draws no page furniture.
+  /// This, not [pageStarts], is what says there is a sheet to draw: a script of
+  /// one page has a first page and no breaks.
+  final int? firstPage;
+
+  /// Where the paginator put each page break, in editor rows, ascending: the
+  /// pages after the first. Empty for a script of one page.
   final List<PageStart> pageStarts;
 
   /// Whether to draw discrete sheets. Horizontal placement reserves the sheet
-  /// immediately; page furniture and vertical gaps wait for [pageStarts].
+  /// immediately; page furniture and vertical gaps wait for [firstPage].
   final bool pageView;
 
   /// The width of the scrollbar that overlays the right edge. The sheet in page
@@ -55,8 +62,9 @@ class EditorGeometry {
   double get lineHeight => metrics.lineHeight;
 
   /// Whether sheets are actually being drawn, as opposed to merely asked for.
-  /// Page view keeps continuous vertical spacing until the first snapshot lands.
-  bool get sheeted => pageView && pageStarts.isNotEmpty;
+  /// Page view keeps continuous vertical spacing until the first snapshot lands,
+  /// and when that snapshot has no page in it.
+  bool get sheeted => pageView && firstPage != null;
 
   /// The width of the content column: 6.0 inches of text and never more.
   ///
@@ -183,10 +191,11 @@ class EditorGeometry {
   /// fluid, sections and synopses occupy editor rows that never reach paper, and
   /// a fixed sheet would have to either clip them or lie about where they sit.
   Iterable<({double top, double bottom, int number})> sheets() sync* {
-    if (!sheeted) return;
+    final first = firstPage;
+    if (!pageView || first == null) return;
     final margin = metrics.down(1);
     var startRow = 0;
-    var number = pageStarts.first.number - 1;
+    var number = first;
     for (final start in pageStarts) {
       yield (
         top: yOfRow(startRow) - margin,
@@ -219,6 +228,7 @@ class EditorGeometry {
       other.metrics == metrics &&
       other.viewportWidth == viewportWidth &&
       other.totalRows == totalRows &&
+      other.firstPage == firstPage &&
       other.pageView == pageView &&
       other.scrollbarWidth == scrollbarWidth &&
       other.topInset == topInset &&
@@ -229,6 +239,7 @@ class EditorGeometry {
     metrics,
     viewportWidth,
     totalRows,
+    firstPage,
     pageView,
     scrollbarWidth,
     topInset,

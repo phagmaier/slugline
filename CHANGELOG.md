@@ -78,6 +78,8 @@ this file and the others to it.
 
 ### Fixed
 
+- Page view draws a script that fits on one page — every new script — on a
+  sheet of paper, as it does longer ones, instead of as a bare column.
 - Save As now shows the script's new name in the app bar and in the “Save
   changes to …?” prompt. An imported script saved for the first time no longer
   goes on saying “Untitled”.

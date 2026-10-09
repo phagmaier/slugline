@@ -74,6 +74,8 @@ class PageIndicator extends ChangeNotifier {
   /// Cleared whenever either side of that could have moved.
   List<PageStart>? _pageStarts;
 
+  int? _firstPage;
+
   int? _current;
   int? _total;
   int? _words;
@@ -126,11 +128,21 @@ class PageIndicator extends ChangeNotifier {
   /// ADR 0018 keeps clear.
   int? get words => _words;
 
-  /// Where each page begins on the editor's grid, in ascending row order.
+  /// The number of the page the script opens on, as the last snapshot gave it.
+  ///
+  /// Null while there is no page to draw: before the first pagination arrives,
+  /// and for one that prints nothing. It is what says a script has a sheet at
+  /// all — one that fits on a single page has a first page and no
+  /// [pageStarts].
+  int? get firstPage => _firstPage;
+
+  /// Where each page after the first begins on the editor's grid, in ascending
+  /// row order.
   ///
   /// Empty until the first pagination arrives, which is what the surface draws
   /// when the answer is not known yet: no rules rather than guessed ones. The
-  /// first page is omitted — a rule above row zero is a rule above the document.
+  /// first page is omitted — a rule above row zero is a rule above the
+  /// document — and [firstPage] is where it is accounted for.
   ///
   /// Resolved lazily and cached, because the block-id-to-row mapping is the
   /// controller's and changes with every edit. One pass over the blocks, and
@@ -253,6 +265,7 @@ class PageIndicator extends ChangeNotifier {
         _firstLineOfPage.clear();
         _unnumberedPages.clear();
         _pageStarts = null;
+        _firstPage = null;
         _words = null;
         _setPosition(null, null);
     }
@@ -264,12 +277,16 @@ class PageIndicator extends ChangeNotifier {
     _firstLineOfPage.clear();
     _unnumberedPages.clear();
     _pageStarts = null;
+    _firstPage = null;
 
     final firstPageAtBlock = <int, int>{};
     final lastPageAtBlock = <int, int>{};
     for (final page in pagination.pages) {
       final number = page.number;
       if (number == null) continue;
+      // A page is a page whether or not a line of the document reached it:
+      // an empty script still prints one blank sheet.
+      _firstPage ??= number;
       var numbered = false;
       for (final line in page.lines) {
         numbered = numbered || line.kind == LayoutLineKind.pageNumber;

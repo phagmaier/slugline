@@ -11,6 +11,7 @@ const _metrics = ScreenplayMetrics(advance: 9, lineHeight: 21);
 EditorGeometry _geometry({
   double viewportWidth = 900,
   int totalRows = 300,
+  int? firstPage,
   List<PageStart> pageStarts = const [],
   bool pageView = false,
   double topInset = 0,
@@ -18,11 +19,15 @@ EditorGeometry _geometry({
   metrics: _metrics,
   viewportWidth: viewportWidth,
   totalRows: totalRows,
+  firstPage: firstPage,
   pageStarts: pageStarts,
   pageView: pageView,
   topInset: topInset,
 );
 
+/// A script of three pages, as the indicator hands it over: the page it opens
+/// on, and where the other two begin.
+const _first = 1;
 const _starts = [PageStart(row: 54, number: 2), PageStart(row: 110, number: 3)];
 
 void main() {
@@ -30,8 +35,13 @@ void main() {
     // What the find bar covers while it is up. A click still has to land on
     // the row it was aimed at, sheets and all.
     for (final pageView in [false, true]) {
-      final plain = _geometry(pageStarts: _starts, pageView: pageView);
+      final plain = _geometry(
+        firstPage: _first,
+        pageStarts: _starts,
+        pageView: pageView,
+      );
       final inset = _geometry(
+        firstPage: _first,
         pageStarts: _starts,
         pageView: pageView,
         topInset: 150,
@@ -96,6 +106,7 @@ void main() {
             metrics: metrics,
             viewportWidth: width,
             totalRows: 300,
+            firstPage: starts.isEmpty ? null : _first,
             pageStarts: starts,
             scrollbarWidth: kMinInteractiveDimension,
           );
@@ -113,7 +124,7 @@ void main() {
     });
 
     test('rows are evenly spaced whatever the pagination says', () {
-      final geometry = _geometry(pageStarts: _starts);
+      final geometry = _geometry(firstPage: _first, pageStarts: _starts);
       expect(geometry.sheeted, isFalse);
       for (final row in [0, 1, 53, 54, 55, 200]) {
         expect(
@@ -125,15 +136,29 @@ void main() {
     });
 
     test('a page break is a rule, and the first page has none above it', () {
-      final rules = _geometry(pageStarts: _starts).rules().toList();
+      final rules = _geometry(
+        firstPage: _first,
+        pageStarts: _starts,
+      ).rules().toList();
       expect(rules.map((rule) => rule.number), [2, 3]);
       expect(rules.first.y, closeTo(_geometry().yOfRow(54) - 10.5, 0.001));
-      expect(_geometry(pageStarts: _starts).sheets(), isEmpty);
+      expect(
+        _geometry(firstPage: _first, pageStarts: _starts).sheets(),
+        isEmpty,
+      );
     });
 
     test('draws nothing at all before the first pagination arrives', () {
       expect(_geometry().rules(), isEmpty);
       expect(_geometry().sheets(), isEmpty);
+    });
+
+    test('a script of one page has nothing to rule', () {
+      final geometry = _geometry(firstPage: _first);
+      expect(geometry.sheeted, isFalse);
+      expect(geometry.rules(), isEmpty);
+      expect(geometry.sheets(), isEmpty);
+      expect(geometry.topPadding, _metrics.down(0.5));
     });
   });
 
@@ -160,6 +185,7 @@ void main() {
             metrics: metrics,
             viewportWidth: width,
             totalRows: 300,
+            firstPage: _first,
             pageStarts: _starts,
             pageView: true,
             scrollbarWidth: kMinInteractiveDimension,
@@ -220,8 +246,36 @@ void main() {
       expect(geometry.yOfRow(54) - geometry.yOfRow(0), 54 * 21);
     });
 
+    test('a script of one page is one sheet, with no break in it', () {
+      // Every new script: a first page and no page starts. The sheet is the
+      // rows with an inch of margin either side, as any other sheet is.
+      final geometry = _geometry(
+        firstPage: _first,
+        pageView: true,
+        totalRows: 12,
+      );
+      expect(geometry.sheeted, isTrue);
+      expect(geometry.topPadding, _metrics.down(1));
+      final sheet = geometry.sheets().single;
+      expect(sheet.number, 1);
+      expect(sheet.top, 0);
+      expect(sheet.bottom, geometry.yOfRow(12) + _metrics.down(1));
+      expect(geometry.contentHeight, sheet.bottom);
+      expect(geometry.rules(), isEmpty);
+      for (var row = 0; row < 12; row++) {
+        expect(geometry.yOfRow(row) - geometry.yOfRow(0), row * 21);
+        expect(geometry.rowAtY(geometry.yOfRow(row) + 1), row);
+      }
+      // What the surface rebuilds on when the pagination lands.
+      expect(geometry, isNot(_geometry(pageView: true, totalRows: 12)));
+    });
+
     test('every page break costs exactly one gap', () {
-      final geometry = _geometry(pageStarts: _starts, pageView: true);
+      final geometry = _geometry(
+        firstPage: _first,
+        pageStarts: _starts,
+        pageView: true,
+      );
       expect(geometry.sheeted, isTrue);
       final gap = geometry.pageGap;
       expect(geometry.yOfRow(53) - geometry.yOfRow(0), 53 * 21);
@@ -232,6 +286,7 @@ void main() {
 
     test('a sheet per page, in order, with the first numbered one', () {
       final sheets = _geometry(
+        firstPage: _first,
         pageStarts: _starts,
         pageView: true,
       ).sheets().toList();
@@ -242,7 +297,14 @@ void main() {
       for (var i = 1; i < sheets.length; i++) {
         expect(sheets[i].top, greaterThan(sheets[i - 1].bottom));
       }
-      expect(_geometry(pageStarts: _starts, pageView: true).rules(), isEmpty);
+      expect(
+        _geometry(
+          firstPage: _first,
+          pageStarts: _starts,
+          pageView: true,
+        ).rules(),
+        isEmpty,
+      );
     });
   });
 
@@ -256,11 +318,16 @@ void main() {
       ('continuous', _geometry(totalRows: 200)),
       (
         'continuous with breaks',
-        _geometry(totalRows: 200, pageStarts: _starts),
+        _geometry(totalRows: 200, firstPage: _first, pageStarts: _starts),
       ),
       (
         'page view',
-        _geometry(totalRows: 200, pageStarts: _starts, pageView: true),
+        _geometry(
+          totalRows: 200,
+          firstPage: _first,
+          pageStarts: _starts,
+          pageView: true,
+        ),
       ),
     ]) {
       test('$name covers every row on screen, at every scroll offset', () {
@@ -286,6 +353,7 @@ void main() {
     test('stays a band and does not become the whole document', () {
       final geometry = _geometry(
         totalRows: 5000,
+        firstPage: _first,
         pageStarts: [
           for (var page = 2; page <= 90; page++)
             PageStart(row: (page - 1) * 54, number: page),
@@ -307,8 +375,14 @@ void main() {
     // does not is a caret that lands on the wrong line.
     for (final (name, geometry) in [
       ('continuous', _geometry()),
-      ('continuous with breaks', _geometry(pageStarts: _starts)),
-      ('page view', _geometry(pageStarts: _starts, pageView: true)),
+      (
+        'continuous with breaks',
+        _geometry(firstPage: _first, pageStarts: _starts),
+      ),
+      (
+        'page view',
+        _geometry(firstPage: _first, pageStarts: _starts, pageView: true),
+      ),
     ]) {
       test(name, () {
         for (var row = 0; row < 200; row++) {
