@@ -23,10 +23,17 @@ finished, and update its source note if the status or evidence changes.
   oversized actions carry over before spacing when fewer than two content rows
   fit, so the new page starts with content. Break-rule regressions, full/incremental
   differential tests (including checkpoint reuse), and unchanged layout goldens pass.
-- [ ] Investigate the inherited hosted startup failure noted during X3/X4/X6
+- [x] Investigate the inherited hosted startup failure noted during X3/X4/X6
   work and record whether it still reproduces. The backlog calls it unresolved
   but does not include the original failure details. See [X3](docs/BACKLOG.md#x3),
   [X4](docs/BACKLOG.md#x4), and [X6](docs/BACKLOG.md#x6).
+  **Result:** Reviewed in `F9 — Close the inherited startup follow-up as not reproduced`:
+  the historical ten-second timeout is retained, but the latest startup-measuring
+  hosted run [37936974961](https://github.com/phagmaier/slugline/actions/runs/37936974961)
+  at `ebd12d8` completed all five launches and passed at 413.076 ms best.
+  Closed as non-reproduced under the requested triage rule; the original cause
+  remains unknown, diagnostics remain enabled, and newer Development checks
+  do not measure startup.
 
 ## Manual validation
 

@@ -2902,6 +2902,22 @@ a zero-tick/zero-switch idle interval. Evidence: `target/x3-smoke/`. No budget
 threshold changed. Desktop IME/Orca/HiDPI, physical print calibration and
 real-GPU 250 MiB RSS remain manual; no unrelated item was fixed.
 
+<a id="hosted-startup-follow-up"></a>
+**Hosted startup follow-up (2026-10-09):** Original run
+[37878545122](https://github.com/phagmaier/slugline/actions/runs/37878545122)
+failed the ten-second first-frame-window watchdog on its first empty-script
+launch; the report remains at `target/x3-smoke/hosted-ci/runtime-budgets.json`.
+The latest startup-measuring hosted run
+[37936974961](https://github.com/phagmaier/slugline/actions/runs/37936974961)
+at `ebd12d8` completed all five launches (first 2310.137 ms, best 413.076 ms
+against the unchanged 500 ms best-of-five limit), with its downloaded report at
+`target/todo-hosted-startup/37936974961/runtime-budgets.json`.
+Closed as non-reproduced under the requested triage rule in
+`F9 — Close the inherited startup follow-up as not reproduced`; the original
+cause remains unknown and failure-only diagnostics remain enabled, with no new
+build or hosted run performed and no startup coverage claimed for newer
+Development checks.
+
 <a id="x4"></a>
 ### X4 — Emphasis that wraps by printed width and is styled in the editor
 
@@ -2935,8 +2951,10 @@ preview/PDF, formatting/Save/Undo/Redo and dense caret/hit smoke passed; two
 behavioral fault injections failed regressions and were reverted. Unchanged
 Xvfb gates passed: 368.336 ms best startup, 267.3125 MiB RSS, a ten-second
 zero-tick/zero-switch interval, and all 15 stressed ordinary closes exited zero.
-Evidence: root `target/x4-resume-smoke/`. No new hosted run was performed; X3's
-hosted startup failure remains unresolved. Desktop IME/Orca, print calibration,
+Evidence: root `target/x4-resume-smoke/`. No new hosted run was performed at this
+checkpoint; X3's hosted startup cause was unresolved. The later
+[startup follow-up](#hosted-startup-follow-up) closed as non-reproduced.
+Desktop IME/Orca, print calibration,
 HiDPI and real-GPU RSS remain manual gates.
 The integration audit reproduced a first dense paste leaving the End caret
 offscreen until another character. The surface now initializes its width cache
@@ -3028,7 +3046,8 @@ regression passed in a private namespace. Evidence is under
 All checks and consumer regressions above passed; logs, the initial failures,
 release runtime JSON and ordinary-close JSON are retained under
 `target/retained-features/x6/`. The after-Find journalled p99 is 4.27 ms.
-Manual desktop gates and the inherited hosted startup investigation remain open.
+Manual desktop gates remain open; the later
+[startup follow-up](#hosted-startup-follow-up) closed as non-reproduced.
 
 <a id="x7"></a>
 ### X7 — Omit and restore
@@ -3111,7 +3130,8 @@ ordinary closes exit zero with exact saved bytes. No-network linkage and isolate
 logs, matched control JSON and immutable release hashes remain under
 `target/retained-features/x7/`, with final summaries in
 `checkpoint-verification.json` and `checkpoint-release-hashes.json`.
-Manual desktop gates 1–5 and the inherited startup investigation remain pending.
+Manual desktop gates 1–5 remain pending; the later
+[startup follow-up](#hosted-startup-follow-up) closed as non-reproduced.
 
 ---
 
