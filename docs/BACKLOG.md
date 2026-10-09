@@ -95,6 +95,7 @@ This is the only place boxes are ticked.
 - [x] [B17](#b17) Hosted Rust checks stop on stale Poppler package metadata
 - [x] [B18](#b18) A retained Find query rescans the script on every edit
 - [x] [B19](#b19) Save As leaves the old name in the app bar
+- [x] [B20](#b20) Closing the window while a script is still opening throws
 
 **3. Fountain and output fidelity**
 
@@ -1212,6 +1213,33 @@ prompt take the new name. `app/test/file_workflow_test.dart` holds both cases;
 on the rebuilt app a Save As through the real chooser changed the bar from
 "find" to "renamed" (`target/b20/look/07-after-save-as.png`). Commit:
 `B19 — Save As renames the script in the app bar`.
+
+<a id="b20"></a>
+### B20 — Closing the window while a script is still opening throws
+
+**Evidence (reproduced).** Promoted from the 2026-10-08 B16 note under
+[Found along the way](#found-along-the-way). Six of six early closes of the
+current release build on the 120-page reference logged
+`Unhandled Exception: Bad state: No element` from `EditorController`'s
+constructor (`target/b20/base-*/first-process.log`). `_onExitRequested` runs
+`core.shutdown()`, which closes the documents the core holds; one still being
+opened is not among them, so it arrives afterwards as a closed handle — or the
+process goes while its journal is half written, which is the orphaned
+`<id>.log.tmp-…` the note recorded.
+
+**Change.** Dart only, in `app/lib/app.dart`: a quit waits for an open the core
+has not answered yet, nothing is opened or adopted once a quit is agreed, and a
+document that arrives then is closed instead of handed to an editor.
+
+**Effort.** S.
+**Result:** 2026-10-09 — every request that makes the core open a document
+goes through `_SluglineAppState._opening`, and the exit handler waits for those
+before `shutdown`. `app/test/file_workflow_test.dart` holds the order; on the
+rebuilt app eighteen of eighteen early closes logged nothing and left no
+journal file, in the same ~315 ms, and `tools/check_clean_close.py` passes
+(`target/b20/`). Limitation: a quit waits for an open in flight, so one stuck
+on a dead mount holds the window until the read returns. Commit:
+`B20 — a quit waits for the script that is still opening`.
 
 ---
 
@@ -2917,6 +2945,12 @@ S1 is fixed, two windows cover it.
 Add a dated line here for anything noticed while working on an item that is
 not part of that item.
 
+- 2026-10-09 — B20, seen in a widget test: `_onExitRequested` disposes the open
+  script's controller and leaves its `EditorPage` in the tree, so any frame
+  built between the quit being agreed and the process going asserts
+  "EditorController was used after being disposed" in a debug build. Release
+  builds do not check. Not changed: B20 only orders the quit behind an open.
+
 - 2026-10-08 — B16, reproduced under Xvfb: closing the window the moment it
   first appears, while the script named on the command line is still being
   opened, logs `Unhandled Exception: Bad state: No element` from
@@ -2931,6 +2965,7 @@ not part of that item.
   it for recovery. Left unchanged. Logs:
   `target/stabilization/b16/cur-G1-early-reference-*/first-process.log`,
   `fix-G1-early-reference-07/state/slugline/journal/`.
+  Promoted to [B20](#b20) on 2026-10-09.
 - 2026-10-08 — B16, observed on the Hyprland session: Ctrl+W in the instant
   after a Save's bytes reach the file is answered with "Save changes? There are
   edits here that are not in the file yet", with "saved just now" already in

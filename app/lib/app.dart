@@ -101,6 +101,14 @@ class _SluglineAppState extends State<SluglineApp> {
   bool _deferredJournalFailure = false;
   late files.PreferencesView _preferences;
 
+  /// Set once a quit has been agreed to. The core is about to drop every
+  /// document it holds, so from here nothing is opened and nothing is adopted.
+  bool _exiting = false;
+
+  /// Documents the core has been asked for and has not yet handed back.
+  int _opensActive = 0;
+  Completer<void>? _opensSettled;
+
   @override
   void initState() {
     super.initState();
@@ -140,10 +148,35 @@ class _SluglineAppState extends State<SluglineApp> {
     if (editor != null && !await editor.confirmClose()) {
       return AppExitResponse.cancel;
     }
+    _exiting = true;
+    // Shutdown closes the documents the core knows about, and one still being
+    // opened is not among them yet. Left to race, it arrives afterwards as a
+    // handle that is already closed — or the process goes while its journal is
+    // half written.
+    if (_opensActive > 0) {
+      await (_opensSettled ??= Completer<void>()).future;
+    }
     _open?.dispose();
     _open = null;
     await widget.core.shutdown();
     return AppExitResponse.exit;
+  }
+
+  /// Asks the core for a document where a quit can wait for the answer. Null
+  /// without asking once a quit is under way.
+  Future<T?> _opening<T>(Future<T?> Function() request) async {
+    if (_exiting) return null;
+    _opensActive += 1;
+    try {
+      return await request();
+    } finally {
+      _opensActive -= 1;
+      if (_opensActive == 0) {
+        final settled = _opensSettled;
+        _opensSettled = null;
+        settled?.complete();
+      }
+    }
   }
 
   // --- startup ---------------------------------------------------------------
@@ -165,8 +198,12 @@ class _SluglineAppState extends State<SluglineApp> {
       for (final entry in choices.entries) {
         switch (entry.value) {
           case RecoveryChoice.recover:
-            final outcome = await files.recoveryAccept(journalPath: entry.key);
+            final outcome = await _opening(
+              () => files.recoveryAccept(journalPath: entry.key),
+            );
             switch (outcome) {
+              case null:
+                return;
               case files.RecoveryOutcome_Recovered(:final handle):
                 await _adopt(RustDocumentCore.of(handle));
                 // One at a time: the editor holds one script. The rest of the
@@ -222,7 +259,7 @@ class _SluglineAppState extends State<SluglineApp> {
   // --- opening and closing ---------------------------------------------------
 
   Future<void> _openPath(String path, {int initialScrollRow = 0}) async {
-    final core = await widget.core.openDocument(path);
+    final core = await _opening(() => widget.core.openDocument(path));
     if (core == null) {
       _say('The script could not be opened or created.');
       return;
@@ -241,7 +278,7 @@ class _SluglineAppState extends State<SluglineApp> {
     if (!mounted) return;
     // The page holds input and autosave for this action. Keep its session
     // until the destination has loaded successfully.
-    final next = await widget.core.openDocument(path);
+    final next = await _opening(() => widget.core.openDocument(path));
     if (next == null) {
       _say('The script could not be opened or created.');
       return;
@@ -295,8 +332,10 @@ class _SluglineAppState extends State<SluglineApp> {
         extension: 'fdx',
       );
       if (path == null || !mounted || !context.mounted) return;
-      final result = await widget.core.importFdx(path);
+      final result = await _opening(() => widget.core.importFdx(path));
       switch (result) {
+        case null:
+          return;
         case FdxImportFailed(:final message):
           _say('Could not import FDX: $message');
           return;
@@ -343,6 +382,10 @@ class _SluglineAppState extends State<SluglineApp> {
   }
 
   Future<void> _adopt(DocumentCore core, {int initialScrollRow = 0}) async {
+    if (_exiting) {
+      core.close();
+      return;
+    }
     _open?.dispose();
     final preferences = _preferences;
     final controller = EditorController(core);
@@ -514,7 +557,7 @@ class _SluglineAppState extends State<SluglineApp> {
 
   void _say(String message) {
     final context = _navigator.currentContext;
-    if (context == null || !context.mounted) return;
+    if (context == null || !context.mounted || _exiting) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));

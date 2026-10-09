@@ -81,6 +81,9 @@ this file and the others to it.
 - Save As now shows the script's new name in the app bar and in the “Save
   changes to …?” prompt. An imported script saved for the first time no longer
   goes on saying “Untitled”.
+- Closing the window while a script is still opening no longer logs an error or
+  can leave a stray temporary file beside the recovery records. The quit waits
+  for the open to finish and closes that script like any other.
 - Opening and closing the title page form no longer rewrites a title page that
   repeats a key or leaves one empty. Only a field that was actually edited is
   written; looking adds nothing to Undo, the unsaved state or the recovery

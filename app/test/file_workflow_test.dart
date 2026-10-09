@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -94,10 +95,23 @@ class _AppCore implements Core {
     _script('alpha', 2),
     _script('beta', 1),
   ];
+
+  /// One entry per shutdown: how many opens were still unanswered at it.
+  final shutdowns = <int>[];
+  int _opening = 0;
+
+  @override
+  Future<void> shutdown() async => shutdowns.add(_opening);
+
   @override
   Future<DocumentCore?> openDocument(String path) async {
     requests.add(path);
-    await holdOpen?.future;
+    _opening += 1;
+    try {
+      await holdOpen?.future;
+    } finally {
+      _opening -= 1;
+    }
     if (failOpen) return null;
     final core = FakeCore.single(BlockKind.action, 'Text from $path.')
       ..eventHandle = opened.length + 1
@@ -467,6 +481,37 @@ void main() {
       expect(core.opened.single.closes, 0);
     },
   );
+
+  testWidgets(
+    'a quit during the startup open waits for it and adopts nothing',
+    (tester) async {
+      final core = _AppCore()..holdOpen = Completer<void>();
+      addTearDown(core.eventBus.close);
+      await tester.pumpWidget(
+        SluglineApp(core: core, initialPath: '/scripts/alpha.fountain'),
+      );
+      await tester.pumpAndSettle();
+      expect(core.requests, ['/scripts/alpha.fountain']);
+      final exit = tester.binding.handleRequestAppExit();
+      await tester.pumpAndSettle();
+      expect(core.shutdowns, isEmpty, reason: 'the open has not answered yet');
+      core.holdOpen!.complete();
+      await tester.pumpAndSettle();
+      expect(await exit, AppExitResponse.exit);
+      expect(core.shutdowns, [0]);
+      expect(core.opened.single.closes, 1);
+      expect(find.byType(EditorPage), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
+    },
+  );
+
+  testWidgets('nothing is opened once a quit is under way', (tester) async {
+    final core = await _pump(tester, open: false);
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+    await _key(tester, LogicalKeyboardKey.enter);
+    expect(core.requests, isEmpty);
+    expect(find.byType(SnackBar), findsNothing);
+  });
 
   testWidgets('a failed open keeps the existing session', (tester) async {
     final core = await _pump(tester);
