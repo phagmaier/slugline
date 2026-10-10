@@ -7,7 +7,7 @@
 
 <p align="center">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux-333.svg?logo=linux" />
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.2-576cbc" />
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-576cbc" />
   <img alt="License" src="https://img.shields.io/badge/license-GPLv3%2FOFL-576cbc" />
 </p>
 

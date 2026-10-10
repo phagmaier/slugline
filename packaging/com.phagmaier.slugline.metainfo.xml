@@ -73,6 +73,20 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.1.0" date="2026-10-09">
+      <description>
+        <p>Scripts now live in a managed library of portable project folders,
+        with import that leaves originals untouched, rename, duplicate, archive
+        and per-script previous versions. Adds Final Draft (FDX) import and
+        export, dual dialogue, scene numbering, omit and restore, an outline
+        navigator, styled emphasis in the editor, go to page, and keyboard
+        shortcuts for switching scripts.</p>
+        <p>Fixes page breaks after edits near the top of every fourth page,
+        characters lost during fast typing, a crash on closing the window, and
+        a second window deleting a running session's recovery record. Page 1 is
+        no longer numbered by default.</p>
+      </description>
+    </release>
     <release version="1.0.2" date="2026-09-13">
       <description>
         <p>Faster scrolling on long scripts, caret position and text size in the

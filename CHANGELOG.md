@@ -6,7 +6,7 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 `app/pubspec.yaml` is the release-version source; `tools/check_version.py` holds
 this file and the others to it.
 
-## Unreleased
+## 1.1.0 - 2026-10-09
 
 ### Added
 
@@ -50,9 +50,9 @@ this file and the others to it.
   in the linear editor. Pairs stay together when they fit a page; longer pairs
   continue each speaker independently with (MORE) and (CONT'D).
 - Previous versions can be viewed as selectable, read-only Fountain text,
-  including the title page, before restoring. “Open as copy…” saves the viewed
-  version under a new filename and opens it in a separate window without
-  replacing the current script or its unsaved work.
+  including the title page, before restoring. “Open as copy” makes the viewed
+  version a new script in the library and opens it; the script it came from is
+  left as it is, after the usual question about unsaved changes.
 - Ctrl+N starts a new script, Ctrl+O opens a searchable list of recent scripts
   with “Browse…” at its end, and Ctrl+W goes back to the library. The library
   focuses its search field and takes Up/Down and Enter, so a script can be
@@ -77,6 +77,12 @@ this file and the others to it.
 
 ### Changed
 
+- Scripts are edited in the library rather than wherever a file happens to be.
+  `slugline FILE`, Browse and opening a file from the file manager open a
+  library script, or offer to import an outside file as a library copy and leave
+  the original untouched. A path that does not exist is reported, not created.
+  Save As is gone: Ctrl+Shift+S exports a copy and the script stays where it is.
+
 - New and edited Fountain blocks omit redundant element-forcing markers while
   preserving markers needed by native syntax. Unedited source remains byte-exact;
   Save never changes authored capitalization or the current editing pin.
@@ -88,11 +94,10 @@ this file and the others to it.
 - Preview and export opens on the page the caret is on instead of always at the
   top. Page 1 still opens at the top, with the title page. The preview's scroll
   bar now reflects the script's real length from the moment it opens.
-- New, Browse, Save As, Rename, Export and the font/backup preferences now use
+- Import, Browse, Export and the font and library-folder preferences now use
   GTK's local file dialog, with system bookmarks, search, keyboard navigation,
-  folder creation and file-type filters. Dialogs start beside the current script
-  or remember the last accepted folder during the launch. Extensionless save
-  names gain the format's extension; replacement still asks only once in Slugline.
+  folder creation and file-type filters. Extensionless export names gain the
+  format's extension; replacement still asks only once in Slugline.
 - While the find bar is open, every match on screen is tinted and the one the
   caret is on is still the selection. Opening Find with text selected inside
   one element searches for that text, with the same toggles and element filter.
@@ -107,8 +112,7 @@ this file and the others to it.
 - Quitting with a script open comes back to that script, on the lines it was
   showing, the next time Slugline starts without a file named. A script put
   away with `Ctrl+W` is not reopened. After a crash the script also comes back
-  where it had been scrolled to, not at its top. Save As no longer leaves the
-  old file as one to come back to.
+  where it had been scrolled to, not at its top.
 - In page view a script that comes back scrolled part of the way down shows
   the lines it was left on. It used to slip back a few lines for every page
   above them, once the sheets were drawn.
@@ -125,9 +129,6 @@ this file and the others to it.
   longer changes the first line out of sight.
 - Page view draws a script that fits on one page — every new script — on a
   sheet of paper, as it does longer ones, instead of as a bare column.
-- Save As now shows the script's new name in the app bar and in the “Save
-  changes to …?” prompt. An imported script saved for the first time no longer
-  goes on saying “Untitled”.
 - Closing the window while a script is still opening no longer logs an error or
   can leave a stray temporary file beside the recovery records. The quit waits
   for the open to finish and closes that script like any other.
@@ -179,9 +180,8 @@ this file and the others to it.
   still synchronize with the input method.
 
 - The native keyboard-switching check now waits for the destination document
-  and editor focus, and verifies that Ctrl+N reached the chooser. Frame settling
-  alone could finish before native file creation completed; application behavior
-  is unchanged.
+  and editor focus. Frame settling alone could finish before native file
+  creation completed; application behavior is unchanged.
 
 - Restoring a previous version now refreshes the editor's text, caret and counts
   from the restored document before editing resumes. Viewing, copying, closing
