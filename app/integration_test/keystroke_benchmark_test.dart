@@ -24,6 +24,8 @@ import 'package:slugline/editor/editor_surface.dart';
 import 'package:slugline/editor/find_bar.dart';
 import 'package:slugline/src/rust/api/files.dart' as files;
 
+import 'managed_fixture.dart';
+
 /// §1.3.
 const keystrokeBudgetMs = 16.0;
 const openBudgetMs = 250.0;
@@ -32,11 +34,13 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory root;
+  late ManagedFixtures managed;
 
   setUpAll(() async {
     // A temporary XDG root, so that the journal this benchmark now writes goes
     // somewhere disposable rather than into the runner's own state directory.
     root = await Directory.systemTemp.createTemp('slugline-bench-');
+    managed = ManagedFixtures(root);
     await Core.init(
       configDir: '${root.path}/config',
       dataDir: '${root.path}/data',
@@ -161,7 +165,8 @@ void main() {
       // The append is deliberately not `fsync`ed (see `storage/src/journal.rs`),
       // so what is being measured is a buffered write of a few hundred bytes.
       final reference = File('../testdata/reference-feature.fountain');
-      final script = '${root.path}/benchmark-$usedFind.fountain';
+      // The library opens only a managed project (ADR 0068).
+      final script = managed.path('benchmark-$usedFind.fountain');
       File(script).writeAsStringSync(reference.readAsStringSync());
 
       final handle = await files.libraryOpen(path: script);
