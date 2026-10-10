@@ -3338,7 +3338,16 @@ not part of that item.
   retain the close prompt. The original Wayland driver was not rerun.
 - 2026-10-08 — B16, observed on the Hyprland session: every launch logs
   `Gdk-Message: Unable to load  from the cursor theme`, with an empty cursor
-  name, on the installed build and the B16 bundle alike. Not investigated.
+  name, on the installed build and the B16 bundle alike.
+  Investigated 2026-10-09 in `Classify the GTK cursor warning at startup`:
+  [Flutter 3.44.8's cursor handler](https://github.com/flutter/flutter/blob/058e0af2c2b57e369d905a03ac9748b0ebf543c6/engine/src/flutter/shell/platform/linux/fl_mouse_cursor_handler.cc)
+  starts with an empty name, and `FlView::setup_cursor` passes it to GTK during
+  realization; tracing the native Wayland debug app confirmed the rejected lookup
+  returns `NULL`, which [GTK defines as inheriting the default cursor](https://docs.gtk.org/gdk3/method.Window.set_cursor.html).
+  The editor rendered, a subsequent default-cursor lookup succeeded, normal close
+  exited 0, and source bytes stayed unchanged (`target/cursor-warning-triage/wayland-verified/`
+  and `wayland-cursors/`); the investigation is closed with no behavioral defect
+  observed in these checks, while the upstream initialization warning remains.
 
 - 2026-10-08 — W10, observed during the installed native-Wayland smoke: an
   unpaced `wtype` text burst did not arrive intact. The saved action was

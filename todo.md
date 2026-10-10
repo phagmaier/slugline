@@ -66,9 +66,15 @@ reason.
   close waits for native input and active explicit saves before checking dirty
   state. File-workflow and native-input widget regressions pass, including a
   newer edit and failed save; the original Wayland driver was not rerun.
-- [ ] Investigate the empty-cursor-name GTK warning seen at launch and establish
+- [x] Investigate the empty-cursor-name GTK warning seen at launch and establish
   whether it affects behavior. See
   [the B16 follow-up note](docs/BACKLOG.md#found-along-the-way).
+  **Result:** Investigated in `Classify the GTK cursor warning at startup`:
+  Flutter 3.44.8 initializes its Linux cursor name to an empty string; GTK rejects
+  that lookup and inherits the default cursor. The isolated native Wayland probe
+  rendered the editor, loaded the subsequent default cursor, and closed with exit 0
+  without changing the script bytes; no behavioral defect was observed in these
+  checks, and the upstream initialization warning remains.
 - [ ] Review the GTK/Flutter startup frame-size warning seen during the W7
   native launch; later frames rendered correctly, and its cause is unknown.
   See [the W7 follow-up note](docs/BACKLOG.md#found-along-the-way).
