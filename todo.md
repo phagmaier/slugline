@@ -75,6 +75,12 @@ reason.
   rendered the editor, loaded the subsequent default cursor, and closed with exit 0
   without changing the script bytes; no behavioral defect was observed in these
   checks, and the upstream initialization warning remains.
-- [ ] Review the GTK/Flutter startup frame-size warning seen during the W7
+- [x] Review the GTK/Flutter startup frame-size warning seen during the W7
   native launch; later frames rendered correctly, and its cause is unknown.
   See [the W7 follow-up note](docs/BACKLOG.md#found-along-the-way).
+  **Result:** Reviewed in `W7 — Close the startup frame-size follow-up as not reproduced`:
+  an uninstrumented native Hyprland launch of the existing Flutter 3.44.8 debug
+  bundle rendered at 1900 × 1008 without the frame-size warning, closed normally
+  with exit 0, and preserved exact CRLF script bytes. Closed under the requested
+  non-reproduction rule; the historical release-launch cause remains unknown
+  (`target/frame-size-triage/wayland-verified/`).

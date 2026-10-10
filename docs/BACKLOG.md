@@ -3419,6 +3419,14 @@ not part of that item.
   chooser rendered correctly in the recorded screenshots, and the session
   exited 0. Startup-size/frame synchronization is outside W7; left unchanged,
   with no claim that a correct later frame explains or fixes the warning.
+  Reviewed 2026-10-09 in `W7 — Close the startup frame-size follow-up as not reproduced`:
+  an uninstrumented native Hyprland launch of the existing Flutter 3.44.8 debug
+  bundle rendered the editor at 1900 × 1008 without this warning, closed normally
+  with exit 0, and preserved exact CRLF script bytes
+  (`target/frame-size-triage/wayland-verified/`). Closed as non-reproduced under
+  the requested triage rule; the historical release-launch cause remains unknown,
+  and this check does not establish a release fix. Flutter's compositor emits the
+  warning after a 100 ms wait for a frame matching the window size.
 - 2026-10-06 — W5, reproduced: the preview keeps its scroll offset in pixels
   when the sheets change size, so it does not keep its page. Opened on page 47
   of a 60-page pagination at the default 58%, "Actual size" leaves page 28 at
