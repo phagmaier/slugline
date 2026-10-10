@@ -34,19 +34,58 @@ files. This gate was retired without establishing a real-IME pass.
 
 ## 3. Print calibration overlay
 
-Automation pins the grid (`render_pdf/tests/element_indents.rs` measures a
-finished PDF with `pdftotext -bbox`; ADR 0034 records the afterwriting /
-screenplain comparison). Re-run the human half only if `layout::metrics` or
-the renderer changed since ADR 0034:
+Automation pins indents and baseline alignment
+(`render_pdf/tests/element_indents.rs` reads the finished PDF's text matrices;
+`text_extraction.rs` checks Poppler text extraction). Grid alignment alone does
+not prove consecutive-row pitch. ADR 0034 records the afterwriting / screenplain
+comparison. Re-run the human half only if `layout::metrics` or the renderer
+changed since ADR 0034:
 
 1. Export the ADR's short script to PDF (US Letter).
 2. `cargo run -p slugline_render_pdf --example dump -- script.fountain out.pdf`
-3. `pdftotext -bbox out.pdf - | head` and confirm every baseline still lands on
-   the six-lines-to-the-inch grid and the indents match §5.2.
+3. `pdftotext -bbox out.pdf out-bbox.html` reports **word bounding boxes**, not
+   baselines. Group words into printed rows on each page; multiple words or
+   styled runs on one baseline are one row. With the default Courier Prime
+   face, the first row's `yMin` is 72 pt from the top; its actual baseline is
+   81.375 pt from the top (710.625 pt in US Letter PDF coordinates). Read the
+   PDF text matrices (`Tm`) or decoded character origins to check baselines;
+   for these unrotated exports, convert PDF y with `page height - y`. Compare
+   bounding-box tops separately, and confirm the indents match §5.2.
+
+   Check pitch using a disposable single Action block containing several short
+   consecutive hard lines, and another single Action paragraph long enough to
+   soft-wrap. Each pair of consecutive printed rows must be 12 pt apart. Also
+   export paragraphs separated by blank rows: one intentional blank row makes
+   the next text-bearing baseline 24 pt away. Compare each gap with its expected
+   row count; **do not compare the average gap over all text-bearing rows with
+   12 pt**. Exclude title pages and page numbers, and never measure across pages.
 4. Open in a viewer (Evince/Okular) and print one page. Expected: 12pt Courier
    Prime, 1" top/bottom margins, page number 0.5" from the top. Page 1 carries
    no number unless “Number the first page” is on (ADR 0048), so print page 2,
    or turn the option on, to see one.
+
+**Result (2026-10-09):** Reported automated measurement: first line y0 was
+72.00 pt (target 72.0 pt, pass); average line pitch was 20.00 pt (target
+12.0 pt, fail). The existing PDF regression in
+`render_pdf/tests/element_indents.rs` checks that printed baselines lie on the
+12 pt grid, but does not assert that the average gap between text-bearing rows
+is 12 pt. Intentional blank rows can make that average larger while the grid
+pitch remains 12 pt. The measurement script and PDF were not retained here, so
+the discrepancy is unresolved and does not establish a renderer defect. Follow
+up by checking how the script groups extracted text rows and accounts for blank
+rows against the PDF operators and regression fixture. No renderer change was
+made; keep this gate open until the result is reconciled.
+
+**Independent follow-up (2026-10-09):** Disposable exports measured through
+actual PDF text matrices, PyMuPDF 1.28.2 character origins and Poppler 26.08.0
+`-bbox` agree: four consecutive hard lines and five soft-wrapped rows have
+exactly 12 pt pitch. Three Action paragraphs occupying rows 0, 2, 4 and 5 have
+text-bearing gaps of 24, 24 and 12 pt: their mean is exactly 20 pt despite the
+12 pt grid. The first word-box top is 72 pt and the first baseline is 81.375 pt
+from the top in each fixture; the existing element-indents fixture also stays
+on the 12 pt grid. No renderer defect was reproduced and no renderer/layout
+change was made. The missing original artifacts prevent identifying that
+report's exact method; physical print/overlay verification remains pending.
 
 ## 4. HiDPI and fractional scaling
 
@@ -61,6 +100,9 @@ windows at 1.5×). The compositor half needs eyes:
    shrinks to fit (fitted size), the element bar ellipsizes without overflow,
    the export dialog shrinks instead of striping (min 480px, then scrolls).
 
+**Result (2026-10-09):** User-reported visual pass: everything looked correct
+and no scaling, scrolling, resize, or export-dialog issues were noticed.
+Machine and exact scale settings were not recorded.
 
 ## 5. Real-desktop runtime budgets
 
@@ -89,3 +131,7 @@ a GPU desktop. The same harness has a manual profile that keeps that limit:
 
 **Result:** pending. The 2026-10-06 Xvfb baseline exceeds 250 MiB and does not
 settle the real-desktop claim. A headless pass does not close this gate.
+**2026-10-09 update:** Not run; the user reports no desktop or laptop with a
+dedicated GPU available. The hardware-rendered desktop result remains
+unverified. A dedicated GPU is not required if an available integrated GPU can
+be confirmed as the active hardware renderer by desktop graphics diagnostics.

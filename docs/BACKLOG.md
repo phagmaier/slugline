@@ -3194,6 +3194,10 @@ S1 is fixed, two windows cover it.
 
 ## Found along the way
 
+- 2026-10-09 — Manual X2 check not run because Final Draft was unavailable.
+  Genuine Final Draft import and reopening an exported FDX in Final Draft
+  remain unverified; the earlier Fade In check is not a substitute.
+
 - 2026-10-09 — B18 verification: the rebuilt release passed startup (best
   380.75 ms) and Xvfb RSS (best 289.08 MiB), but
   `check_runtime_budgets.py` failed the unchanged idle gate. No interval had
