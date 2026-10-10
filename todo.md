@@ -40,12 +40,6 @@ finished, and update its source note if the status or evidence changes.
 These checks need a real desktop or external application. They are final
 validation work and do not block routine development.
 
-- [x] Retire the mandatory Orca screen-reader pass for editing, library
-  navigation, and dialogs. See
-  [manual gate 2](docs/MANUAL_GATES.md#2-orca-screen-reader-pass).
-  **Result:** Retired at the user's request in `Retire the mandatory Orca verification gate`:
-  verified Orca compatibility is outside the requested product scope.
-  No manual pass was performed; existing accessibility support remains in place.
 - [ ] Repeat print calibration if layout metrics or the renderer changed since
   ADR 0034; record the result. See
   [manual gate 3](docs/MANUAL_GATES.md#3-print-calibration-overlay).

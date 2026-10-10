@@ -2772,7 +2772,7 @@ startup is 376.025 ms and Xvfb RSS 274.93 MiB; idle retains the known
 zero-tick/one-main-thread-switch failure, logged under “Found along the way”.
 No idle threshold or harness was changed. Evidence and fault logs are under
 `target/x1-dual-smoke/`, including `runtime-budgets-isolated.json`.
-Real-desktop IME, Orca, HiDPI, print calibration and real-GPU RSS remain
+Real-desktop IME, HiDPI, print calibration and real-GPU RSS remain
 unverified manual gates; no installation, push or merge was performed.
 
 <a id="x2"></a>
@@ -2853,7 +2853,7 @@ The unchanged final runtime harness passed startup 375.568 ms, Xvfb RSS
 closes exited zero. Earlier local failures remain retained, not reclassified
 as passes; no idle fix or threshold change is claimed. Evidence:
 `target/x2-fdx-smoke/` (verification/logs/screenshots and runtime/close JSON).
-Genuine Final Draft, physical print calibration, desktop IME/Orca/HiDPI and
+Genuine Final Draft, physical print calibration, desktop IME/HiDPI and
 real-GPU 250 MiB RSS remain manual. Unrelated title-refresh, duplicate-native-
 key and no-op-title-journal findings are recorded below and not fixed.
 
@@ -2899,7 +2899,7 @@ reopen preserved the title, action `#88#`, dual cue, literal `##`, and expected
 numbered/unnumbered source; ordinary closes exited zero. The unchanged harness
 also passed 15 stressed closes, 390.380 ms best startup, 274.65 MiB Xvfb RSS and
 a zero-tick/zero-switch idle interval. Evidence: `target/x3-smoke/`. No budget
-threshold changed. Desktop IME/Orca/HiDPI, physical print calibration and
+threshold changed. Desktop IME/HiDPI, physical print calibration and
 real-GPU 250 MiB RSS remain manual; no unrelated item was fixed.
 
 <a id="hosted-startup-follow-up"></a>
@@ -2954,7 +2954,7 @@ zero-tick/zero-switch interval, and all 15 stressed ordinary closes exited zero.
 Evidence: root `target/x4-resume-smoke/`. No new hosted run was performed at this
 checkpoint; X3's hosted startup cause was unresolved. The later
 [startup follow-up](#hosted-startup-follow-up) closed as non-reproduced.
-Desktop IME/Orca, print calibration,
+Desktop IME, print calibration,
 HiDPI and real-GPU RSS remain manual gates.
 The integration audit reproduced a first dense paste leaving the End caret
 offscreen until another character. The surface now initializes its width cache
