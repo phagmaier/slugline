@@ -2,11 +2,12 @@
 
 Some properties of this application are properties of the *session* — the input
 method, the screen reader, the printer, the display server — and no test in
-this repository can stand in for them. Each gate below names what automation
+this repository can stand in for them. Each active gate below names what automation
 already proves, what a person still has to do, and exactly how. None of them
 blocks day-to-day development. Run them during the explicitly requested final
 release validation and record the results here (date, machine, pass/fail).
 Routine task completion does not require repeating or enumerating these gates.
+Retired entries are historical or optional checks, not release requirements.
 
 ## 0. What was already checked on 2026-09-13
 
@@ -33,9 +34,15 @@ files. This gate was retired without establishing a real-IME pass.
 
 ## 2. Orca screen-reader pass
 
+**Status:** retired at the user's request on 2026-10-09.
+Verified Orca compatibility is outside the requested product scope and is no
+longer a release gate. Existing accessibility support remains in place.
+
 Automation proves the semantics tree (`test/editor/accessibility_test.dart`
 asserts on `SemanticsData`: labels, values, selection base/extent, actions).
 It cannot prove Orca reads a screenplay *well*.
+
+**Optional verification procedure:**
 
 1. `sudo pacman -S --needed orca`, enable in Settings → Accessibility.
 2. Open the reference script with Orca running. Arrow through a scene heading,
@@ -46,6 +53,10 @@ It cannot prove Orca reads a screenplay *well*.
    accepted, but confirm it is one step per run, not per character).
 4. Open the library, the navigator and the export dialog. Expected: rows read
    as "title, time, pages"; dialogs read their titles and focused controls.
+
+**Historical evidence:** Prerequisite check on 2026-10-09 found no Orca executable
+on PATH in the current environment. No real-desktop Orca pass was performed;
+this gate was retired without establishing verified Orca compatibility.
 
 ## 3. Print calibration overlay
 
