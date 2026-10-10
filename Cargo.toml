@@ -16,7 +16,7 @@ members = [
 # a second time, because Cargo cannot read it from there. `tools/check_version.py`
 # fails the build if the two ever disagree, which is the only thing that makes
 # "one source" true rather than aspirational.
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 # Not aspirational, and not a preference: this is the floor the resolved
 # dependency graph actually needs, and CI's `msrv` job builds on exactly this
