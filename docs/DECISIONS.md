@@ -89,7 +89,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0066 | Repeated title entries are shown and edited individually | `crates/fountain/src/model.rs`, `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/title_page_dialog.dart` | live |
 | 0067 | Reopening and recovery reuse the saved reading row | `app/lib/app.dart`, `app/test/file_workflow_test.dart`, `app/integration_test/persistence_test.dart` | live |
 | 0068 | Editable scripts are portable managed projects; import and migration copy sources | `crates/storage/src/project.rs`, `crates/bridge/src/api/files.rs`, `app/lib/app.dart`, `app/lib/library/` | live |
-| 0069 | CJK input-method validation is outside the release scope | `docs/MANUAL_GATES.md`, `todo.md` | live |
+| 0069 | CJK input-method validation is outside the release scope | `docs/MANUAL_GATES.md` | live |
 
 ---
 

@@ -154,6 +154,6 @@ writes to the developer's home directory, or downloads a tool.
 
 Before announcing a release broadly, run the AppImage and installed tarball on
 a real desktop and check opening a `.fountain` file from the file manager,
-Wayland and X11 startup, HiDPI/fractional scaling, an `ibus` CJK input method,
-PDF viewing/printing, and at least one non-Arch distribution. These checks are
-not represented as automated passes.
+Wayland and X11 startup, HiDPI/fractional scaling, PDF viewing/printing, and at
+least one non-Arch distribution. These checks are not represented as automated
+passes. `docs/MANUAL_GATES.md` records the active gates and their results.

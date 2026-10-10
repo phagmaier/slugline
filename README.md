@@ -86,7 +86,7 @@ always will.
   promised.
 - **Managed script library** — portable project folders with display names, pins,
   previous versions, archive/restore, page counts, and quick search.
-- **Crash recovery** — if the editor quits unexpectedly, your unsent work is
+- **Crash recovery** — if the editor quits unexpectedly, your unsaved work is
   waiting for you the next time you open that script.
 - **External-change detection** — if something else writes your file while it's
   open, Slugline asks before overwriting anything.
@@ -179,7 +179,7 @@ application menu or open a `.fountain` file in your file manager.
 
 ```sh
 slugline                         # opens the library
-slugline my-script.fountain      # opens or creates a script
+slugline my-script.fountain      # opens a library script, or offers to import the file
 slugline --version
 slugline --help
 ```
@@ -366,9 +366,10 @@ validation and artifact smoke tests before publishing assets. See
 
 ## What's left?
 
-A handful of checks still need a person at a real desktop: Wayland and X11 with
-HiDPI/fractional scaling, additional distributions and GTK versions, real
-`ibus` plus CJK input, and printing from a PDF viewer.
+A few checks are still owed to hardware or software this project has not had:
+the real-GPU memory budget (gate 5 in `docs/MANUAL_GATES.md`), a round trip
+through Final Draft itself for FDX files, and distributions and GTK versions
+other than current Arch Linux.
 
 ## Reporting issues
 

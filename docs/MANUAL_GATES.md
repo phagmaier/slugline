@@ -87,6 +87,10 @@ on the 12 pt grid. No renderer defect was reproduced and no renderer/layout
 change was made. The missing original artifacts prevent identifying that
 report's exact method; physical print/overlay verification remains pending.
 
+**Print (2026-10-09):** User-reported pass: a printed page was checked and
+looked correct. Printer, viewer and paper were not recorded. With the
+follow-up above reconciling the 20 pt average, this gate is closed.
+
 ## 4. HiDPI and fractional scaling
 
 Automation covers in-app text scaling (`writing_polish_test.dart` pumps 800px
