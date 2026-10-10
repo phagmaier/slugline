@@ -69,7 +69,7 @@ if command_present flutter; then
   ok "flutter $flutter_version"
   case "$flutter_version" in
     *3.44.8*) ;;
-    *) warn "flutter is not the pinned 3.44.8; app/pubspec.lock belongs to 3.44.8 and a newer SDK rewrites four pins (see BACKLOG B6)" ;;
+    *) warn "flutter is not the pinned 3.44.8; app/pubspec.lock belongs to 3.44.8 and a newer SDK rewrites four pins (see BACKLOG B6); with mise, run 'mise install' in the repository" ;;
   esac
   if command_present dart; then
     ok "dart $(dart --version 2>&1 | head -n 1)"

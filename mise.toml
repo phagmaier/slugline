@@ -1,0 +1,4 @@
+# The Flutter SDK CI and the release build pin; app/pubspec.lock belongs to it.
+# Keep in step with `flutter-version` in .github/workflows/.
+[tools]
+flutter = "3.44.8"

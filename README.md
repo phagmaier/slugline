@@ -271,7 +271,9 @@ comes back out exactly as it went in. No reformatting, no surprises.
 ## Source build requirements
 
 You need Flutter 3.44.8 (the CI-pinned stable SDK), Rust 1.85 or newer, GTK 3
-development headers, and desktop registration tools:
+development headers, and desktop registration tools. With
+[mise](https://mise.jdx.dev), `mise install` in the repository selects that
+Flutter from `mise.toml`:
 
 ```sh
 # Arch

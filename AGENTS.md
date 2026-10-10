@@ -405,6 +405,11 @@ together if deliberately changing one.
 - `app/pubspec.lock` belongs to Flutter 3.44.8. Newer Flutter, including codegen
   running `pub get`, may rewrite it. Restore it unless deliberately changing
   dependencies or the toolchain; CI uses `--enforce-lockfile`.
+- `mise.toml` pins that Flutter locally; change it together with
+  `flutter-version` in the workflows. Use the `flutter` and `dart` that resolve
+  inside the repository, never a system SDK by path: a newer one also fails the
+  format check on untouched files. A copy of the tree outside the repository has
+  no pin, so call the pinned SDK explicitly there.
 - Do not add network requests, telemetry, update checks, font downloads,
   databases, or persisted lock files. Loss of user text is a P0 defect.
 - Never rewrite an accepted ADR's decision in `docs/DECISIONS.md`. A later
