@@ -2,7 +2,7 @@
 """Measure the shipped Linux release process (ADR 0050).
 
     xvfb-run -a python3 tools/check_runtime_budgets.py
-    python3 tools/check_runtime_budgets.py --desktop  # manual GPU-session gate
+    python3 tools/check_runtime_budgets.py --desktop  # optional real-desktop profile
 
 No benchmark entry point or production marker: the GTK runner maps its window
 only on Flutter's first frame. All launches have fresh XDG directories. This is
@@ -357,7 +357,7 @@ def main():
     )
     parser.add_argument(
         "--desktop", action="store_true",
-        help="manual real-desktop profile: preserve the GPU environment, assert 250 MiB",
+        help="optional real-desktop profile: preserve the GPU environment, assert 250 MiB",
     )
     parser.add_argument(
         "--only", choices=["startup", "idle", "rss"], action="append",

@@ -68,8 +68,7 @@ this file and the others to it.
   printed page. Page 1 is the start of the script; the title page is not
   counted.
 - The release process now has automated cold-start, idle wakeup and memory
-  regression checks under Xvfb. The separate real-desktop memory budget remains
-  a manual verification gate.
+  regression checks under Xvfb. A real-desktop memory figure is not gated.
 - A startup watchdog failure now retains bounded live X11, thread, mapping and
   session diagnostics, plus a post-deadline native-stack attempt, in the existing
   runtime-budget report before cleanup. Successful measurements and application

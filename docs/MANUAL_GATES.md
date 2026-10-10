@@ -110,32 +110,22 @@ Machine and exact scale settings were not recorded.
 
 ## 5. Real-desktop runtime budgets
 
-F9's automated Xvfb/llvmpipe harness enforces a separate 320 MiB RSS regression
-ceiling. It cannot establish whether the original 250 MiB limit is exceeded on
-a GPU desktop. The same harness has a manual profile that keeps that limit:
+**Status:** retired at the user's request on 2026-10-09 (ADR 0070). A
+real-GPU startup, idle and 250 MiB memory measurement is no longer a release
+gate. The automated Xvfb checks in `tools/check_runtime_budgets.py`, with their
+separate 320 MiB ceiling, still run in CI and the release workflow.
 
-1. Build with `cd app && flutter build linux --release`, then return to the
-   repository root. Use a real desktop with GPU rendering (X11, or XWayland on
-   Wayland), scale 1 and `xdotool` installed. Unset `LIBGL_ALWAYS_SOFTWARE` and
-   `LP_NUM_THREADS` if previously set for headless tests; confirm hardware
-   rendering with the desktop's graphics diagnostics.
-2. Run `python3 tools/check_runtime_budgets.py --desktop --output target/runtime-budgets-desktop.json`.
-   Do not interact with or move focus from its disposable windows. It uses
-   isolated XDG directories and copies the reference script, leaving personal
-   scripts and preferences alone. The script establishes and checks X input
-   focus; a person must confirm the visible editor and caret and actual GPU use.
-3. Expected: best-of-five first-frame startup < 500 ms, a ten-second idle
-   interval with zero CPU ticks and voluntary switches, and best-of-three
-   reference-script RSS < 250 MiB over three consecutive observation intervals.
-   Inspect all recorded samples, not only the passing minimum. Record the date,
-   desktop/GPU, toolchain and report here. A desktop that runs an accessibility
-   bus wakes the main thread through GTK's bridge some seconds after a burst of
-   frames: one switch, no CPU tick (ADR 0065). Say so if that is what an
-   interval shows; it is the desktop's message, not a timer of Slugline's.
+**Historical evidence:** No real-desktop pass was established. The 2026-10-06
+Xvfb baseline exceeds 250 MiB and never settled the desktop claim. One desktop
+run was attempted on 2026-10-09 on Hyprland through XWayland with Intel UHD 630
+graphics: three empty-script startups took 297.963, 301.824 and 309.396 ms
+against the 500 ms limit, then `xdotool getwindowfocus` failed on the third
+launch and the run stopped before idle or RSS were measured. The focus failure
+was not investigated.
 
-**Result:** pending. The 2026-10-06 Xvfb baseline exceeds 250 MiB and does not
-settle the real-desktop claim. A headless pass does not close this gate.
-**2026-10-09 update:** Not run; the user reports no desktop or laptop with a
-dedicated GPU available. The hardware-rendered desktop result remains
-unverified. A dedicated GPU is not required if an available integrated GPU can
-be confirmed as the active hardware renderer by desktop graphics diagnostics.
+**Optional measurement:** after `cd app && flutter build linux --release`, run
+`python3 tools/check_runtime_budgets.py --desktop --output target/runtime-budgets-desktop.json`
+from a real X11 or XWayland session without touching its disposable windows. It
+uses isolated XDG directories. A desktop accessibility bus can wake the main
+thread once per interval without a CPU tick (ADR 0065); that is the desktop's
+message, not a timer of Slugline's.

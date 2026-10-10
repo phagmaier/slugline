@@ -385,7 +385,7 @@ affected behavior is verified when its relevant check still fails.
 When relevant, verify exact bytes, BOM/CRLF, untouched source, journal recovery
 and actual reopen. Full-disk classification alone is not a real full-disk test;
 PDF extraction marked `SKIPPED` is not a pass. Widget, native, installed and
-real-desktop results are distinct: Xvfb does not close manual GPU gate 5. An
+real-desktop results are distinct: an Xvfb result is not a desktop one. An
 ordinary-close check must inspect process exit and retain a failing core, not
 just wrapper success. Mention only the gates relevant to the change or requested
 validation; do not restate every pending manual gate in every completion.

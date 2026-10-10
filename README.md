@@ -366,10 +366,9 @@ validation and artifact smoke tests before publishing assets. See
 
 ## What's left?
 
-A few checks are still owed to hardware or software this project has not had:
-the real-GPU memory budget (gate 5 in `docs/MANUAL_GATES.md`), a round trip
-through Final Draft itself for FDX files, and distributions and GTK versions
-other than current Arch Linux.
+Two checks are still owed to software and systems this project has not had: a
+round trip through Final Draft itself for FDX files, and distributions and GTK
+versions other than current Arch Linux.
 
 ## Reporting issues
 

@@ -30,7 +30,6 @@ figures use MiB (1024 × 1024 bytes), as the existing bundle-size check does.
 | < 500 ms | Fresh process → first-frame window, empty script argument; best of 5 | `tools/check_runtime_budgets.py` (`STARTUP_MS`) |
 | 0 ticks and 0 voluntary thread switches | Focused idle, 10 s after measured quiet; best of 3 | same file (`IDLE_SECONDS`) |
 | < 320 MiB | RSS with the reference open, Xvfb / llvmpipe, `LP_NUM_THREADS=4`; best of 3 | same file (`XVFB_RSS_MIB`) |
-| < 250 MiB | RSS with the reference open on a real GPU desktop; best of 3 | same file, `--desktop` (`DESKTOP_RSS_MIB`); [manual gate 5](MANUAL_GATES.md#5-real-desktop-runtime-budgets) |
 
 **Debug builds relax some of these on purpose.** `cargo test` runs unoptimised,
 so `pagination_is_fast_enough.rs` allows 100 ms full and 12 ms incremental under
@@ -71,21 +70,22 @@ application never wakes over an entire session or detect polling slower than
 the observation interval. RSS keeps the larger endpoint reading per interval,
 then the best of those three intervals.
 
-The original 250 MiB RSS limit is retained for a real GPU desktop, pending
-manual gate 5. The initial Xvfb baseline is already about 272–290 MiB; software
-rendering contributes resident memory and startup CPU, but its contribution has
-not been separated from an application overrun. The additional 320 MiB ceiling
-is deliberately an environment-specific regression limit, with roughly 10%
-headroom above the observed range, not evidence that the 250 MiB desktop budget
-passes. The software profile pins `LP_NUM_THREADS=4`, X11 and scale 1 to
+The original 250 MiB RSS limit was written for a real GPU desktop. It is not a
+release budget: [manual gate 5](MANUAL_GATES.md#5-real-desktop-runtime-budgets)
+was retired without a real-desktop measurement (ADR 0070). The Xvfb baseline is
+about 272–290 MiB; software rendering contributes resident memory and startup
+CPU, but its contribution has not been separated from the application's own.
+The 320 MiB ceiling is deliberately an environment-specific regression limit,
+with roughly 10% headroom above the observed range, and says nothing about a
+desktop figure. The software profile pins `LP_NUM_THREADS=4`, X11 and scale 1 to
 reduce variation across headless machines. It also removes
 `DBUS_SESSION_BUS_ADDRESS` and `AT_SPI_BUS_ADDRESS` (ADR 0065): started from a
 desktop session the process would otherwise join that desktop's accessibility
 bus through GTK's bridge and be woken by it, which is not the application
 idling badly and is not what a hosted runner measures. CI and release preflight
-run this profile; `--desktop` preserves the graphics, scale and session
-environment and asserts 250 MiB. Both use the same harness and retain raw
-process logs with `--output`.
+run this profile; the optional `--desktop` profile preserves the graphics,
+scale and session environment and asserts 250 MiB. Both use the same harness
+and retain raw process logs with `--output`.
 
 If the ten-second startup watchdog fails, the launch record's
 `startup_diagnostics` captures live state before SIGTERM/SIGKILL cleanup:

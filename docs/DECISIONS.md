@@ -70,7 +70,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0047 | Sung hard lines remain dialogue and carry lyric output metadata | `crates/fountain/src/syntax.rs`, `crates/fountain/src/lib.rs`, `crates/layout/src/engine.rs`, `crates/layout/src/line_break.rs`, `crates/layout/src/model.rs`, `crates/render_pdf/src/lib.rs` | live |
 | 0048 | Page 1 is counted, and prints its number only when the page setup asks | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/page_numbers.rs`, `crates/storage/src/prefs.rs`, `app/lib/editor/page_indicator.dart`, `app/lib/settings/preferences_dialog.dart` | live |
 | 0049 | An incremental run resumes and stops only where the paginator recorded that it could | `crates/layout/src/engine.rs`, `crates/layout/src/model.rs`, `crates/layout/tests/incremental_differential.rs` | live |
-| 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | live |
+| 0050 | Release-process budgets observe the shipped window and measured quiet | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md`, `docs/MANUAL_GATES.md`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `tools/release_preflight.sh` | narrowed by 0070 — real-desktop budget gate retired |
 | 0051 | Shift+Enter is a core-owned line break with its own undo transaction | `crates/bridge/src/api/doc.rs`, `app/lib/core/document_core.dart`, `app/lib/editor/editor_controller.dart`, `app/lib/editor/editor_surface.dart`, `app/lib/editor/commands.dart` | live |
 | 0052 | GTK owns local file selection; the core still authorizes replacement | `app/linux/runner/my_application.cc`, `app/lib/library/file_chooser.dart`, `app/lib/library/quick_open_dialog.dart`, `app/lib/settings/preferences_dialog.dart`, `app/lib/preview/export_dialog.dart`, `app/lib/library/save_dialogs.dart` | live; narrowed by 0068 — managed projects |
 | 0053 | The runner stops the engine before the process exits | `app/linux/runner/my_application.cc`, `tools/check_clean_close.py`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | live |
@@ -90,6 +90,7 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0067 | Reopening and recovery reuse the saved reading row | `app/lib/app.dart`, `app/test/file_workflow_test.dart`, `app/integration_test/persistence_test.dart` | live |
 | 0068 | Editable scripts are portable managed projects; import and migration copy sources | `crates/storage/src/project.rs`, `crates/bridge/src/api/files.rs`, `app/lib/app.dart`, `app/lib/library/` | live |
 | 0069 | CJK input-method validation is outside the release scope | `docs/MANUAL_GATES.md` | live |
+| 0070 | The real-desktop runtime budget is outside the release scope | `docs/MANUAL_GATES.md`, `docs/BUDGETS.md`, `tools/check_runtime_budgets.py` | live |
 
 ---
 
@@ -3860,6 +3861,8 @@ file fail.
 **Date:** 2026-10-06 · **Status:** accepted · **Phase:** post-1.0, F9
 **Extends:** ADR 0014 with an observation of idle wakeups; Dart still owns timers
 and the actor still blocks on its channel.
+**Superseded by:** ADR 0070 for the real-desktop 250 MiB limit and manual gate 5.
+The automated budgets and the rest of this record stand.
 
 ### Context
 
@@ -5407,3 +5410,32 @@ composition does not require adopting ADR 0005's fallback editor.
 
 The retired gate retains its historical evidence without claiming a pass.
 Any future real-CJK support commitment requires its own validation scope.
+
+---
+
+## ADR 0070 — The real-desktop runtime budget is outside the release scope
+
+**Date:** 2026-10-09 · **Status:** accepted
+**Narrows:** ADR 0050's real-desktop 250 MiB limit and its manual gate 5.
+
+### Context
+
+The owner declined a hard gate on startup time and speed for a personal tool:
+if the application ever feels slow, that will be worked on then. One desktop
+run was attempted on 2026-10-09 (Hyprland, XWayland, Intel UHD 630). It recorded
+three startups of 298, 302 and 309 ms before the harness's X focus read-back
+failed on the third launch; idle and RSS were never measured there.
+
+### Decision
+
+Retire manual gate 5. The 250 MiB real-desktop figure is no longer a pending
+release claim, and nobody is asked to run the `--desktop` profile. The automated
+Xvfb startup, idle and RSS regression checks and the keystroke budget are
+unchanged: they need no person and still catch a regression.
+
+### Consequences
+
+The `--desktop` profile stays in the harness as an optional measurement. Its
+focus read-back failure under Hyprland is unexplained and is not being pursued.
+The retired gate retains its evidence without claiming a pass. Any future
+real-desktop performance commitment requires its own validation scope.
