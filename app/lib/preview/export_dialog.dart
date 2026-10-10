@@ -457,8 +457,8 @@ class _ExportDialogState extends State<ExportDialog> {
               ),
               const SizedBox(height: 8),
               Text(
-                'An export writes a copy. This script stays where it is — use '
-                'Save as to move it.',
+                'An export writes a copy. This script stays in the library, '
+                'with its unsaved changes and history as they are.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if (_report case final report?) ...[

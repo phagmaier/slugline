@@ -332,6 +332,15 @@ class _SluglineAppState extends State<SluglineApp> {
     String canonical;
     try {
       canonical = await widget.core.resolvePath(path);
+    } on FileSystemException catch (failure) {
+      // A missing path is never created: a script begins in the library.
+      final reason = failure.osError?.message;
+      _say(
+        'No screenplay could be read at $path'
+        '${reason == null ? '' : ' ($reason)'}. '
+        'Choose New script to start one in the library.',
+      );
+      return;
     } catch (failure) {
       _say('The screenplay is unavailable: $failure');
       return;
