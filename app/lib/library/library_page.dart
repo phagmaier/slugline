@@ -498,6 +498,19 @@ class _LibraryPageState extends State<LibraryPage> {
                 color: context.colours.textSecondary,
               ),
             ),
+            if (widget.core case final ManagedLibraryCore managed) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Scripts are kept in '
+                '${_displayPath(managed.libraryStatus().path)}. '
+                'Preferences can change the folder.',
+                key: const ValueKey('library-empty-location'),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: context.colours.textTertiary,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             Wrap(
               alignment: WrapAlignment.center,

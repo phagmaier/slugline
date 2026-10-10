@@ -215,7 +215,8 @@ picker. `Ctrl+Shift+S` exports a Fountain copy while retaining the current scrip
 its unsaved changes and history. Existing destinations require replacement approval;
 managed project contents are protected even when closed.
 
-The library defaults to **Documents/Slugline** (or **home/Slugline**). Each script
+The library defaults to **Documents/Slugline** (or **home/Slugline**), made the
+first time Slugline starts; Preferences can choose another folder. Each script
 has its own folder containing `script.fountain`, `project.json` and `versions/`;
 FDX imports retain `imports/source.fdx`. Rename changes the display name, while
 Duplicate includes active unsaved text and creates an independent project.

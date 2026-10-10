@@ -88,9 +88,10 @@ process that has since finished, so nothing supersedes it and nothing needs to.
 | 0065 | The headless budget profile does not join the desktop's session bus | `tools/check_runtime_budgets.py`, `docs/BUDGETS.md` | live |
 | 0066 | Repeated title entries are shown and edited individually | `crates/fountain/src/model.rs`, `crates/document/src/document.rs`, `crates/bridge/src/api/doc.rs`, `app/lib/editor/title_page_dialog.dart` | live |
 | 0067 | Reopening and recovery reuse the saved reading row | `app/lib/app.dart`, `app/test/file_workflow_test.dart`, `app/integration_test/persistence_test.dart` | live |
-| 0068 | Editable scripts are portable managed projects; import and migration copy sources | `crates/storage/src/project.rs`, `crates/bridge/src/api/files.rs`, `app/lib/app.dart`, `app/lib/library/` | live |
+| 0068 | Editable scripts are portable managed projects; import and migration copy sources | `crates/storage/src/project.rs`, `crates/bridge/src/api/files.rs`, `app/lib/app.dart`, `app/lib/library/` | refined by 0071 — default root made at first launch |
 | 0069 | CJK input-method validation is outside the release scope | `docs/MANUAL_GATES.md` | live |
 | 0070 | The real-desktop runtime budget is outside the release scope | `docs/MANUAL_GATES.md`, `docs/BUDGETS.md`, `tools/check_runtime_budgets.py` | live |
+| 0071 | The default library folder is made at first launch | `crates/bridge/src/api/files.rs`, `app/lib/library/library_page.dart` | live |
 
 ---
 
@@ -5306,6 +5307,8 @@ the recovered text and BOM/untouched CRLF bytes through Save and actual reopen.
 **Date:** 2026-10-09 · **Status:** accepted
 **Narrows:** ADR 0016, ADR 0021, ADR 0029, ADR 0038, ADR 0043, ADR 0052, ADR 0055, ADR 0062 and ADR 0064 for managed project workflows.
 
+**Superseded by:** ADR 0071 for when the default root is made. Every other rule remains.
+
 ### Context
 
 Arbitrary external paths made every New and first imported Save ask for a destination,
@@ -5439,3 +5442,35 @@ The `--desktop` profile stays in the harness as an optional measurement. Its
 focus read-back failure under Hyprland is unexplained and is not being pursued.
 The retired gate retains its evidence without claiming a pass. Any future
 real-desktop performance commitment requires its own validation scope.
+
+---
+
+## ADR 0071 — The default library folder is made at first launch
+
+**Date:** 2026-10-10 · **Status:** accepted
+**Refines:** ADR 0068's lazy first-run default; its location, persistence and missing-root rules remain.
+
+### Context
+
+ADR 0068 made the default root only when the first project was published. A
+fresh 1.1.0 installation therefore showed a library whose folder did not exist:
+Reveal failed with "Folder unavailable", and the folder chooser in Preferences
+started at a path that was not there. Every later feature touching the root
+would have had to remember the same gap.
+
+### Decision
+
+`init` makes the default root when no library is configured and it is absent.
+It does not write preferences: the root is still persisted only when a project
+is published or another root is selected. A root that has held a project is
+therefore always a configured one, and a configured root that disappears is
+still reported unavailable and never remade. Failing to make the default does
+not fail startup; project creation reports it as before. There is no first-run
+question; the empty library names the folder and Preferences changes it.
+
+### Consequences
+
+A launch that creates nothing leaves one empty folder in Documents (or home).
+Explicit test roots get their `data/library` directory at `init`. A bridge
+test holds creation without pinning and the unchanged missing-configured-root
+refusal.

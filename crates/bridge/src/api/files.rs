@@ -303,6 +303,13 @@ pub async fn init(config_dir: String, data_dir: String, state_dir: String) -> bo
         .library_dir
         .clone()
         .unwrap_or_else(|| paths.default_library().to_path_buf());
+    // A first run makes the default so Reveal and the folder chooser have a
+    // real directory. It stays unpinned until a project is published, so only
+    // a root that never held one is ever made here (ADR 0071). A failure is
+    // left for project creation to report.
+    if prefs.library_dir.is_none() {
+        let _ = project::root(&selected_root, true);
+    }
     let library_root = selected_root.canonicalize().unwrap_or(selected_root);
     let mut library = Library::load(&paths.library_index());
     let library_error = if !library_root.exists() && prefs.library_dir.is_none() {
@@ -3960,6 +3967,46 @@ mod tests {
     };
 
     const SCRIPT: &str = "The house is quiet.\n";
+    #[test]
+    fn first_initialization_makes_the_default_root_without_pinning_it() {
+        let _storage = STORAGE.lock().unwrap_or_else(PoisonError::into_inner);
+        let root = temp_root("init-first-run");
+        let paths = Paths::under(&root);
+        let start = || {
+            block_on(init(
+                paths.config_dir().to_string_lossy().into_owned(),
+                paths.data_dir().to_string_lossy().into_owned(),
+                paths.state_dir().to_string_lossy().into_owned(),
+            ))
+        };
+        assert!(!paths.default_library().exists());
+        assert!(start());
+        assert!(paths.default_library().is_dir());
+        let status = library_status();
+        assert_eq!(
+            status.path,
+            paths
+                .default_library()
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+        );
+        assert_eq!(status.error, None);
+        assert!(block_on(library_list()).is_empty());
+        assert_eq!(prefs_get().library_dir, None);
+        assert!(!paths.preferences().exists());
+
+        // A root somebody chose is still reported when it is gone, never remade.
+        let chosen = root.join("chosen");
+        let preferences = CorePreferences {
+            library_dir: Some(chosen.clone()),
+            ..CorePreferences::default()
+        };
+        preferences.save(&paths.preferences()).unwrap();
+        assert!(start());
+        assert!(!chosen.exists());
+        assert!(library_status().error.is_some());
+    }
     #[test]
     fn managed_initialization_resolves_root_alias_before_open_and_save() {
         let it = Fixture::open("init-root-alias");

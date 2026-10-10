@@ -6,6 +6,14 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 `app/pubspec.yaml` is the release-version source; `tools/check_version.py` holds
 this file and the others to it.
 
+## Unreleased
+
+### Fixed
+
+- A fresh installation makes its default library folder at first launch, so
+  Reveal library folder and the folder chooser in Preferences no longer fail
+  before the first script exists. The empty library says where scripts are kept.
+
 ## 1.1.0 - 2026-10-09
 
 ### Added

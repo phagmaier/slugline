@@ -91,7 +91,7 @@ pub struct Preferences {
     /// Where rolling backups go. `None` means the default under
     /// `$XDG_STATE_HOME`.
     pub backup_dir: Option<PathBuf>,
-    /// Managed library. None selects the lazy platform default.
+    /// Managed library. None selects the platform default, made at first launch.
     pub library_dir: Option<PathBuf>,
     pub backup_keep_versions: u32,
     pub backup_keep_days: u32,
