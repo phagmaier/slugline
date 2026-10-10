@@ -3398,17 +3398,15 @@ fn migrate_history(
     legacy_root: &Path,
     source: &Path,
 ) -> Result<(), atomic::SaveError> {
-    // Validate each child before writes; symlinked reference/version trees are never followed.
+    // Validate the version store before writes; a symlinked tree is never followed.
     let versions = project.versions();
-    for child in [&versions] {
-        if std::fs::symlink_metadata(child)
-            .map_or(true, |m| !m.is_dir() || m.file_type().is_symlink())
-        {
-            return Err(atomic::SaveError::Io {
-                path: child.clone(),
-                message: "version store is unavailable or a child symlink".into(),
-            });
-        }
+    if std::fs::symlink_metadata(&versions)
+        .map_or(true, |m| !m.is_dir() || m.file_type().is_symlink())
+    {
+        return Err(atomic::SaveError::Io {
+            path: versions.clone(),
+            message: "version store is unavailable or a child symlink".into(),
+        });
     }
     let directory = legacy_root.join(journal::script_id(source));
     if !directory.exists() {
