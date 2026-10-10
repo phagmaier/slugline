@@ -46,6 +46,13 @@ void main() {
     await tester.pump();
     expect(core.saves, isEmpty, reason: 'native text is still pending');
     expect(requests, 1);
+    bool? mayClose;
+    final close = tester
+        .state<EditorPageState>(find.byType(EditorPage))
+        .confirmClose()
+        .then((value) => mayClose = value);
+    await tester.pump();
+    expect(mayClose, isNull, reason: 'close must wait for native text too');
     final surface = tester.state<EditorSurfaceState>(
       find.byType(EditorSurface),
     );
@@ -60,6 +67,8 @@ void main() {
     expect(core.saves, [('/scripts/burst.fountain', false)]);
     expect(core.onDisk, '$incomplete.');
     expect(core.dirty, isFalse);
+    await close;
+    expect(mayClose, isTrue);
   });
 
   testWidgets('a disposed editor cannot save after the native reply', (

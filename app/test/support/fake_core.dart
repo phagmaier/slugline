@@ -813,6 +813,9 @@ class FakeCore implements DocumentCore {
   /// disk.
   Completer<void>? holdWrites;
 
+  /// Holds save bookkeeping after the bytes have reached the file.
+  Completer<void>? holdSaveRecord;
+
   /// Marks the document saved without writing anything — what an undo back to
   /// the last saved revision looks like from outside.
   void markClean() {
@@ -978,6 +981,10 @@ class FakeCore implements DocumentCore {
       );
     }
     onDisk = planned;
+    if (holdSaveRecord case final hold?) {
+      holdSaveRecord = null;
+      await hold.future;
+    }
     // Clean only as far as what was written — `mark_saved_at(plan.revision)`.
     if (source() == planned) {
       _dirty = false;

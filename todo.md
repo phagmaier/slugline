@@ -59,9 +59,13 @@ These are documented observations without a confirmed defect or a dedicated
 backlog item. Decide whether to investigate, promote, or close them with a
 reason.
 
-- [ ] Review the immediate Ctrl+W-after-Save observation: the close prompt can
+- [x] Review the immediate Ctrl+W-after-Save observation: the close prompt can
   briefly say there are unsaved edits after the bytes have reached disk. See
   [the B16 follow-up note](docs/BACKLOG.md#found-along-the-way).
+  **Result:** Confirmed and fixed in `Wait for explicit Save before confirming close`:
+  close waits for native input and active explicit saves before checking dirty
+  state. File-workflow and native-input widget regressions pass, including a
+  newer edit and failed save; the original Wayland driver was not rerun.
 - [ ] Investigate the empty-cursor-name GTK warning seen at launch and establish
   whether it affects behavior. See
   [the B16 follow-up note](docs/BACKLOG.md#found-along-the-way).

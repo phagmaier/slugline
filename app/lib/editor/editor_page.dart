@@ -157,6 +157,7 @@ class EditorPageState extends State<EditorPage> {
   int _externalChangeSerial = 0;
   int _modalSerial = 0;
   bool _scriptActionActive = false;
+  final Set<Future<void>> _pendingSaves = {};
   int _externalChangesActive = 0;
   Completer<void>? _externalChangesSettled;
   Timer? _navigatorRefresh;
@@ -437,10 +438,17 @@ class EditorPageState extends State<EditorPage> {
 
   /// Ctrl+S, and the command palette's Save.
   Future<void> save({bool forcePath = false}) async {
-    final controller = widget.controller;
-    await NativeInput.flush();
-    if (!mounted || widget.controller != controller) return;
-    await _saveWithOutcome(forcePath: forcePath);
+    final settled = Completer<void>();
+    _pendingSaves.add(settled.future);
+    try {
+      final controller = widget.controller;
+      await NativeInput.flush();
+      if (!mounted || widget.controller != controller) return;
+      await _saveWithOutcome(forcePath: forcePath);
+    } finally {
+      _pendingSaves.remove(settled.future);
+      settled.complete();
+    }
   }
 
   Future<SaveOutcome> _saveWithOutcome({
@@ -657,6 +665,14 @@ class EditorPageState extends State<EditorPage> {
   ///
   /// Returns whether the caller may proceed.
   Future<bool> confirmClose() async {
+    final controller = widget.controller;
+    // Save includes native input, the file write and core bookkeeping. Its
+    // dirty flag is authoritative only after that work has finished; edits
+    // made after its snapshot must still get the ordinary close question.
+    while (_pendingSaves.isNotEmpty) {
+      await Future.wait(_pendingSaves.toList());
+    }
+    if (!mounted || widget.controller != controller) return false;
     if (!_core.dirty) return true;
     final choice = await withModal(
       () => showUnsavedChanges(context, widget.title ?? 'this script'),

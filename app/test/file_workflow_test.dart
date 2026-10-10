@@ -191,6 +191,20 @@ Future<void> _key(
   await tester.pumpAndSettle();
 }
 
+void _mockInputFlush(WidgetTester tester) {
+  const channel = MethodChannel('slugline/window');
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    channel,
+    (_) async => null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      null,
+    ),
+  );
+}
+
 Future<_AppCore> _pump(WidgetTester tester, {bool open = true}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(1200, 800);
@@ -594,6 +608,77 @@ void main() {
       },
     );
   }
+
+  for (final editDuringSave in [false, true]) {
+    testWidgets(
+      'Ctrl+W waits for Save bookkeeping, later edit: $editDuringSave',
+      (tester) async {
+        _mockInputFlush(tester);
+        final core = await _pump(tester);
+        final controller = _editor(tester).controller;
+        final document = core.opened.single;
+        controller.insertText('Saved words. ');
+        final savedSource = controller.source;
+        final record = document.holdSaveRecord = Completer<void>();
+        await _key(tester, LogicalKeyboardKey.keyS, control: true);
+        expect(document.onDisk, savedSource);
+        expect(document.dirty, isTrue);
+        await _key(tester, LogicalKeyboardKey.keyW, control: true);
+        expect(find.text('Save changes to alpha.fountain?'), findsNothing);
+        expect(document.closes, 0);
+        if (editDuringSave) controller.insertText('Later words. ');
+        record.complete();
+        await tester.pumpAndSettle();
+        expect(document.onDisk, savedSource);
+        expect(document.saves, hasLength(1));
+        if (editDuringSave) {
+          expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+          await tester.tap(find.text('Cancel'));
+          await tester.pumpAndSettle();
+          expect(document.closes, 0);
+          expect(controller.source, contains('Later words.'));
+          expect(document.dirty, isTrue);
+        } else {
+          expect(find.byType(LibraryPage), findsOneWidget);
+          expect(document.closes, 1);
+          expect(document.dirty, isFalse);
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    'Ctrl+W after a pending failed Save still asks about unsaved edits',
+    (tester) async {
+      _mockInputFlush(tester);
+      final core = await _pump(tester);
+      final controller = _editor(tester).controller;
+      final document = core.opened.single;
+      controller.insertText('Keep these words. ');
+      final write = document.holdWrites = Completer<void>();
+      document.refuseSaveWith = SaveFailure.noSpace;
+      final save = tester
+          .state<EditorPageState>(find.byType(EditorPage))
+          .save();
+      await tester.pump();
+      expect(document.saves, hasLength(1));
+      await _key(tester, LogicalKeyboardKey.keyW, control: true);
+      expect(find.text('Save changes to alpha.fountain?'), findsNothing);
+      write.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('The disk is full'), findsOneWidget);
+      expect(document.closes, 0);
+      await _key(tester, LogicalKeyboardKey.escape);
+      await save;
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes to alpha.fountain?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(document.closes, 0);
+      expect(document.dirty, isTrue);
+      expect(controller.source, contains('Keep these words.'));
+    },
+  );
 
   testWidgets(
     'a failed save cancels Ctrl+W without closing the dirty session',

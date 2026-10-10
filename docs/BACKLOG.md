@@ -3331,7 +3331,11 @@ not part of that item.
   the dirty flag on the actor, so the question is asked of a file that already
   holds the text. It errs on the safe side and no person is that fast; recorded
   because any harness must wait for the journal to restart, not for the bytes.
-  Left unchanged.
+  Resolved 2026-10-09 in `Wait for explicit Save before confirming close`:
+  reproduced with a widget save held after writing its bytes; close now waits
+  for active explicit saves, including native input, before checking dirty.
+  File-workflow and native-input widget tests pass; newer edits and failed saves
+  retain the close prompt. The original Wayland driver was not rerun.
 - 2026-10-08 — B16, observed on the Hyprland session: every launch logs
   `Gdk-Message: Unable to load  from the cursor theme`, with an empty cursor
   name, on the installed build and the B16 bundle alike. Not investigated.
