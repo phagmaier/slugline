@@ -91,9 +91,18 @@ if [ "${1:-}" = "--headed" ]; then
     red "FAIL: --headed needs xvfb-run"
     exit 1
   fi
+  # A disposable home, XDG roots and library: the namespace isolates the
+  # network, not the data, and this must never run in the developer's own
+  # scripts, preferences or recovery records.
+  mkdir -p "$WORK/home" "$WORK/config/slugline" "$WORK/data" "$WORK/state" \
+    "$WORK/cache" "$WORK/library"
+  printf '{"library_dir": "%s"}\n' "$WORK/library" > "$WORK/config/slugline/prefs.json"
   # `unshare` outside `xvfb-run`, so the X server it starts is inside the
   # namespace too and the application cannot reach a display on the outside.
-  if ! out=$(unshare -rn xvfb-run -a timeout 60 "$BINARY" "$SCRIPT" 2>&1 & sleep 25; kill %1 2>/dev/null; wait 2>/dev/null); then
+  if ! out=$(env HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" \
+      XDG_DATA_HOME="$WORK/data" XDG_STATE_HOME="$WORK/state" \
+      XDG_CACHE_HOME="$WORK/cache" \
+      unshare -rn xvfb-run -a timeout 60 "$BINARY" "$SCRIPT" 2>&1 & sleep 25; kill %1 2>/dev/null; wait 2>/dev/null); then
     true  # killing it is how it ends; the file is the assertion.
   fi
   AFTER="$(sha256sum < "$SCRIPT")"
